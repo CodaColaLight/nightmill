@@ -14,3 +14,4 @@ First extraction of the workflow out of the project it grew up in, as a Claude C
   warm-up commands with lockfile-hash skip, run hints); new `-Abandon` to free a slot without a merged PR.
 - Issue-form templates rendered from `areas` and `invariants`.
 - Tests: generic-words lint, JSON and skill checks, slot smoke tests in both shells; CI for all of them.
+- Licensed under the Apache License 2.0.

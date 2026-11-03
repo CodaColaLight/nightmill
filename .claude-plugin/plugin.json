@@ -5,5 +5,6 @@
   "description": "Lights-out development workflow for Claude Code: issue board to spec to PR, with a worker agent, permanent worktree slots and all project-specific values in one config file.",
   "author": { "name": "CodaColaLight", "url": "https://github.com/CodaColaLight" },
   "repository": "https://github.com/CodaColaLight/nightmill",
+  "license": "Apache-2.0",
   "keywords": ["workflow", "github-projects", "worktrees", "spec-first", "agents"]
 }

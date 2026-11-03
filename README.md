@@ -106,6 +106,6 @@ domain.
 
 To try a change in a project without publishing it: `claude --plugin-dir /path/to/nightmill`.
 
-## Status
+## Status and license
 
-0.1.0, first extraction. No license yet.
+0.1.0, first extraction. Apache License 2.0, see `LICENSE`.
