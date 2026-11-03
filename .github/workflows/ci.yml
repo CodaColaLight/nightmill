@@ -18,18 +18,20 @@ jobs:
       - run: bash tests/lint.sh
 
   smoke-bash:
-    name: slot.sh smoke test
+    name: bash scripts smoke tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: bash tests/smoke-slot.sh
+      - run: bash tests/smoke-render.sh
 
   smoke-powershell:
-    name: slot.ps1 smoke test
+    name: PowerShell scripts smoke tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 
   validate:
     name: claude plugin validate (not blocking)

@@ -27,7 +27,7 @@ $main = Split-Path ([string]$gitDir).Trim() -Parent
 
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
-$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+$cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $wt = $cfg.worktrees
 
 $baseBranch = "main"
@@ -50,7 +50,7 @@ function Get-SlotDir($n) { Join-Path $root "slot-$n" }
 function Get-Marker($n) { Join-Path $state "slot-$n.json" }
 function Read-Marker($n) {
   $p = Get-Marker $n
-  if (Test-Path $p) { Get-Content $p -Raw | ConvertFrom-Json } else { $null }
+  if (Test-Path $p) { Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 }
 function Write-Lf($path, $text) { [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false)) }
 

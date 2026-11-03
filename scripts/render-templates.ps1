@@ -12,7 +12,8 @@ $ErrorActionPreference = "Stop"
 
 $cfgPath = Join-Path $Project ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
-$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+# -Encoding UTF8 everywhere: Windows PowerShell 5.1 otherwise reads files in the ANSI code page.
+$cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 function Yaml-Quote($s) { '"' + (([string]$s) -replace '\\', '\\' -replace '"', '\"') + '"' }
 function Label($key, $default) { if ($cfg.labels -and $cfg.labels.$key) { $cfg.labels.$key } else { $default } }
@@ -20,7 +21,8 @@ function Label($key, $default) { if ($cfg.labels -and $cfg.labels.$key) { $cfg.l
 if (-not $cfg.areas -or @($cfg.areas).Count -eq 0) { throw "nightmill.json needs at least one entry in areas" }
 $areas = "[" + (@($cfg.areas) -join ", ") + "]"
 
-$invariants = @($cfg.invariants)
+# @($null) would be a one-element array; filter so a missing key means "no invariants".
+$invariants = @($cfg.invariants | Where-Object { $null -ne $_ -and "$_" -ne "" })
 $invBlock = ""
 foreach ($i in $invariants) {
   $invBlock += "        - label: " + (Yaml-Quote $i) + "`n          required: false`n"
@@ -41,7 +43,7 @@ New-Item -ItemType Directory -Force $dst | Out-Null
 
 $kept = @()
 foreach ($f in Get-ChildItem $src -Filter *.yml) {
-  $text = (Get-Content $f.FullName -Raw) -replace "`r`n", "`n"
+  $text = (Get-Content $f.FullName -Raw -Encoding UTF8) -replace "`r`n", "`n"
   if ($invariants.Count -eq 0) {
     $text = [regex]::Replace($text, "(?s)\n  # \{\{INVARIANTS_BEGIN\}\}\n.*?# \{\{INVARIANTS_END\}\}\n", "`n")
   } else {
@@ -54,7 +56,7 @@ foreach ($f in Get-ChildItem $src -Filter *.yml) {
 
   $out = Join-Path $dst $f.Name
   if ((Test-Path $out) -and -not $Force) {
-    $have = (Get-Content $out -Raw) -replace "`r`n", "`n"
+    $have = (Get-Content $out -Raw -Encoding UTF8) -replace "`r`n", "`n"
     if ($have -ne $text) { $kept += $f.Name; continue }
   }
   [System.IO.File]::WriteAllText($out, $text, (New-Object System.Text.UTF8Encoding $false))

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-11-03)
+
+- The PowerShell scripts read the config, templates and markers as UTF-8. Windows PowerShell 5.1
+  otherwise used the ANSI code page, which turned an em dash in an invariant into mojibake in the
+  rendered issue forms.
+
 ## 0.1.0 (2026-11-03)
 
 First extraction of the workflow out of the project it grew up in, as a Claude Code plugin.
