@@ -38,7 +38,8 @@ git remote add origin "$tmp/origin.git"
 git push -q origin main
 
 echo "== status before anything"
-bash "$S" --status | grep -q 'slot 1  not created yet free' || fail "initial status"
+# Output is captured first: with pipefail, grep -q closing the pipe early would fail the pipeline.
+grep -q 'slot 1  not created yet free' <<<"$(bash "$S" --status)" || fail "initial status"
 
 echo "== take slot 1"
 out=$(bash "$S" --take feat/a)
@@ -50,9 +51,9 @@ grep -q "PORT=8101 slot 1" <<<"$out" || fail "run hint placeholders"
 [ -f "$tmp/wt/.slots/slot-1.json" ] || fail "marker"
 
 echo "== take slot 2, third take fails"
-bash "$S" --take feat/b | grep -q "Slot 2 is yours" || fail "take slot 2"
+grep -q "Slot 2 is yours" <<<"$(bash "$S" --take feat/b)" || fail "take slot 2"
 if bash "$S" --take feat/c 2>/dev/null; then fail "third take should fail"; fi
-bash "$S" --status | grep -q 'busy: feat/a' || fail "status shows slot 1 busy"
+grep -q 'busy: feat/a' <<<"$(bash "$S" --status)" || fail "status shows slot 1 busy"
 
 echo "== warm-up skipped while the lockfile is unchanged"
 bash "$S" --abandon 1 >/dev/null
@@ -61,11 +62,11 @@ bash "$S" --take feat/d >/dev/null
 [ ! -f "$tmp/wt/slot-1/client/warmed.txt" ] || fail "warm-up ran again although the lockfile hash is unchanged"
 
 echo "== WORKER_SLOTS overrides the count"
-WORKER_SLOTS=3 bash "$S" --status | grep -q 'slot 3' || fail "WORKER_SLOTS override"
+grep -q 'slot 3' <<<"$(WORKER_SLOTS=3 bash "$S" --status)" || fail "WORKER_SLOTS override"
 
 echo "== abandon both"
 bash "$S" --abandon 1 >/dev/null
 bash "$S" --abandon 2 >/dev/null
-bash "$S" --status | grep -q 'slot 2  ready           free' || fail "slot 2 free after abandon"
+grep -q 'slot 2  ready           free' <<<"$(bash "$S" --status)" || fail "slot 2 free after abandon"
 
 echo "SMOKE OK"
