@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (generic, JSON, skills, shell)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/lint.sh
+
+  smoke-bash:
+    name: slot.sh smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/smoke-slot.sh
+
+  smoke-powershell:
+    name: slot.ps1 smoke test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
+
+  validate:
+    name: claude plugin validate (not blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate . --strict

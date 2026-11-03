@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/CodaColaLight/nightmill/main/schema/nightmill.schema.json",
+  "title": "nightmill project configuration (.claude/nightmill.json)",
+  "description": "Everything the nightmill skills and scripts need to know about one project. Unknown keys are ignored.",
+  "type": "object",
+  "required": ["github", "maintainer", "verification"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "github": {
+      "type": "object",
+      "required": ["owner", "repo", "projectNumber"],
+      "properties": {
+        "owner": { "type": "string", "description": "GitHub user or organisation that owns the repository and the project board." },
+        "repo": { "type": "string", "description": "Repository name without the owner." },
+        "projectNumber": { "type": "integer", "minimum": 1, "description": "Number of the GitHub Projects (v2) board, as in `gh project view N`." }
+      }
+    },
+    "maintainer": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "How the skills address the person who sets Ready and Approved." }
+      }
+    },
+    "board": {
+      "type": "object",
+      "description": "Field and option names on the board. The flow itself is fixed: backlog > ready > spec > specReview > approved > inProgress > review > done.",
+      "properties": {
+        "statusField": { "type": "string", "default": "Status" },
+        "priorityField": { "type": "string", "default": "Priority" },
+        "areaField": { "type": "string", "default": "Area" },
+        "statuses": {
+          "type": "object",
+          "properties": {
+            "backlog": { "type": "string", "default": "Backlog" },
+            "ready": { "type": "string", "default": "Ready" },
+            "spec": { "type": "string", "default": "Spec" },
+            "specReview": { "type": "string", "default": "Spec review" },
+            "approved": { "type": "string", "default": "Approved" },
+            "inProgress": { "type": "string", "default": "In progress" },
+            "review": { "type": "string", "default": "Review" },
+            "done": { "type": "string", "default": "Done" }
+          }
+        },
+        "priorities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Critical", "High", "Medium", "Low"],
+          "description": "Priority option names, highest first."
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "properties": {
+        "epic": { "type": "string", "default": "epic" },
+        "story": { "type": "string", "default": "story" },
+        "bug": { "type": "string", "default": "bug" },
+        "needsSpec": { "type": "string", "default": "needs-spec" },
+        "areaPrefix": { "type": "string", "default": "area:" },
+        "priorityPrefix": { "type": "string", "default": "prio:" }
+      }
+    },
+    "areas": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Area options for the issue forms and the board's Area field."
+    },
+    "invariants": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Project rules every story and bug must respect. Rendered as a checkbox list into the issue forms."
+    },
+    "iterations": {
+      "type": "object",
+      "properties": {
+        "specDir": { "type": "string", "default": "docs/specs" },
+        "specPattern": { "type": "string", "default": "iteration-<N>-<slug>.md" },
+        "changelog": { "type": "string", "default": "docs/CHANGELOG.md" },
+        "milestonePattern": { "type": "string", "default": "iteration-<N>" },
+        "decisionsDir": { "type": "string", "default": "docs/decisions" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["check"],
+      "properties": {
+        "check": { "type": "string", "description": "The local equivalent of CI: one command run from the repository root, non-zero exit on failure." },
+        "manualCheckPaths": { "type": "array", "items": { "type": "string" }, "description": "A change under one of these paths also needs the manual check." },
+        "manualCheckText": { "type": "string", "description": "What the manual check is, in one sentence." },
+        "benchRule": { "type": "string", "description": "Optional extra testing rule, for example which code needs a benchmark." }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "properties": {
+        "storyTriggers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Kinds of change that turn a bug into a story and block auto-merge, for example a new rule, tuning numbers, a wire-format change."
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "properties": {
+        "baseBranch": { "type": "string", "default": "main" },
+        "featurePrefix": { "type": "string", "default": "feat/" },
+        "fixPrefix": { "type": "string", "default": "fix/" },
+        "specPrefix": { "type": "string", "default": "spec/" },
+        "mergeFlags": { "type": "string", "default": "--auto --squash" }
+      }
+    },
+    "parallel": {
+      "type": "object",
+      "properties": {
+        "maxAgents": { "type": "integer", "minimum": 1, "default": 2, "description": "Agents (subagents, slot builds) running at the same time on this machine. Rule of thumb: one per 8 GB of RAM." },
+        "hotFiles": { "type": "array", "items": { "type": "string" }, "description": "Files or directories only one task may touch at a time." },
+        "doNotPair": { "type": "string", "description": "Kinds of tasks that must not run side by side, for example two benchmark-heavy tasks." }
+      }
+    },
+    "worktrees": {
+      "type": "object",
+      "properties": {
+        "root": { "type": "string", "description": "Where slot worktrees live, relative to the main checkout. Default: ../<checkout-folder>-wt" },
+        "slots": { "type": "integer", "minimum": 1, "default": 2, "description": "Number of permanent slots. WORKER_SLOTS in the environment overrides it." },
+        "ports": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" },
+          "description": "Port bases by name; slot N gets base + N. Example: {\"server\": 8100, \"client\": 5200}."
+        },
+        "warmup": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+              "dir": { "type": "string", "description": "Directory inside the worktree to run in. Default: the worktree root." },
+              "command": { "type": "string" },
+              "lockfile": { "type": "string", "description": "Relative to the worktree. When set, the command runs only when this file's hash changed since the last run in that slot." }
+            }
+          },
+          "description": "Commands that make a slot ready to build, for example npm ci."
+        },
+        "runHints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Lines printed after a slot is taken. {slot} and {port.<name>} are replaced."
+        }
+      }
+    }
+  }
+}

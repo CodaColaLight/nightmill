@@ -1,0 +1,59 @@
+{
+  "$schema": "https://raw.githubusercontent.com/CodaColaLight/nightmill/main/schema/nightmill.schema.json",
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "board": {
+    "statusField": "Status",
+    "priorityField": "Priority",
+    "areaField": "Area",
+    "statuses": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "spec": "Spec",
+      "specReview": "Spec review",
+      "approved": "Approved",
+      "inProgress": "In progress",
+      "review": "Review",
+      "done": "Done"
+    },
+    "priorities": ["Critical", "High", "Medium", "Low"]
+  },
+  "labels": { "epic": "epic", "story": "story", "bug": "bug", "needsSpec": "needs-spec", "areaPrefix": "area:", "priorityPrefix": "prio:" },
+  "areas": ["core", "api", "ui", "infra", "docs"],
+  "invariants": [
+    "Public API changes are additive, or the version is bumped",
+    "Anything on the hot path has a benchmark"
+  ],
+  "iterations": {
+    "specDir": "docs/specs",
+    "specPattern": "iteration-<N>-<slug>.md",
+    "changelog": "docs/CHANGELOG.md",
+    "milestonePattern": "iteration-<N>",
+    "decisionsDir": "docs/decisions"
+  },
+  "verification": {
+    "check": "bash scripts/check.sh",
+    "manualCheckPaths": ["src/ui"],
+    "manualCheckText": "Open the app, exercise the feature, no console errors.",
+    "benchRule": ""
+  },
+  "escalation": {
+    "storyTriggers": ["a new rule or behaviour", "a public API change", "a design choice"]
+  },
+  "git": { "baseBranch": "main", "featurePrefix": "feat/", "fixPrefix": "fix/", "specPrefix": "spec/", "mergeFlags": "--auto --squash" },
+  "parallel": {
+    "maxAgents": 2,
+    "hotFiles": ["src/main.ts"],
+    "doNotPair": "two benchmark-heavy tasks"
+  },
+  "worktrees": {
+    "root": "../widgets-wt",
+    "slots": 2,
+    "ports": { "server": 8100, "client": 5200 },
+    "warmup": [{ "dir": "client", "command": "npm ci", "lockfile": "client/package-lock.json" }],
+    "runHints": [
+      "PORT={port.server} npm run server",
+      "VITE_PORT={port.client} npm run dev"
+    ]
+  }
+}

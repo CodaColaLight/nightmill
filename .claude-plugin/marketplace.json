@@ -1,0 +1,13 @@
+{
+  "name": "nightmill",
+  "owner": { "name": "CodaColaLight", "url": "https://github.com/CodaColaLight" },
+  "description": "The nightmill workflow plugin: board-driven stories and bugs, a spec gate, worker slots.",
+  "plugins": [
+    {
+      "name": "nightmill",
+      "source": "./",
+      "description": "Lights-out development workflow: /next, /fix, /story, /check, /init, the worker agent and the slot scripts.",
+      "category": "workflow"
+    }
+  ]
+}

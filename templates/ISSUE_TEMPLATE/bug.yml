@@ -1,0 +1,48 @@
+name: Bug
+description: A defect in shipped behaviour
+title: "[Bug] "
+labels: ["{{LABEL_BUG}}"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options: {{AREAS}}
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happens
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Setup, commands run, steps taken.
+      value: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Console output, logs, screenshot.
+  # {{INVARIANTS_BEGIN}}
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariants the fix must respect
+      options:
+{{INVARIANTS}}
+  # {{INVARIANTS_END}}

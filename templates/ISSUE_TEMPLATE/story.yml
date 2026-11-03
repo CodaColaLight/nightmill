@@ -1,0 +1,69 @@
+name: Story
+description: One shippable slice of a feature (one spec, one PR)
+title: "[Story] "
+labels: ["{{LABEL_STORY}}", "{{LABEL_NEEDS_SPEC}}"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options: {{AREAS}}
+    validations:
+      required: true
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      description: "#number of the parent epic"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why now. Link prior specs and decisions instead of repeating them.
+    validations:
+      required: true
+  - type: input
+    id: goal
+    attributes:
+      label: Goal
+      description: One sentence a user would understand.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checkbox list. Each line must be testable and will become a test name. No numbers here; numbers go in the spec.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  # {{INVARIANTS_BEGIN}}
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariants this story must respect
+      options:
+{{INVARIANTS}}
+  # {{INVARIANTS_END}}
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: What to run and what to look at. Default below.
+      value: |
+        - `{{CHECK_COMMAND}}` green
+        - {{MANUAL_CHECK}}
+  - type: textarea
+    id: agent_notes
+    attributes:
+      label: Agent notes
+      description: Files likely touched, known gotchas, related issues.
