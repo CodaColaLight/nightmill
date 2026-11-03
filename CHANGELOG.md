@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Plugin icon (`.claude-plugin/icon.png`): a white windmill and crescent moon on dark purple,
+  rendered by `tools/make-icon.ps1`.
+
 ## 0.1.1 (2026-11-03)
 
 - The PowerShell scripts read the config, templates and markers as UTF-8. Windows PowerShell 5.1
