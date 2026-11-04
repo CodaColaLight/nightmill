@@ -1,0 +1,55 @@
+name: Bug
+description: A defect in shipped behaviour
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options: [skills, scripts, templates, schema, docs, ci]
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happens
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Setup, commands run, steps taken.
+      value: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Console output, logs, screenshot.
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariants the fix must respect
+      options:
+        - label: "Generic — no word from tests/forbidden-words.txt anywhere in the repository"
+          required: false
+        - label: "Fixed flow — the eight statuses and who sets them change only with a decision record"
+          required: false
+        - label: "Both shells — every script exists in PowerShell and bash and behaves the same"
+          required: false
+        - label: "Config-driven — a project-specific value lives in .claude/nightmill.json, never in a skill or script"
+          required: false
+        - label: "Compatible — slot markers and config keys stay readable by the previous version"
+          required: false

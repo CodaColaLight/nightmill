@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/CodaColaLight/nightmill/main/schema/nightmill.schema.json",
+  "github": { "owner": "CodaColaLight", "repo": "nightmill", "projectNumber": 2 },
+  "maintainer": { "name": "CodaColaLight" },
+  "board": {
+    "statusField": "Status",
+    "priorityField": "Priority",
+    "areaField": "Area",
+    "statuses": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "spec": "Spec",
+      "specReview": "Spec review",
+      "approved": "Approved",
+      "inProgress": "In progress",
+      "review": "Review",
+      "done": "Done"
+    },
+    "priorities": ["Critical", "High", "Medium", "Low"]
+  },
+  "labels": { "epic": "epic", "story": "story", "bug": "bug", "needsSpec": "needs-spec", "areaPrefix": "area:", "priorityPrefix": "prio:" },
+  "areas": ["skills", "scripts", "templates", "schema", "docs", "ci"],
+  "invariants": [
+    "Generic — no word from tests/forbidden-words.txt anywhere in the repository",
+    "Fixed flow — the eight statuses and who sets them change only with a decision record",
+    "Both shells — every script exists in PowerShell and bash and behaves the same",
+    "Config-driven — a project-specific value lives in .claude/nightmill.json, never in a skill or script",
+    "Compatible — slot markers and config keys stay readable by the previous version"
+  ],
+  "iterations": {
+    "specDir": "docs/specs",
+    "specPattern": "iteration-<N>-<slug>.md",
+    "changelog": "CHANGELOG.md",
+    "milestonePattern": "iteration-<N>",
+    "decisionsDir": "docs/decisions"
+  },
+  "verification": {
+    "check": "bash tests/check.sh",
+    "manualCheckPaths": ["skills", "agents"],
+    "manualCheckText": "Run the changed skill in a real project with `claude --plugin-dir <this checkout>` and watch it take the right steps",
+    "benchRule": "A script that runs in the smoke tests keeps its scenario there; a new script flag gets a smoke step in both shells"
+  },
+  "escalation": {
+    "storyTriggers": ["a change to the status flow or who sets a status", "a new, renamed or removed config key", "a change to the slot marker format"]
+  },
+  "git": { "baseBranch": "main", "featurePrefix": "feat/", "fixPrefix": "fix/", "specPrefix": "spec/", "mergeFlags": "--auto --squash" },
+  "parallel": {
+    "maxAgents": 2,
+    "hotFiles": ["skills/workflow/SKILL.md", "schema/nightmill.schema.json", "scripts/slot.ps1", "scripts/slot.sh"],
+    "doNotPair": "two tasks that both change the slot scripts or both change the schema"
+  },
+  "worktrees": {
+    "root": "../nightmill-wt",
+    "slots": 2,
+    "runHints": ["claude --plugin-dir . (in a project checkout, pointing at this slot) to try the change"]
+  }
+}

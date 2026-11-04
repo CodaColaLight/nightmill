@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- nightmill develops itself: `.claude/nightmill.json`, issue forms, `.claude/CLAUDE.md`, `tests/check.sh`
+  (one check command that runs what the machine can and lists what it skipped) and decision 0001.
 - Plugin icon (`.claude-plugin/icon.png`): a white windmill and crescent moon on dark purple,
   rendered by `tools/make-icon.ps1`.
 

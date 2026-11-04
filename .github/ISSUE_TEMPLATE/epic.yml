@@ -1,0 +1,31 @@
+name: Epic
+description: A capability area that groups stories
+title: "[Epic] "
+labels: ["epic"]
+body:
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: What this area adds, in one paragraph. Describe prior art by its behaviour, not by name.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope / out of scope
+      value: |
+        **In:**
+        -
+        **Out:**
+        -
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Specs, decisions, design documents.
+  - type: textarea
+    id: stories
+    attributes:
+      label: Stories
+      description: Maintained automatically as sub-issues; leave empty.

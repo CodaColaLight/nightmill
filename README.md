@@ -93,18 +93,25 @@ cold. A slot is busy from `-Take` to `-Release` (after the PR merged) or `-Aband
 
 ## Developing nightmill
 
+nightmill develops itself with its own workflow: a board, the eight statuses, specs, one check
+command, auto-merge. `.claude/CLAUDE.md` holds the rules for working on it; `docs/decisions/0001` says why.
+
 ```
+bash tests/check.sh         # everything this machine can run, lists what it skipped
 bash tests/lint.sh          # generic words, JSON, skill frontmatter, shell syntax
-bash tests/smoke-slot.sh    # slot.sh against a throwaway repository
+bash tests/smoke-slot.sh    # slot.sh against a throwaway repository (needs jq)
+bash tests/smoke-render.sh  # render-templates.sh (needs jq)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 claude plugin validate . --strict
 ```
 
-CI runs the same four. The lint fails on any word from `tests/forbidden-words.txt`: nightmill was
+CI runs all of them. The lint fails on any word from `tests/forbidden-words.txt`: nightmill was
 extracted from one project and must not know that project's name, its maintainer's name or its
 domain.
 
-To try a change in a project without publishing it: `claude --plugin-dir /path/to/nightmill`.
+To run the plugin from a checkout instead of the installed copy: `claude --plugin-dir /path/to/nightmill`,
+in this repository or in a project.
 
 ## Status and license
 
