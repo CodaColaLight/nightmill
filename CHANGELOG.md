@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 6 (#8): `scripts/validate-config.ps1` and `scripts/validate-config.sh` check a config against the
+  schema: required keys, types, `minimum`, `minItems`, `enum`, closed objects, and a warning for an unknown key
+  with a hint for a likely typo (`worktree` for `worktrees`). One line per finding names the key; the bash version
+  needs `jq`. `/init` validates the candidate config before it shows the plan, and the lint validates the example
+  and this repository's own config and fails if the schema gains a keyword the validator does not understand.
 - Iteration 5 (#6): `scripts/release.sh` and `scripts/release.ps1` cut a release in two steps: prepare a
   `release/vX.Y.Z` pull request (version bump, changelog cut, README line), then `--publish` after the merge
   to tag the release commit and create the GitHub Release. `--dry-run` shows the plan. The lint fails when

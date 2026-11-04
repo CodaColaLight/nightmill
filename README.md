@@ -103,6 +103,10 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 
 `templates/nightmill.example.json` is a complete example.
 
+Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`, which needs `jq`). It reads the
+schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
+and warns about keys it does not know, with a hint for a likely typo. `/nightmill:init` runs it for you.
+
 ## Why slots
 
 A slot is a worktree that is never removed. A new task switches it to a new branch from the base
@@ -123,10 +127,12 @@ bash tests/smoke-slot.sh    # slot.sh against a throwaway repository (needs jq)
 bash tests/smoke-render.sh  # render-templates.sh (needs jq)
 bash tests/smoke-hook.sh    # the SessionStart hook (no jq)
 bash tests/smoke-release.sh # the release script (git only)
+bash tests/smoke-validate.sh # the config validator (needs jq)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-release.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
 claude plugin validate . --strict
 ```
 

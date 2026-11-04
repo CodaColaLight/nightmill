@@ -125,8 +125,12 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   | `<labels.priorityPrefix><priority, lower case>` for each of `board.priorities` | Critical `B60205`, High `D93F0B`, Medium `F9D0C4`, Low `C5DEF5` | Priority: `<priority>` |
 
 - **Config**: `.claude/nightmill.json` with LF line endings, from the example with every detected and
-  answered value, keys the user left empty deleted. Check it against the schema by reading both (a
-  validator script is a separate story); a wrong type or an unknown key is fixed before the plan is shown.
+  answered value, keys the user left empty deleted. Write the candidate to a temporary file outside the
+  project and validate it before the plan is shown: `"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <file>`
+  (PowerShell) or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <file>` (needs `jq`). An error (a wrong
+  type, a missing required key) is fixed and the validator run again; a warning (an unknown key, with a hint
+  when it looks like a typo) is listed in the plan. After the real file is written, run the validator on it
+  and put its summary line, for example `0 errors, 0 warnings`, in the report's **Config** row.
 - **Issue forms**: `"${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.ps1"` (PowerShell) or
   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.sh"` from the repository root, writing
   `.github/ISSUE_TEMPLATE/{epic,story,bug,config}.yml` from `areas` and `invariants`. An existing form

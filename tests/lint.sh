@@ -63,7 +63,7 @@ grep -q 'Picking an issue' skills/workflow/SKILL.md || { echo "FAIL: skills/work
 
 echo "== init skill keeps the install-chat steps"
 # /init detects, asks seven questions in order, plans, confirms once, applies with gh and git (iteration 1).
-for w in createProjectV2View updateProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link'; do
+for w in validate-config createProjectV2View updateProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link'; do
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
 done
 i=0
@@ -132,6 +132,30 @@ rd_version=$(sed -nE 's/^Version ([0-9]+\.[0-9]+\.[0-9]+)\..*/\1/p' README.md | 
 if [ -z "$pj_version" ] || [ "$pj_version" != "$cl_version" ] || [ "$pj_version" != "$rd_version" ]; then
   echo "FAIL: versions disagree: plugin.json='$pj_version' CHANGELOG.md='$cl_version' (heading: '$cl_heading') README.md='$rd_version'"; fail=1
 fi
+
+echo "== config validates"
+# The example and this repository's own config pass the validator with --strict (iteration 6): the bash
+# validator when jq is installed, else the PowerShell one, else the check is skipped.
+ps_cmd=""
+if command -v pwsh >/dev/null 2>&1; then ps_cmd=pwsh; elif command -v powershell >/dev/null 2>&1; then ps_cmd=powershell; fi
+for f in templates/nightmill.example.json .claude/nightmill.json; do
+  if command -v jq >/dev/null 2>&1; then
+    out=$(bash scripts/validate-config.sh --strict "$f" 2>&1) || { echo "$out"; echo "FAIL: $f does not validate"; fail=1; }
+  elif [ -n "$ps_cmd" ]; then
+    out=$("$ps_cmd" -NoProfile -ExecutionPolicy Bypass -File scripts/validate-config.ps1 -Config "$f" -Strict 2>&1) || { echo "$out"; echo "FAIL: $f does not validate"; fail=1; }
+  else
+    echo "skipped $f (no jq and no PowerShell)"
+  fi
+done
+
+echo "== schema keywords are supported"
+# scripts/validate-config.* understand type, properties, required, items, minimum, minItems,
+# additionalProperties and enum. A schema that gains another constraint would be silently ignored by them.
+for kw in '$ref' anyOf oneOf allOf not if pattern format const maxItems uniqueItems minLength maxLength maximum dependencies; do
+  if grep -qF "\"$kw\"" schema/nightmill.schema.json; then
+    echo "FAIL: schema/nightmill.schema.json uses \"$kw\", which scripts/validate-config.* does not support"; fail=1
+  fi
+done
 
 echo "== shell"
 for f in scripts/*.sh tests/*.sh; do
