@@ -31,8 +31,10 @@ copies of the same skills shadow each other.
 - **The status flow is fixed.** The eight statuses and who sets them change only with a decision record
   in `docs/decisions/` (short, dated, `NNNN-title.md`).
 - **CHANGELOG by version.** `CHANGELOG.md` has one section per plugin version. An iteration's entry is a
-  bullet under `Unreleased` naming the iteration and the issue; the maintainer cuts a version by moving
-  `Unreleased` under a version heading and bumping `.claude-plugin/plugin.json`. Projects pin by version.
+  bullet under `Unreleased` naming the iteration and the issue; the maintainer cuts a version with
+  `scripts/release.sh --version X.Y.Z` (or `release.ps1`), merges the release pull request it opens, then runs
+  it again with `--publish` to tag. The lint keeps `plugin.json`, the changelog and the README line in step.
+  Projects pin by version.
 - **CI and merging.** `ci.yml` runs on every push and PR to `main`. A ruleset protects `main`: squash
   only, no force push, a PR merges only when the lint and both smoke-test jobs pass
   (`claude plugin validate` does not block). Only ever `gh pr merge <n> --auto --squash`; a plain

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 5 (#6): `scripts/release.sh` and `scripts/release.ps1` cut a release in two steps: prepare a
+  `release/vX.Y.Z` pull request (version bump, changelog cut, README line), then `--publish` after the merge
+  to tag the release commit and create the GitHub Release. `--dry-run` shows the plan. The lint fails when
+  `plugin.json`, the newest changelog heading and the README's `Version` line disagree; the README line now
+  reads `Version 0.1.1.`. Decision 0002 records why a release goes through a pull request.
 - Iteration 4 (#5): `CONTRIBUTING.md`, two issue forms for outsiders (`nightmill-bug.yml` and
   `nightmill-idea.yml`, next to the rendered workflow forms), a pull request template, and a README line on
   what a stranger needs before installing. The lint checks that they exist and say what the spec requires;

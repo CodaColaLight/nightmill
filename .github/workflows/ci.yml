@@ -27,6 +27,7 @@ jobs:
       - run: bash tests/smoke-slot.sh
       - run: bash tests/smoke-render.sh
       - run: bash tests/smoke-hook.sh
+      - run: bash tests/smoke-release.sh
 
   smoke-powershell:
     name: PowerShell scripts smoke tests
@@ -36,6 +37,7 @@ jobs:
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-release.ps1
 
   validate:
     name: claude plugin validate (not blocking)
