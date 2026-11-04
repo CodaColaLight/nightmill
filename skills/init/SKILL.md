@@ -82,17 +82,33 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   ] }) { projectV2Field { ... on ProjectV2SingleSelectField { options { id name } } } } }
   ```
 
-- **Board view** (the columns): a view with `layout: BOARD_LAYOUT`, named after the repository, created
-  with the mutation below. A board layout groups by `Status` by default, so the eight statuses become the
-  columns. **exists** when the board already has any view whose `layout` is `BOARD_LAYOUT`
-  (`projectV2(number: <n>) { views(first: 20) { nodes { name layout } } }`).
+- **Board views** (the columns and the saved filters): four views, created with `createProjectV2View` and
+  given their filter with `updateProjectV2View`. A board layout groups by `Status` by default, so the
+  eight statuses become the columns. A view is **exists** when the board already has a view of that name
+  (`projectV2(number: <n>) { views(first: 20) { nodes { id name layout filter } } }`); a view that exists
+  with a different filter is shown in the plan and changed only when the user keeps that line. The
+  default table "View 1" of a new board is renamed to `Epics` instead of creating a fifth view.
+
+  | View | Layout | Filter | Columns shown |
+  |---|---|---|---|
+  | `Board` | `BOARD_LAYOUT` | `-label:epic,bug` | Title, Priority, Area |
+  | `Ready` | `TABLE_LAYOUT` | `status:Ready,Approved -label:epic -label:bug` | Title, Labels, Priority, Area |
+  | `Epics` | `TABLE_LAYOUT` | `label:epic` | Title, Status, Linked pull requests, Sub-issues progress |
+  | `Bugs` | `BOARD_LAYOUT` | `label:bug` | Title, Assignees, Status, Linked pull requests |
+
+  Use the label names from `labels` in the filters. Field ids come from `gh project field-list`.
 
   ```graphql
-  mutation { createProjectV2View(input: { projectId: "<project node id>", name: "<repo>", layout: BOARD_LAYOUT,
-    configuration: { visibleFieldIds: ["<priority field id>", "<area field id>"] } })
-    { projectV2View { number layout verticalGroupByFields(first: 1) { nodes { ... on ProjectV2SingleSelectField { name } } } } } }
+  mutation { createProjectV2View(input: { projectId: "<project node id>", name: "Board", layout: BOARD_LAYOUT,
+    configuration: { visibleFieldIds: ["<title field id>", "<priority field id>", "<area field id>"] } })
+    { projectV2View { id number layout verticalGroupByFields(first: 1) { nodes { ... on ProjectV2SingleSelectField { name } } } } } }
+  mutation { updateProjectV2View(input: { viewId: "<view id>", filter: "-label:epic,bug" }) { projectV2View { name filter } } }
   ```
 
+  The API **cannot set a view's grouping or sorting** (the configuration input has only
+  `visibleFieldIds`), so two settings stay by hand and are always listed in the report: on `Board`,
+  group by `Area` (swimlanes) and sort by `Priority` descending; on `Ready`, sort by `Priority`
+  ascending.
 - **Repository link**: `gh project link <n> --owner <owner> --repo <owner>/<repo>`; **exists** when the
   board's `repositories` (the GraphQL query above) already list this one.
 - **Labels**: `gh label create <name> --color <hex> --description "<text>"` for each missing one. A label
@@ -124,6 +140,16 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   plus the array when it is missing: `Bash(gh project:*)`, `Bash(gh issue:*)`, `Bash(gh pr:*)`,
   `Bash(gh api:*)`, `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, and one rule for
   `verification.check` (`Bash(<the exact check command>)`). A rule already present is **exists**.
+- **Board workflows** (read-only, never applied): the API can list a board's workflows and whether each is
+  enabled, but it has **no mutation to create, enable or configure one** (only `deleteProjectV2Workflow`
+  exists), and it does not expose which status a workflow sets. So this line only reads
+  (`user(login: "<owner>") { projectV2(number: <n>) { workflows(first: 20) { nodes { name enabled } } } }`;
+  use `organization(login: ...)` for an organization) and is marked **exists** when the ten workflows in
+  the table of step 6 are all enabled, else **by hand**. Read it **last**, after the board and field
+  changes: replacing the Status options disables every workflow that pointed at an option that is gone
+  (a fresh board starts with its workflows enabled; after the options are replaced "Item added to project"
+  and "Pull request linked to issue" were seen disabled). Even when all ten are enabled, which status each
+  sets cannot be read, so the report always lists the expected targets.
 
 ## 4. Confirm once
 
@@ -138,7 +164,7 @@ to the report.
 ## 5. Apply
 
 Apply the kept lines in this order: board and fields, view, link, labels, config, forms, CLAUDE.md,
-settings. After each GitHub change read it back (`gh project field-list`, `gh label list`,
+settings; then read the board workflows (read-only, see the plan). After each GitHub change read it back (`gh project field-list`, `gh label list`,
 the `repositories` and `views` queries); a line whose read-back does not show the change is **failed**, with
 the command's error, and the run goes on with the lines that do not depend on it (the view, the field options and the link depend on the board, the forms on the config; nothing else does).
 
@@ -146,10 +172,43 @@ Every line is idempotent, so re-running is safe: a second run finds each line **
 
 ## 6. Report
 
-End with one table: line, result (**created**, **changed**, **already there**, **declined**, **failed**).
-Below it, "Still to do by hand:" with exactly the declined and failed lines, or "nothing". Do not print
-instructions for lines that were applied.
+End with one table: line, result (**created**, **changed**, **already there**, **declined**, **failed**,
+**by hand**). Below it, "Still to do by hand:" with exactly the declined, failed and by-hand lines, or
+"nothing". Do not print instructions for lines that were applied.
 
-One note always follows, never as a failure: the board's **workflows** (for example "item closed > Done",
-"pull request merged > Done") are not reachable through the API; the maintainer enables them once in the
-board's Workflows settings in the browser.
+Then, **always**, even when everything else was already there, print the board settings that only the
+browser can change. It is not a failure: the GitHub API cannot create, enable or configure board
+workflows, and cannot set a view's grouping or sorting. First the two view settings from the plan
+(`Board`: group by `Area`, sort by `Priority` descending; `Ready`: sort by `Priority` ascending), at the
+board's view menu. Then the workflows, which the maintainer sets once at
+`https://github.com/users/<owner>/projects/<n>/workflows`
+(`https://github.com/orgs/<owner>/projects/<n>/workflows` for an organization). Print the table below with
+the current state from the read in step 3 (enabled or disabled, never "unknown" for a workflow that was
+listed; "missing" for one that was not), and the sentence that follows it.
+
+| Workflow | Enable it and set | Why the flow needs it |
+|---|---|---|
+| Item added to project | Status = Backlog (`board.statuses.backlog`) | a new issue lands in Backlog |
+| Item closed | Status = Done | a closed issue finishes |
+| Pull request merged | Status = Done | a merged PR finishes its story |
+| Pull request linked to issue | Status = Review | a PR with `Closes #N` moves its story to Review |
+| Code review approved | Status = Review | an approved review keeps the story in Review |
+| Code changes requested | Status = Review | a PR that needs changes stays in Review |
+| Item reopened | Status = In progress | a reopened issue is being worked on again |
+| Auto-add sub-issues to project | on | the stories of an epic appear on the board |
+| Auto-add to project | repository = this repository, filter `is:issue,pr` | every issue and PR of the repository is on the board |
+| Auto-archive items | filter `is:issue,pr is:closed updated:@today-1d` | closed items leave the board a day after their last update |
+
+After the table print these three notes:
+
+- **Why the auto-archive filter is that short.** Archiving closed items one day after their last update
+  keeps the number of items each board query has to fetch small, and so keeps the agents clear of
+  GitHub's rate limits. Do not lengthen it without a reason.
+- **Missing workflows.** On the new boards checked, only six workflows existed (Item added, Item closed,
+  Pull request merged, Pull request linked to issue, Auto-add sub-issues, Auto-close issue). Item
+  reopened, Code review approved, Code changes requested, Auto-add to project and Auto-archive items are
+  added on the workflows page with "Add workflow", then configured as in the table.
+- **Leave Auto-close issue off.** The agents set Ready, Spec, Spec review, Approved and In progress
+  themselves (the maintainer sets Ready and Approved), so no workflow touches those, except Item reopened
+  which sets In progress. Replacing the Status options of an existing board disables the workflows that
+  pointed at a removed option, so check this table again after any later change to the options.

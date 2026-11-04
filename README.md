@@ -57,17 +57,29 @@ Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugi
 /nightmill:init
 ```
 
-The repository is private for now; `gh auth login` (or any git credential for GitHub) is enough for
-the clone. The scripts need `git` and `gh`; the bash versions also need `jq`. Hooks, permissions and
+The scripts need `git` and `gh`; the bash versions also need `jq`. Hooks, permissions and
 environment variables stay in the project's own `.claude/settings.json`; a plugin cannot set them.
+
+A plugin cannot run anything when it is installed, so nightmill ships a `SessionStart` hook for the
+first session after: in a project that has the plugin enabled but no `.claude/nightmill.json`, it prints one
+line and Claude offers to run `/nightmill:init`. In a configured project the hook is silent. If you enabled
+the plugin at user scope and open projects that do not use it, set `NIGHTMILL_HINT=off` in `env` in your
+user `settings.json` to silence it everywhere. The hook runs `scripts/session-start.sh`, so it needs bash:
+that is `sh` on macOS and Linux and Git Bash on Windows, which Claude Code uses whenever Git for Windows is
+installed. On a Windows machine where Claude Code runs hooks through PowerShell only, the hook does nothing
+and says nothing; `scripts/session-start.ps1` does the same job and can be wired by hand as a `SessionStart`
+command hook in the project's `.claude/settings.json`.
 
 `/nightmill:init` is an install chat. It detects what `gh` and the repository can tell (owner, repo, an
 existing board, the check command, areas), asks one question at a time for the rest with a proposed
 default, shows one plan table and, after one confirmation, creates or completes the board (the eight
-Status options, Priority and Area, a Board view with the statuses as columns, the repository link), the
+Status options, Priority and Area, four saved views with filters, the repository link), the
 labels, `.claude/nightmill.json`, `.github/ISSUE_TEMPLATE/`, the CLAUDE.md snippet and the permission
-rules in `.claude/settings.json`. Re-running it on a configured project changes nothing. The board.s
-workflows (item closed > Done) are the one thing the API cannot set; enable them once in the browser.
+rules in `.claude/settings.json`. Re-running it on a configured project changes nothing. The board's
+workflows (ten, among them item added > Backlog, item closed and pull request merged > Done, pull request
+linked > Review, item reopened > In progress, auto-archive of closed items) are the one thing the API cannot
+set: `/init` reads whether they are enabled and ends every run with the exact table to set once in the
+board's Workflows settings in the browser.
 
 ## Configuration
 
@@ -106,8 +118,10 @@ bash tests/check.sh         # everything this machine can run, lists what it ski
 bash tests/lint.sh          # generic words, JSON, skill frontmatter, shell syntax
 bash tests/smoke-slot.sh    # slot.sh against a throwaway repository (needs jq)
 bash tests/smoke-render.sh  # render-templates.sh (needs jq)
+bash tests/smoke-hook.sh    # the SessionStart hook (no jq)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
 claude plugin validate . --strict
 ```
 

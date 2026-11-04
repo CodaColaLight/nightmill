@@ -47,6 +47,16 @@ Board automation may overwrite a status seconds after a PR is linked; after open
 again once the link has registered. Look option ids up at runtime (`gh project field-list`); never
 keep them in notes.
 
+Four statuses are also set by the board's own **workflows**, not only by an agent: Backlog (item added),
+In progress (item reopened), Review (pull request linked, code review approved, code changes requested)
+and Done (item closed, pull request merged). Two more workflows add items (all issues and PRs of the
+repository, and the sub-issues of an epic) and one archives closed items a day after their last update;
+that filter is kept short on purpose, so each board query fetches few items and stays clear of GitHub's
+rate limits. The GitHub API cannot create, enable or configure workflows, so the maintainer sets them
+once in the board's Workflows settings in the browser; `/init` prints the exact table. If a status stops
+moving on its own, read `projectV2.workflows { nodes { name enabled } }` first: replacing the Status
+options disables the workflows that pointed at a removed option.
+
 ## Stories and bugs
 
 - An agent only works on issues whose status is Ready (spec, or bug fix) or Approved (implementation).

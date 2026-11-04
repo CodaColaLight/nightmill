@@ -63,7 +63,7 @@ grep -q 'Picking an issue' skills/workflow/SKILL.md || { echo "FAIL: skills/work
 
 echo "== init skill keeps the install-chat steps"
 # /init detects, asks seven questions in order, plans, confirms once, applies with gh and git (iteration 1).
-for w in createProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link'; do
+for w in createProjectV2View updateProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link'; do
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
 done
 i=0
@@ -73,6 +73,29 @@ for t in 'maintainer name' 'check command' 'areas' 'invariants' 'manual-check pa
 done
 if grep -qF 'Do not edit settings.json yourself' skills/init/SKILL.md; then
   echo "FAIL: skills/init/SKILL.md still tells the model not to edit settings.json (the install chat offers it)"; fail=1
+fi
+# The API cannot configure board workflows, so /init must always print the table of what to set by hand.
+for w in 'Pull request linked to issue' 'Pull request merged' 'Item closed' 'Item added to project' 'workflows(first' 'projects/<n>/workflows' 'no mutation' 'grouping or sorting' 'Code changes requested' 'Code review approved' 'Item reopened' 'Auto-archive items' 'updated:@today-1d' 'rate limits'; do
+  grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention the board workflow item: $w"; fail=1; }
+done
+grep -qF 'Workflows settings' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not say who sets the board workflows"; fail=1; }
+
+echo "== session-start hook is wired"
+# The SessionStart hook offers /init where nightmill is not set up (iteration 3): hooks/hooks.json has the
+# event map under "hooks", a SessionStart entry with matcher startup, and every command runs a script of
+# this plugin that exists.
+if [ -f hooks/hooks.json ]; then
+  grep -q '"hooks"' hooks/hooks.json || { echo "FAIL: hooks/hooks.json has no top-level hooks key"; fail=1; }
+  grep -q '"SessionStart"' hooks/hooks.json || { echo "FAIL: hooks/hooks.json has no SessionStart entry"; fail=1; }
+  grep -Eq '"matcher": *"startup"' hooks/hooks.json || { echo "FAIL: the SessionStart entry does not use matcher startup"; fail=1; }
+  n_cmd=$(grep -c '"command":' hooks/hooks.json || true)
+  n_ok=$(grep '"command":' hooks/hooks.json | grep -c '\${CLAUDE_PLUGIN_ROOT}/scripts/' || true)
+  [ "$n_cmd" -ge 1 ] && [ "$n_cmd" = "$n_ok" ] || { echo "FAIL: every hook command must run \${CLAUDE_PLUGIN_ROOT}/scripts/<script>"; fail=1; }
+  for c in $(grep -o '\${CLAUDE_PLUGIN_ROOT}/scripts/[A-Za-z0-9._-]*' hooks/hooks.json | sort -u); do
+    [ -f "scripts/${c##*/scripts/}" ] || { echo "FAIL: hooks/hooks.json names scripts/${c##*/scripts/}, which does not exist"; fail=1; }
+  done
+else
+  echo "FAIL: hooks/hooks.json is missing"; fail=1
 fi
 
 echo "== shell"

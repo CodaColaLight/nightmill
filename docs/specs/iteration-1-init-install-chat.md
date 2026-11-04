@@ -140,3 +140,21 @@ behaves.
 - Removing a Status option that items still use, or renaming a label whose colour differs.
 - Editing user-level settings (`~/.claude/settings.json`); only the project file is touched.
 - Any new config key, any change to the status flow, any new script.
+## As built
+
+Differences from the plan above, found while running `/init` against real boards:
+
+- **Repository link detection** uses the GraphQL `repositories` query; `gh project view` does not list them.
+- **Board workflows are report-only.** The API lists them and whether each is enabled but has no mutation to
+  create, enable or configure one. On a throwaway board a fresh board had all enabled, and replacing the
+  Status options disabled those that pointed at a removed option. `/init` reads them last and always ends
+  with the table of the ten workflows to set by hand: item added > Backlog; item closed and pull request
+  merged > Done; pull request linked, code review approved and code changes requested > Review; item reopened
+  > In progress; auto-add of the repository's issues and PRs; auto-add of sub-issues; auto-archive of closed
+  items after one day (short on purpose: fewer items fetched, fewer rate-limit problems).
+- **Four views instead of one.** `Board`, `Ready`, `Epics`, `Bugs`, with filters set by
+  `updateProjectV2View` and visible fields by `createProjectV2View`. Grouping and sorting cannot be set by
+  the API; `Board` grouped by `Area` and sorted by `Priority`, and `Ready` sorted by `Priority`, stay by hand
+  and are listed in the report.
+- **Not done, new story:** copying a template board (`gh project copy` carries fields, views with grouping
+  and sorting, and workflows with their targets) instead of building the board field by field.
