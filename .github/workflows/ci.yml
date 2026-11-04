@@ -14,14 +14,14 @@ jobs:
     name: Lint (generic, JSON, skills, shell)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash tests/lint.sh
 
   smoke-bash:
     name: bash scripts smoke tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash tests/smoke-slot.sh
       - run: bash tests/smoke-render.sh
 
@@ -29,7 +29,7 @@ jobs:
     name: PowerShell scripts smoke tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
