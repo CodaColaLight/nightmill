@@ -1,6 +1,6 @@
 # Iteration 3: a SessionStart hook offers `/init` where nightmill is not set up
 
-Status: draft, awaiting approval (#12)
+Status: delivered in iteration 3 (PR #PRNUM)
 
 Story: #12, epic #4 (Setup and onboarding). Adds `hooks/hooks.json` and one script in each shell. No config
 key, no change to the status flow, no change to the slot marker: none of `escalation.storyTriggers`
@@ -112,3 +112,24 @@ The PR states which of the two applied and why.
   (that is the validator, #9).
 - Detecting that the plugin is enabled at project or user scope; the hook cannot tell.
 - Any new configuration key.
+
+## As built
+
+Differences from the plan above, found by running real sessions (`claude -p ... --plugin-dir <slot>`, with
+`--output-format stream-json --verbose` to read each hook's exit code and output):
+
+- **One hook entry, bash only.** `hooks/hooks.json` has a single `SessionStart` entry whose command is
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh"; exit 0`. The `; exit 0` makes the same line
+  harmless in PowerShell: where bash is missing, PowerShell prints the error to stderr, the hook still
+  exits 0 and nothing is shown. The smoke test runs the wired command in PowerShell on a PATH without bash.
+- **Why not two entries.** Measured: with both entries, one line was printed when `bash` was on the PATH.
+  A missing PowerShell made its entry end with exit 1 and outcome `error`. And when Claude Code ran the bash
+  entry through a Git Bash that is not on the PATH (the default Git for Windows install), the PowerShell
+  guard "stay silent when bash is on the PATH" did not hold and the line was printed twice. A guard on the
+  PATH cannot tell which shell Claude Code uses, so the two-entry design was dropped.
+- **`session-start.ps1` has no bash guard.** It is the same behaviour for a machine that runs hooks through
+  PowerShell only; it is not wired by `hooks.json` but is smoke-tested and documented in the README.
+- **Cost:** on a Windows machine where Claude Code runs hooks through PowerShell only, the hint is not shown.
+  nightmill needs `git`, and git installed through Git for Windows brings Git Bash, so this affects few users.
+- **Manual check, seen:** (1) a throwaway repository without config: the session quoted the line and offered
+  `/nightmill:init`; (2) the configured nightmill checkout: "nothing"; (3) `NIGHTMILL_HINT=off`: "nothing".

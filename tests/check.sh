@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/check.sh - the local equivalent of CI, in one command (verification.check in .claude/nightmill.json).
 #   1. tests/lint.sh
-#   2. the bash smoke tests (need jq; skipped with a notice when it is missing, CI runs them)
+#   2. the hook smoke test, then the other bash smoke tests (need jq; skipped with a notice when it is
+#      missing, CI runs them)
 #   3. the PowerShell smoke tests (when powershell or pwsh is on the PATH)
 #   4. claude plugin validate --strict (when claude is on the PATH)
 # Exit code is non-zero when any step that ran failed. Skipped steps are listed at the end.
@@ -16,6 +17,7 @@ run() { # run <name> <command...>
 }
 
 run "lint" bash tests/lint.sh
+run "smoke-hook.sh" bash tests/smoke-hook.sh
 
 if command -v jq >/dev/null 2>&1; then
   run "smoke-slot.sh" bash tests/smoke-slot.sh
@@ -29,6 +31,7 @@ if command -v pwsh >/dev/null 2>&1; then ps=pwsh; elif command -v powershell >/d
 if [ -n "$ps" ]; then
   run "smoke-slot.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
   run "smoke-render.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1
+  run "smoke-hook.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
 else
   skipped+=("PowerShell smoke tests (no pwsh or powershell)")
 fi

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Iteration 3 (#12): a `SessionStart` hook (`hooks/hooks.json`, `scripts/session-start.sh` and `.ps1`)
+  makes Claude offer `/nightmill:init` in a project that has the plugin enabled but no
+  `.claude/nightmill.json`; in a configured project it is silent. `NIGHTMILL_HINT=off` silences it for
+  people who enabled the plugin at user scope.
 - Iteration 2 (#14): `/spec` and `/next` are two commands. `/spec [N]` writes the spec for a Ready story
   and stops at Spec review; `/next [N]` implements an Approved story only and, with nothing Approved,
   lists the Ready stories and points to `/spec`. Both print `Picking #N ...` before they change anything
@@ -10,9 +14,16 @@
 - Iteration 1 (#10): `/init` is an install chat. It detects owner, repo, board, check command and areas,
   asks the rest one question at a time with a proposed default, shows one plan, and after one
   confirmation creates or completes the board (eight Status options with existing ids kept, Priority and
-  Area, a Board-layout view so the statuses are columns, the repository link), the labels, the config,
-  the issue forms, the CLAUDE.md snippet and the permission rules in `.claude/settings.json`; it ends with
-  a table of created, changed, already there, declined and failed lines. Re-running changes nothing.
+  Area, four views (Board, Ready, Epics, Bugs) with filters and visible fields so the statuses are columns,
+  the repository link), the labels, the config, the issue forms, the CLAUDE.md snippet and the permission
+  rules in `.claude/settings.json`; it ends with a table of created, changed, already there, declined and
+  failed lines. Re-running changes nothing. The board workflows cannot be set through the API: `/init`
+  reads whether the ten it needs are enabled and always ends with the table to set by hand in the board's
+  Workflows settings (item added > Backlog, item closed and pull request merged > Done, pull request
+  linked, code review approved and code changes requested > Review, item reopened > In progress, auto-add
+  and auto-add sub-issues on, auto-archive of closed items after one day, kept short to limit the items
+  fetched and the GitHub rate limits). A view's grouping and sorting cannot be set through the API either;
+  both are listed in the same closing section.
 - nightmill develops itself: `.claude/nightmill.json`, issue forms, `.claude/CLAUDE.md`, `tests/check.sh`
   (one check command that runs what the machine can and lists what it skipped) and decision 0001.
 - Plugin icon (`.claude-plugin/icon.png`): a white windmill and crescent moon on dark purple,
