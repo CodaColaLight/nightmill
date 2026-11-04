@@ -1,6 +1,6 @@
 # Iteration 6: a config validator that reads the schema
 
-Status: delivered in iteration 6 (PR #PRNUM)
+Status: delivered in iteration 6 (PR #21)
 
 Story: #8, epic #3 (Scripts without extra tools). Adds `scripts/validate-config.ps1` and
 `scripts/validate-config.sh`, their smoke tests, a lint check, and one change to the `/init` skill. No
