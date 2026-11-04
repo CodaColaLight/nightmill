@@ -20,16 +20,17 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-command -v jq >/dev/null 2>&1 || { echo "new-worktree.sh needs jq" >&2; exit 1; }
+. "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "run new-worktree.sh from inside a git checkout of the project" >&2; exit 1; }
 main=$(dirname "$gitdir")
 cfg="$main/.claude/nightmill.json"
 [ -f "$cfg" ] || { echo "no $cfg (run /nightmill:init)" >&2; exit 1; }
-q() { jq -r "$1 // empty" "$cfg"; }
+json_load "$cfg" || exit 1
+q() { json_get "$1"; }
 
-base_branch=$(q '.git.baseBranch'); base_branch=${base_branch:-main}
+base_branch=$(q git.baseBranch); base_branch=${base_branch:-main}
 [ -n "$base" ] || base="origin/$base_branch"
-root_rel=$(q '.worktrees.root'); root_rel=${root_rel:-"../$(basename "$main")-wt"}
+root_rel=$(q worktrees.root); root_rel=${root_rel:-"../$(basename "$main")-wt"}
 mkdir -p "$main/$root_rel"
 root=$(cd "$main/$root_rel" && pwd)
 
@@ -45,14 +46,15 @@ else
 fi
 
 if [ "$skip" = 0 ]; then
-  while IFS= read -r w; do
+  count=$(json_len worktrees.warmup)
+  for ((idx = 0; idx < count; idx++)); do
     where="$dir"
-    d=$(jq -r '.dir // empty' <<<"$w")
+    d=$(json_get "worktrees.warmup[$idx].dir")
     if [ -n "$d" ]; then where="$dir/$d"; fi
-    cmd=$(jq -r '.command' <<<"$w")
+    cmd=$(json_get "worktrees.warmup[$idx].command")
     echo "warm-up in $where: $cmd"
     (cd "$where" && bash -c "$cmd")
-  done < <(jq -c '.worktrees.warmup // [] | .[]' "$cfg")
+  done
 fi
 
 # A port offset per worktree, from the name, so two servers can run at once.
@@ -60,20 +62,27 @@ sum=0
 for ((i = 0; i < ${#slug}; i++)); do sum=$((sum + $(printf '%d' "'${slug:i:1}"))); done
 offset=$((sum % 100))
 
-ports() { jq -r '.worktrees.ports // {} | to_entries[] | "\(.key)=\(.value)"' "$cfg"; }
+ports() { # key=value lines, in file order
+  local k
+  while IFS= read -r k; do
+    if [ -n "$k" ]; then printf '%s=%s\n' "$k" "$(json_get "worktrees.ports.$k")"; fi
+  done < <(json_keys worktrees.ports)
+}
 echo
 echo "Worktree ready: $dir"
 echo "  cd '$dir'"
 while IFS='=' read -r name p; do
   [ -n "$name" ] && echo "  port $name: $((p + offset))"
 done < <(ports)
-if [ "$(jq -r '.worktrees.runHints // [] | length' "$cfg")" -gt 0 ]; then
+hint_count=$(json_len worktrees.runHints)
+if [ "$hint_count" -gt 0 ]; then
   echo "Run it next to other checkouts:"
-  while IFS= read -r line; do
+  for ((idx = 0; idx < hint_count; idx++)); do
+    line=$(json_get "worktrees.runHints[$idx]")
     line=${line//\{slot\}/$offset}
     while IFS='=' read -r name p; do
       [ -n "$name" ] && line=${line//\{port.$name\}/$((p + offset))}
     done < <(ports)
     echo "  $line"
-  done < <(jq -r '.worktrees.runHints // [] | .[]' "$cfg")
+  done
 fi

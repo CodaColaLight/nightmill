@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # tests/check.sh - the local equivalent of CI, in one command (verification.check in .claude/nightmill.json).
 #   1. tests/lint.sh
-#   2. the hook and release smoke tests, then the other bash smoke tests (need jq; skipped with a notice when it is
-#      missing, CI runs them)
+#   2. the bash smoke tests (they need git and the tools every POSIX shell has, no jq)
 #   3. the PowerShell smoke tests (when powershell or pwsh is on the PATH)
 #   4. claude plugin validate --strict (when claude is on the PATH)
 # Exit code is non-zero when any step that ran failed. Skipped steps are listed at the end.
@@ -17,16 +16,12 @@ run() { # run <name> <command...>
 }
 
 run "lint" bash tests/lint.sh
+run "smoke-json.sh" bash tests/smoke-json.sh
 run "smoke-hook.sh" bash tests/smoke-hook.sh
 run "smoke-release.sh" bash tests/smoke-release.sh
-
-if command -v jq >/dev/null 2>&1; then
-  run "smoke-slot.sh" bash tests/smoke-slot.sh
-  run "smoke-render.sh" bash tests/smoke-render.sh
-  run "smoke-validate.sh" bash tests/smoke-validate.sh
-else
-  skipped+=("bash smoke tests (jq is not installed)")
-fi
+run "smoke-slot.sh" bash tests/smoke-slot.sh
+run "smoke-render.sh" bash tests/smoke-render.sh
+run "smoke-validate.sh" bash tests/smoke-validate.sh
 
 ps=""
 if command -v pwsh >/dev/null 2>&1; then ps=pwsh; elif command -v powershell >/dev/null 2>&1; then ps=powershell; fi

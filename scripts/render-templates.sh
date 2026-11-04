@@ -4,7 +4,7 @@
 #   render-templates.sh [--project <dir>] [--force]
 # Reads areas, invariants, labels and verification from .claude/nightmill.json and fills the {{...}}
 # placeholders in templates/ISSUE_TEMPLATE/*.yml. Without --force an existing form that differs is
-# left alone and listed. Needs jq.
+# left alone and listed. Needs bash and awk, no jq.
 set -euo pipefail
 
 project=$(pwd); force=0
@@ -16,26 +16,37 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-command -v jq >/dev/null 2>&1 || { echo "render-templates.sh needs jq" >&2; exit 1; }
+. "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
 
 cfg="$project/.claude/nightmill.json"
 [ -f "$cfg" ] || { echo "no $cfg (run /nightmill:init)" >&2; exit 1; }
+json_load "$cfg" || exit 1
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 src="$here/../templates/ISSUE_TEMPLATE"
 dst="$project/.github/ISSUE_TEMPLATE"
 mkdir -p "$dst"
 
-[ "$(jq -r '.areas // [] | length' "$cfg")" -gt 0 ] || { echo "nightmill.json needs at least one entry in areas" >&2; exit 1; }
-export AREAS; AREAS=$(jq -r '.areas | "[" + join(", ") + "]"' "$cfg")
-# tojson gives a double-quoted JSON string, which is a valid double-quoted YAML scalar.
-export INVARIANTS; INVARIANTS=$(jq -r '.invariants // [] | map("        - label: " + tojson + "\n          required: false") | join("\n")' "$cfg")
-inv_count=$(jq -r '.invariants // [] | length' "$cfg")
-export CHECK_COMMAND; CHECK_COMMAND=$(jq -r '.verification.check // ""' "$cfg")
-export MANUAL_CHECK; MANUAL_CHECK=$(jq -r '.verification.manualCheckText // "Manual check as the story describes"' "$cfg")
-export LABEL_EPIC; LABEL_EPIC=$(jq -r '.labels.epic // "epic"' "$cfg")
-export LABEL_STORY; LABEL_STORY=$(jq -r '.labels.story // "story"' "$cfg")
-export LABEL_BUG; LABEL_BUG=$(jq -r '.labels.bug // "bug"' "$cfg")
-export LABEL_NEEDS_SPEC; LABEL_NEEDS_SPEC=$(jq -r '.labels.needsSpec // "needs-spec"' "$cfg")
+areas_count=$(json_len areas)
+[ "$areas_count" -gt 0 ] || { echo "nightmill.json needs at least one entry in areas" >&2; exit 1; }
+export AREAS; AREAS="["
+for ((i = 0; i < areas_count; i++)); do
+  if [ "$i" -gt 0 ]; then AREAS+=", "; fi
+  AREAS+=$(json_get "areas[$i]")
+done
+AREAS+="]"
+# json_quote gives a double-quoted JSON string, which is a valid double-quoted YAML scalar.
+inv_count=$(json_len invariants)
+export INVARIANTS; INVARIANTS=""
+for ((i = 0; i < inv_count; i++)); do
+  if [ "$i" -gt 0 ]; then INVARIANTS+=$'\n'; fi
+  INVARIANTS+="        - label: $(json_quote "$(json_get "invariants[$i]")")"$'\n'"          required: false"
+done
+export CHECK_COMMAND; CHECK_COMMAND=$(json_get verification.check "")
+export MANUAL_CHECK; MANUAL_CHECK=$(json_get verification.manualCheckText "Manual check as the story describes")
+export LABEL_EPIC; LABEL_EPIC=$(json_get labels.epic "epic")
+export LABEL_STORY; LABEL_STORY=$(json_get labels.story "story")
+export LABEL_BUG; LABEL_BUG=$(json_get labels.bug "bug")
+export LABEL_NEEDS_SPEC; LABEL_NEEDS_SPEC=$(json_get labels.needsSpec "needs-spec")
 export INV_COUNT=$inv_count
 
 render() { # file

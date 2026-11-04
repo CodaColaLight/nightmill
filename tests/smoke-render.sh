@@ -50,7 +50,7 @@ grep -qx 'mine' "$tmp/.github/ISSUE_TEMPLATE/nightmill-bug.yml" || fail "render-
 for f in epic story bug config; do [ -f "$tmp/.github/ISSUE_TEMPLATE/$f.yml" ] || fail "$f.yml was not written"; done
 
 echo "== no invariants drops the block"
-jq 'del(.invariants)' "$tmp/.claude/nightmill.json" > "$tmp/cfg2.json" && mv "$tmp/cfg2.json" "$tmp/.claude/nightmill.json"
+grep -v '"invariants"' "$tmp/.claude/nightmill.json" > "$tmp/cfg2.json" && mv "$tmp/cfg2.json" "$tmp/.claude/nightmill.json"
 bash "$R" --project "$tmp" --force >/dev/null
 ! grep -q 'invariants' "$story" || fail "checkbox block not dropped"
 ! grep -q '{{' "$story" || fail "placeholder left after drop"

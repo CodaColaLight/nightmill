@@ -3,7 +3,7 @@
 # on the line that names the key, unknown keys are warnings (errors with --strict), findings print sorted, enum
 # and closed objects work with a schema of their own, usage errors exit 2, this repository's own config passes,
 # and the lint notices a schema keyword the validator does not support. Same cases as smoke-validate.ps1.
-# Needs jq (like the validator).
+# Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d)

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 7 (#7): the bash scripts read JSON without `jq`. `scripts/lib/json.awk` is a strict JSON parser in
+  POSIX awk and `scripts/lib/json.sh` the functions on top of it (`json_get`, `json_len`, `json_keys`, `json_has`,
+  `json_quote`, `json_marker`); `slot.sh`, `new-worktree.sh`, `render-templates.sh` and `validate-config.sh` use
+  them, the validator's walk is now `scripts/lib/validate.awk`, and the slot marker is byte for byte what it was.
+  The bash smoke tests run on a machine with only git, gh and bash; CI cross-checks the reader against `jq`, then
+  hides `jq` for the other bash tests, and the lint fails if a bash file starts using `jq` again.
 - Iteration 6 (#8): `scripts/validate-config.ps1` and `scripts/validate-config.sh` check a config against the
   schema: required keys, types, `minimum`, `minItems`, `enum`, closed objects, and a warning for an unknown key
   with a hint for a likely typo (`worktree` for `worktrees`). One line per finding names the key; the bash version

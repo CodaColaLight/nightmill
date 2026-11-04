@@ -45,7 +45,7 @@ copies of the same skills shadow each other.
 ```sh
 bash tests/check.sh                                   # everything the machine can run
 bash tests/lint.sh                                    # generic words, JSON, skill frontmatter, shell syntax
-bash tests/smoke-slot.sh; bash tests/smoke-render.sh  # need jq
+bash tests/smoke-slot.sh; bash tests/smoke-render.sh; bash tests/smoke-json.sh
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 claude plugin validate . --strict

@@ -26,10 +26,9 @@ elif grep -rniF --exclude-dir=.git --exclude=forbidden-words.local.txt -f "$word
 fi
 
 echo "== json"
+# Every JSON file parses, checked with the same strict parser the scripts use (scripts/lib/json.awk).
 while IFS= read -r f; do
-  if command -v jq >/dev/null 2>&1; then jq . "$f" >/dev/null || { echo "FAIL: $f does not parse"; fail=1; }
-  else python3 -I -m json.tool "$f" >/dev/null || { echo "FAIL: $f does not parse"; fail=1; }
-  fi
+  JSON_MODE=check JSON_FILE="$f" LC_ALL=C awk -f scripts/lib/json.awk || { echo "FAIL: $f does not parse"; fail=1; }
 done < <(find . -path ./.git -prune -o -name '*.json' -print)
 
 echo "== skills"
@@ -134,18 +133,9 @@ if [ -z "$pj_version" ] || [ "$pj_version" != "$cl_version" ] || [ "$pj_version"
 fi
 
 echo "== config validates"
-# The example and this repository's own config pass the validator with --strict (iteration 6): the bash
-# validator when jq is installed, else the PowerShell one, else the check is skipped.
-ps_cmd=""
-if command -v pwsh >/dev/null 2>&1; then ps_cmd=pwsh; elif command -v powershell >/dev/null 2>&1; then ps_cmd=powershell; fi
+# The example and this repository's own config pass the validator with --strict (iteration 6).
 for f in templates/nightmill.example.json .claude/nightmill.json; do
-  if command -v jq >/dev/null 2>&1; then
-    out=$(bash scripts/validate-config.sh --strict "$f" 2>&1) || { echo "$out"; echo "FAIL: $f does not validate"; fail=1; }
-  elif [ -n "$ps_cmd" ]; then
-    out=$("$ps_cmd" -NoProfile -ExecutionPolicy Bypass -File scripts/validate-config.ps1 -Config "$f" -Strict 2>&1) || { echo "$out"; echo "FAIL: $f does not validate"; fail=1; }
-  else
-    echo "skipped $f (no jq and no PowerShell)"
-  fi
+  out=$(bash scripts/validate-config.sh --strict "$f" 2>&1) || { echo "$out"; echo "FAIL: $f does not validate"; fail=1; }
 done
 
 echo "== schema keywords are supported"
@@ -157,12 +147,23 @@ for kw in '$ref' anyOf oneOf allOf not if pattern format const maxItems uniqueIt
   fi
 done
 
+echo "== bash files do not use jq"
+# The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
+# with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
+# this file names it in its own checks. A mention in a comment line is fine.
+for f in scripts/*.sh scripts/lib/* tests/*.sh; do
+  case "$f" in tests/smoke-json.sh|tests/lint.sh) continue ;; esac
+  if grep -nw jq "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f uses jq outside a comment; read JSON with scripts/lib/json.sh"; fail=1
+  fi
+done
+
 echo "== shell"
-for f in scripts/*.sh tests/*.sh; do
+for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }
 done
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -S warning scripts/*.sh tests/*.sh || fail=1
+  shellcheck -S warning scripts/*.sh scripts/lib/*.sh tests/*.sh || fail=1
 else
   echo "(shellcheck not installed, skipped)"
 fi
