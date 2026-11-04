@@ -1,0 +1,43 @@
+name: Suggest an idea for nightmill
+description: A change or a feature you would like
+title: "[Idea] "
+labels: ["idea", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The maintainer triages ideas. An accepted idea becomes a story on the project board; nobody starts
+        work on it before it is marked Ready.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you change?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: What would it touch
+      options:
+        - A skill (spec, next, fix, story, check, init, workflow)
+        - A script (slot, new-worktree, render-templates)
+        - The SessionStart hook
+        - The templates or issue forms
+        - The documentation
+        - Something else
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Pull request
+      options:
+        - label: I would like to send a pull request for this.

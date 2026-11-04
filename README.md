@@ -51,13 +51,16 @@ Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugi
 
 ## Install
 
+You need Claude Code, `git`, and `gh` signed in with `gh auth login` and the `project` scope
+(`gh auth refresh -s project`); the bash scripts also need `jq`.
+
 ```
 /plugin marketplace add CodaColaLight/nightmill
 /plugin install nightmill@nightmill
 /nightmill:init
 ```
 
-The scripts need `git` and `gh`; the bash versions also need `jq`. Hooks, permissions and
+Hooks, permissions and
 environment variables stay in the project's own `.claude/settings.json`; a plugin cannot set them.
 
 A plugin cannot run anything when it is installed, so nightmill ships a `SessionStart` hook for the
@@ -131,6 +134,11 @@ domain.
 
 To run the plugin from a checkout instead of the installed copy: `claude --plugin-dir /path/to/nightmill`,
 in this repository or in a project.
+
+## Contributing
+
+Issues and pull requests are welcome. `CONTRIBUTING.md` explains how work is decided here and what a pull
+request has to satisfy. Report a security problem privately, as described in `SECURITY.md`.
 
 ## Status and license
 
