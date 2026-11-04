@@ -1,6 +1,6 @@
 # Iteration 2: `/spec` writes the spec, `/next` implements the approved story
 
-Status: draft, awaiting approval (#14)
+Status: delivered in iteration 2 (PR #16)
 
 Story: #14, epic #4. Splits `skills/next/SKILL.md` in two. No new config key, no change to the status
 flow or to who sets a status, no change to the slot marker: none of `escalation.storyTriggers` applies, so

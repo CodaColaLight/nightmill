@@ -6,7 +6,7 @@
     {
       "name": "nightmill",
       "source": "./",
-      "description": "Lights-out development workflow: /next, /fix, /story, /check, /init, the worker agent and the slot scripts.",
+      "description": "Lights-out development workflow: /spec, /next, /fix, /story, /check, /init, the worker agent and the slot scripts.",
       "category": "workflow"
     }
   ]

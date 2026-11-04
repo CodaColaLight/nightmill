@@ -50,8 +50,8 @@ keep them in notes.
 ## Stories and bugs
 
 - An agent only works on issues whose status is Ready (spec, or bug fix) or Approved (implementation).
-- Every PR closes exactly one story or fixes one bug. `/next` takes a story, `/fix` a bug, `/story`
-  files a story.
+- Every PR closes exactly one story or fixes one bug. `/spec` writes the spec for a Ready story, `/next`
+  implements an Approved one, `/fix` fixes a bug, `/story` files a story.
 - **Bugs are not iterations**: no spec, milestone, iteration number or CHANGELOG entry. A failing test
   first, then the smallest fix of the cause. A fix that needs one of `escalation.storyTriggers` is a story.
 - **A story only partly done**: file the rest as a new story under the same epic (`/story`), link both
@@ -59,6 +59,26 @@ keep them in notes.
   tick criteria that were not met.
 - **Spec first.** The spec is a PR of its own (docs only, auto-merged). Implementation starts only
   from Approved. A spec that needs changes stays in Spec review while it is revised.
+
+## Picking an issue
+
+`/spec` and `/next` pick their issue by one rule and differ only in the status they take: `/spec` takes a
+**Ready** story (`board.statuses.ready`), `/next` an **Approved** one (`board.statuses.approved`).
+
+1. **With a number**, take that issue. An epic or a bug is refused (bugs go through `/fix`). An issue
+   whose board status is not the skill's status is refused with one line that names the status found and
+   the skill that takes it, for example `#12 is at Spec review, not Ready; /spec only takes Ready stories.`
+   Nothing is changed.
+2. **Without a number**, list the board (`gh project item-list`), keep open issues at the skill's status
+   that are not epics and not bugs, and take the highest `board.priorityField` (the order of
+   `board.priorities`; an item without a priority ranks last). On a tie ask the maintainer which, listing
+   the tied issues.
+3. **Before the first change** (board, branch, file, slot) print one line:
+   `Picking #N "<title>": <status>, <priority>, <reason>`, where the reason is `named by number`,
+   `only <status> story` or `highest priority of K <status> stories`.
+
+With nothing at the skill's status the skill changes nothing and says so. `/next` then lists the Ready
+stories and points to `/spec N`; it never starts a spec itself.
 
 ## Definition of done
 

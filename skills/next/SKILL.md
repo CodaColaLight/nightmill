@@ -1,11 +1,11 @@
 ---
 name: next
-description: Take the next story from the board - implement an Approved story, or write the spec for a Ready one. Use when asked to pick up the next story, start a story, spec an issue, or implement an approved spec.
+description: Implement the next Approved story from the board - slot, tests, code, check, PR, auto-merge. Use when asked to pick up the next story, implement an approved spec, or start an approved story. Writing the spec for a Ready story is /spec.
 argument-hint: [issue-number]
 disable-model-invocation: true
 ---
 
-Pick up the next story from the board: $ARGUMENTS
+Implement the next Approved story from the board: $ARGUMENTS
 
 Project configuration (`.claude/nightmill.json`):
 
@@ -18,40 +18,25 @@ skill of this plugin; this skill is the step list.
 
 ## 1. Pick the issue
 
-- If `$ARGUMENTS` holds an issue number, take that issue in whatever status it is in (Ready or Approved).
-- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json`.
-  Keep open issues that are not epics and not bugs (bugs go through `/fix`).
-  Candidates are **Approved items first** (work already approved beats new specs), then **Ready** items.
-  Within a group take the highest `board.priorityField`; on a tie ask the maintainer which.
-- Nothing Approved or Ready: say so and stop.
+Follow **Picking an issue** in the `workflow` skill with the status **Approved** (`board.statuses.approved`).
+
+- If `$ARGUMENTS` holds an issue number, take that issue; refuse when it is not at Approved.
+- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json`
+  and take the highest-priority Approved story that is not an epic and not a bug (bugs go through `/fix`).
+- Nothing Approved: change nothing and never start a spec. List the Ready stories, one line each as
+  `#N "<title>" (<priority>)` in priority order, then print `Nothing is Approved. Run /spec N to write a spec.`
+  With no Ready story either, print `Nothing is Approved or Ready.` Then stop.
+- Print the line `Picking #N "<title>": <status>, <priority>, <reason>` before the first change.
 - Read the issue with `gh issue view N --json number,title,labels,body,milestone,comments`, its parent epic,
   and every spec and decision either references.
 
-## 2. A Ready story: write the spec, then stop
+## 2. Implement the approved story
 
-1. Set the status to **Spec** right away and read it back (`gh project item-list` for the item id,
-   `gh project field-list` for the field and option ids, then `gh project item-edit`). Not In progress:
-   nothing is being implemented yet.
-2. Pick the iteration number N: the higher of the latest entry in `iterations.changelog` and the highest
-   milestone matching `iterations.milestonePattern` (`gh api repos/<owner>/<repo>/milestones --paginate`,
-   state all; another task may have claimed a number that is not merged yet), plus 1. Create the
-   milestone if missing and put the issue in it.
-3. Write `<iterations.specDir>/<iterations.specPattern>` from the acceptance criteria: exact rules and
-   numbers, a "Not done" list, and the status line `Status: draft, awaiting approval (#N)`.
-4. Open the spec as its own PR: a branch `<git.specPrefix><N>-<slug>` from up-to-date
-   `origin/<git.baseBranch>` (the working tree must be clean; if it is not, say so and stop), commit the
-   spec only, push, PR titled `docs: iteration <N> spec (#<issue>)` with the body `Spec for #<issue>.`
-   (not `Closes`), and `gh pr merge <pr> <git.mergeFlags>`: a spec PR is docs only. Switch back to the
-   branch you came from.
-5. Set the status to **Spec review** and read it back. Comment on the issue:
-   `Spec: <path> (PR #<pr>). Waiting for approval.`
-6. **Stop.** Show the spec to the maintainer. Only the maintainer sets Approved. If the maintainer asks
-   for changes, revise the spec in a follow-up PR and keep the status at Spec review.
-
-## 3. An Approved story: implement
-
-1. Set the status to **In progress** and read it back. Find the spec: the issue comment from step 2.5,
-   else the milestone's spec in `iterations.specDir`. Read it completely; the spec is the contract.
+1. Set the status to **In progress** and read it back (`gh project item-list` for the item id,
+   `gh project field-list` for the field and option ids, then `gh project item-edit`). Find the spec: the
+   issue comment `/spec` left (`Spec: <path> (PR #<pr>)`), else the milestone's spec in
+   `iterations.specDir`. Read it completely; the spec is the contract. The iteration number N is the one
+   in the spec's file name.
 2. Take a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
    or `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
    worktree; `-Release N` after the merge. Without slots, `git switch -c` from up-to-date `origin/<git.baseBranch>`.

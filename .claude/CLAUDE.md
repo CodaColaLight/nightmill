@@ -7,8 +7,8 @@ it is and how a project installs it. This file is for working *on* nightmill.
 
 nightmill develops itself with its own workflow. The rules are in `skills/workflow/SKILL.md`
 (`/nightmill:workflow`); this project's values are in `.claude/nightmill.json` (board 2 on the
-`CodaColaLight` account, labels, areas, the check command, slots). `/next` takes a story (writes the
-spec, then implements it once the maintainer set Approved), `/fix` fixes a bug, `/story` files a story,
+`CodaColaLight` account, labels, areas, the check command, slots). `/spec` writes the
+spec for a Ready story, `/next` implements an Approved one, `/fix` fixes a bug, `/story` files a story,
 `/check` runs the check. An agent only works on issues whose board status is Ready or Approved; only the
 maintainer sets those. Run the check before every commit; never commit red.
 
@@ -54,7 +54,7 @@ powershell -ExecutionPolicy Bypass -File tools/make-icon.ps1                    
 
 ```
 .claude-plugin   plugin.json (name, version), marketplace.json, icon.png
-skills           one folder per skill: workflow (rules), next, fix, story, check, init
+skills           one folder per skill: workflow (rules), spec, next, fix, story, check, init
 agents           worker.md
 scripts          slot, new-worktree, render-templates; each as .ps1 and .sh
 schema           nightmill.schema.json, every config key described

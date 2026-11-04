@@ -35,6 +35,22 @@ for a in agents/*.md; do
   grep -q '^name: ' "$a" || { echo "FAIL: $a has no name"; fail=1; }
 done
 
+echo "== spec and next stay split"
+# /spec writes the spec for a Ready story, /next implements an Approved one (iteration 2).
+if [ -f skills/spec/SKILL.md ]; then
+  grep -q 'Spec review' skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not set Spec review"; fail=1; }
+  grep -q 'Ready' skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not take Ready stories"; fail=1; }
+  grep -q 'Picking #' skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not print the picking line"; fail=1; }
+else
+  echo "FAIL: skills/spec/SKILL.md is missing"; fail=1
+fi
+grep -q 'Approved' skills/next/SKILL.md || { echo "FAIL: skills/next/SKILL.md does not take Approved stories"; fail=1; }
+grep -q 'Picking #' skills/next/SKILL.md || { echo "FAIL: skills/next/SKILL.md does not print the picking line"; fail=1; }
+if grep -q '^## 2\. A Ready story' skills/next/SKILL.md; then
+  echo "FAIL: skills/next/SKILL.md still holds the spec procedure (it belongs in /spec)"; fail=1
+fi
+grep -q 'Picking an issue' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md has no 'Picking an issue' section"; fail=1; }
+
 echo "== shell"
 for f in scripts/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }

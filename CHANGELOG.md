@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 2 (#14): `/spec` and `/next` are two commands. `/spec [N]` writes the spec for a Ready story
+  and stops at Spec review; `/next [N]` implements an Approved story only and, with nothing Approved,
+  lists the Ready stories and points to `/spec`. Both print `Picking #N ...` before they change anything
+  (rule: "Picking an issue" in the `workflow` skill). **`/next` no longer writes specs**: a project note
+  or habit that calls `/next` for a Ready story must call `/spec`.
 - nightmill develops itself: `.claude/nightmill.json`, issue forms, `.claude/CLAUDE.md`, `tests/check.sh`
   (one check command that runs what the machine can and lists what it skipped) and decision 0001.
 - Plugin icon (`.claude-plugin/icon.png`): a white windmill and crescent moon on dark purple,

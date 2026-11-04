@@ -34,7 +34,8 @@ not a conversation.
 
 | Piece | What it does |
 |---|---|
-| `/nightmill:next [N]` | Takes a story: Approved ones first (implement), then Ready ones (write the spec as its own PR, set Spec review, stop). |
+| `/nightmill:spec [N]` | Takes a Ready story and writes its spec as its own PR, sets Spec review and stops. |
+| `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. |
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` works through every Ready bug. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
@@ -46,7 +47,7 @@ not a conversation.
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `schema/nightmill.schema.json` | Every configuration key, described. |
 
-Bare `/next`, `/fix`, `/story`, `/check` also work unless another plugin or the project defines them.
+Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugin or the project defines them.
 
 ## Install
 
