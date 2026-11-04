@@ -24,6 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - run: bash tests/smoke-json.sh
+      - name: Hide jq (the bash scripts must not need it)
+        run: |
+          sudo mv "$(command -v jq)" "$RUNNER_TEMP/jq.hidden"
+          if command -v jq; then echo "jq is still on the PATH"; exit 1; fi
       - run: bash tests/smoke-slot.sh
       - run: bash tests/smoke-render.sh
       - run: bash tests/smoke-hook.sh

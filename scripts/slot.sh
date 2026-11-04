@@ -4,7 +4,7 @@
 #   slot.sh --take feat/foo [--slot 2] [--base origin/main] [--skip-warmup]
 #   slot.sh --release 1                 # after the PR merged
 #   slot.sh --abandon 1                 # free a slot whose task was dropped (no merged PR)
-# Needs git, jq and (for --release) gh. Run it from inside the project: any checkout or worktree of
+# Needs git and (for --release) gh. Run it from inside the project: any checkout or worktree of
 # it. Configuration comes from .claude/nightmill.json in the main checkout, keys under "worktrees"
 # (see schema/nightmill.schema.json); WORKER_SLOTS overrides worktrees.slots. A slot is never removed:
 # a new task only switches it to a new branch from the base branch, so build output stays warm.
@@ -32,23 +32,24 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-command -v jq >/dev/null 2>&1 || { echo "slot.sh needs jq" >&2; exit 1; }
+. "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
 
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "run slot.sh from inside a git checkout of the project" >&2; exit 1; }
 main=$(dirname "$gitdir")
 cfg="$main/.claude/nightmill.json"
 [ -f "$cfg" ] || { echo "no $cfg (run /nightmill:init)" >&2; exit 1; }
+json_load "$cfg" || exit 1
 
-q() { jq -r "$1 // empty" "$cfg"; }
+q() { json_get "$1"; }
 
-base_branch=$(q '.git.baseBranch'); base_branch=${base_branch:-main}
+base_branch=$(q git.baseBranch); base_branch=${base_branch:-main}
 [ -n "$base" ] || base="origin/$base_branch"
-root_rel=$(q '.worktrees.root'); root_rel=${root_rel:-"../$(basename "$main")-wt"}
+root_rel=$(q worktrees.root); root_rel=${root_rel:-"../$(basename "$main")-wt"}
 mkdir -p "$main/$root_rel"
 root=$(cd "$main/$root_rel" && pwd)
 state="$root/.slots"
 
-count=$(q '.worktrees.slots'); count=${count:-2}
+count=$(q worktrees.slots); count=${count:-2}
 if [ -n "${WORKER_SLOTS:-}" ]; then
   [[ "$WORKER_SLOTS" =~ ^[1-9][0-9]?$ ]] || { echo "WORKER_SLOTS must be a number from 1 to 99" >&2; exit 1; }
   count=$WORKER_SLOTS
@@ -57,7 +58,7 @@ fi
 slot_dir() { echo "$root/slot-$1"; }
 marker() { echo "$state/slot-$1.json"; }
 has_marker() { [ -f "$(marker "$1")" ]; }
-marker_field() { jq -r ".$2" "$(marker "$1")"; }
+marker_field() { ( json_load "$(marker "$1")" && json_get "$2" ); }
 dirty_count() { git -C "$1" status --porcelain | wc -l | tr -d ' '; }
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
@@ -65,15 +66,16 @@ sha256() {
 }
 
 warmup() { # slot dir
-  local n=$1 dir=$2 i=0 w where d cmd lf stamp hash have
+  local n=$1 dir=$2 i=0 idx count where d cmd lf stamp hash have
   [ "$skip" = 1 ] && return 0
-  while IFS= read -r w; do
+  count=$(json_len worktrees.warmup)
+  for ((idx = 0; idx < count; idx++)); do
     i=$((i + 1))
     where="$dir"
-    d=$(jq -r '.dir // empty' <<<"$w")
+    d=$(json_get "worktrees.warmup[$idx].dir")
     if [ -n "$d" ]; then where="$dir/$d"; fi
-    cmd=$(jq -r '.command' <<<"$w")
-    lf=$(jq -r '.lockfile // empty' <<<"$w")
+    cmd=$(json_get "worktrees.warmup[$idx].command")
+    lf=$(json_get "worktrees.warmup[$idx].lockfile")
     stamp="$state/slot-$n.warmup-$i"
     hash=""
     if [ -n "$lf" ] && [ -f "$dir/$lf" ]; then
@@ -85,28 +87,35 @@ warmup() { # slot dir
     echo "warm-up $i in $where: $cmd"
     (cd "$where" && bash -c "$cmd")
     if [ -n "$hash" ]; then echo "$hash" > "$stamp"; fi
-  done < <(jq -c '.worktrees.warmup // [] | .[]' "$cfg")
+  done
 }
 
-ports() { jq -r '.worktrees.ports // {} | to_entries[] | "\(.key)=\(.value)"' "$cfg"; }
+ports() { # key=value lines, in file order
+  local k
+  while IFS= read -r k; do
+    if [ -n "$k" ]; then printf '%s=%s\n' "$k" "$(json_get "worktrees.ports.$k")"; fi
+  done < <(json_keys worktrees.ports)
+}
 
 hints() { # slot dir branch
-  local n=$1 dir=$2 branch=$3 line name p
+  local n=$1 dir=$2 branch=$3 line name p idx count
   echo
   echo "Slot $n is yours: $dir  (branch $branch)"
   echo "  cd '$dir'"
   while IFS='=' read -r name p; do
     [ -n "$name" ] && echo "  port $name: $((p + n))"
   done < <(ports)
-  if [ "$(jq -r '.worktrees.runHints // [] | length' "$cfg")" -gt 0 ]; then
+  count=$(json_len worktrees.runHints)
+  if [ "$count" -gt 0 ]; then
     echo "Run it next to other slots:"
-    while IFS= read -r line; do
+    for ((idx = 0; idx < count; idx++)); do
+      line=$(json_get "worktrees.runHints[$idx]")
       line=${line//\{slot\}/$n}
       while IFS='=' read -r name p; do
         [ -n "$name" ] && line=${line//\{port.$name\}/$((p + n))}
       done < <(ports)
       echo "  $line"
-    done < <(jq -r '.worktrees.runHints // [] | .[]' "$cfg")
+    done
   fi
 }
 
@@ -155,8 +164,7 @@ if [ -n "$take" ]; then
 
   warmup "$n" "$dir"
 
-  jq -n --argjson slot "$n" --arg branch "$take" --arg since "$(date +%Y-%m-%dT%H:%M:%S)" \
-    '{slot: $slot, branch: $branch, since: $since}' > "$(marker "$n")"
+  json_marker "$n" "$take" "$(date +%Y-%m-%dT%H:%M:%S)" > "$(marker "$n")"
   hints "$n" "$dir" "$take"
   exit 0
 fi

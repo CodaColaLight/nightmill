@@ -52,7 +52,7 @@ Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugi
 ## Install
 
 You need Claude Code, `git`, and `gh` signed in with `gh auth login` and the `project` scope
-(`gh auth refresh -s project`); the bash scripts also need `jq`.
+(`gh auth refresh -s project`). The bash scripts need nothing beyond bash and the tools a POSIX shell has (awk, sed, grep).
 
 ```
 /plugin marketplace add CodaColaLight/nightmill
@@ -103,7 +103,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 
 `templates/nightmill.example.json` is a complete example.
 
-Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`, which needs `jq`). It reads the
+Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
 and warns about keys it does not know, with a hint for a likely typo. `/nightmill:init` runs it for you.
 
@@ -123,11 +123,12 @@ command, auto-merge. `.claude/CLAUDE.md` holds the rules for working on it; `doc
 ```
 bash tests/check.sh         # everything this machine can run, lists what it skipped
 bash tests/lint.sh          # generic words, JSON, skill frontmatter, shell syntax
-bash tests/smoke-slot.sh    # slot.sh against a throwaway repository (needs jq)
-bash tests/smoke-render.sh  # render-templates.sh (needs jq)
-bash tests/smoke-hook.sh    # the SessionStart hook (no jq)
+bash tests/smoke-slot.sh    # slot.sh against a throwaway repository
+bash tests/smoke-render.sh  # render-templates.sh
+bash tests/smoke-hook.sh    # the SessionStart hook
 bash tests/smoke-release.sh # the release script (git only)
-bash tests/smoke-validate.sh # the config validator (needs jq)
+bash tests/smoke-validate.sh # the config validator
+bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
