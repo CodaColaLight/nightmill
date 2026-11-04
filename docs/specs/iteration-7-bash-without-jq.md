@@ -1,6 +1,6 @@
 # Iteration 7: the bash scripts read JSON without jq
 
-Status: delivered in iteration 7 (PR #PRNUM)
+Status: delivered in iteration 7 (PR #23)
 
 Story: #7, epic #2 (Scripts without extra tools). Adds two files under `scripts/lib/`, changes four bash
 scripts and the tests around them, and updates the documentation. No config key, no change to the status
