@@ -1,6 +1,6 @@
 # Iteration 4: a contributor guide and nightmill's own bug and idea forms
 
-Status: delivered in iteration 4 (PR #PRNUM)
+Status: delivered in iteration 4 (PR #17)
 
 Story: #5, epic #1 (Public release). Adds documentation and two issue forms, a pull request template, two
 labels, one lint check and a CI line. No config key, no change to the status flow, no change to the slot
