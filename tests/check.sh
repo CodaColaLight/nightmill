@@ -23,6 +23,7 @@ run "smoke-release.sh" bash tests/smoke-release.sh
 if command -v jq >/dev/null 2>&1; then
   run "smoke-slot.sh" bash tests/smoke-slot.sh
   run "smoke-render.sh" bash tests/smoke-render.sh
+  run "smoke-validate.sh" bash tests/smoke-validate.sh
 else
   skipped+=("bash smoke tests (jq is not installed)")
 fi
@@ -34,6 +35,7 @@ if [ -n "$ps" ]; then
   run "smoke-render.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1
   run "smoke-hook.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
   run "smoke-release.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-release.ps1
+  run "smoke-validate.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
 else
   skipped+=("PowerShell smoke tests (no pwsh or powershell)")
 fi
