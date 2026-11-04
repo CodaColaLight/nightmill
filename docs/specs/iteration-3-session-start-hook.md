@@ -1,6 +1,6 @@
 # Iteration 3: a SessionStart hook offers `/init` where nightmill is not set up
 
-Status: delivered in iteration 3 (PR #PRNUM)
+Status: delivered in iteration 3 (PR #15)
 
 Story: #12, epic #4 (Setup and onboarding). Adds `hooks/hooks.json` and one script in each shell. No config
 key, no change to the status flow, no change to the slot marker: none of `escalation.storyTriggers`
