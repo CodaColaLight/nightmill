@@ -1,6 +1,6 @@
 # Iteration 1: `/init` as an install chat
 
-Status: draft, awaiting approval (#10)
+Status: delivered in iteration 1 (PR #17)
 
 Story: #10, epic #4 (Setup and onboarding). Replaces the body of `skills/init/SKILL.md`. No script, no new
 config key, no change to the status flow, no change to the slot marker: none of `escalation.storyTriggers`

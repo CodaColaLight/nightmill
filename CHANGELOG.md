@@ -7,6 +7,12 @@
   lists the Ready stories and points to `/spec`. Both print `Picking #N ...` before they change anything
   (rule: "Picking an issue" in the `workflow` skill). **`/next` no longer writes specs**: a project note
   or habit that calls `/next` for a Ready story must call `/spec`.
+- Iteration 1 (#10): `/init` is an install chat. It detects owner, repo, board, check command and areas,
+  asks the rest one question at a time with a proposed default, shows one plan, and after one
+  confirmation creates or completes the board (eight Status options with existing ids kept, Priority and
+  Area, a Board-layout view so the statuses are columns, the repository link), the labels, the config,
+  the issue forms, the CLAUDE.md snippet and the permission rules in `.claude/settings.json`; it ends with
+  a table of created, changed, already there, declined and failed lines. Re-running changes nothing.
 - nightmill develops itself: `.claude/nightmill.json`, issue forms, `.claude/CLAUDE.md`, `tests/check.sh`
   (one check command that runs what the machine can and lists what it skipped) and decision 0001.
 - Plugin icon (`.claude-plugin/icon.png`): a white windmill and crescent moon on dark purple,

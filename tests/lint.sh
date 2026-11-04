@@ -51,6 +51,20 @@ if grep -q '^## 2\. A Ready story' skills/next/SKILL.md; then
 fi
 grep -q 'Picking an issue' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md has no 'Picking an issue' section"; fail=1; }
 
+echo "== init skill keeps the install-chat steps"
+# /init detects, asks seven questions in order, plans, confirms once, applies with gh and git (iteration 1).
+for w in createProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link'; do
+  grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
+done
+i=0
+for t in 'maintainer name' 'check command' 'areas' 'invariants' 'manual-check paths' 'slot count' 'ports'; do
+  i=$((i + 1))
+  grep -q -- "^$i\. \*\*$t\*\*" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md question $i is not '$t'"; fail=1; }
+done
+if grep -qF 'Do not edit settings.json yourself' skills/init/SKILL.md; then
+  echo "FAIL: skills/init/SKILL.md still tells the model not to edit settings.json (the install chat offers it)"; fail=1
+fi
+
 echo "== shell"
 for f in scripts/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }

@@ -5,7 +5,8 @@ it is and how a project installs it. This file is for working *on* nightmill.
 
 ## Development process
 
-nightmill develops itself with its own workflow. The rules are in `skills/workflow/SKILL.md`
+This project runs on the [nightmill](https://github.com/CodaColaLight/nightmill) workflow plugin: itself, from
+this working tree. The rules are in `skills/workflow/SKILL.md`
 (`/nightmill:workflow`); this project's values are in `.claude/nightmill.json` (board 2 on the
 `CodaColaLight` account, labels, areas, the check command, slots). `/spec` writes the
 spec for a Ready story, `/next` implements an Approved one, `/fix` fixes a bug, `/story` files a story,

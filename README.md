@@ -39,7 +39,7 @@ not a conversation.
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` works through every Ready bug. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
-| `/nightmill:init` | Sets a project up: config file, issue forms, board options, CLAUDE.md snippet. |
+| `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Status`. |
@@ -61,9 +61,13 @@ The repository is private for now; `gh auth login` (or any git credential for Gi
 the clone. The scripts need `git` and `gh`; the bash versions also need `jq`. Hooks, permissions and
 environment variables stay in the project's own `.claude/settings.json`; a plugin cannot set them.
 
-`/nightmill:init` writes `.claude/nightmill.json` from the real repository (owner, repo, board number,
-check command), renders `.github/ISSUE_TEMPLATE/`, compares the board's Status options with the flow
-above and prints the GraphQL to add missing ones, and prints a snippet for the project's CLAUDE.md.
+`/nightmill:init` is an install chat. It detects what `gh` and the repository can tell (owner, repo, an
+existing board, the check command, areas), asks one question at a time for the rest with a proposed
+default, shows one plan table and, after one confirmation, creates or completes the board (the eight
+Status options, Priority and Area, a Board view with the statuses as columns, the repository link), the
+labels, `.claude/nightmill.json`, `.github/ISSUE_TEMPLATE/`, the CLAUDE.md snippet and the permission
+rules in `.claude/settings.json`. Re-running it on a configured project changes nothing. The board.s
+workflows (item closed > Done) are the one thing the API cannot set; enable them once in the browser.
 
 ## Configuration
 
