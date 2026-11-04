@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: bash tests/lint.sh
+        env:
+          FORBIDDEN_WORDS: ${{ secrets.FORBIDDEN_WORDS }}
 
   smoke-bash:
     name: bash scripts smoke tests

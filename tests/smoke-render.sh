@@ -43,6 +43,12 @@ grep -q 'hand edited' "$tmp/.github/ISSUE_TEMPLATE/epic.yml" || fail "hand-edite
 bash "$R" --project "$tmp" --force >/dev/null
 ! grep -q 'hand edited' "$tmp/.github/ISSUE_TEMPLATE/epic.yml" || fail "--force did not overwrite"
 
+echo "== other forms in the folder are left alone"
+echo "mine" > "$tmp/.github/ISSUE_TEMPLATE/nightmill-bug.yml"
+bash "$R" --project "$tmp" --force >/dev/null
+grep -qx 'mine' "$tmp/.github/ISSUE_TEMPLATE/nightmill-bug.yml" || fail "render-templates touched a form it does not own"
+for f in epic story bug config; do [ -f "$tmp/.github/ISSUE_TEMPLATE/$f.yml" ] || fail "$f.yml was not written"; done
+
 echo "== no invariants drops the block"
 jq 'del(.invariants)' "$tmp/.claude/nightmill.json" > "$tmp/cfg2.json" && mv "$tmp/cfg2.json" "$tmp/.claude/nightmill.json"
 bash "$R" --project "$tmp" --force >/dev/null

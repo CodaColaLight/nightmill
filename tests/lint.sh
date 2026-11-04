@@ -98,6 +98,30 @@ else
   echo "FAIL: hooks/hooks.json is missing"; fail=1
 fi
 
+echo "== contributor files are wired"
+# CONTRIBUTING.md, the two forms for outsiders and the pull request template exist and say what the spec of
+# iteration 4 requires. Whether GitHub accepts the forms is checked in the browser's issue chooser.
+if [ -f CONTRIBUTING.md ]; then
+  for w in 'tests/check.sh' '--plugin-dir' 'SECURITY.md' 'Ready' 'Approved' 'PowerShell' 'bash'; do
+    grep -qF -- "$w" CONTRIBUTING.md || { echo "FAIL: CONTRIBUTING.md does not mention $w"; fail=1; }
+  done
+else
+  echo "FAIL: CONTRIBUTING.md is missing"; fail=1
+fi
+for f in nightmill-bug nightmill-idea; do
+  p=.github/ISSUE_TEMPLATE/$f.yml
+  if [ -f "$p" ]; then
+    head -1 "$p" | grep -q '^name: ' || { echo "FAIL: $p does not start with name:"; fail=1; }
+    grep -q '^body:' "$p" || { echo "FAIL: $p has no body:"; fail=1; }
+  else
+    echo "FAIL: $p is missing"; fail=1
+  fi
+done
+for id in shell os claude_code_version nightmill_version config; do
+  grep -q "^    id: $id\$" .github/ISSUE_TEMPLATE/nightmill-bug.yml 2>/dev/null || { echo "FAIL: nightmill-bug.yml has no field $id"; fail=1; }
+done
+[ -f .github/pull_request_template.md ] || { echo "FAIL: .github/pull_request_template.md is missing"; fail=1; }
+
 echo "== shell"
 for f in scripts/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }

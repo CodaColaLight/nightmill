@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 4 (#5): `CONTRIBUTING.md`, two issue forms for outsiders (`nightmill-bug.yml` and
+  `nightmill-idea.yml`, next to the rendered workflow forms), a pull request template, and a README line on
+  what a stranger needs before installing. The lint checks that they exist and say what the spec requires;
+  the render smoke tests check that rendering leaves other forms alone; the lint job in CI passes the
+  `FORBIDDEN_WORDS` secret to the generic-words check when the repository has one.
 - Iteration 3 (#12): a `SessionStart` hook (`hooks/hooks.json`, `scripts/session-start.sh` and `.ps1`)
   makes Claude offer `/nightmill:init` in a project that has the plugin enabled but no
   `.claude/nightmill.json`; in a configured project it is silent. `NIGHTMILL_HINT=off` silences it for

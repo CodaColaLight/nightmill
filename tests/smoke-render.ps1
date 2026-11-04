@@ -48,6 +48,12 @@ try {
   $null = Render -Force
   if ((Get-Content "$tmp\.github\ISSUE_TEMPLATE\epic.yml" -Raw) -match 'hand edited') { Fail "-Force did not overwrite" }
 
+  Write-Host "== other forms in the folder are left alone"
+  [System.IO.File]::WriteAllText("$tmp\.github\ISSUE_TEMPLATE\nightmill-bug.yml", "mine`n", $utf8)
+  $null = Render -Force
+  if ((Get-Content "$tmp\.github\ISSUE_TEMPLATE\nightmill-bug.yml" -Raw) -notmatch 'mine') { Fail "render-templates touched a form it does not own" }
+  foreach ($f in "epic", "story", "bug", "config") { if (-not (Test-Path "$tmp\.github\ISSUE_TEMPLATE\$f.yml")) { Fail "$f.yml was not written" } }
+
   Write-Host "== no invariants drops the block"
   $cfg2 = $cfg.Replace('"invariants": ["Fog of war — nothing unseen is sent", "Quote \"this\" and `that`"],', '')
   [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg2, $utf8)

@@ -1,0 +1,103 @@
+name: Report a problem with nightmill
+description: Something in nightmill does not work as documented
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems do not belong here. Report them privately, see `SECURITY.md`.
+
+        Please replace owner, repository and other private values with placeholders in everything you paste.
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is affected
+      options:
+        - A skill (spec, next, fix, story, check, init, workflow)
+        - A script (slot, new-worktree, render-templates)
+        - The SessionStart hook
+        - The templates or issue forms
+        - The documentation
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: shell
+    attributes:
+      label: Shell used for the scripts
+      options:
+        - bash
+        - PowerShell
+        - Both
+        - Not applicable
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: claude_code_version
+    attributes:
+      label: Claude Code version
+      description: The output of `claude --version`.
+    validations:
+      required: true
+  - type: input
+    id: nightmill_version
+    attributes:
+      label: nightmill version
+      description: The version in `plugin.json`, or the commit if you use `--plugin-dir`.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How nightmill is loaded
+      options:
+        - Installed from the marketplace
+        - Loaded with --plugin-dir
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happens
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The commands or steps, and the output.
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Your .claude/nightmill.json
+      description: Optional. Replace owner, repository, names and paths with placeholders.
+      render: json
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: I searched the open issues.
+          required: true
+        - label: I removed private values from the config and the output.
+          required: true
