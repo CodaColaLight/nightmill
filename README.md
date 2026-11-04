@@ -122,9 +122,11 @@ bash tests/lint.sh          # generic words, JSON, skill frontmatter, shell synt
 bash tests/smoke-slot.sh    # slot.sh against a throwaway repository (needs jq)
 bash tests/smoke-render.sh  # render-templates.sh (needs jq)
 bash tests/smoke-hook.sh    # the SessionStart hook (no jq)
+bash tests/smoke-release.sh # the release script (git only)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-release.ps1
 claude plugin validate . --strict
 ```
 
@@ -135,6 +137,18 @@ domain.
 To run the plugin from a checkout instead of the installed copy: `claude --plugin-dir /path/to/nightmill`,
 in this repository or in a project.
 
+### Releasing
+
+`main` only takes pull requests, so a release has two steps. `scripts/release.sh --version X.Y.Z` (or
+`scripts/release.ps1 -Version X.Y.Z`) creates the branch `release/vX.Y.Z` with one commit that bumps
+`.claude-plugin/plugin.json`, moves the `Unreleased` entries of `CHANGELOG.md` under `## X.Y.Z (date)` and
+updates the `Version` line below, then opens the pull request. After you merge it, the same command with
+`--publish` (`-Publish`) tags the release commit and creates the GitHub Release from the changelog section.
+`--dry-run` (`-DryRun`) shows the plan and changes nothing. The script refuses when the version is not
+greater than the current one, when the tree is dirty, when you are not on an up-to-date `main`, when
+`Unreleased` is empty, or when the tag or branch exists. The lint fails if `plugin.json`, the newest
+changelog heading and the README's `Version` line disagree. Projects pin by the version in `plugin.json`.
+
 ## Contributing
 
 Issues and pull requests are welcome. `CONTRIBUTING.md` explains how work is decided here and what a pull
@@ -142,4 +156,4 @@ request has to satisfy. Report a security problem privately, as described in `SE
 
 ## Status and license
 
-0.1.0, first extraction. Apache License 2.0, see `LICENSE`.
+Version 0.1.1. Apache License 2.0, see `LICENSE`.
