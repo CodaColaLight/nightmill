@@ -18,7 +18,7 @@
 JSON_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 JSON_FLAT=""
 
-_json_awk() { LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" "$@"; }
+_json_awk() { LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk"; }
 
 json_load() {
   local out
@@ -31,7 +31,7 @@ json_check() {
 }
 
 json_get() {
-  local p=$1 def=${2-} res kind val
+  local p=$1 def=${2-} res val
   res=$(printf '%s\n' "$JSON_FLAT" | JSON_P=$p LC_ALL=C awk -F '\t' '
     $1 == ENVIRON["JSON_P"] { kind = $2; val = $3; found = 1 }
     END {

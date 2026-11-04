@@ -148,7 +148,7 @@ else
     eq "jq cross-check fixture $k" "$(jq -r ".$k // empty" "$tmp/fixture.json")" "$(json_get "$k")"
   done
   for v in 'plain' 'a "q" \ b' $'tab\there' 'é — 😀' 'back\slash' 'both "x" and \y'; do
-    eq "jq cross-check json_quote [$v]" "$(jq -n --arg s "$v" '$s | tojson')" "$(json_quote "$v")"
+    eq "jq cross-check json_quote [$v]" "$(jq -nr --arg s "$v" '$s | tojson')" "$(json_quote "$v")"
   done
 fi
 
