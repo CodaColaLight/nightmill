@@ -1,6 +1,6 @@
 # Iteration 5: a release in two commands, and a lint that keeps the versions in step
 
-Status: delivered in iteration 5 (PR #PRNUM)
+Status: delivered in iteration 5 (PR #19)
 
 Story: #6, epic #1 (Public release). Adds `scripts/release.ps1` and `scripts/release.sh`, their smoke
 tests, a lint check, a decision record and short documentation. No config key, no change to the status flow,
