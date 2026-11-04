@@ -21,7 +21,7 @@
   "labels": { "epic": "epic", "story": "story", "bug": "bug", "needsSpec": "needs-spec", "areaPrefix": "area:", "priorityPrefix": "prio:" },
   "areas": ["skills", "scripts", "templates", "schema", "docs", "ci"],
   "invariants": [
-    "Generic — no word from tests/forbidden-words.txt anywhere in the repository",
+    "Generic — no word from the private word list anywhere in the repository",
     "Fixed flow — the eight statuses and who sets them change only with a decision record",
     "Both shells — every script exists in PowerShell and bash and behaves the same",
     "Config-driven — a project-specific value lives in .claude/nightmill.json, never in a skill or script",

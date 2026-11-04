@@ -47,7 +47,7 @@ body:
     attributes:
       label: Invariants this story must respect
       options:
-        - label: "Generic — no word from tests/forbidden-words.txt anywhere in the repository"
+        - label: "Generic — no word from the private word list anywhere in the repository"
           required: false
         - label: "Fixed flow — the eight statuses and who sets them change only with a decision record"
           required: false

@@ -111,7 +111,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 claude plugin validate . --strict
 ```
 
-CI runs all of them. The lint fails on any word from `tests/forbidden-words.txt`: nightmill was
+CI runs all of them. The lint fails on any word from the private word list (`tests/forbidden-words.local.txt`): nightmill was
 extracted from one project and must not know that project's name, its maintainer's name or its
 domain.
 

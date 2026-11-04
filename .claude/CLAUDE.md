@@ -20,7 +20,7 @@ copies of the same skills shadow each other.
 
 ## Rules the workflow skill does not know
 
-- **Generic.** `tests/lint.sh` fails on any word from `tests/forbidden-words.txt`: the name of the project
+- **Generic.** `tests/lint.sh` fails on any word from the private word list (`tests/forbidden-words.local.txt`): the name of the project
   nightmill was extracted from, its maintainer, its domain. That holds for issues and specs too.
 - **Two shells.** A change to a script in `scripts/` is made in both the `.ps1` and the `.sh`, with a
   smoke step in both `tests/smoke-*.ps1` and `tests/smoke-*.sh`. `tests/check.sh` runs what the machine
@@ -60,7 +60,7 @@ agents           worker.md
 scripts          slot, new-worktree, render-templates; each as .ps1 and .sh
 schema           nightmill.schema.json, every config key described
 templates        nightmill.example.json, ISSUE_TEMPLATE/*.yml with {{placeholders}}, CLAUDE.snippet.md
-tests            lint.sh, smoke-*.sh/.ps1, check.sh/.ps1, forbidden-words.txt
+tests            lint.sh, smoke-*.sh/.ps1, check.sh/.ps1
 tools            make-icon.ps1
 docs             specs/ (iteration specs), decisions/
 ```

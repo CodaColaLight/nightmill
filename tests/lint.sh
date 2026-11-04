@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # tests/lint.sh - nightmill stays generic and well-formed.
-#   1. No word from tests/forbidden-words.txt (names of the project nightmill was extracted from,
-#      its maintainer, ...) appears anywhere in the repository.
+#   1. No word from the private word list (names of the project nightmill was extracted from,
+#      its maintainer, ...) appears anywhere in the repository. The list is not committed:
+#      it is tests/forbidden-words.local.txt (gitignored) or the FORBIDDEN_WORDS variable
+#      (one word per line; CI sets it from a secret). Without either the check is skipped.
 #   2. Every JSON file parses.
 #   3. Every skill has frontmatter with name and description; every skill that reads the config
 #      injects it with the !` ` preamble.
@@ -11,7 +13,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fail=0
 
 echo "== forbidden words"
-if grep -rniF --exclude-dir=.git --exclude=forbidden-words.txt -f tests/forbidden-words.txt . ; then
+words=tests/forbidden-words.local.txt
+if [ -n "${FORBIDDEN_WORDS:-}" ]; then
+  words=$(mktemp); trap 'rm -f "$words"' EXIT
+  printf '%s
+' "$FORBIDDEN_WORDS" > "$words"
+fi
+if [ ! -s "$words" ]; then
+  echo "skipped: no word list (tests/forbidden-words.local.txt or FORBIDDEN_WORDS)"
+elif grep -rniF --exclude-dir=.git --exclude=forbidden-words.local.txt -f "$words" . ; then
   echo "FAIL: project-specific words found (see above)"; fail=1
 fi
 
