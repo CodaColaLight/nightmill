@@ -179,7 +179,9 @@ strongest (aliases and full model ids); models of the same level share one entry
 The workflow skill defines how a skill picks a role's model: the configured model, else the default of the schema,
 passed explicitly; a model that cannot be used stops the run and is reported, never replaced. `/next` and `/fix`
 hand the coding to an `implementer` or `fixer` subagent on the configured model, and the pull request says which
-model it ran on; the session keeps the board, the slot, the CHANGELOG and the pull request.
+model it ran on; the session keeps the board, the slot, the CHANGELOG and the pull request. `/spec` hands the
+writing of the spec to a `specWriter` subagent the same way, and the spec pull request says which model it ran
+on; the session keeps the board, the branch and the pull request.
 
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),

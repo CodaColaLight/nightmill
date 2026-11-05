@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Iteration 14 (#38): `/spec` hands the writing to a spec writer subagent on the configured model. The spec file
+  is written by a `specWriter` subagent, launched as a fresh agent (not a fork, not the `worker`) on
+  `roles.specWriter.model` or the schema default, passed explicitly, after the session created the spec branch from
+  the up-to-date base and counted the agents against `parallel.maxAgents`. The prompt carries the story, its epic
+  and the specs and decisions they reference, forbids committing, pushing, board changes and further agents, and
+  ends with a result block (`Result: complete | partial | failed`). The session checks the form (one changed file,
+  the title and the status line), commits the spec only and keeps the pull request, the statuses and every hard
+  rule; the spec pull request says `Written by the specWriter role on <model>.` A `partial` or `failed` result, a
+  wrong form or an unusable model leaves the story at Spec, opens no pull request and moves nothing to Spec
+  review; the unfinished file is kept in a local commit and an empty branch is removed. The README says so in one
+  sentence and the lint pins the wording. No config key, script or status change.
+
 - Iteration 13 (#35): `/next` and `/fix` hand the coding to a subagent on the configured model. The tests and the
   code of a story are written by an `implementer` subagent, the failing test and the fix of a bug by a `fixer`
   subagent, each launched as a fresh agent (not a fork, not the `worker`) on `roles.<role>.model` or the schema

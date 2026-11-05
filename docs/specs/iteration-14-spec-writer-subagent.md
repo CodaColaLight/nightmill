@@ -1,6 +1,6 @@
 # Iteration 14: /spec hands the writing to a spec writer subagent on the configured model
 
-Status: draft, awaiting approval (#38)
+Status: delivered in iteration 14 (PR #64)
 
 Story: #38, epic #30 (Independent spec review). Changes `skills/spec/SKILL.md` so that the spec file is written by a
 `specWriter` subagent on the model the configuration gives the role, the way iteration 13 did it for `/next` and
