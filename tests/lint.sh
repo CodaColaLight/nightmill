@@ -138,6 +138,24 @@ for f in templates/nightmill.example.json .claude/nightmill.json; do
   out=$(bash scripts/validate-config.sh --strict "$f" 2>&1) || { echo "$out"; echo "FAIL: $f does not validate"; fail=1; }
 done
 
+echo "== reviewer pairing is checked"
+# The validators reject a reviewer ranked below the role it reviews and warn about a model that is not in
+# models.ranking (iteration 15). Both shells carry the rule, so a shell that drops it fails here on a machine
+# that can run only the other one.
+for w in 'ranks below' 'is not in models.ranking'; do
+  grep -qF -- "$w" scripts/lib/validate.awk || { echo "FAIL: scripts/lib/validate.awk does not carry the pairing rule text: $w"; fail=1; }
+  grep -qF -- "$w" scripts/validate-config.ps1 || { echo "FAIL: scripts/validate-config.ps1 does not carry the pairing rule text: $w"; fail=1; }
+done
+# the validator this lint runs on the example and on the repository's own config has the rule
+pair_cfg=$(mktemp)
+sed 's/"specReviewer": { "model": "opus" }/"specReviewer": { "model": "haiku" }/' templates/nightmill.example.json > "$pair_cfg"
+if out=$(bash scripts/validate-config.sh "$pair_cfg" 2>&1); then
+  echo "FAIL: scripts/validate-config.sh accepted a spec reviewer on a model ranked below the spec writer's"; fail=1
+elif ! printf '%s\n' "$out" | grep -qF 'ranks below'; then
+  echo "FAIL: scripts/validate-config.sh did not say 'ranks below' for a spec reviewer ranked below the spec writer"; fail=1
+fi
+rm -f "$pair_cfg"
+
 echo "== schema keywords are supported"
 # scripts/validate-config.* understand type, properties, required, items, minimum, minItems,
 # additionalProperties and enum. A schema that gains another constraint would be silently ignored by them.

@@ -1,6 +1,6 @@
 # Iteration 15: the validator rejects a reviewer ranked below its producer
 
-Status: draft, awaiting approval (#32)
+Status: delivered in iteration 15 (PR #68)
 
 Story: #32, epic #28 (Agent roles and models). Adds one rule to `scripts/validate-config.ps1` and
 `scripts/validate-config.sh` (in the bash one, to `scripts/lib/validate.awk`): a reviewer role must rank at least as

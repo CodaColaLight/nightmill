@@ -15,7 +15,8 @@
 #
 # The validator walks the schema; it supports type, properties, required, items, minimum, minItems,
 # additionalProperties (a schema, true or false) and enum. tests/lint.sh fails if the schema uses a keyword
-# that is not on that list.
+# that is not on that list. After the walk, Test-Pairs checks that a reviewer role is not ranked below the
+# role it reviews (iteration 15).
 param(
   [string]$Config,
   [string]$Schema,
@@ -157,6 +158,74 @@ function Test-Node($val, $s, [string]$p) {
   }
 }
 
+# --- the reviewer pairing (iteration 15) ---------------------------------------------------------------------
+# A rule across keys, which the schema cannot express: a reviewer role must rank at least as high as each role
+# it reviews (specReviewer over specWriter, codeReviewer over implementer and fixer), judged by models.ranking.
+# It runs on the effective models (the config's roles.<role>.model when it is a non-empty string, else the
+# default of the schema) and on the effective ranking (the config's, else the default of the schema), so a
+# config without the keys is clean. Same texts and same findings as validate-config.sh (lib/validate.awk).
+
+# Whether $obj is a JSON object that has exactly this key (the match is case-sensitive, as in the walk above).
+function Test-Has($obj, [string]$name) {
+  return (($obj -is [System.Management.Automation.PSCustomObject]) -and (@($obj.PSObject.Properties.Name) -ccontains $name))
+}
+
+# A child of a JSON object by exact key; $null when $obj is not an object or has no such key.
+function Get-Child($obj, [string]$name) {
+  if (Test-Has $obj $name) { return $obj.PSObject.Properties[$name].Value }
+  return $null
+}
+
+# The model a role runs on: "" when neither the config nor the schema has one.
+function Get-RoleModel($cfg, $sch, [string]$role) {
+  $m = Get-Child (Get-Child (Get-Child $cfg "roles") $role) "model"
+  if ($m -is [string] -and $m -ne "") { return $m }
+  $d = Get-Child (Get-Child (Get-Child (Get-Child (Get-Child (Get-Child $sch "properties") "roles") "properties") $role) "properties") "model"
+  $d = Get-Child $d "default"
+  if ($d -is [string]) { return $d }
+  return ""
+}
+
+function Test-Pairs($cfg, $sch) {
+  if (-not ($cfg -is [System.Management.Automation.PSCustomObject])) { return }
+  if (-not (Test-Has (Get-Child $sch "properties") "roles")) { return }
+  $models = Get-Child $cfg "models"
+  if (Test-Has $models "ranking") {
+    $rk = Get-Child $models "ranking"
+    if (-not ($rk -is [System.Array]) -or @($rk).Count -eq 0) { return }
+  }
+  else {
+    $rk = Get-Child (Get-Child (Get-Child (Get-Child (Get-Child $sch "properties") "models") "properties") "ranking") "default"
+    if (-not ($rk -is [System.Array])) { return }
+  }
+  # the rank of a name: the 1-based position of the first entry that has it as a part of a "="-joined entry
+  $rank = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal)
+  $i = 0
+  foreach ($item in @($rk)) {
+    $i++
+    if ($item -is [string]) {
+      foreach ($part in $item.Split([char]'=')) { if ($part -ne "" -and -not $rank.ContainsKey($part)) { $rank[$part] = $i } }
+    }
+  }
+  $model = @{}
+  foreach ($role in @("specWriter", "specReviewer", "implementer", "codeReviewer", "fixer")) {
+    $m = Get-RoleModel $cfg $sch $role
+    $model[$role] = $m
+    if ($m -ne "" -and -not $rank.ContainsKey($m)) {
+      Add-Finding ("roles." + $role + ".model") "warning" ("model " + (Get-JsonText $m) + " is not in models.ranking, so " + $role + " cannot be compared")
+    }
+  }
+  # the pairs: reviewer, then the role it reviews
+  foreach ($pair in @(@("specReviewer", "specWriter"), @("codeReviewer", "implementer"), @("codeReviewer", "fixer"))) {
+    $rev = $pair[0]; $prod = $pair[1]
+    if ($model[$rev] -eq "" -or $model[$prod] -eq "") { continue }
+    if (-not $rank.ContainsKey($model[$rev]) -or -not $rank.ContainsKey($model[$prod])) { continue }
+    if ($rank[$model[$rev]] -lt $rank[$model[$prod]]) {
+      Add-Finding ("roles." + $rev + ".model") "error" ($rev + " on " + (Get-JsonText $model[$rev]) + " ranks below " + $prod + " on " + (Get-JsonText $model[$prod]))
+    }
+  }
+}
+
 # --- run -----------------------------------------------------------------------------------------------------
 
 Write-Output "validating $Config against $Schema"
@@ -188,6 +257,7 @@ elseif ($text.TrimStart()[0] -ne '{') {
 }
 else {
   Test-Node $doc $schemaDoc ""
+  Test-Pairs $doc $schemaDoc
 }
 
 $records = $script:findings.ToArray()

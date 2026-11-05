@@ -3,7 +3,8 @@
 # Prints one record per finding, "<path> TAB <rank> TAB <line>" (rank 0 for an error, 1 for a warning), in
 # no particular order; the caller sorts them with LC_ALL=C sort. Same checks, texts and order as
 # validate-config.ps1: type, enum, minimum, minItems, items, required, properties, additionalProperties
-# (a schema, true or false); an unknown key is a warning, with a hint when it looks like a typo.
+# (a schema, true or false); an unknown key is a warning, with a hint when it looks like a typo. After the
+# walk, vpairs() checks that a reviewer role is not ranked below the role it reviews (iteration 15).
 # Exit code 2 (message on standard error) when the schema or the config cannot be read, or the schema is
 # not valid JSON. A config that is not valid JSON is a finding.
 
@@ -133,6 +134,68 @@ function vnode(id, sid, path,   k, t, e, i, ok, list, item, mn, mi, it, req, pro
   }
 }
 
+# --- the reviewer pairing (iteration 15) -------------------------------------------------------------------
+# A rule across keys, which the schema cannot express: a reviewer role must rank at least as high as each role
+# it reviews (specReviewer over specWriter, codeReviewer over implementer and fixer), judged by models.ranking.
+# It runs on the effective models (the config's roles.<role>.model when it is a non-empty string, else the
+# default of the schema) and on the effective ranking (the config's, else the default of the schema), so a
+# config without the keys is clean. Same texts and same findings as validate-config.ps1.
+
+# a child of a node, 0 when the node itself is 0
+function vch(id, key) {
+  if (!id) return 0
+  return json_child(id, key)
+}
+
+# the model a role runs on: "" when neither the config nor the schema has one
+function vrolemodel(role,   n, d) {
+  n = vch(vch(vch(croot, "roles"), role), "model")
+  if (n && jk[n] == "string" && jv[n] != "") return jv[n]
+  d = vch(vch(vch(vch(vch(vch(sroot, "properties"), "roles"), "properties"), role), "properties"), "model")
+  d = vch(d, "default")
+  if (d && jk[d] == "string") return jv[d]
+  return ""
+}
+
+function vpairs(   rk, i, item, n, j, parts, role, roles, nroles, pair, rev, prod, m, rrank, prank) {
+  if (jk[croot] != "object") return
+  if (!vch(vch(sroot, "properties"), "roles")) return
+  rk = vch(vch(croot, "models"), "ranking")
+  if (rk) {
+    if (jk[rk] != "array" || jn[rk] == 0) return
+  } else {
+    rk = vch(vch(vch(vch(vch(sroot, "properties"), "models"), "properties"), "ranking"), "default")
+    if (!rk || jk[rk] != "array") return
+  }
+  # the rank of a name: the 1-based position of the first entry that has it as a part of a "="-joined entry
+  for (i = 1; i <= jn[rk]; i++) {
+    item = jc[rk, i]
+    if (jk[item] != "string") continue
+    n = split(jv[item], parts, "=")
+    for (j = 1; j <= n; j++) if (parts[j] != "" && !(parts[j] in vrank)) vrank[parts[j]] = i
+  }
+  nroles = split("specWriter specReviewer implementer codeReviewer fixer", roles, " ")
+  for (i = 1; i <= nroles; i++) {
+    role = roles[i]
+    vmodel[role] = vrolemodel(role)
+    if (vmodel[role] != "" && !(vmodel[role] in vrank)) {
+      vfinding("roles." role ".model", "warning", "model " json_quote(vmodel[role]) " is not in models.ranking, so " role " cannot be compared")
+    }
+  }
+  # the pairs: reviewer, then the role it reviews
+  split("specReviewer:specWriter codeReviewer:implementer codeReviewer:fixer", pair, " ")
+  for (i = 1; i <= 3; i++) {
+    split(pair[i], m, ":")
+    rev = m[1]; prod = m[2]
+    if (vmodel[rev] == "" || vmodel[prod] == "") continue
+    if (!(vmodel[rev] in vrank) || !(vmodel[prod] in vrank)) continue
+    rrank = vrank[vmodel[rev]]; prank = vrank[vmodel[prod]]
+    if (rrank < prank) {
+      vfinding("roles." rev ".model", "error", rev " on " json_quote(vmodel[rev]) " ranks below " prod " on " json_quote(vmodel[prod]))
+    }
+  }
+}
+
 BEGIN {
   if (ENVIRON["VAL_CONFIG"] == "") exit 0
   sfile = ENVIRON["VAL_SCHEMA"]
@@ -146,5 +209,6 @@ BEGIN {
   croot = json_parse(ctext)
   if (!croot) { vfinding("", "error", "not valid JSON"); exit 0 }
   vnode(croot, sroot, "")
+  vpairs()
   exit 0
 }

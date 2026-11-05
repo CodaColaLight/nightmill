@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Iteration 15 (#32): the validator rejects a reviewer ranked below its producer. `validate-config` (PowerShell and
+  bash, in `scripts/lib/validate.awk`) checks, after the schema walk, that `specReviewer` ranks at least as high as
+  `specWriter` and `codeReviewer` at least as high as `implementer` and `fixer`, judged by `models.ranking`, on the
+  effective models (the configured model, else the default of the schema) and the effective ranking (the configured
+  one, else the default). A reviewer ranked below a producer is an error that names both roles and both models
+  (`specReviewer on "sonnet" ranks below specWriter on "opus"`); a model of one of those roles that is not in the
+  ranking is a warning that names the role; `tester` and `worker` are never compared; models of one level share a
+  ranking entry (`"opus=claude-opus-5-5"`) and pass. The rule is skipped when `models.ranking` is not a non-empty
+  array (the walk already reports that), so a config without the keys is unaffected. Fourteen smoke cases run in
+  both shells, the lint checks that both carry the rule and that the validator it uses has it, and the README and
+  the description of `roles` in the schema say that the validator checks it. No config key, flag or status change.
+
 - Iteration 14 (#38): `/spec` hands the writing to a spec writer subagent on the configured model. The spec file
   is written by a `specWriter` subagent, launched as a fresh agent (not a fork, not the `worker`) on
   `roles.specWriter.model` or the schema default, passed explicitly, after the session created the spec branch from

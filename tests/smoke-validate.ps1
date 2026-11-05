@@ -102,6 +102,45 @@ try {
   Check "role key wrong case strict" $roleCase 1 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)') @("-Strict")
   Check "unknown key in a role" (Edit $ex '"implementer": { "model": "opus" }' '"implementer": { "model": "opus", "effort": "high" }') 0 @("warning: roles.implementer.effort: unknown key")
 
+  Write-Host "== the reviewer pairing"
+  $SW = '"specWriter": { "model": "opus" }'; $SR = '"specReviewer": { "model": "opus" }'
+  $CR = '"codeReviewer": { "model": "opus" }'; $RK = '"ranking": ["haiku", "sonnet", "opus", "fable"]'
+  $bare = '{"github":{"owner":"o","repo":"r","projectNumber":1},"maintainer":{"name":"M"},"verification":{"check":"true"}'
+  Check "reviewer stronger" (Edit $ex $SW '"specWriter": { "model": "sonnet" }') 0 @("0 errors, 0 warnings")
+  Check "code reviewer stronger" (Edit $ex $CR '"codeReviewer": { "model": "fable" }') 0 @("0 errors, 0 warnings")
+  $same = Edit (Edit $ex $RK '"ranking": ["haiku", "sonnet", "opus=claude-opus-5-5", "fable"]') $SW '"specWriter": { "model": "claude-opus-5-5" }'
+  Check "same level in one entry" $same 0 @("0 errors, 0 warnings")
+  Check "spec reviewer below spec writer" (Edit $ex $SR '"specReviewer": { "model": "sonnet" }') 1 @(
+    'error: roles.specReviewer.model: specReviewer on "sonnet" ranks below specWriter on "opus"', "1 error, 0 warnings")
+  # two errors on one path sort by their text: fixer before implementer
+  $f = Join-Path $tmp "pair2.json"
+  Write-Utf8 $f (Edit $ex $CR '"codeReviewer": { "model": "haiku" }')
+  $r = Run-V $f
+  if ($r.Code -ne 1) { Fail "code reviewer below two producers: expected exit code 1, got $($r.Code)" }
+  $want = "error: roles.codeReviewer.model: codeReviewer on `"haiku`" ranks below fixer on `"opus`"`nerror: roles.codeReviewer.model: codeReviewer on `"haiku`" ranks below implementer on `"opus`"`n2 errors, 0 warnings"
+  $got = (@($r.Out -split "`r?`n" | Where-Object { $_ -ne "" }) | Select-Object -Skip 1) -join "`n"
+  if ($got -ne $want) { Fail "code reviewer below two producers: wrong lines or order. Got:`n$got`nWanted:`n$want" }
+  $unr = Edit $ex $SR '"specReviewer": { "model": "mystery" }'
+  $unrLine = 'warning: roles.specReviewer.model: model "mystery" is not in models.ranking, so specReviewer cannot be compared'
+  Check "unranked reviewer" $unr 0 @($unrLine, "0 errors, 1 warning")
+  Check "unranked reviewer strict" $unr 1 @($unrLine) @("-Strict")
+  Check "unranked producer" (Edit $ex '"implementer": { "model": "opus" }' '"implementer": { "model": "mystery" }') 0 @(
+    'warning: roles.implementer.model: model "mystery" is not in models.ranking, so implementer cannot be compared', "0 errors, 1 warning")
+  Check "tester and worker are not compared" (Edit (Edit $ex '"tester": { "model": "sonnet" }' '"tester": { "model": "haiku" }') '"worker": { "model": "haiku" }' '"worker": { "model": "mystery" }') 0 @("0 errors, 0 warnings")
+  Check "defaults fill a missing role" ($bare + ',"roles":{"specReviewer":{"model":"sonnet"}}}') 1 @(
+    'error: roles.specReviewer.model: specReviewer on "sonnet" ranks below specWriter on "opus"', "1 error, 0 warnings")
+  Check "an empty model takes the default" (Edit $ex $SR '"specReviewer": { "model": "" }') 0 @("0 errors, 0 warnings")
+  Check "the keys are absent" ($bare + "}") 0 @("0 errors, 0 warnings")
+  $f = Join-Path $tmp "norank.json"
+  Write-Utf8 $f (Edit $ex $RK '"ranking": ["haiku", "fable"]')
+  $r = Run-V $f
+  if ($r.Code -ne 0) { Fail "a ranking without the default models: expected exit code 0, got $($r.Code)" }
+  $want = (@("codeReviewer", "fixer", "implementer", "specReviewer", "specWriter") | ForEach-Object { "warning: roles.$_.model: model `"opus`" is not in models.ranking, so $_ cannot be compared" }) -join "`n"
+  $want += "`n0 errors, 5 warnings"
+  $got = (@($r.Out -split "`r?`n" | Where-Object { $_ -ne "" }) | Select-Object -Skip 1) -join "`n"
+  if ($got -ne $want) { Fail "a ranking without the default models: wrong lines or order. Got:`n$got`nWanted:`n$want" }
+  Check "a bad ranking gives only its own error" (Edit $ex $RK '"ranking": "opus"') 1 @("error: models.ranking: expected array, got string", "1 error, 0 warnings")
+
   Write-Host "== enum and closed objects, with a schema of their own"
   $mini = Join-Path $tmp "mini.schema.json"
   Write-Utf8 $mini '{"type":"object","additionalProperties":false,"required":["mode"],"properties":{"mode":{"type":"string","enum":["fast","slow"]}}}'
