@@ -330,6 +330,25 @@ for a in agents/*.md; do
   [ "$a" = agents/worker.md ] || { echo "FAIL: $a: the implementer and the fixer have no agent file (the prompt is in the skill)"; fail=1; }
 done
 
+echo "== /spec hands the writing to a subagent"
+# /spec launches a specWriter subagent on the configured model (iteration 14). It is a conversation, so the lint
+# pins the wording the behaviour depends on; the manual check does the behaviour.
+f=skills/spec/SKILL.md
+for w in 'roles.specWriter.model' 'Agent roles and models' 'explicitly' 'not a fork' 'not nightmill:worker' 'parallel.maxAgents' \
+         'never writes the spec itself' 'Result: complete | partial | failed' \
+         'Stopped: the specWriter role cannot run on' 'Stopped: the specWriter returned' \
+         'Written by the specWriter role on' 'Do not commit and do not push' 'do not launch other agents'; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the subagent item: $w"; fail=1; }
+done
+# what the session keeps
+for w in 'Picking #' 'Spec review' 'gh pr merge' 'Spec for #' 'Never set Ready or Approved'; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f lost what the session keeps: $w"; fail=1; }
+done
+# a spec pull request says Spec for, never Closes
+if grep -qF 'Closes #' "$f"; then
+  echo "FAIL: $f tells the session to write 'Closes #'; a spec pull request says 'Spec for #'"; fail=1
+fi
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
