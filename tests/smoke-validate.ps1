@@ -159,6 +159,23 @@ try {
       if ($out -notlike "*pattern*") { Fail "the lint did not name the keyword: $out" }
     }
     finally { Pop-Location }
+
+    Write-Host "== the lint notices a role the workflow skill does not name"
+    $copy2 = Join-Path $tmp "repocopy2"
+    New-Item -ItemType Directory -Path $copy2 | Out-Null
+    & robocopy $here $copy2 /E /XD ".git" /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { Fail "could not copy the repository (robocopy $LASTEXITCODE)" }
+    $skillPath = Join-Path $copy2 "skills\workflow\SKILL.md"
+    $w = [IO.File]::ReadAllText($skillPath, $utf8)
+    Write-Utf8 $skillPath ($w.Replace("fixer", "fix-er"))
+    Push-Location $copy2
+    $ErrorActionPreference = "Continue"
+    try {
+      $out = (& $bash tests/lint.sh 2>&1 | Out-String)
+      if ($LASTEXITCODE -eq 0) { Fail "the lint accepted a workflow skill without the fixer role" }
+      if ($out -notlike "*fixer*") { Fail "the lint did not name the role: $out" }
+    }
+    finally { Pop-Location }
   }
 
   Write-Host "VALIDATE OK"

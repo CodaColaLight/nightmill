@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Iteration 11 (#33): the workflow skill defines the agent roles and how a skill picks a role's model. A new
+  section "Agent roles and models" lists the seven roles with what each produces and which role reviews which,
+  and states the rule: the model of a role is `roles.<role>.model`, else the default in the schema, passed
+  explicitly on every launch, never inherited from the session and never through a fork. A model that cannot be
+  used stops the run with a line naming the role and the model; no skill falls back to another model. The old
+  "always pass a model" sentence in "Parallel work" is replaced by a pointer to the section, and the README says
+  the same in one sentence. The lint checks that the section names every role of the schema, carries the rule's
+  wording, and that `agents/worker.md` has the schema default; a smoke case in both shells shows the lint fails
+  when a role is missing.
 - Iteration 10 (#31): three optional config keys name the agent roles and their models. `roles.<role>.model` sets
   the model of `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer` and `worker` (a role
   that is absent or empty takes the default in the schema), `models.ranking` lists models weakest first (models of
