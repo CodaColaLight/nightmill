@@ -101,6 +101,40 @@ PR says how it was verified. `verification.benchRule` applies when set. Tests ar
 Run the check (`/nightmill:check`) before every commit. Never commit red. If CI is red where the local
 run was green, fix the local loop, not just the test.
 
+## Agent roles and models
+
+Seven roles do the work of a story. Each runs as a subagent on the model the configuration gives it
+(`roles.<role>.model`); the model of the session that orchestrates does not decide who writes or who reviews.
+
+| Role | Does | Produces | Reviewed by |
+|---|---|---|---|
+| `specWriter` | writes the spec of a Ready story | the spec file | `specReviewer` |
+| `specReviewer` | reviews a spec before it goes to Spec review | findings on the spec | the maintainer |
+| `tester` | writes the failing tests from the approved spec, before the implementer | the tests | `codeReviewer`, with the change |
+| `implementer` | writes the code of an Approved story | the change | `codeReviewer` |
+| `codeReviewer` | reviews the change before the pull request opens | findings on the change | the maintainer |
+| `fixer` | fixes a bug | the fix and its regression test | `codeReviewer` |
+| `worker` | does a mechanical, fully specified job | the job's result, read back by the caller | the caller |
+
+A reviewer ranks at least as high as each role it reviews: `specReviewer` over `specWriter`, `codeReviewer` over
+`implementer` and `fixer`. `models.ranking` holds the order.
+
+**Which model.** The model of a role R is `roles.R.model` when the configuration has it as a non-empty string;
+otherwise the `default` of `properties.roles.properties.R.properties.model` in
+`${CLAUDE_PLUGIN_ROOT}/schema/nightmill.schema.json`. Pass it explicitly as the `model` of the Agent call on every
+launch of a role; a model is never inherited from the session, and a launch without one would run on it. A role
+is never launched as a fork: a fork runs on the session's model whatever is passed. The `worker` agent follows
+the same rule; the `model:` in `agents/worker.md` is only the default for a project without configuration and
+equals the schema default.
+
+**When the model cannot be used** (the launch is refused, the model is unknown, or this account cannot run it),
+stop. Print `Stopped: the <role> role cannot run on <model>: <the reason>. Nothing was started on another model.`
+and change nothing further; a status or file already changed stays, and the line says which. The maintainer fixes
+`roles.<role>.model`. A skill never falls back to another model, not to the session's, not to a model of the same
+level, not to the `worker`, because a reviewer must not drop below its producer unnoticed.
+
+Work the session does itself is not a role. A role's work goes to a subagent only where a skill's own steps say so.
+
 ## Parallel work
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
@@ -110,8 +144,8 @@ run was green, fix the local loop, not just the test.
   Before launching one, count the running ones; queue or do the work inline otherwise.
 - Not two tasks over the same files; `parallel.hotFiles` stay with one task. Never pair
   `parallel.doNotPair`. Rebase on the base branch before the PR.
-- Prefer a fresh agent with a short, specific prompt over a fork. Always pass a model: the `worker`
-  agent (cheap model) for mechanical, fully specified jobs; a strong model for specs and implementation.
+- Prefer a fresh agent with a short, specific prompt over a fork. Give a role's agent the model that **Agent roles
+  and models** gives it.
 - Do not launch agents just to wait on a dependency; start them when it has merged.
 
 ## CI and merging

@@ -214,6 +214,31 @@ for w in 'roles' 'models.ranking' 'review.maxFixRounds'; do
   grep -qF -- "\`$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 
+echo "== agent roles are defined in the workflow skill"
+# The workflow skill has the section "Agent roles and models" (iteration 11): it names every role of the schema,
+# states how a model is resolved and what happens when it cannot be used, the old "always pass a model" rule is
+# gone, and the worker agent's own model is the schema default.
+wf=skills/workflow/SKILL.md
+if grep -qxF '## Agent roles and models' "$wf"; then
+  section=$(awk '/^## Agent roles and models$/ { s = 1; next } s && /^## / { exit } s { print }' "$wf")
+  json_load schema/nightmill.schema.json
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    printf '%s\n' "$section" | grep -qF -- "\`$r\`" || { echo "FAIL: $wf: the section 'Agent roles and models' does not name the role $r"; fail=1; }
+  done < <(json_keys properties.roles.properties)
+  for w in 'roles.<role>.model' 'properties.roles.properties.R.properties.model' 'schema/nightmill.schema.json' 'explicitly' 'never inherited from the session' 'never launched as a fork' 'Stopped: the <role> role cannot run on <model>' 'never falls back' 'Reviewed by'; do
+    printf '%s\n' "$section" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Agent roles and models' does not say: $w"; fail=1; }
+  done
+  worker_default=$(json_get properties.roles.properties.worker.properties.model.default)
+  worker_model=$(sed -n 's/^model:[[:space:]]*//p' agents/worker.md | head -1)
+  [ "$worker_model" = "$worker_default" ] || { echo "FAIL: agents/worker.md has model '$worker_model', the schema default of roles.worker.model is '$worker_default'"; fail=1; }
+else
+  echo "FAIL: $wf has no section '## Agent roles and models'"; fail=1
+fi
+for w in 'a strong model for specs and implementation' 'Always pass a model'; do
+  if grep -qF -- "$w" "$wf"; then echo "FAIL: $wf still says '$w' (the roles section replaces it)"; fail=1; fi
+done
+
 echo "== status is wired"
 # /status (iteration 8): the skill, both scripts and both smoke tests exist, the README names the skill, and the
 # scripts only read: no board edit, merge, comment or GraphQL mutation anywhere in them.

@@ -123,4 +123,11 @@ sed 's/^\(  "title":\)/  "pattern": "x",\n\1/' "$cp_dir/schema/nightmill.schema.
 if out=$(cd "$cp_dir" && bash tests/lint.sh 2>&1); then fail "the lint accepted a schema with a pattern keyword"; fi
 case "$out" in *pattern*) ;; *) fail "the lint did not name the keyword: $out" ;; esac
 
+echo "== the lint notices a role the workflow skill does not name"
+cp_dir2="$tmp/repocopy2"; mkdir -p "$cp_dir2"
+( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir2" && tar -xf - )
+sed 's/fixer/fix-er/g' "$cp_dir2/skills/workflow/SKILL.md" > "$cp_dir2/w.tmp" && mv "$cp_dir2/w.tmp" "$cp_dir2/skills/workflow/SKILL.md"
+if out=$(cd "$cp_dir2" && bash tests/lint.sh 2>&1); then fail "the lint accepted a workflow skill without the fixer role"; fi
+case "$out" in *fixer*) ;; *) fail "the lint did not name the role: $out" ;; esac
+
 echo "VALIDATE OK"
