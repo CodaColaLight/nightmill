@@ -38,12 +38,15 @@ This replaces the plugin-loading part of [0001](0001-nightmill-develops-itself.m
   `--plugin-dir` on a separate checkout.
 - One marketplace named `nightmill` can be registered at a time, and the plugin has the same name on every
   branch. The stable release and a preview replace each other; they are never installed together.
+- Marketplaces are registered per user, not per project. `claude plugin marketplace remove nightmill`, the
+  first step of switching to a preview and back, also uninstalls nightmill from every other project on the
+  machine that installed it from that marketplace. Reinstall it there afterwards.
 - A preview is a real `X.Y.Z`. `release.sh` and the lint accept only `X.Y.Z` with digits, so there is no
   `-rc` suffix. A preview that is abandoned leaves a branch and a closed pull request and no tag; the tag is
   only created by `--publish`. Allowing a pre-release suffix would be a story.
 - Whether pushing a fix to the release branch is picked up by removing the marketplace and installing it again,
   without a new version, has not been checked. If it is not, a retest needs a new version and a new release
   branch.
-- `.claude/CLAUDE.md`, `CONTRIBUTING.md` and the README's "run the plugin from a checkout" line describe the
-  setup 0001 chose and change with this decision; so does the rule that nightmill is not installed in this
+- `.claude/CLAUDE.md`, `CONTRIBUTING.md` and the README's "run the plugin from a checkout" line described the
+  setup 0001 chose and changed with this decision; so did the rule that nightmill is not installed in this
   repository.
