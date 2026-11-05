@@ -19,7 +19,7 @@ A bug is a defect in shipped behaviour (form: `.github/ISSUE_TEMPLATE/bug.yml`).
 milestone, iteration number or CHANGELOG entry.
 
 1. **Pick the issue.** If `$ARGUMENTS` has a number, use it; otherwise list the items whose status is
-   Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json`), keep
+   Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .status, .priority, ((.labels // []) | join(",")), .content.title] | @tsv'`), keep
    open issues labelled `labels.bug`, take the highest `board.priorityField` and ask the maintainer on a
    tie. Nothing Ready: say so and stop. Read it with `gh issue view N --json number,title,labels,body`.
 2. **Decide whether it is a bug.** If the fix needs one of `escalation.storyTriggers` or a design choice,

@@ -79,7 +79,7 @@ options disables the workflows that pointed at a removed option.
    whose board status is not the skill's status is refused with one line that names the status found and
    the skill that takes it, for example `#12 is at Spec review, not Ready; /spec only takes Ready stories.`
    Nothing is changed.
-2. **Without a number**, list the board (`gh project item-list`), keep open issues at the skill's status
+2. **Without a number**, list the board (`gh project item-list`, filtered with its own `--jq`; do not pipe it into `python` or `jq`, which the project's permission rule `Bash(gh project *)` does not cover), keep open issues at the skill's status
    that are not epics and not bugs, and take the highest `board.priorityField` (the order of
    `board.priorities`; an item without a priority ranks last). On a tie ask the maintainer which, listing
    the tied issues.

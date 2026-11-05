@@ -21,7 +21,7 @@ skill of this plugin; this skill is the step list.
 Follow **Picking an issue** in the `workflow` skill with the status **Approved** (`board.statuses.approved`).
 
 - If `$ARGUMENTS` holds an issue number, take that issue; refuse when it is not at Approved.
-- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json`
+- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .status, .priority, ((.labels // []) | join(",")), .content.title] | @tsv'`
   and take the highest-priority Approved story that is not an epic and not a bug (bugs go through `/fix`).
 - Nothing Approved: change nothing and never start a spec. List the Ready stories, one line each as
   `#N "<title>" (<priority>)` in priority order, then print `Nothing is Approved. Run /spec N to write a spec.`
