@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Iteration 18 (#36): a separate code reviewer reviews the change before the pull request opens. The new agent
+  `agents/code-reviewer.md` (tools `Read, Grep, Glob`, so it cannot change anything; `model:` kept equal to the schema
+  default by the lint) checks that every acceptance criterion has a test, that the change does what the spec says and
+  nothing beyond it, that the "Not done" list and the invariants hold and that the check is green, and reports
+  findings in one fixed block. The format, the definition of blocking and advisory, the fix rounds (at most
+  `1 + review.maxFixRounds` reviews, only blocking findings go back, to a fresh implementer or fixer) and the pairing
+  rule (checked with `validate-config`, never by comparing ranks) are written once in a new section "Findings and fix
+  rounds" of the workflow skill, for the spec review to reuse. `/next` and `/fix` launch the reviewer as
+  `nightmill:code-reviewer` on `roles.codeReviewer.model` after the producer's result and before the manual check, as
+  a fresh agent that gets the criteria, the spec, the invariants, the diff and the check line but not the producer's
+  own account; a review that cannot be had stops the run. Blocking findings left after the last round are listed in
+  the pull request under `Open review findings` and keep auto-merge off (an interim until #37). The lint pins the
+  wording, keeps the agent's tools and format in step, and now allows exactly the worker and the code reviewer under
+  `agents/`. No config key, script or status change.
+
 - Iteration 16 (#34): `/nightmill:models` prints one table of the model of every agent role. The scripts
   `scripts/models.ps1` and `scripts/models.sh` (with `scripts/lib/models.awk`, no `jq`) read the config and the
   schema and print, per role, what it does, the model it runs on, whether that comes from the config or from the

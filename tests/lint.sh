@@ -369,9 +369,13 @@ done
 for w in 'Cause:' 'Fix:' 'Test:'; do
   grep -qF -- "$w" skills/fix/SKILL.md || { echo "FAIL: skills/fix/SKILL.md: the fixer's result block lacks $w"; fail=1; }
 done
-# no agent file for the two roles: the prompt is in the skill, the default model is in the schema
+# no agent file for the producers: the prompt is in the skill, the default model is in the schema. The agents are
+# the worker and, since iteration 18, the code reviewer (which needs a tool list that keeps it read-only).
 for a in agents/*.md; do
-  [ "$a" = agents/worker.md ] || { echo "FAIL: $a: the implementer and the fixer have no agent file (the prompt is in the skill)"; fail=1; }
+  case "$a" in
+    agents/worker.md|agents/code-reviewer.md) ;;
+    *) echo "FAIL: $a: only the worker and the code reviewer have an agent file (the implementer's and the fixer's prompts are in the skills)"; fail=1 ;;
+  esac
 done
 
 echo "== /spec hands the writing to a subagent"
@@ -392,6 +396,43 @@ done
 if grep -qF 'Closes #' "$f"; then
   echo "FAIL: $f tells the session to write 'Closes #'; a spec pull request says 'Spec for #'"; fail=1
 fi
+
+echo "== a separate code reviewer reviews the change"
+# The code reviewer (iteration 18): an agent file whose tool list keeps it read-only, a section "Findings and fix
+# rounds" in the workflow skill that holds the findings format and the rounds, and /next and /fix that launch it
+# between the producer's result and the pull request. The skills are conversations, so the lint pins the wording.
+cr=agents/code-reviewer.md
+if [ -f "$cr" ]; then
+  grep -qx 'name: code-reviewer' "$cr" || { echo "FAIL: $cr has no 'name: code-reviewer'"; fail=1; }
+  [ "$(sed -n 's/^tools:[[:space:]]*//p' "$cr" | head -1)" = "Read, Grep, Glob" ] || { echo "FAIL: $cr: the tools must be exactly 'Read, Grep, Glob' (no Bash, Write, Edit or Agent)"; fail=1; }
+  json_load schema/nightmill.schema.json
+  cr_default=$(json_get properties.roles.properties.codeReviewer.properties.model.default)
+  [ "$(sed -n 's/^model:[[:space:]]*//p' "$cr" | head -1)" = "$cr_default" ] || { echo "FAIL: $cr: model is not the schema default of roles.codeReviewer.model ($cr_default)"; fail=1; }
+  for w in 'changes nothing' 'acceptance criterion' 'Not done' 'invariant' 'Check:' 'blocking' 'advisory' 'no findings'; do
+    grep -qF -- "$w" "$cr" || { echo "FAIL: $cr does not say: $w"; fail=1; }
+  done
+else
+  echo "FAIL: $cr is missing"; fail=1
+fi
+wf=skills/workflow/SKILL.md
+if grep -qxF '## Findings and fix rounds' "$wf"; then
+  fsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^## / { exit } s { print }' "$wf")
+  for w in 'Review: findings | no findings' '- blocking <file>:<line>' '- advisory <file>:<line>' 'review.maxFixRounds' '1 + review.maxFixRounds' 'validate-config' 'ranks below' "never sees the producer's own account" 'is never read as'; do
+    printf '%s\n' "$fsection" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+  done
+  # the format of the block is the same in the agent file and in the workflow skill
+  fmt='^(Review: findings \| no findings|Blocking: <n>|Advisory: <n>|- blocking <file>:<line> .*|- advisory <file>:<line> .*)$'
+  if [ -f "$cr" ] && [ "$(printf '%s\n' "$fsection" | grep -E "$fmt")" != "$(grep -E "$fmt" "$cr")" ]; then
+    echo "FAIL: the format lines of the findings block differ between $wf and $cr"; fail=1
+  fi
+else
+  echo "FAIL: $wf has no section '## Findings and fix rounds'"; fail=1
+fi
+for f in skills/next/SKILL.md skills/fix/SKILL.md; do
+  for w in 'nightmill:code-reviewer' 'roles.codeReviewer.model' 'Findings and fix rounds' 'validate-config' 'Stopped: the codeReviewer ranks below' 'Stopped: the code review could not be had' 'Open review findings' 'Reviewed by the codeReviewer role on' 'not a fork'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the code review item: $w"; fail=1; }
+  done
+done
 
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine

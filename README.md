@@ -186,6 +186,11 @@ writing of the spec to a `specWriter` subagent the same way, and the spec pull r
 on; the session keeps the board, the branch and the pull request. `/nightmill:models` prints the table of every
 role, its model, where the model comes from, its rank and whether its pairing holds; it only reads.
 
+Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the
+change, as a separate agent that never sees the implementer's own account, and send the blocking findings back to the
+implementer or fixer for at most `review.maxFixRounds` rounds. The findings format and the rounds are in the workflow
+skill; the reviewer is `agents/code-reviewer.md` and can only read.
+
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
 and warns about keys it does not know, with a hint for a likely typo. It also rejects a config that puts a

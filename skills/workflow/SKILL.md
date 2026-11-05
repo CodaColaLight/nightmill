@@ -135,6 +135,43 @@ level, not to the `worker`, because a reviewer must not drop below its producer 
 
 Work the session does itself is not a role. A role's work goes to a subagent only where a skill's own steps say so.
 
+## Findings and fix rounds
+
+A reviewer role reports its findings in one format, and the producer it reviewed fixes the blocking ones in rounds.
+
+The last message of a reviewer ends with exactly this block:
+
+```
+Review: findings | no findings
+Blocking: <n>
+Advisory: <n>
+- blocking <file>:<line> <what is wrong, one line>
+- advisory <file>:<line> <what is wrong, one line>
+```
+
+`<file>` is relative to the root of the repository and `<line>` is the line after the change; a finding about something
+missing (a test that is not there) names the file where it belongs and `-` as the line. `no findings` is an explicit
+result, with `Blocking: 0` and `Advisory: 0` and no finding lines. The two counts equal the number of finding lines of
+each kind. A reply that is not of this form is no review.
+
+**Blocking** is a finding that breaks something the story promised or the project requires: a criterion without a test,
+a change that does not do what the spec says, work beyond the spec, a violated invariant, an item of the "Not done"
+list done anyway, a check that is not green. Everything else is **advisory**. Advisory findings are reported and never
+sent back.
+
+**Rounds.** The first review is round 0. While blocking findings remain and fewer than `review.maxFixRounds` fix rounds
+have been used, the producer fixes exactly the blocking findings (a new agent of the same role and model, never a
+fork), runs the check and commits, and the reviewer runs again. A story is reviewed at most `1 + review.maxFixRounds`
+times; with `review.maxFixRounds` at 0 it is reviewed once and nothing is sent back. A reviewer is a fresh agent every
+time and never sees the producer's own account of its work.
+
+**The pairing.** Before a reviewer is launched, the reviewer's model must rank at least as high as the producer's. A
+skill checks it with the validator (`validate-config`) and stops, naming both roles and both models, when the validator
+reports `<reviewer> on "<model>" ranks below <producer> on "<model>"`; it never compares ranks itself.
+
+**A review that cannot be had** (the model cannot be used, no valid block, an error) stops the run; it is never read as
+"no findings".
+
 ## Parallel work
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot

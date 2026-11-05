@@ -1,6 +1,6 @@
 # Iteration 18: a separate code reviewer reviews the change before the pull request opens
 
-Status: draft, awaiting approval (#36)
+Status: delivered in iteration 18 (PR #75)
 
 Story: #36, epic #29 (Independent code review). Adds the agent `agents/code-reviewer.md`, a new section "Findings and
 fix rounds" in `skills/workflow/SKILL.md`, and a review step in `skills/next/SKILL.md` and `skills/fix/SKILL.md`: after
