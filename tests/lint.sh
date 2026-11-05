@@ -277,6 +277,30 @@ for w in 'gh project copy' 'template-board' 'field by field'; do
 done
 grep -qF 'The template board' README.md || { echo "FAIL: README.md has no section 'The template board'"; fail=1; }
 
+echo "== init installs the edit permission"
+# /init adds the rule Edit(**) to permissions.allow of .claude/settings.local.json (iteration 12). /init is a
+# conversation, so the lint pins the wording the behaviour depends on; the manual check does the behaviour.
+for w in '**Edit permission**' 'Edit(**)' '.claude/settings.local.json' 'git check-ignore' 'declined (edits will prompt)' '**exists**'; do
+  grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention the edit permission item: $w"; fail=1; }
+done
+# the Confirm once step shows the local file's text next to the CLAUDE.md and settings.json edits
+if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' skills/init/SKILL.md | grep -qF '.claude/settings.local.json'; then
+  echo "FAIL: skills/init/SKILL.md: the Confirm once step does not show .claude/settings.local.json"; fail=1
+fi
+# the edit-permission line itself says that no entry of an existing file is removed or reordered
+if ! sed -n '/^- \*\*Edit permission\*\*/,/^- \*\*Board workflows\*\*/p' skills/init/SKILL.md | grep -qF 'without removing or reordering an entry'; then
+  echo "FAIL: skills/init/SKILL.md: the Edit permission line does not say no entry is removed or reordered"; fail=1
+fi
+# Edit(/**) is not scoped to the project on every platform; only Edit(**) is written
+for f in skills/init/SKILL.md README.md; do
+  if grep -qF 'Edit(/**)' "$f"; then
+    echo "FAIL: $f contains Edit(/**), which reaches outside the project; write Edit(**)"; fail=1
+  fi
+done
+for w in 'Edit(**)' '.claude/settings.local.json' '### The edit permission'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the edit permission item: $w"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

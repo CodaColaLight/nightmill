@@ -164,6 +164,33 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   plus the array when it is missing: `Bash(gh project:*)`, `Bash(gh issue:*)`, `Bash(gh pr:*)`,
   `Bash(gh api:*)`, `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, and one rule for
   `verification.check` (`Bash(<the exact check command>)`). A rule already present is **exists**.
+- **Edit permission**: so that `/spec`, `/next` and `/fix` write files without a prompt, add the one rule
+  `Edit(**)` to `permissions.allow` of the project's `.claude/settings.local.json` (personal, not committed:
+  letting an unattended run edit is the choice of whoever runs it, so it stays out of the committed
+  `settings.json`). One `Edit(**)` rule covers the Write tool as well as the Edit tool and is relative to the
+  directory of the session, so it does not reach a path outside it. Write exactly `Edit(**)`: the variant that
+  starts with a slash was seen to allow a write outside the project, and a bare `Edit` allowed nothing.
+  - **Detect.** The line is **exists** when `Edit(**)` is in `permissions.allow` of `.claude/settings.local.json`
+    or of `.claude/settings.json`, or when `permissions.defaultMode` is `acceptEdits` or `bypassPermissions` in
+    either file (the project already covers it; the plan names which file or mode). Otherwise it is **create**
+    (the file is missing) or **change** (the file is there).
+  - **Show the exact text** in the plan message, next to the CLAUDE.md and settings texts: with the file
+    missing, the whole file that will be created, `{ "permissions": { "allow": [ "Edit(**)" ] } }` written with
+    2-space indentation and LF endings; with the file present, the diff, one added line `"Edit(**)"` at the
+    end of `permissions.allow` (the array is created when the file has none), every other byte unchanged.
+    The line says in one sentence what is granted (file edits and writes inside the project directory, not Bash,
+    not other directories) and that `.claude/` still prompts.
+  - **Git.** When `git check-ignore -q .claude/settings.local.json` fails, the file is not ignored: the line says
+    "not ignored by git; add it to .gitignore, it is personal". Never edit `.gitignore`.
+  - **Apply** with the other settings changes, merging into the existing array
+    without removing or reordering an entry (the rule of **Permissions**); a missing file is created as `{}` plus the array. Read the file back; a
+    line whose read-back does not show `Edit(**)` is **failed**, with the reason.
+  - **Declined.** A line the user skips is **declined**: neither settings file is touched, and the report says
+    `Edit permission: declined (edits will prompt)`. It is not asked again in this run.
+  - **Report row**, one of: `added to .claude/settings.local.json`, `exists (<file or defaultMode>)`, `declined`,
+    `failed: <reason>`. After an add the report also says that the slots under `worktrees.root` are outside the
+    project directory and still prompt, and that a headless run (`claude -p`) ignores a project's allow rules
+    until the workspace is trusted once in an interactive session.
 - **Board workflows** (read-only, never applied): the API can list a board's workflows and whether each is
   enabled, but it has **no mutation to create, enable or configure one** (only `deleteProjectV2Workflow`
   exists), and it does not expose which status a workflow sets. So this line only reads
@@ -178,8 +205,9 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
 ## 4. Confirm once
 
 Print the plan as one table (line, action) and ask a single question: apply all, or name the lines to
-skip. The CLAUDE.md edit and the `settings.json` edit are shown in the same message as the exact text
-or diff that will be written, so that the one answer covers them. A skipped line is **declined** and is
+skip. The CLAUDE.md edit, the `settings.json` edit and the `.claude/settings.local.json` edit (the edit
+permission) are shown in the same message as the exact text or diff that will be written, so that the one
+answer covers them. A skipped line is **declined** and is
 not asked about again in this run.
 
 When the plan holds only **exists** lines, ask nothing: say "already set up, nothing to change" and go
