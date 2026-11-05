@@ -62,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File tools/make-social-preview.ps1          
 ```
 .claude-plugin   plugin.json (name, version), marketplace.json, icon.png
 skills           one folder per skill: workflow (rules), spec, next, fix, story, check, init
-agents           worker.md, code-reviewer.md
+agents           worker.md, code-reviewer.md, spec-reviewer.md
 scripts          slot, new-worktree, render-templates; each as .ps1 and .sh
 schema           nightmill.schema.json, every config key described
 templates        nightmill.example.json, ISSUE_TEMPLATE/*.yml with {{placeholders}}, CLAUDE.snippet.md

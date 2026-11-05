@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Iteration 20 (#39): a separate spec reviewer reviews the spec before it goes to Spec review. The new agent
+  `agents/spec-reviewer.md` (tools `Read, Grep, Glob`, `model:` kept equal to the schema default by the lint) checks
+  that every acceptance criterion is covered and testable, that exact rules and numbers are in the spec, that it
+  contradicts no decision and no existing spec, that it has a "Not done" list, that it states whether the change is
+  one of the escalation triggers and whether the manual check applies, that it adds no scope the issue does not ask
+  for and that its title and status line have the form the skill checks, and reports findings in the block of
+  "Findings and fix rounds". `/spec` launches it as `nightmill:spec-reviewer` on `roles.specReviewer.model` after the
+  writer's result and before the commit, as a fresh agent that gets the story, the epic, the decisions and specs
+  directories, the escalation triggers, the manual-check paths and the invariants but not the writer's own account;
+  blocking findings go back to a fresh spec writer for at most `review.maxFixRounds` rounds; the pairing is checked
+  with `validate-config`; a review that cannot be had stops the run and leaves the story at Spec. Blocking findings
+  left after the last round are listed in the spec pull request under `Open review findings` and keep auto-merge off
+  (an interim until #40). The lint pins the wording and the format lines (now the same in three files) and allows
+  exactly the worker and the two reviewers under `agents/`. No config key, script or status change.
+
 - Iteration 19 (#37): the review is recorded in the pull request and open blocking findings stop auto-merge. A pull
   request of a story or a bug that went through the code review has a `## Review` section after "How verified",
   defined once in the paragraph "The pull request" of "Findings and fix rounds" in the workflow skill: the reviewer's

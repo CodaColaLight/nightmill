@@ -40,12 +40,14 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
    milestone if missing and put the issue in it.
 3. **Hand the writing to the spec writer.** The session never writes the spec itself; the spec file
    `<iterations.specDir>/<iterations.specPattern>` is written by a subagent in the role `specWriter` (see "The
-   spec writer" below): branch, count the agents, launch it, read its result.
+   spec writer" below): branch, count the agents, launch it, read its result. Then have it reviewed by a
+   different agent, the `specReviewer`, and let the writer fix what is blocking (see "The spec review" below).
 4. Open the spec as its own PR: commit the spec only, push, PR titled `docs: iteration <N> spec (#<issue>)`
    with the body `Spec for #<issue>.` (not `Closes`) and, on its own line,
    `Written by the specWriter role on <model>.` (`<model>` is the exact string passed as `model` in the Agent
-   call), and `gh pr merge <pr> <git.mergeFlags>`: a spec PR is docs only. Switch back to the branch you came
-   from.
+   call), then the review lines of "The spec review" (step 5 there), and `gh pr merge <pr> <git.mergeFlags>`: a
+   spec PR is docs only (not when blocking review findings are left, step 5 there). Switch back to the branch you
+   came from.
 5. Set the status to **Spec review** and read it back. Comment on the issue:
    `Spec: <path> (PR #<pr>). Waiting for approval.`
 6. **Stop.** Show the spec to the maintainer with the `Decisions` and `Left` lines of the result block. Only the
@@ -73,7 +75,7 @@ rule. The spec file is the writer's.
    exactly one change, the spec file, that its first heading starts `# Iteration <N>:` and that it has the line
    `Status: draft, awaiting approval (#<issue>)`. That is the form only; whether the spec is good is for the
    reviewer and the maintainer.
-   - `Result: complete` and the form is right: go on with step 4 above.
+   - `Result: complete` and the form is right: go on with "The spec review" below, then step 4 above.
    - `Result: partial`, `Result: failed`, no result block, an error, or a wrong form: open no PR and move nothing
      to Spec review. Print `Stopped: the specWriter returned <partial|failed>: <Left>` (a wrong form is
      `partial`, and the line names what is wrong), say that the story stays at Spec, and do the clean-up.
@@ -113,6 +115,55 @@ Criteria: <one line per acceptance criterion: the heading of the spec that cover
 Decisions: <the choices you made that the issue did not settle, one line each; none>
 Left: <what is not done and why; nothing>
 ```
+
+## The spec review
+
+After the writer's `Result: complete` and a right form, and before the commit, the push and the pull request, a
+different agent reviews the spec file as it is in the working tree. The findings format, the rounds and the pairing
+rule are in **Findings and fix rounds** in the `workflow` skill.
+
+1. **The pairing.** Run `validate-config` of the shell in use on the project's config
+   (`"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
+   on `roles.specReviewer.model` with the text `ranks below`, stop with
+   `Stopped: the specReviewer ranks below the specWriter: <the text of that line>. Nothing was reviewed; the status of #<issue> is Spec.`
+   and do the clean-up of "The spec writer". When the validator cannot run (exit code 2, missing script), stop with
+   `Stopped: the pairing could not be checked: <the reason>. Nothing was reviewed.` A reviewer model that is not in
+   `models.ranking` is only a warning of the validator and does not stop the run.
+2. **Count and launch.** Count the agents as for the writer. One Agent call: `subagent_type`
+   `nightmill:spec-reviewer`, not a fork, with the `model` that **Agent roles and models** gives `specReviewer`
+   (`roles.specReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
+   that section's line for `specReviewer`, naming the status Spec, and do the clean-up.
+3. **The prompt**, filled in by the session. It carries facts, not the writer's own account (its `Criteria`,
+   `Decisions` and `Left` lines): the reviewer shares no context with the writer.
+
+   ```markdown
+   Review the spec <absolute path of the spec> for story #<issue> "<title>" in <owner>/<repo> (read it, and read
+   anything else you need under <absolute repository path>).
+
+   The story, in full: <issue body and comments>. Its epic #<epic>, in full: <epic body>.
+   The decisions are in <absolute path of iterations.decisionsDir>, the existing specs in <absolute path of
+   iterations.specDir>.
+   The change is a story trigger when it is one of: <escalation.storyTriggers, one per line>.
+   The paths that require a manual check: <verification.manualCheckPaths>.
+   The invariants of the project: <config invariants, one per line>.
+
+   End with the findings block of the workflow skill, and nothing after it.
+   ```
+4. **Read the block.** `no findings`, or advisory findings only: go on to the commit and keep the advisory lines. With
+   blocking findings, while fewer than `review.maxFixRounds` fix rounds have been used: a fix round (a fresh
+   specWriter, the writer's prompt plus the blocking lines and "Fix exactly these blocking findings in the spec file
+   and nothing else"), the form check of "Read the result" again (a failure stops the run as there), and a new review
+   from step 2 (the pairing is not checked again). No valid block, or an error: stop with
+   `Stopped: the spec review could not be had: <the reason>. Nothing was opened.` and do the clean-up.
+5. **After the last review.** Blocking findings that remain are listed in the spec pull request under the heading
+   `Open review findings` (each as in the block) and auto-merge is **not** enabled; the pull request says so.
+   Advisory findings are listed under `Review notes`, one line each. The body keeps `Spec for #<issue>.` and the
+   writer's line and gets, on its own line, `Reviewed by the specReviewer role on <model> after <r> fix round(s).`
+
+The reviewer reads the file in the working tree, so the review runs before the commit; the commit then holds the spec
+as the last round left it. The statuses, the comment on the issue, the stop at Spec review and every hard rule stay with
+the session as before.
 
 ## Hard rules
 

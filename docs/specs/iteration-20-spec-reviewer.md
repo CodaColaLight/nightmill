@@ -1,6 +1,6 @@
 # Iteration 20: a separate spec reviewer reviews the spec before it goes to Spec review
 
-Status: draft, awaiting approval (#39)
+Status: delivered in iteration 20 (PR #83)
 
 Story: #39, epic #30 (Independent spec review). Adds the agent `agents/spec-reviewer.md` and a review step in
 `skills/spec/SKILL.md`: after the `specWriter` subagent has returned a spec of the right form and before the spec is
