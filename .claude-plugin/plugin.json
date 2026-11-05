@@ -1,7 +1,7 @@
 {
   "name": "nightmill",
   "displayName": "Nightmill",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Lights-out development workflow for Claude Code: issue board to spec to PR, with a worker agent, permanent worktree slots and all project-specific values in one config file.",
   "author": { "name": "David Kunz", "url": "https://github.com/CodaColaLight" },
   "repository": "https://github.com/CodaColaLight/nightmill",

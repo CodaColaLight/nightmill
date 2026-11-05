@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 (2026-11-05)
+
 - Iteration 11 (#33): the workflow skill defines the agent roles and how a skill picks a role's model. A new
   section "Agent roles and models" lists the seven roles with what each produces and which role reviews which,
   and states the rule: the model of a role is `roles.<role>.model`, else the default in the schema, passed
