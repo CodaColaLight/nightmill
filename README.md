@@ -122,11 +122,34 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
 | `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
+| `roles` | The model of each agent role (`roles.<role>.model`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
+| `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
+| `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
 | `parallel` | Agent cap, hot files, task pairs to avoid |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints |
 
 `templates/nightmill.example.json` is a complete example.
+
+### Agent roles and models
+
+Seven agent roles each run on a model the config names. All of `roles`, `models` and `review` are optional, and
+so is every key inside them: a role that is absent, or whose `model` is empty, takes its default.
+
+| Role | Does | Default model |
+|---|---|---|
+| `specWriter` | Writes the spec of a Ready story | `opus` |
+| `specReviewer` | Reviews a spec before it goes to Spec review | `opus` |
+| `tester` | Writes the failing tests from the approved spec, before the implementer | `sonnet` |
+| `implementer` | Writes the code of an Approved story | `opus` |
+| `codeReviewer` | Reviews the change before the pull request opens | `opus` |
+| `fixer` | Fixes a bug | `opus` |
+| `worker` | Does mechanical, fully specified jobs (the `worker` agent) | `haiku` |
+
+`specReviewer` reviews `specWriter`; `codeReviewer` reviews `implementer` and `fixer`. A reviewer should rank at
+least as high as each role it reviews. The rank comes from `models.ranking`, the models from weakest to
+strongest (aliases and full model ids); models of the same level share one entry, joined by `=`, for example
+`"opus=claude-opus-5-5"`. `review.maxFixRounds` (default 2) is how many fix rounds a producer gets after a review.
 
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),

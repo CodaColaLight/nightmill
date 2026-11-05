@@ -147,6 +147,73 @@ for kw in '$ref' anyOf oneOf allOf not if pattern format const maxItems uniqueIt
   fi
 done
 
+echo "== roles and models are described"
+# The agent roles, the model ranking and the fix rounds (iteration 10): all optional, each with a type, a default
+# and a description in the schema; the example and this repository's config carry them; the README names them.
+# shellcheck source=scripts/lib/json.sh
+. scripts/lib/json.sh
+role_defaults="specWriter:opus specReviewer:opus tester:sonnet implementer:opus codeReviewer:opus fixer:opus worker:haiku"
+rank_default="haiku sonnet opus fable"
+json_load schema/nightmill.schema.json
+for k in roles models review; do
+  json_has "properties.$k" || { echo "FAIL: schema has no $k"; fail=1; }
+  [ -n "$(json_get "properties.$k.description")" ] || { echo "FAIL: schema: $k has no description"; fail=1; }
+  if json_has "properties.$k.required"; then echo "FAIL: schema: $k has a required list (the keys are optional)"; fail=1; fi
+  n=$(json_len required)
+  for ((j = 0; j < n; j++)); do
+    [ "$(json_get "required[$j]")" != "$k" ] || { echo "FAIL: schema: $k is in the root required list"; fail=1; }
+  done
+done
+for pair in $role_defaults; do
+  r=${pair%%:*}; d=${pair#*:}; p=properties.roles.properties.$r
+  [ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: roles.$r has no description"; fail=1; }
+  [ "$(json_get "$p.properties.model.type")" = string ] || { echo "FAIL: schema: roles.$r.model is not a string"; fail=1; }
+  [ "$(json_get "$p.properties.model.default")" = "$d" ] || { echo "FAIL: schema: roles.$r.model default is not $d"; fail=1; }
+  [ -n "$(json_get "$p.properties.model.description")" ] || { echo "FAIL: schema: roles.$r.model has no description"; fail=1; }
+  if json_has "$p.required" || json_has "$p.properties.model.required"; then echo "FAIL: schema: roles.$r has a required list"; fail=1; fi
+done
+p=properties.models.properties.ranking
+[ "$(json_get "$p.type")" = array ] || { echo "FAIL: schema: models.ranking is not an array"; fail=1; }
+[ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: models.ranking has no description"; fail=1; }
+[ "$(json_len "$p.default")" = 4 ] || { echo "FAIL: schema: models.ranking default is not the four aliases"; fail=1; }
+j=0
+for m in $rank_default; do
+  [ "$(json_get "$p.default[$j]")" = "$m" ] || { echo "FAIL: schema: models.ranking default[$j] is not $m"; fail=1; }
+  j=$((j + 1))
+done
+p=properties.review.properties.maxFixRounds
+[ "$(json_get "$p.type")" = integer ] || { echo "FAIL: schema: review.maxFixRounds is not an integer"; fail=1; }
+[ "$(json_get "$p.minimum")" = 0 ] || { echo "FAIL: schema: review.maxFixRounds minimum is not 0"; fail=1; }
+[ "$(json_get "$p.default")" = 2 ] || { echo "FAIL: schema: review.maxFixRounds default is not 2"; fail=1; }
+[ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: review.maxFixRounds has no description"; fail=1; }
+for f in templates/nightmill.example.json .claude/nightmill.json; do
+  json_load "$f"
+  for pair in $role_defaults; do
+    r=${pair%%:*}; d=${pair#*:}
+    json_has "roles.$r.model" || { echo "FAIL: $f has no roles.$r.model"; fail=1; continue; }
+    if [ "$f" = templates/nightmill.example.json ] && [ "$(json_get "roles.$r.model")" != "$d" ]; then
+      echo "FAIL: $f: roles.$r.model is not the schema default $d"; fail=1
+    fi
+  done
+  json_has models.ranking || { echo "FAIL: $f has no models.ranking"; fail=1; }
+  json_has review.maxFixRounds || { echo "FAIL: $f has no review.maxFixRounds"; fail=1; }
+  if [ "$f" = templates/nightmill.example.json ]; then
+    j=0
+    for m in $rank_default; do
+      [ "$(json_get "models.ranking[$j]")" = "$m" ] || { echo "FAIL: $f: models.ranking[$j] is not the schema default $m"; fail=1; }
+      j=$((j + 1))
+    done
+    [ "$(json_len models.ranking)" = 4 ] || { echo "FAIL: $f: models.ranking is not the schema default"; fail=1; }
+    [ "$(json_get review.maxFixRounds)" = 2 ] || { echo "FAIL: $f: review.maxFixRounds is not the schema default 2"; fail=1; }
+  fi
+done
+for pair in $role_defaults; do
+  grep -qF -- "${pair%%:*}" README.md || { echo "FAIL: README.md does not mention the role ${pair%%:*}"; fail=1; }
+done
+for w in 'roles' 'models.ranking' 'review.maxFixRounds'; do
+  grep -qF -- "\`$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+
 echo "== status is wired"
 # /status (iteration 8): the skill, both scripts and both smoke tests exist, the README names the skill, and the
 # scripts only read: no board edit, merge, comment or GraphQL mutation anywhere in them.

@@ -43,6 +43,17 @@
   "escalation": {
     "storyTriggers": ["a change to the status flow or who sets a status", "a new, renamed or removed config key", "a change to the slot marker format"]
   },
+  "roles": {
+    "specWriter": { "model": "opus" },
+    "specReviewer": { "model": "opus" },
+    "tester": { "model": "sonnet" },
+    "implementer": { "model": "opus" },
+    "codeReviewer": { "model": "opus" },
+    "fixer": { "model": "opus" },
+    "worker": { "model": "haiku" }
+  },
+  "models": { "ranking": ["haiku", "sonnet", "opus", "fable"] },
+  "review": { "maxFixRounds": 2 },
   "git": { "baseBranch": "main", "featurePrefix": "feat/", "fixPrefix": "fix/", "specPrefix": "spec/", "mergeFlags": "--auto --squash" },
   "parallel": {
     "maxAgents": 2,

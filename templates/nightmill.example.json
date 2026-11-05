@@ -40,6 +40,17 @@
   "escalation": {
     "storyTriggers": ["a new rule or behaviour", "a public API change", "a design choice"]
   },
+  "roles": {
+    "specWriter": { "model": "opus" },
+    "specReviewer": { "model": "opus" },
+    "tester": { "model": "sonnet" },
+    "implementer": { "model": "opus" },
+    "codeReviewer": { "model": "opus" },
+    "fixer": { "model": "opus" },
+    "worker": { "model": "haiku" }
+  },
+  "models": { "ranking": ["haiku", "sonnet", "opus", "fable"] },
+  "review": { "maxFixRounds": 2 },
   "git": { "baseBranch": "main", "featurePrefix": "feat/", "fixPrefix": "fix/", "specPrefix": "spec/", "mergeFlags": "--auto --squash" },
   "parallel": {
     "maxAgents": 2,
