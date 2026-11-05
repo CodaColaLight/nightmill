@@ -174,7 +174,8 @@ so is every key inside them: a role that is absent, or whose `model` is empty, t
 `specReviewer` reviews `specWriter`; `codeReviewer` reviews `implementer` and `fixer`. A reviewer should rank at
 least as high as each role it reviews. The rank comes from `models.ranking`, the models from weakest to
 strongest (aliases and full model ids); models of the same level share one entry, joined by `=`, for example
-`"opus=claude-opus-5-5"`. `review.maxFixRounds` (default 2) is how many fix rounds a producer gets after a review.
+`"opus=claude-opus-5-5"`. The validator checks the pairing (see below). `review.maxFixRounds` (default 2) is how
+many fix rounds a producer gets after a review.
 
 The workflow skill defines how a skill picks a role's model: the configured model, else the default of the schema,
 passed explicitly; a model that cannot be used stops the run and is reported, never replaced. `/next` and `/fix`
@@ -185,7 +186,10 @@ on; the session keeps the board, the branch and the pull request.
 
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
-and warns about keys it does not know, with a hint for a likely typo. `/nightmill:init` runs it for you.
+and warns about keys it does not know, with a hint for a likely typo. It also rejects a config that puts a
+reviewer on a model ranked below the role it reviews (`specReviewer` below `specWriter`, `codeReviewer` below
+`implementer` or `fixer`, judged by `models.ranking`) and warns about a model that is not in the ranking.
+`/nightmill:init` runs it for you.
 
 ## Why slots
 

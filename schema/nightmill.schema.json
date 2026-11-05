@@ -105,7 +105,7 @@
     },
     "roles": {
       "type": "object",
-      "description": "The model each agent role runs on. A role that is absent, or whose model is empty, takes the default shown. specReviewer must rank at least as high as specWriter, and codeReviewer at least as high as implementer and fixer (checked by the validator once models.ranking is set).",
+      "description": "The model each agent role runs on. A role that is absent, or whose model is empty, takes the default shown. specReviewer must rank at least as high as specWriter, and codeReviewer at least as high as implementer and fixer (checked by the validator against models.ranking, or its default when it is not set).",
       "properties": {
         "specWriter": { "type": "object", "description": "Writes the spec of a Ready story.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
         "specReviewer": { "type": "object", "description": "Reviews a spec before it goes to Spec review. Reviews specWriter.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },

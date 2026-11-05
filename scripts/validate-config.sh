@@ -17,7 +17,8 @@
 # Needs bash and awk, no jq: the work is done by lib/json.awk (a JSON parser) and lib/validate.awk (the walk
 # of the schema). The validator supports type, properties, required, items, minimum, minItems,
 # additionalProperties (a schema, true or false) and enum. tests/lint.sh fails if the schema uses a keyword
-# that is not on that list.
+# that is not on that list. After the walk it also checks that a reviewer role is not ranked below the role it
+# reviews, by models.ranking (iteration 15; vpairs() in lib/validate.awk).
 set -euo pipefail
 
 usage() { echo "usage: validate-config.sh [--schema path] [--strict] [config]" >&2; exit 2; }
