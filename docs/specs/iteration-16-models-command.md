@@ -1,6 +1,6 @@
 # Iteration 16: /nightmill:models, one table of each role's model
 
-Status: draft, awaiting approval (#34)
+Status: delivered in iteration 16 (PR #72)
 
 Story: #34, epic #28 (Agent roles and models). Adds the skill `/nightmill:models` and the scripts behind it,
 `scripts/models.ps1` and `scripts/models.sh`, which print one table: every agent role, what it does, the model it

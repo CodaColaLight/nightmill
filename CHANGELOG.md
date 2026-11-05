@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Iteration 16 (#34): `/nightmill:models` prints one table of the model of every agent role. The scripts
+  `scripts/models.ps1` and `scripts/models.sh` (with `scripts/lib/models.awk`, no `jq`) read the config and the
+  schema and print, per role, what it does, the model it runs on, whether that comes from the config or from the
+  default of the schema, its 1-based rank in `models.ranking` and whether its pairing holds (`ok`,
+  `BELOW <producers>` for a reviewer ranked below a role it reviews, `NOT RANKED` for a model that is not in the
+  ranking; `tester` and `worker` are never flagged), then the ranking, a `pairings:` summary and, when the config sets
+  nothing, a line that says these are the defaults. An invalid ranking is reported instead of compared. The
+  scripts only read, find the config of the main checkout from any worktree, and exit 0 once the table is printed.
+  The new skill runs the script and adds at most two lines; the README lists the command. Thirteen smoke cases run
+  in both shells, among them one that requires the counts of the table to agree with `validate-config`, and the
+  lint checks that the skill, both scripts and both tests exist, that the scripts only read, and that CI and the
+  check run the tests. No config key, status or slot change.
 - Iteration 15 (#32): the validator rejects a reviewer ranked below its producer. `validate-config` (PowerShell and
   bash, in `scripts/lib/validate.awk`) checks, after the schema walk, that `specReviewer` ranks at least as high as
   `specWriter` and `codeReviewer` at least as high as `implementer` and `fixer`, judged by `models.ranking`, on the
