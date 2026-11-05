@@ -6,17 +6,20 @@ it is and how a project installs it. This file is for working *on* nightmill.
 ## Development process
 
 This project runs on the [nightmill](https://github.com/CodaColaLight/nightmill) workflow plugin: itself, from
-this working tree. The rules are in `skills/workflow/SKILL.md`
+the installed release. The rules are in `skills/workflow/SKILL.md`
 (`/nightmill:workflow`); this project's values are in `.claude/nightmill.json` (board 2 on the
 `CodaColaLight` account, labels, areas, the check command, slots). `/spec` writes the
 spec for a Ready story, `/next` implements an Approved one, `/fix` fixes a bug, `/story` files a story,
 `/check` runs the check. An agent only works on issues whose board status is Ready or Approved; only the
 maintainer sets those. Run the check before every commit; never commit red.
 
-**Run the plugin from this checkout**, not an installed copy, so the skills under test are the ones in
-the working tree: `claude --plugin-dir .` here, or `claude --plugin-dir <path to this checkout>` in
-another project to try a change for real. Do not install `nightmill@nightmill` in this repository; two
-copies of the same skills shadow each other.
+**Work on the installed release; never `claude --plugin-dir .` here** (`docs/decisions/0003`). A folder
+loaded with `--plugin-dir` is a protected path, so with `.` almost every edit in this repository prompts.
+Edit in a worktree (`../nightmill-wt/<slug>`). To try a skill that is still changing, start a session in
+another folder with `claude --plugin-dir <a separate checkout>`. Before a release, install the release
+branch as a preview: `claude plugin marketplace add CodaColaLight/nightmill#release/vX.Y.Z`. Only one
+marketplace named `nightmill` is registered at a time (stable or preview), and never load the same skills
+twice (installed and `--plugin-dir`) in one session; they shadow each other.
 
 ## Rules the workflow skill does not know
 
