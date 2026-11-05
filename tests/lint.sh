@@ -416,7 +416,8 @@ else
 fi
 wf=skills/workflow/SKILL.md
 if grep -qxF '## Findings and fix rounds' "$wf"; then
-  fsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^## / { exit } s { print }' "$wf")
+  # the section ends at the next "## " heading that is not inside a code fence (the Review template has one)
+  fsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' "$wf")
   for w in 'Review: findings | no findings' '- blocking <file>:<line>' '- advisory <file>:<line>' 'review.maxFixRounds' '1 + review.maxFixRounds' 'validate-config' 'ranks below' "never sees the producer's own account" 'is never read as'; do
     printf '%s\n' "$fsection" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
   done
@@ -429,8 +430,27 @@ else
   echo "FAIL: $wf has no section '## Findings and fix rounds'"; fail=1
 fi
 for f in skills/next/SKILL.md skills/fix/SKILL.md; do
-  for w in 'nightmill:code-reviewer' 'roles.codeReviewer.model' 'Findings and fix rounds' 'validate-config' 'Stopped: the codeReviewer ranks below' 'Stopped: the code review could not be had' 'Open review findings' 'Reviewed by the codeReviewer role on' 'not a fork'; do
+  for w in 'nightmill:code-reviewer' 'roles.codeReviewer.model' 'Findings and fix rounds' 'validate-config' 'Stopped: the codeReviewer ranks below' 'Stopped: the code review could not be had' 'not a fork'; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the code review item: $w"; fail=1; }
+  done
+done
+
+echo "== the review is recorded in the pull request"
+# The pull request of a story or a bug has a section "## Review" (iteration 19), defined once in the workflow skill,
+# and a blocking finding that is still open keeps auto-merge off: the section "CI and merging" names it, and /next
+# and /fix say so in one fixed sentence. The interim text of iteration 18 is replaced, not kept beside the new one.
+sentence='Auto-merge is not enabled: blocking review findings are still open (see Review).'
+for w in '## Review' '- Reviewer: codeReviewer role on <model>' '- Author: <producer> role on <model>' '- Fix rounds used: <r> of <review.maxFixRounds>' '- Findings fixed: <n>' '- Findings still open: <b> blocking, <a> advisory' 'fixed in round <k>:' "$sentence"; do
+  printf '%s\n' "$fsection" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+done
+cisection=$(awk '/^## CI and merging$/ { s = 1; next } s && /^## / { exit } s { print }' "$wf")
+printf '%s\n' "$cisection" | grep -qF 'blocking review finding' || { echo "FAIL: $wf: the section 'CI and merging' does not name an open blocking review finding"; fail=1; }
+for f in skills/next/SKILL.md skills/fix/SKILL.md; do
+  for w in '## Review' 'Findings fixed' 'Findings still open' "$sentence"; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the review item: $w"; fail=1; }
+  done
+  for w in 'Open review findings' 'Review notes' 'Reviewed by the codeReviewer role on'; do
+    if grep -qF -- "$w" "$f"; then echo "FAIL: $f still has the interim text '$w' of iteration 18 (it is replaced by the Review section)"; fail=1; fi
   done
 done
 

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Iteration 19 (#37): the review is recorded in the pull request and open blocking findings stop auto-merge. A pull
+  request of a story or a bug that went through the code review has a `## Review` section after "How verified",
+  defined once in the paragraph "The pull request" of "Findings and fix rounds" in the workflow skill: the reviewer's
+  and the author's role and model, `Fix rounds used: <r> of <review.maxFixRounds>`, `Findings fixed`, `Findings still
+  open` (blocking and advisory), one line per fixed finding (`fixed in round <k>:`) and one per open finding as the
+  last review wrote it. The section replaces the interim text of iteration 18 (`Open review findings`, `Review
+  notes` and the `Reviewed by` line). With a blocking finding still open the pull request is opened all the same and
+  says `Auto-merge is not enabled: blocking review findings are still open (see Review).`; the workflow skill's "CI and
+  merging" names an open blocking review finding as a reason not to enable auto-merge, and advisory findings change
+  nothing. `/next` and `/fix` build the section the same way. The lint pins the wording, checks that the interim
+  text is gone, and its section extraction now ignores a `## ` line inside a code fence. No config key, script or
+  status change.
+
 - Iteration 18 (#36): a separate code reviewer reviews the change before the pull request opens. The new agent
   `agents/code-reviewer.md` (tools `Read, Grep, Glob`, so it cannot change anything; `model:` kept equal to the schema
   default by the lint) checks that every acceptance criterion has a test, that the change does what the spec says and

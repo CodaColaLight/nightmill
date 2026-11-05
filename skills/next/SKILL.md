@@ -53,7 +53,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 6. Open a PR titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
    `Written by the implementer role on <model>.` (`<model>` is the exact string passed as `model` in the
    Agent call), and a "How verified" section written from the result block (tests, the check) and your own
-   manual check, and the review lines of "The code review" (step 5 there). Set the status to **Review**, read it
+   manual check, and the `## Review` section of "The code review" (step 5 there). Set the status to **Review**, read it
    back, and check it again after a minute (board automation may have changed it).
 7. Enable auto-merge: `gh pr merge <pr> <git.mergeFlags>`, because the spec was approved. Do **not**,
    and say why in the PR, when the PR changes one of `escalation.storyTriggers`, is partial, skipped
@@ -158,10 +158,16 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    else, run the check, commit": the blocking lines), read its `Result:` block as before (`failed` stops the run as
    there), and review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop
    with `Stopped: the code review could not be had: <the reason>. Nothing was opened.`
-5. **After the last review.** Blocking findings that remain are listed in the pull request under the heading
-   `Open review findings` (each as in the block) and auto-merge is **not** enabled; the pull request says so.
-   Advisory findings are listed under `Review notes`, one line each. The pull request gets one line under the
-   implementer's line: `Reviewed by the codeReviewer role on <model> after <r> fix round(s).`
+5. **After the last review: the `## Review` section.** Build the section that **Findings and fix rounds** describes
+   (the paragraph "The pull request" of the `workflow` skill) from what you held during the run: the blocks of all
+   reviews, the fix rounds used and the models you passed to the Agent calls. `Findings still open` are those of the
+   last review, as the reviewer wrote them; `Findings fixed` are the blocking findings sent back in an earlier round
+   and not repeated in the last review with the same file and text. Put the section after "How verified" and remove
+   nothing else from the body. When the last review has a blocking finding, do **not** enable auto-merge and say, where
+   step 7 says why auto-merge was withheld,
+   `Auto-merge is not enabled: blocking review findings are still open (see Review).`
+   Otherwise the rule of step 7 decides, unchanged. Your final message to the maintainer says whether auto-merge is
+   on and, if not, that blocking findings are open.
 
 A `partial` result is reviewed like a complete one.
 
