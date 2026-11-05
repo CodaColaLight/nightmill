@@ -1,6 +1,6 @@
 # Iteration 19: the review is recorded in the pull request and open blocking findings stop auto-merge
 
-Status: draft, awaiting approval (#37)
+Status: delivered in iteration 19 (PR #77)
 
 Story: #37, epic #29 (Independent code review). Replaces the plain interim text that iteration 18 (#36) has `/next` and
 `/fix` write into the pull request with a full `## Review` section, defined once in the workflow skill, and makes an

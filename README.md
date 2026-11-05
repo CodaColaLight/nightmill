@@ -189,7 +189,9 @@ role, its model, where the model comes from, its rank and whether its pairing ho
 Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the
 change, as a separate agent that never sees the implementer's own account, and send the blocking findings back to the
 implementer or fixer for at most `review.maxFixRounds` rounds. The findings format and the rounds are in the workflow
-skill; the reviewer is `agents/code-reviewer.md` and can only read.
+skill; the reviewer is `agents/code-reviewer.md` and can only read. The pull request has a Review section with the
+reviewer's and the author's model, the rounds used and the findings fixed and still open, and a blocking finding that
+is still open keeps auto-merge off.
 
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),

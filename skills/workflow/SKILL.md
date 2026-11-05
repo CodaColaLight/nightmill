@@ -172,6 +172,28 @@ reports `<reviewer> on "<model>" ranks below <producer> on "<model>"`; it never 
 **A review that cannot be had** (the model cannot be used, no valid block, an error) stops the run; it is never read as
 "no findings".
 
+**The pull request.** A pull request that went through a review has a section `## Review`, after "How verified", in
+this form (the lines are the same for a story and for a bug; `<producer>` is `implementer` or `fixer`):
+
+```
+## Review
+
+- Reviewer: codeReviewer role on <model>
+- Author: <producer> role on <model>
+- Fix rounds used: <r> of <review.maxFixRounds>
+- Findings fixed: <n>
+- Findings still open: <b> blocking, <a> advisory
+```
+
+It is followed by one line per fixed finding, `fixed in round <k>: blocking <file>:<line> <text>`, and one line per open
+finding exactly as the reviewer wrote it in its last review, `- blocking <file>:<line> <text>` or
+`- advisory <file>:<line> <text>`. `<model>` is the exact string passed as `model` in the Agent call. The findings still
+open are those of the last review; the findings fixed are the blocking findings that were sent back in an earlier round
+and are not repeated in the last review with the same file and text (the line is not compared). With no findings the
+counts are 0 and there are no finding lines. With a blocking finding still open the pull request is opened all the
+same, the section says so, and the pull request says
+`Auto-merge is not enabled: blocking review findings are still open (see Review).`
+
 ## Parallel work
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
@@ -191,8 +213,8 @@ CI runs on every push and PR to `git.baseBranch`; a PR merges only when its bloc
 After opening a PR run `gh pr merge <n> <git.mergeFlags>` (never a plain `gh pr merge`: an admin
 bypass would let a red PR through) when it is a story whose spec was approved, a spec PR, or a
 complete bug fix. Do not, and say why in the PR, when it changes one of `escalation.storyTriggers`,
-is partial, skips a required manual check, or the maintainer asked to review it. A red PR is fixed,
-never forced.
+is partial, skips a required manual check, has a blocking review finding still open, or the maintainer
+asked to review it. A red PR is fixed, never forced.
 
 ## Hard rules
 

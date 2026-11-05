@@ -40,7 +40,7 @@ milestone, iteration number or CHANGELOG entry.
 6. **Open a PR** titled `fix: <what> (#N)` with `Fixes #N`, directly under it the line
    `Fixed by the fixer role on <model>.` (`<model>` is the exact string passed as `model` in the Agent call),
    and the sections Cause, Fix and How verified, written from the result block (the test, the check) and the
-   manual steps, and the review lines of "The code review" (step 5 there). Set the status to Review and read it
+   manual steps, and the `## Review` section of "The code review" (step 5 there). Set the status to Review and read it
    back. For a complete fix enable auto-merge (`gh pr merge <pr> <git.mergeFlags>`); not for a partial fix, one
    that has blocking review findings left, or one that touches `escalation.storyTriggers` (that is a story).
 
@@ -144,10 +144,16 @@ format, the rounds and the pairing rule are in **Findings and fix rounds** in th
    review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop with
    `Stopped: the code review could not be had: <the reason>. Nothing was opened.` In "Batch mode" this is a stop of
    that bug, handled like a `failed` fixer (skipped), except for a model that cannot be used, which ends the run.
-5. **After the last review.** Blocking findings that remain are listed in the pull request under the heading
-   `Open review findings` (each as in the block) and auto-merge is **not** enabled; the pull request says so.
-   Advisory findings are listed under `Review notes`, one line each. The pull request gets one line under the
-   fixer's line: `Reviewed by the codeReviewer role on <model> after <r> fix round(s).`
+5. **After the last review: the `## Review` section.** Build the section that **Findings and fix rounds** describes
+   (the paragraph "The pull request" of the `workflow` skill, with `Author: fixer role on <model>`) from what you held
+   during the run: the blocks of all reviews, the fix rounds used and the models you passed to the Agent calls.
+   `Findings still open` are those of the last review, as the reviewer wrote them; `Findings fixed` are the blocking
+   findings sent back in an earlier round and not repeated in the last review with the same file and text. Put the
+   section after "How verified" and remove nothing else from the body. When the last review has a blocking finding,
+   do **not** enable auto-merge and say, where step 6 says why auto-merge was withheld,
+   `Auto-merge is not enabled: blocking review findings are still open (see Review).`
+   Otherwise the rule of step 6 decides, unchanged. Your final message to the maintainer says whether auto-merge is
+   on and, if not, that blocking findings are open.
 
 A `partial` result is reviewed like a complete one.
 
