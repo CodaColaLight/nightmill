@@ -54,6 +54,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 claude plugin validate . --strict
 powershell -ExecutionPolicy Bypass -File scripts/render-templates.ps1 -Project . -Force   # after editing areas or invariants
 powershell -ExecutionPolicy Bypass -File tools/make-icon.ps1                               # after editing the icon
+powershell -ExecutionPolicy Bypass -File tools/make-social-preview.ps1                     # after the icon or the tagline changes; upload docs/social-preview.png in Settings > General by hand
 ```
 
 ## Layout
@@ -66,6 +67,6 @@ scripts          slot, new-worktree, render-templates; each as .ps1 and .sh
 schema           nightmill.schema.json, every config key described
 templates        nightmill.example.json, ISSUE_TEMPLATE/*.yml with {{placeholders}}, CLAUDE.snippet.md
 tests            lint.sh, smoke-*.sh/.ps1, check.sh/.ps1
-tools            make-icon.ps1
+tools            make-icon.ps1, make-social-preview.ps1, fonts/ (Creepster, SIL OFL, licence beside it)
 docs             specs/ (iteration specs), decisions/
 ```
