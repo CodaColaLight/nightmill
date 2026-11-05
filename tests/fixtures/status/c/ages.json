@@ -1,0 +1,27 @@
+{
+  "data": {
+    "node": {
+      "items": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y3Vyc29y"
+        },
+        "nodes": [
+          {
+            "createdAt": "2026-10-01T09:00:00Z",
+            "content": {
+              "number": 30,
+              "timelineItems": {
+                "nodes": [
+                  {
+                    "createdAt": "2026-11-04T10:00:00Z"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

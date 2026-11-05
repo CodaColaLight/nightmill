@@ -1,0 +1,9 @@
+ #  Title            Status  Who  PR  Age  Flag
+30  Something ready  Ready   -    -    1d
+
+slots
+slot  Branch       Since  PR          Flag
+   1  feat/merged     1d  #60 merged  stale: busy, PR merged (slot --release 1)
+   2  feat/closed    11h  #61 closed  stale: busy, PR closed (slot --abandon 2)
+   3  feat/stale      3d  -           stale: busy, no open PR
+   4  feat/new       10m  -

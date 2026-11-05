@@ -1,0 +1,110 @@
+{
+  "items": [
+    {
+      "id": "PVTI_20",
+      "content": {
+        "number": 20,
+        "title": "[Story] Lost in progress",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/20"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "In progress",
+      "title": "[Story] Lost in progress"
+    },
+    {
+      "id": "PVTI_21",
+      "content": {
+        "number": 21,
+        "title": "[Story] Just started",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/21"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "In progress",
+      "title": "[Story] Just started"
+    },
+    {
+      "id": "PVTI_22",
+      "content": {
+        "number": 22,
+        "title": "[Story] A closed PR at Review",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/22"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] A closed PR at Review"
+    },
+    {
+      "id": "PVTI_23",
+      "content": {
+        "number": 23,
+        "title": "[Story] A merged spec PR",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/23"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec",
+      "title": "[Story] A merged spec PR"
+    },
+    {
+      "id": "PVTI_24",
+      "content": {
+        "number": 24,
+        "title": "[Story] A draft spec PR",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/24"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec review",
+      "title": "[Story] A draft spec PR"
+    },
+    {
+      "id": "PVTI_25",
+      "content": {
+        "number": 25,
+        "title": "[Story] Approved just now",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/25"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Approved",
+      "title": "[Story] Approved just now"
+    },
+    {
+      "id": "PVTI_26",
+      "content": {
+        "number": 26,
+        "title": "[Story] A closed spec PR only",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/26"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec",
+      "title": "[Story] A closed spec PR only"
+    }
+  ],
+  "totalCount": 7
+}

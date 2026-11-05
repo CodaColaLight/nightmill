@@ -55,6 +55,17 @@ grep -q "Slot 2 is yours" <<<"$(bash "$S" --take feat/b)" || fail "take slot 2"
 if bash "$S" --take feat/c 2>/dev/null; then fail "third take should fail"; fi
 grep -q 'busy: feat/a' <<<"$(bash "$S" --status)" || fail "status shows slot 1 busy"
 
+echo "== --porcelain: one tab separated line per slot"
+T=$'\t'
+porc=$(bash "$S" --status --porcelain)
+case "$porc" in
+  "1${T}busy${T}feat/a${T}"*) ;;
+  *) fail "porcelain line for slot 1: $porc" ;;
+esac
+[ "$(printf '%s\n' "$porc" | sed -n 2p | cut -f1-3)" = "2${T}busy${T}feat/b" ] || fail "porcelain line for slot 2: $porc"
+[ "$(printf '%s\n' "$porc" | wc -l | tr -d ' ')" = 2 ] || fail "porcelain line count: $porc"
+grep -q 'slots = 2' <<<"$(bash "$S" --status)" || fail "status without --porcelain changed"
+
 echo "== warm-up skipped while the lockfile is unchanged"
 bash "$S" --abandon 1 >/dev/null
 rm "$tmp/wt/slot-1/client/warmed.txt"
@@ -68,5 +79,6 @@ echo "== abandon both"
 bash "$S" --abandon 1 >/dev/null
 bash "$S" --abandon 2 >/dev/null
 grep -q 'slot 2  ready           free' <<<"$(bash "$S" --status)" || fail "slot 2 free after abandon"
+[ "$(bash "$S" --status --porcelain)" = "$(printf '1\tfree\n2\tfree')" ] || fail "porcelain after abandon"
 
 echo "SMOKE OK"

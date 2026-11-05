@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "PVTI_30",
+      "content": {
+        "number": 30,
+        "title": "[Story] Something ready",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/30"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Ready",
+      "title": "[Story] Something ready"
+    }
+  ],
+  "totalCount": 1
+}

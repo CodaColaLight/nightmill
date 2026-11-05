@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 8 (#9): `/nightmill:status` prints one table of what waits for the maintainer and what is stuck:
+  board items with their pull request and CI state, the busy slots, and stale states flagged (Review with a
+  merged PR, In progress or Spec with nothing behind it, a busy slot whose PR is merged or closed). It reads only.
+  `scripts/status.ps1` and `scripts/status.sh` print the same table (the bash one needs no `jq`); `slot --porcelain`
+  lists the slots for scripts. Smoke tests run both against fixtures and a fake `gh`.
 - Iteration 7 (#7): the bash scripts read JSON without `jq`. `scripts/lib/json.awk` is a strict JSON parser in
   POSIX awk and `scripts/lib/json.sh` the functions on top of it (`json_get`, `json_len`, `json_keys`, `json_has`,
   `json_quote`, `json_marker`); `slot.sh`, `new-worktree.sh`, `render-templates.sh` and `validate-config.sh` use

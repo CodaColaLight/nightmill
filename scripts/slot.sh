@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/slot.sh - permanent worktrees, one per worker slot (nightmill). Bash twin of slot.ps1.
-#   slot.sh --status
+#   slot.sh --status [--porcelain]      # --porcelain: one tab separated line per slot, for scripts
 #   slot.sh --take feat/foo [--slot 2] [--base origin/main] [--skip-warmup]
 #   slot.sh --release 1                 # after the PR merged
 #   slot.sh --abandon 1                 # free a slot whose task was dropped (no merged PR)
@@ -17,10 +17,11 @@ usage() {
   exit 1
 }
 
-take=""; release=0; abandon=0; status=0; slot=0; base=""; skip=0
+take=""; release=0; abandon=0; status=0; slot=0; base=""; skip=0; porcelain=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --status) status=1 ;;
+    --porcelain) porcelain=1 ;;
     --take) take=${2:?--take needs a branch}; shift ;;
     --slot) slot=${2:?}; shift ;;
     --base) base=${2:?}; shift ;;
@@ -118,6 +119,18 @@ hints() { # slot dir branch
     done
   fi
 }
+
+if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
+  # <n> TAB busy TAB <branch> TAB <since>, or <n> TAB free
+  for ((i = 1; i <= count; i++)); do
+    if has_marker "$i"; then
+      printf '%s\tbusy\t%s\t%s\n' "$i" "$(marker_field "$i" branch)" "$(marker_field "$i" since)"
+    else
+      printf '%s\tfree\n' "$i"
+    fi
+  done
+  exit 0
+fi
 
 if [ "$status" = 1 ]; then
   echo "slots = $count  root = $root"

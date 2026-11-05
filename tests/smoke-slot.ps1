@@ -67,6 +67,17 @@ try {
   $out = Slot -Status
   if ($out -notmatch "busy: feat/a") { Fail "status shows slot 1 busy: $out" }
 
+  Write-Host "== -Porcelain: one tab separated line per slot"
+  $out = Slot -Status -Porcelain
+  $lines = @($out -split "`r?`n" | Where-Object { $_ -ne "" })
+  if ($lines.Count -ne 2) { Fail "porcelain line count: $out" }
+  $f1 = $lines[0] -split "`t"
+  $f2 = $lines[1] -split "`t"
+  if ($f1[0] -ne "1" -or $f1[1] -ne "busy" -or $f1[2] -ne "feat/a" -or -not $f1[3]) { Fail "porcelain line for slot 1: $($lines[0])" }
+  if ($f2[0] -ne "2" -or $f2[1] -ne "busy" -or $f2[2] -ne "feat/b") { Fail "porcelain line for slot 2: $($lines[1])" }
+  $out = Slot -Status
+  if ($out -notmatch "slots = 2") { Fail "status without -Porcelain changed: $out" }
+
   Write-Host "== warm-up skipped while the lockfile is unchanged"
   $null = Slot -Abandon 1
   Remove-Item "$tmp\wt\slot-1\client\warmed.txt"
@@ -84,6 +95,9 @@ try {
   $null = Slot -Abandon 2
   $out = Slot -Status
   if ($out -notmatch "slot 2  ready           free") { Fail "slot 2 free after abandon: $out" }
+  $out = Slot -Status -Porcelain
+  $lines = @($out -split "`r?`n" | Where-Object { $_ -ne "" })
+  if ($lines.Count -ne 2 -or $lines[0] -ne "1`tfree" -or $lines[1] -ne "2`tfree") { Fail "porcelain after abandon: $out" }
 
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {

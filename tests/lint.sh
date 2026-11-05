@@ -147,6 +147,19 @@ for kw in '$ref' anyOf oneOf allOf not if pattern format const maxItems uniqueIt
   fi
 done
 
+echo "== status is wired"
+# /status (iteration 8): the skill, both scripts and both smoke tests exist, the README names the skill, and the
+# scripts only read: no board edit, merge, comment or GraphQL mutation anywhere in them.
+for f in skills/status/SKILL.md scripts/status.sh scripts/status.ps1 scripts/lib/status.awk tests/smoke-status.sh tests/smoke-status.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+grep -qF '/nightmill:status' README.md || { echo "FAIL: README.md does not mention /nightmill:status"; fail=1; }
+for f in scripts/status.sh scripts/status.ps1 scripts/lib/status.awk; do
+  if [ -f "$f" ] && grep -nE 'item-edit|item-add|item-archive|item-delete|pr merge|issue edit|issue comment|issue close|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f changes something; /status only reads"; fail=1
+  fi
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

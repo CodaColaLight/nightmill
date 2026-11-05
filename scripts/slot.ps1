@@ -1,5 +1,5 @@
 # scripts/slot.ps1 - permanent worktrees, one per worker slot (nightmill).
-#   slot.ps1 -Status
+#   slot.ps1 -Status [-Porcelain]        # -Porcelain: one tab separated line per slot, for scripts
 #   slot.ps1 -Take feat/foo              # first free slot
 #   slot.ps1 -Take fix/1-x -Slot 2       # a given slot
 #   slot.ps1 -Release 1                  # after the PR merged
@@ -14,6 +14,7 @@ param(
   [int]$Release = 0,
   [int]$Abandon = 0,
   [switch]$Status,
+  [switch]$Porcelain,
   [int]$Slot = 0,
   [string]$Base = "",
   [switch]$SkipWarmup
@@ -95,6 +96,15 @@ function Show-Hints($n, $dir, $branch) {
       Write-Host "  $line"
     }
   }
+}
+
+if ($Status -and $Porcelain) {
+  # <n> TAB busy TAB <branch> TAB <since>, or <n> TAB free
+  for ($i = 1; $i -le $count; $i++) {
+    $m = Read-Marker $i
+    if ($m) { Write-Output ("{0}`tbusy`t{1}`t{2}" -f $i, $m.branch, $m.since) } else { Write-Output ("{0}`tfree" -f $i) }
+  }
+  exit 0
 }
 
 if ($Status) {
