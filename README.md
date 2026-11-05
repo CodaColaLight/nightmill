@@ -63,7 +63,8 @@ You need Claude Code, `git`, and `gh` signed in with `gh auth login` and the `pr
 ```
 
 Hooks, permissions and
-environment variables stay in the project's own `.claude/settings.json`; a plugin cannot set them.
+environment variables stay in the project's own `.claude/settings.json` (or the personal
+`.claude/settings.local.json`); a plugin cannot set them.
 
 A plugin cannot run anything when it is installed, so nightmill ships a `SessionStart` hook for the
 first session after: in a project that has the plugin enabled but no `.claude/nightmill.json`, it prints one
@@ -79,12 +80,36 @@ command hook in the project's `.claude/settings.json`.
 existing board, the check command, areas), asks one question at a time for the rest with a proposed
 default, shows one plan table and, after one confirmation, creates or completes the board (the eight
 Status options, Priority and Area, four saved views with filters, the repository link), the
-labels, `.claude/nightmill.json`, `.github/ISSUE_TEMPLATE/`, the CLAUDE.md snippet and the permission
-rules in `.claude/settings.json`. Re-running it on a configured project changes nothing. The board's
+labels, `.claude/nightmill.json`, `.github/ISSUE_TEMPLATE/`, the CLAUDE.md snippet, the permission
+rules in `.claude/settings.json` and the edit permission in `.claude/settings.local.json`. Re-running it on a
+configured project changes nothing. The board's
 workflows (ten, among them item added > Backlog, item closed and pull request merged > Done, pull request
 linked > Review, item reopened > In progress, auto-archive of closed items) are the one thing the API cannot
 set: `/init` reads whether they are enabled and ends every run with the exact table to set once in the
 board's Workflows settings in the browser, unless the board came from the template (next section).
+
+### The edit permission
+
+Without a rule for edits, `/spec`, `/next` and `/fix` prompt on every file they write, which defeats an
+unattended run. So `/init` has a plan line **Edit permission** that adds one rule, `Edit(**)`, to
+`permissions.allow` in `.claude/settings.local.json`, and shows the exact text it will write before the one
+confirmation.
+
+- **What it grants:** edits and writes (the Edit and Write tools) to files inside the project directory, which
+  is what the three skills do. Not Bash, not any other directory. A write under `.claude/` still prompts.
+- **Where it is written:** the personal `.claude/settings.local.json`, not the committed `.claude/settings.json`.
+  Letting an unattended run edit is the choice of whoever runs it; in the committed file the rule would also
+  silence the prompts of every collaborator's interactive session. A fresh clone therefore has no local file,
+  and `/init` adds the line again there (one run, one confirmation). `/init` tells you when the file is not
+  ignored by git; it never edits `.gitignore`.
+- **Declining and re-running:** a declined line leaves both settings files untouched and is reported as
+  declined (edits will prompt). Re-running `/init` changes nothing and reports the line as exists, also when
+  the project already covers it with `permissions.defaultMode` set to `acceptEdits` or `bypassPermissions`.
+  No entry already in the file is removed or reordered.
+- **Taking it back:** delete the `Edit(**)` line from `.claude/settings.local.json`.
+- **Limits:** the slots under `worktrees.root` are outside the project directory and are not covered, so the
+  edits `/next` and `/fix` make in a slot still prompt. A project's allow rules apply only after the
+  workspace is trusted, so a headless run (`claude -p`) needs one interactive session in the project first.
 
 ### The template board
 

@@ -1,6 +1,6 @@
 # Iteration 12: /init installs the edit permission a lights-out run needs
 
-Status: draft, awaiting approval (#48)
+Status: delivered in iteration 12 (PR #58)
 
 Story: #48, epic #47 (Unattended runs). Adds one line to the plan of `/nightmill:init`: the rule `Edit(**)` in
 `permissions.allow` of the project's `.claude/settings.local.json`, so that `/spec`, `/next` and `/fix` write files

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Iteration 12 (#48): `/nightmill:init` installs the edit permission a lights-out run needs. A new plan line,
+  **Edit permission**, adds the rule `Edit(**)` to `permissions.allow` of the personal
+  `.claude/settings.local.json`, so `/spec`, `/next` and `/fix` write files inside the project without a prompt
+  (not Bash, not other directories; `.claude/` still prompts). The plan shows the exact text or diff before the
+  one confirmation, says when the local file is not ignored by git, reports a skipped line as `declined (edits
+  will prompt)` and a covered project (the rule in either file, or `defaultMode` `acceptEdits` or
+  `bypassPermissions`) as `exists`, and never removes or reorders an entry. The README has a section "The edit
+  permission". The slots under `worktrees.root` are outside the project directory and are not covered; that is
+  the next story of the unattended-runs epic. The lint has a section that pins the wording, including that
+  `Edit(/**)`, which reaches outside the project, is never written. No script and no config key changed.
+
 ## 0.2.0 (2026-11-05)
 
 - Iteration 11 (#33): the workflow skill defines the agent roles and how a skill picks a role's model. A new
