@@ -41,7 +41,7 @@ owner=$(json_get github.owner); repo=$(json_get github.repo); number=$(json_get 
 { [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$number" ]; } || die "github.owner, github.repo and github.projectNumber are needed in $cfg"
 st() { json_get "board.statuses.$1" "$2"; }
 # the statuses in the order of the table, tab separated
-order="$(st specReview 'Spec review')	$(st approved Approved)	$(st inProgress 'In progress')	$(st review Review)	$(st spec Spec)	$(st ready Ready)	$(st backlog Backlog)	$(st done Done)"
+order="$(st specReview 'Spec review')	$(st approved Approved)	$(st inProgress 'In progress')	$(st review Review)	$(st spec Spec)	$(st ready Ready)	$(st backlog Backlog)	$(st 'done' Done)"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
