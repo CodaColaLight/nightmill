@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Iteration 10 (#31): three optional config keys name the agent roles and their models. `roles.<role>.model` sets
+  the model of `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer` and `worker` (a role
+  that is absent or empty takes the default in the schema), `models.ranking` lists models weakest first (models of
+  one level share an entry joined by `=`) and `review.maxFixRounds` is how many fix rounds a producer gets after a
+  review (default 2). All three are in the schema with descriptions and defaults, in the example config, in this
+  repository's own config and in the README. Nothing reads them yet, so a project without them behaves as before.
+  The lint checks the schema, the example, the repository's config and the README for them; both validate smoke
+  tests cover the new keys.
 - Iteration 9 (#10): `/nightmill:init` copies nightmill's template board when a project has none, so the views
   (filters, grouping, sorting) and the workflows come configured and nothing is left for the browser. It links
   the repository, replaces only the Area options (and Priority when `board.priorities` differs) and keeps the

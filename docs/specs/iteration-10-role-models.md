@@ -1,6 +1,6 @@
 # Iteration 10: a model for each agent role, and the model ranking
 
-Status: draft, awaiting approval (#31)
+Status: delivered in iteration 10 (PR #49)
 
 Story: #31, epic #28 (Agent roles and models). Adds three optional config keys (`roles`, `models`, `review`)
 to `schema/nightmill.schema.json`, `templates/nightmill.example.json` and the README, puts them in this

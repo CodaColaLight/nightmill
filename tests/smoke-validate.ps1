@@ -83,6 +83,25 @@ try {
   Check "typo strict" $typo 1 @('warning: worktree: unknown key (did you mean "worktrees"?)') @("-Strict")
   Check "unknown nested key" (Edit $ex '"owner": "acme",' '"owner": "acme", "org": "x",') 0 @("warning: github.org: unknown key")
 
+  Write-Host "== roles, models and review"
+  Check "new keys clean" $ex 0 @("0 errors, 0 warnings")
+  Check "new keys clean strict" $ex 0 @("0 errors, 0 warnings") @("-Strict")
+  Check "no new keys" '{"github":{"owner":"o","repo":"r","projectNumber":1},"maintainer":{"name":"M"},"verification":{"check":"true"}}' 0 @("0 errors, 0 warnings")
+  Check "model not a string" (Edit $ex '"implementer": { "model": "opus" }' '"implementer": { "model": 3 }') 1 @("error: roles.implementer.model: expected string, got integer")
+  $rolesArr = [regex]::Replace($ex, '(?s)"roles": \{.*?\r?\n  \},', '"roles": [],')
+  if ($rolesArr -eq $ex) { Fail "fixture: the roles block is not in the example" }
+  Check "roles not an object" $rolesArr 1 @("error: roles: expected object, got array")
+  Check "ranking not an array" (Edit $ex '"ranking": ["haiku", "sonnet", "opus", "fable"]' '"ranking": "opus"') 1 @("error: models.ranking: expected array, got string")
+  Check "ranking empty" (Edit $ex '"ranking": ["haiku", "sonnet", "opus", "fable"]' '"ranking": []') 1 @("error: models.ranking: needs at least 1 items, got 0")
+  Check "ranking entry not a string" (Edit $ex '"ranking": ["haiku", "sonnet", ' '"ranking": ["haiku", 3, ') 1 @("error: models.ranking[1]: expected string, got integer")
+  Check "fix rounds negative" (Edit $ex '"maxFixRounds": 2' '"maxFixRounds": -1') 1 @("error: review.maxFixRounds: must be at least 0, got -1")
+  Check "fix rounds a string" (Edit $ex '"maxFixRounds": 2' '"maxFixRounds": "two"') 1 @("error: review.maxFixRounds: expected integer, got string")
+  Check "zero fix rounds" (Edit $ex '"maxFixRounds": 2' '"maxFixRounds": 0') 0 @("0 errors, 0 warnings")
+  $roleCase = Edit $ex '"codeReviewer"' '"codereviewer"'
+  Check "role key wrong case" $roleCase 0 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)')
+  Check "role key wrong case strict" $roleCase 1 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)') @("-Strict")
+  Check "unknown key in a role" (Edit $ex '"implementer": { "model": "opus" }' '"implementer": { "model": "opus", "effort": "high" }') 0 @("warning: roles.implementer.effort: unknown key")
+
   Write-Host "== enum and closed objects, with a schema of their own"
   $mini = Join-Path $tmp "mini.schema.json"
   Write-Utf8 $mini '{"type":"object","additionalProperties":false,"required":["mode"],"properties":{"mode":{"type":"string","enum":["fast","slow"]}}}'

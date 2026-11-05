@@ -103,6 +103,39 @@
         }
       }
     },
+    "roles": {
+      "type": "object",
+      "description": "The model each agent role runs on. A role that is absent, or whose model is empty, takes the default shown. specReviewer must rank at least as high as specWriter, and codeReviewer at least as high as implementer and fixer (checked by the validator once models.ranking is set).",
+      "properties": {
+        "specWriter": { "type": "object", "description": "Writes the spec of a Ready story.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
+        "specReviewer": { "type": "object", "description": "Reviews a spec before it goes to Spec review. Reviews specWriter.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
+        "tester": { "type": "object", "description": "Writes the failing tests from the approved spec, before the implementer. Not compared with any other role.", "properties": { "model": { "type": "string", "default": "sonnet", "description": "Model alias or full model id." } } },
+        "implementer": { "type": "object", "description": "Writes the code of an Approved story.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
+        "codeReviewer": { "type": "object", "description": "Reviews the change before the pull request opens. Reviews implementer and fixer.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
+        "fixer": { "type": "object", "description": "Fixes a bug.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
+        "worker": { "type": "object", "description": "Does mechanical, fully specified jobs (the worker agent).", "properties": { "model": { "type": "string", "default": "haiku", "description": "Model alias or full model id." } } }
+      }
+    },
+    "models": {
+      "type": "object",
+      "description": "What nightmill needs to know about models.",
+      "properties": {
+        "ranking": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "default": ["haiku", "sonnet", "opus", "fable"],
+          "description": "Models from weakest to strongest; a model's rank is its position. Name models of the same level in one entry, joined by =, for example \"opus=claude-opus-5-5\". List the aliases and the full model ids that roles use."
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "description": "How the internal reviews work.",
+      "properties": {
+        "maxFixRounds": { "type": "integer", "minimum": 0, "default": 2, "description": "How many times a producer may fix what its reviewer found before the work is handed to the maintainer. 0 hands over after the first review." }
+      }
+    },
     "git": {
       "type": "object",
       "properties": {
