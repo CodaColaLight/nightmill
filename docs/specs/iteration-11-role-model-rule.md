@@ -1,6 +1,6 @@
 # Iteration 11: the workflow skill defines the agent roles and how a skill picks a role's model
 
-Status: draft, awaiting approval (#33)
+Status: delivered in iteration 11 (PR #52)
 
 Story: #33, epic #28 (Agent roles and models). Adds one section, "Agent roles and models", to
 `skills/workflow/SKILL.md` and replaces the one sentence in "Parallel work" that says which model to pass. Adds a
