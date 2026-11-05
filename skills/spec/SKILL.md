@@ -21,7 +21,7 @@ skill of this plugin; this skill is the step list.
 Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`board.statuses.ready`).
 
 - If `$ARGUMENTS` holds an issue number, take that issue; refuse when it is not at Ready.
-- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json`
+- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .status, .priority, ((.labels // []) | join(",")), .content.title] | @tsv'`
   and take the highest-priority Ready story that is not an epic and not a bug (bugs go through `/fix`).
 - Nothing Ready: print `Nothing is Ready.`, add `Approved: #N ... Run /next to implement.` when Approved
   stories exist, change nothing and stop.
