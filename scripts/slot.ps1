@@ -4,15 +4,23 @@
 #   slot.ps1 -Take fix/1-x -Slot 2       # a given slot
 #   slot.ps1 -Release 1                  # after the PR merged
 #   slot.ps1 -Abandon 1                  # free a slot whose task was dropped (no merged PR)
+#   slot.ps1 -Reap                       # free every busy slot whose PR has merged (-Take does this first)
 # Run it from inside the project: any checkout or worktree of it. Configuration comes from
 # .claude/nightmill.json in the main checkout, keys under "worktrees" (see schema/nightmill.schema.json);
 # $env:WORKER_SLOTS overrides worktrees.slots. A slot is never removed: a new task only switches it
 # to a new branch from the base branch, so build output stays warm. A slot is busy from -Take to
-# -Release or -Abandon (a marker file in <root>/.slots, outside any repo). Slot N gets port base + N.
+# -Release, -Abandon or an automatic release (a marker file in <root>/.slots, outside any repo). Slot N gets
+# port base + N.
+# Automatic release (-Reap, and the first step of every -Take; iteration 17): a busy slot is freed when its
+# worktree is clean and gh lists a merged PR for its branch whose last commit is the tip of the local branch
+# (so a reused branch name or work after the merge keeps the slot busy and nothing is deleted). A slot that
+# cannot be judged (gh missing or failing, no fetch) stays busy and a note goes to standard error; the freeing
+# never makes a take fail. Same behaviour as slot.sh (--reap).
 param(
   [string]$Take,
   [int]$Release = 0,
   [int]$Abandon = 0,
+  [switch]$Reap,
   [switch]$Status,
   [switch]$Porcelain,
   [int]$Slot = 0,
@@ -54,6 +62,77 @@ function Read-Marker($n) {
   if (Test-Path $p) { Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 }
 function Write-Lf($path, $text) { [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false)) }
+
+# Run a native command and keep its output and its error text apart (redirecting a native command's stderr in
+# Windows PowerShell 5.1 turns its progress lines into errors); returns Out, Err and Code.
+function Invoke-Native([string]$file, [string[]]$arguments) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $file
+  $psi.Arguments = (@($arguments | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join " ")
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $errTask = $p.StandardError.ReadToEndAsync()
+  $out = $p.StandardOutput.ReadToEnd()
+  $p.WaitForExit()
+  [pscustomobject]@{ Out = $out; Err = $errTask.Result; Code = $p.ExitCode }
+}
+function Get-FirstLine([string]$text) { (@($text -split "`r?`n" | Where-Object { $_ -ne "" }) | Select-Object -First 1) }
+
+$script:freed = 0
+# Invoke-Reap: free every busy slot whose PR has merged (see the header); one line per freed slot
+function Invoke-Reap {
+  $fetched = 0
+  $freason = ""
+  $gc = Get-Command gh -ErrorAction SilentlyContinue
+  for ($n = 1; $n -le $count; $n++) {
+    $m = Read-Marker $n
+    if (-not $m) { continue }
+    $dir = Get-SlotDir $n
+    if (-not (Test-Path -LiteralPath $dir)) { continue }
+    if (@(git -C $dir status --porcelain).Count -gt 0) { continue }
+    $branch = [string]$m.branch
+    if (-not $branch) { continue }
+    $tip = git -C $dir rev-parse "refs/heads/$branch" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $tip) { continue }
+    $tip = ([string]$tip).Trim()
+    if (-not $gc) {
+      [Console]::Error.WriteLine("slot ${n}: not checked for a merged PR (gh is not on the PATH)")
+      continue
+    }
+    $r = Invoke-Native $gc.Source @("pr", "list", "--state", "merged", "--head", $branch, "--json", "number,headRefOid")
+    if ($r.Code -ne 0) {
+      [Console]::Error.WriteLine("slot ${n}: not checked for a merged PR ($(Get-FirstLine $r.Err))")
+      continue
+    }
+    $prs = @()
+    try { $prs = @(ConvertFrom-Json -InputObject $r.Out) }
+    catch {
+      [Console]::Error.WriteLine("slot ${n}: not checked for a merged PR (gh did not answer with JSON)")
+      continue
+    }
+    # the first merged PR, in the order gh printed them, whose head commit is the tip of the local branch
+    $pr = $null
+    foreach ($p in $prs) { if ([string]$p.headRefOid -ceq $tip) { $pr = $p.number; break } }
+    if ($null -eq $pr) { continue }
+    if ($fetched -eq 0) {
+      $f = Invoke-Native "git" @("fetch", "origin", $baseBranch)
+      if ($f.Code -eq 0) { $fetched = 1 } else { $fetched = -1; $freason = Get-FirstLine $f.Err }
+    }
+    if ($fetched -ne 1) {
+      [Console]::Error.WriteLine("slot ${n}: not checked for a merged PR (git fetch origin $baseBranch failed: $freason)")
+      continue
+    }
+    $s = Invoke-Native "git" @("-C", $dir, "switch", "--detach", "origin/$baseBranch")
+    if ($s.Code -ne 0) { continue }
+    $null = Invoke-Native "git" @("branch", "-D", $branch)
+    Remove-Item (Get-Marker $n)
+    Write-Host "Slot $n is free (was $branch, PR #$pr), released automatically." -ForegroundColor Green
+    $script:freed++
+  }
+}
 
 function Invoke-Warmup($n, $dir) {
   if ($SkipWarmup -or -not $wt -or -not $wt.warmup) { return }
@@ -124,8 +203,16 @@ if ($Status) {
   exit 0
 }
 
+if ($Reap) {
+  New-Item -ItemType Directory -Force $state | Out-Null
+  Invoke-Reap
+  if ($script:freed -eq 0) { Write-Host "No slot freed." }
+  exit 0
+}
+
 if ($Take) {
   New-Item -ItemType Directory -Force $state | Out-Null
+  Invoke-Reap
   $n = $Slot
   if ($n -eq 0) {
     for ($i = 1; $i -le $count; $i++) { if (-not (Read-Marker $i)) { $n = $i; break } }
@@ -189,5 +276,5 @@ if ($Abandon -gt 0) {
   exit 0
 }
 
-Write-Host "usage: slot.ps1 -Status | -Take <branch> [-Slot N] [-Base <ref>] [-SkipWarmup] | -Release N | -Abandon N"
+Write-Host "usage: slot.ps1 -Status | -Take <branch> [-Slot N] [-Base <ref>] [-SkipWarmup] | -Release N | -Abandon N | -Reap"
 exit 1
