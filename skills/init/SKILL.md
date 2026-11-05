@@ -12,7 +12,8 @@ Current configuration, if any:
 
 The plugin's files are under `${CLAUDE_PLUGIN_ROOT}`: the schema `schema/nightmill.schema.json` (every
 key described, with defaults), the example `templates/nightmill.example.json`, the CLAUDE.md snippet
-`templates/CLAUDE.snippet.md`, the renderer `scripts/render-templates.ps1` / `.sh`.
+`templates/CLAUDE.snippet.md`, the renderer `scripts/render-templates.ps1` / `.sh`, the location of nightmill's
+template board `templates/board-template.json` and the check of it `scripts/template-board.ps1` / `.sh`.
 
 This is an install chat. The order is fixed: **1 Detect, 2 Ask, 3 Plan, 4 Confirm once, 5 Apply,
 6 Report.** Nothing is written or created before the confirmation in step 4 is answered; steps 1 to 3
@@ -59,7 +60,24 @@ values. A key the user leaves empty is deleted from the config rather than writt
 
 Build the full list of changes. Mark each line **create**, **change** or **exists** (nothing to do):
 
-- **Board**: when none was found, `gh project create --owner <owner> --title <repo>`. The `Status` field
+- **Board, with the template** (only when no board was found): nightmill keeps a public template board whose
+  views (filters, grouping, sorting, columns) and workflows are already configured, and `gh project copy`
+  carries all of them across. Build the candidate config first (the **Config** line below), write it to a
+  temporary file outside the project and run the check on it:
+  `"${CLAUDE_PLUGIN_ROOT}/scripts/template-board.ps1" -Config <file>` (PowerShell) or
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/template-board.sh" --config <file>`. It only reads and prints one line:
+  `template: usable (<owner>/<number>)` or `template: not usable: <reason>` (an exit code 2 is an error to
+  report, not a reason; fall back as below and say what failed). The plan's **Board** line is then one of:
+  - `create (copy of <owner>/<number>)` when the line said `usable`;
+  - `create (field by field: <reason>)` otherwise, with the reason in words: `no template published yet`
+    (`none published`), `the template is not reachable from this account` (`not reachable`), `your config
+    renames a field or a status` (`fields differ`, `statuses differ`). This is the fallback; the plan always
+    says so, never silently. The fallback is the field-by-field board described next.
+
+  A user who skips the copy line gets the field-by-field board. A copy is never offered for a board that
+  already exists. Nothing about the template is a config key: a project cannot point `/init` at another one.
+- **Board, field by field**: when none was found and the template is not used,
+  `gh project create --owner <owner> --title <repo>`. The `Status` field
   gets exactly the eight `board.statuses` in flow order with one `updateProjectV2Field` call that lists
   **every** option: an option whose name already exists keeps its `id`; an old option that is not one of
   the eight and is used by no item is left out (dropped); one that is still used by an item stays in the
@@ -87,7 +105,9 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   eight statuses become the columns. A view is **exists** when the board already has a view of that name
   (`projectV2(number: <n>) { views(first: 20) { nodes { id name layout filter } } }`); a view that exists
   with a different filter is shown in the plan and changed only when the user keeps that line. The
-  default table "View 1" of a new board is renamed to `Epics` instead of creating a fifth view.
+  default table "View 1" of a new board is renamed to `Epics` instead of creating a fifth view. On a board
+  copied from the template every view the copy brought is **exists**, with its grouping and sorting; a view
+  that is missing is created as above.
 
   | View | Layout | Filter | Columns shown |
   |---|---|---|---|
@@ -172,6 +192,30 @@ settings; then read the board workflows (read-only, see the plan). After each Gi
 the `repositories` and `views` queries); a line whose read-back does not show the change is **failed**, with
 the command's error, and the run goes on with the lines that do not depend on it (the view, the field options and the link depend on the board, the forms on the config; nothing else does).
 
+**A board copied from the template** replaces "create the board and its fields" and goes in this order:
+
+1. `gh project copy <number> --source-owner <owner> --target-owner <project owner> --title <repo>`, with
+   `<owner>` and `<number>` from `templates/board-template.json`. Read the new board's number from the result
+   and put it in `github.projectNumber` of the config written later.
+2. The repository link (`gh project link`), as for any board.
+3. **Only** the options of the `Area` field: replaced with `areas` through `updateProjectV2Field` with every
+   option, as for any board (the copied ones are unused, so all are dropped). The `Priority` options are
+   replaced too when `board.priorities` differs from the template's, and left alone otherwise. The `Status`
+   field and its option ids are **not touched**: the workflows point at them.
+4. Views that the copy did not bring are created as in the plan; the ones it brought are left alone.
+5. **Read back**, after the changes: each view's filter, layout, grouping and sorting through GraphQL, on the
+   copy and on the template (a public board, so the same query reads it)
+   (`views(first: 20) { nodes { name filter layout groupByFields(first: 2) { nodes { ... on ProjectV2FieldCommon { name } } } verticalGroupByFields(first: 2) { nodes { ... on ProjectV2FieldCommon { name } } } sortByFields(first: 5) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } } }`;
+   on a board layout `verticalGroupByFields` are the columns and `groupByFields` the swimlanes), and the
+   workflows of the copy (`workflows(first: 20) { nodes { name enabled } }`). The copy matches when each of
+   its views has the filter, grouping and sorting of the template's view of that name and the ten workflows are
+   enabled. A view setting that differs from the template, a setting the plan expects that the copy does not
+   show (`Board`: group by `Area`, sort by `Priority` descending; `Ready`: sort by `Priority` ascending), or a
+   disabled workflow is reported **by hand** for that item only; the board is kept, never deleted.
+
+If the copy itself fails, say so with the command's error, build the board field by field (the plan's
+fallback) and put the reason in the report. A half-made copy is not reused: tell the user its number.
+
 Every line is idempotent, so re-running is safe: a second run finds each line **exists** and applies nothing.
 
 ## 6. Report
@@ -180,7 +224,15 @@ End with one table: line, result (**created**, **changed**, **already there**, *
 **by hand**). Below it, "Still to do by hand:" with exactly the declined, failed and by-hand lines, or
 "nothing". Do not print instructions for lines that were applied.
 
-Then, **always**, even when everything else was already there, print the board settings that only the
+**A board copied from the template** (the Board row says **created (copy of the template)**): when the read
+back of step 5 matches (the views with grouping and sorting present, the ten workflows enabled), do not print
+the browser-only settings below. Print one line instead: `Views, grouping, sorting and workflows came with the
+template; their targets are the template's (the API cannot read them): <the workflows page link>.` When the
+read back differs, list only the differing view setting or workflow, with the same instruction as below.
+
+For a board built **field by field** (the fallback, a skipped copy, or a board that already existed), the
+report is unchanged from before and starts with the reason for the fallback, if any. Then, **always**, even
+when everything else was already there, print the board settings that only the
 browser can change. It is not a failure: the GitHub API cannot create, enable or configure board
 workflows, and cannot set a view's grouping or sorting. First the two view settings from the plan
 (`Board`: group by `Area`, sort by `Priority` descending; `Ready`: sort by `Priority` ascending), at the

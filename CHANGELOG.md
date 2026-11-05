@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Iteration 9 (#10): `/nightmill:init` copies nightmill's template board when a project has none, so the views
+  (filters, grouping, sorting) and the workflows come configured and nothing is left for the browser. It links
+  the repository, replaces only the Area options (and Priority when `board.priorities` differs) and keeps the
+  Status options and their ids. `scripts/template-board.ps1` and `scripts/template-board.sh` check, read only,
+  whether the template is usable for a candidate config and print one line; when it is not (none published, not
+  reachable, a renamed field or status) `/init` says why in the plan and builds the board field by field as
+  before. The template's location is `templates/board-template.json`, not a config key; its number stays `null`
+  until the maintainer publishes the template. Smoke tests run both scripts against fixtures and a fake `gh`; the
+  lint checks the wiring and that the scripts only read.
 - Iteration 8 (#9): `/nightmill:status` prints one table of what waits for the maintainer and what is stuck:
   board items with their pull request and CI state, the busy slots, and stale states flagged (Review with a
   merged PR, In progress or Spec with nothing behind it, a busy slot whose PR is merged or closed). It reads only.
