@@ -160,6 +160,31 @@ for f in scripts/status.sh scripts/status.ps1 scripts/lib/status.awk; do
   fi
 done
 
+echo "== template board is wired"
+# /init copies nightmill's template board when it can and builds the board field by field when it cannot
+# (iteration 9): the location is templates/board-template.json (owner a non-empty string, number an integer or
+# null), the check is scripts/template-board.* (read only), /init uses both ways and says which, the README
+# describes the template.
+tb=templates/board-template.json
+if [ -f "$tb" ]; then
+  grep -Eq '"owner":[[:space:]]*"[^"]+"' "$tb" || { echo "FAIL: $tb: owner must be a non-empty string"; fail=1; }
+  grep -Eq '"number":[[:space:]]*(null|[1-9][0-9]*)[[:space:]]*[,}]' "$tb" || { echo "FAIL: $tb: number must be an integer or null"; fail=1; }
+else
+  echo "FAIL: $tb is missing"; fail=1
+fi
+for f in scripts/template-board.sh scripts/template-board.ps1 tests/smoke-template-board.sh tests/smoke-template-board.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+for f in scripts/template-board.sh scripts/template-board.ps1; do
+  if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f changes something; the template check only reads"; fail=1
+  fi
+done
+for w in 'gh project copy' 'template-board' 'field by field'; do
+  grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
+done
+grep -qF 'The template board' README.md || { echo "FAIL: README.md has no section 'The template board'"; fail=1; }
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

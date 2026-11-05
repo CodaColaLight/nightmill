@@ -46,6 +46,7 @@ not a conversation.
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Status`. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
+| `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
 | `schema/nightmill.schema.json` | Every configuration key, described. |
 
 Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugin or the project defines them.
@@ -83,7 +84,30 @@ rules in `.claude/settings.json`. Re-running it on a configured project changes 
 workflows (ten, among them item added > Backlog, item closed and pull request merged > Done, pull request
 linked > Review, item reopened > In progress, auto-archive of closed items) are the one thing the API cannot
 set: `/init` reads whether they are enabled and ends every run with the exact table to set once in the
-board's Workflows settings in the browser.
+board's Workflows settings in the browser, unless the board came from the template (next section).
+
+### The template board
+
+A view's grouping and sorting and a board's workflows cannot be set through the API, but a copy of a
+configured board carries them. So when a project has no board, `/init` first checks nightmill's template
+board and, if it is usable, copies it (`gh project copy`), links the repository and replaces only the Area
+options (and Priority when `board.priorities` differs); the Status options and their ids stay, because the
+workflows point at them. The plan says which way the board is made: `create (copy of <owner>/<number>)` or
+`create (field by field: <reason>)`. The reason is one of: no template published yet, the template is not
+reachable from this account, your config renames a field or a status. The fallback is the field-by-field board
+`/init` has always built, with the by-hand list in the report. A copy ends with a read back of the views and
+workflows, and only what differs is listed.
+
+The template lives in `templates/board-template.json` (`{ "owner": ..., "number": ... }`): a public board of the
+maintainer that holds no items, only structure. It belongs to the plugin and is not a config key; a `null`
+number means none is published and `/init` falls back. `scripts/template-board.ps1 -Config <file>` (or
+`scripts/template-board.sh --config <file>`) prints `template: usable (<owner>/<number>)` or
+`template: not usable: <none published | not reachable | fields differ | statuses differ>`; it only reads.
+
+The maintainer refreshes the template from a configured board: `gh project copy <n> --source-owner <owner>
+--target-owner <owner> --title "nightmill template"`, check that it has no items and that the ten workflows are
+enabled with their targets, make it public with `gh project edit <new n> --owner <owner> --visibility PUBLIC`,
+change the number in `templates/board-template.json` in a pull request, and delete the old template board.
 
 ## Configuration
 
@@ -130,6 +154,7 @@ bash tests/smoke-hook.sh    # the SessionStart hook
 bash tests/smoke-release.sh # the release script (git only)
 bash tests/smoke-validate.sh # the config validator
 bash tests/smoke-status.sh  # status.sh against fixtures and a fake gh
+bash tests/smoke-template-board.sh # template-board.sh against fixtures and a fake gh
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -137,6 +162,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-release.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-status.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
 claude plugin validate . --strict
 ```
 

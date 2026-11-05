@@ -1,6 +1,6 @@
 # Iteration 9: /init copies a template board, so views and workflows come configured
 
-Status: draft, awaiting approval (#10)
+Status: delivered in iteration 9 (PR #27)
 
 Story: #10, epic #3 (Setup and onboarding). Adds `templates/board-template.json`, the scripts
 `scripts/template-board.ps1` and `scripts/template-board.sh`, a "copy first" branch in `skills/init/SKILL.md`,
