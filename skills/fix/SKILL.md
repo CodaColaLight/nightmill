@@ -33,14 +33,16 @@ milestone, iteration number or CHANGELOG entry.
    result. It writes the test that fails for the reason in the issue first, fixes the cause with the smallest
    diff, corrects a spec's text when the fix changes a rule or number the spec states, adds no CHANGELOG entry,
    and runs the check.
-5. **Read the result and do the manual check.** A change under any of `verification.manualCheckPaths` also gets
-   `verification.manualCheckText`, done by the session (the fixer runs the check, not this).
+5. **Have the fix reviewed, then do the manual check.** A different agent, the `codeReviewer`, reviews the fix and
+   the fixer fixes what is blocking (see "The code review" below). A change under any of
+   `verification.manualCheckPaths` also gets `verification.manualCheckText`, done by the session (the fixer runs the
+   check, not this).
 6. **Open a PR** titled `fix: <what> (#N)` with `Fixes #N`, directly under it the line
    `Fixed by the fixer role on <model>.` (`<model>` is the exact string passed as `model` in the Agent call),
    and the sections Cause, Fix and How verified, written from the result block (the test, the check) and the
-   manual steps. Set the status to Review and read it back. For a complete fix enable auto-merge
-   (`gh pr merge <pr> <git.mergeFlags>`); not for a partial fix or one that touches `escalation.storyTriggers`
-   (that is a story).
+   manual steps, and the review lines of "The code review" (step 5 there). Set the status to Review and read it
+   back. For a complete fix enable auto-merge (`gh pr merge <pr> <git.mergeFlags>`); not for a partial fix, one
+   that has blocking review findings left, or one that touches `escalation.storyTriggers` (that is a story).
 
 ## The fixer
 
@@ -100,6 +102,54 @@ Commits: <hash and subject, one per line; none>
 Manual check: needed | not needed (<the verification.manualCheckPaths touched>)
 Left: <what is not done and why; nothing>
 ```
+
+## The code review
+
+After the fixer's result (not `failed`) and before the manual check, a different agent reviews the fix. The findings
+format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
+
+1. **The pairing.** Run `validate-config` of the shell in use on the project's config
+   (`"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
+   on `roles.codeReviewer.model` with the text `ranks below`, stop with
+   `Stopped: the codeReviewer ranks below the fixer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
+   (the line may name the other producer, then name it). When the validator cannot run (exit code 2, missing
+   script), stop with `Stopped: the pairing could not be checked: <the reason>. Nothing was reviewed.` A reviewer
+   model that is not in `models.ranking` is only a warning of the validator and does not stop the run.
+2. **Count and launch.** Count the agents as for the fixer. One Agent call: `subagent_type`
+   `nightmill:code-reviewer`, not a fork, with the `model` that **Agent roles and models** gives `codeReviewer`
+   (`roles.codeReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
+   that section's line for `codeReviewer`, naming the status and the slot.
+3. **The prompt**, filled in by the session. It carries facts, not the fixer's own account (its `Cause`, `Fix` and
+   `Left` lines): the reviewer shares no context with the fixer.
+
+   ```markdown
+   Review the fix on branch <branch> in the checkout at <absolute slot path> (use that path for every file you read)
+   for bug #<issue> "<title>".
+
+   The bug report: <verbatim>.
+   The spec the bug touches, if any: <path in the slot> (read it).
+   The invariants of the project: <config invariants, one per line>.
+   The fixer's check: <its Check: line>.
+
+   The change, as `git diff <base>...<branch>`: <the diff; when it is longer than 2000 lines, the --stat and the
+   instruction to read the files>.
+
+   End with the findings block of the workflow skill, and nothing after it.
+   ```
+4. **Read the block.** `no findings`, or advisory findings only: go on and keep the advisory lines. With blocking
+   findings, while fewer than `review.maxFixRounds` fix rounds have been used: launch the fix (a fresh fixer, as in
+   "The fixer", with its prompt and, added at the end, "Fix exactly these blocking findings and nothing else, run
+   the check, commit": the blocking lines), read its `Result:` block as before (`failed` stops the run as there), and
+   review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop with
+   `Stopped: the code review could not be had: <the reason>. Nothing was opened.` In "Batch mode" this is a stop of
+   that bug, handled like a `failed` fixer (skipped), except for a model that cannot be used, which ends the run.
+5. **After the last review.** Blocking findings that remain are listed in the pull request under the heading
+   `Open review findings` (each as in the block) and auto-merge is **not** enabled; the pull request says so.
+   Advisory findings are listed under `Review notes`, one line each. The pull request gets one line under the
+   fixer's line: `Reviewed by the codeReviewer role on <model> after <r> fix round(s).`
+
+A `partial` result is reviewed like a complete one.
 
 ## Batch mode: `/fix all`
 

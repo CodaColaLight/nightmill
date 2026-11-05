@@ -44,19 +44,20 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 3. **Hand the coding to the implementer.** The session never writes the code itself; the tests and the code are
    written by a subagent in the role `implementer` (see "The implementer" below): count the agents, launch it,
    read its result.
-4. If the change touches any of `verification.manualCheckPaths`, do `verification.manualCheckText` yourself
-   (the subagent runs the check, not this) and note the steps for the PR.
+4. **Have the change reviewed** by a different agent, the `codeReviewer` (see "The code review" below), and let
+   the implementer fix what is blocking. Then, if the change touches any of `verification.manualCheckPaths`, do
+   `verification.manualCheckText` yourself (the subagent runs the check, not this) and note the steps for the PR.
 5. Add the CHANGELOG entry for iteration N and change the spec's status line to
    `Status: delivered in iteration <N> (PR #<pr>)`. Rebase on `origin/<git.baseBranch>`; on a CHANGELOG
    conflict keep both entries in iteration order.
 6. Open a PR titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
    `Written by the implementer role on <model>.` (`<model>` is the exact string passed as `model` in the
    Agent call), and a "How verified" section written from the result block (tests, the check) and your own
-   manual check. Set the status to **Review**, read it back, and check
-   it again after a minute (board automation may have changed it).
+   manual check, and the review lines of "The code review" (step 5 there). Set the status to **Review**, read it
+   back, and check it again after a minute (board automation may have changed it).
 7. Enable auto-merge: `gh pr merge <pr> <git.mergeFlags>`, because the spec was approved. Do **not**,
-   and say why in the PR, when the PR changes one of `escalation.storyTriggers`, is partial, or skipped
-   a required manual check.
+   and say why in the PR, when the PR changes one of `escalation.storyTriggers`, is partial, skipped
+   a required manual check, or has blocking review findings left.
 8. If the story ends up only partly done: file the rest as a new story under the same epic (`/story`),
    link both issues, say so in the PR. The PR still closes the old issue; never tick criteria that were not met.
 
@@ -116,6 +117,53 @@ Commits: <hash and subject, one per line; none>
 Manual check: needed | not needed (<the verification.manualCheckPaths touched>)
 Left: <what is not done and why; nothing>
 ```
+
+## The code review
+
+After the implementer's result (not `failed`) and before the manual check, a different agent reviews the change. The
+findings format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
+
+1. **The pairing.** Run `validate-config` of the shell in use on the project's config
+   (`"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
+   on `roles.codeReviewer.model` with the text `ranks below`, stop with
+   `Stopped: the codeReviewer ranks below the implementer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
+   (the line may name the other producer, then name it). When the validator cannot run (exit code 2, missing
+   script), stop with `Stopped: the pairing could not be checked: <the reason>. Nothing was reviewed.` A reviewer
+   model that is not in `models.ranking` is only a warning of the validator and does not stop the run.
+2. **Count and launch.** Count the agents as for the implementer. One Agent call: `subagent_type`
+   `nightmill:code-reviewer`, not a fork, with the `model` that **Agent roles and models** gives `codeReviewer`
+   (`roles.codeReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
+   that section's line for `codeReviewer`, naming the status and the slot.
+3. **The prompt**, filled in by the session. It carries facts, not the implementer's own account (its `Criteria`,
+   `Left` and `Decisions` lines): the reviewer shares no context with the implementer.
+
+   ```markdown
+   Review the change on branch <branch> in the checkout at <absolute slot path> (use that path for every file you
+   read) for story #<issue> "<title>".
+
+   The acceptance criteria of the issue: <verbatim>.
+   The spec: <path in the slot> (read it).
+   The invariants of the project: <config invariants, one per line>.
+   The implementer's check: <its Check: line>.
+
+   The change, as `git diff <base>...<branch>`: <the diff; when it is longer than 2000 lines, the --stat and the
+   instruction to read the files>.
+
+   End with the findings block of the workflow skill, and nothing after it.
+   ```
+4. **Read the block.** `no findings`, or advisory findings only: go on and keep the advisory lines. With blocking
+   findings, while fewer than `review.maxFixRounds` fix rounds have been used: launch the fix (a fresh implementer, as
+   in "The implementer", with its prompt and, added at the end, "Fix exactly these blocking findings and nothing
+   else, run the check, commit": the blocking lines), read its `Result:` block as before (`failed` stops the run as
+   there), and review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop
+   with `Stopped: the code review could not be had: <the reason>. Nothing was opened.`
+5. **After the last review.** Blocking findings that remain are listed in the pull request under the heading
+   `Open review findings` (each as in the block) and auto-merge is **not** enabled; the pull request says so.
+   Advisory findings are listed under `Review notes`, one line each. The pull request gets one line under the
+   implementer's line: `Reviewed by the codeReviewer role on <model> after <r> fix round(s).`
+
+A `partial` result is reviewed like a complete one.
 
 ## Hard rules
 
