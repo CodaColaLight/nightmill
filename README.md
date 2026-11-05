@@ -183,7 +183,9 @@ passed explicitly; a model that cannot be used stops the run and is reported, ne
 hand the coding to an `implementer` or `fixer` subagent on the configured model, and the pull request says which
 model it ran on; the session keeps the board, the slot, the CHANGELOG and the pull request. `/spec` hands the
 writing of the spec to a `specWriter` subagent the same way, and the spec pull request says which model it ran
-on; the session keeps the board, the branch and the pull request. `/nightmill:models` prints the table of every
+on; the session keeps the board, the branch and the pull request. A `specReviewer` subagent on its configured model
+reviews the spec before it goes to Spec review (`agents/spec-reviewer.md`, read-only), and the blocking findings go
+back to the writer for at most `review.maxFixRounds` rounds. `/nightmill:models` prints the table of every
 role, its model, where the model comes from, its rank and whether its pairing holds; it only reads.
 
 Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the

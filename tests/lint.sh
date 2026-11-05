@@ -370,11 +370,11 @@ for w in 'Cause:' 'Fix:' 'Test:'; do
   grep -qF -- "$w" skills/fix/SKILL.md || { echo "FAIL: skills/fix/SKILL.md: the fixer's result block lacks $w"; fail=1; }
 done
 # no agent file for the producers: the prompt is in the skill, the default model is in the schema. The agents are
-# the worker and, since iteration 18, the code reviewer (which needs a tool list that keeps it read-only).
+# the worker and the two reviewers (iterations 18 and 20), which need a tool list that keeps them read-only.
 for a in agents/*.md; do
   case "$a" in
-    agents/worker.md|agents/code-reviewer.md) ;;
-    *) echo "FAIL: $a: only the worker and the code reviewer have an agent file (the implementer's and the fixer's prompts are in the skills)"; fail=1 ;;
+    agents/worker.md|agents/code-reviewer.md|agents/spec-reviewer.md) ;;
+    *) echo "FAIL: $a: only the worker and the two reviewers have an agent file (the producers' prompts are in the skills)"; fail=1 ;;
   esac
 done
 
@@ -464,6 +464,36 @@ for f in scripts/slot.sh scripts/slot.ps1; do
 done
 for w in '--reap' '-Reap'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+
+echo "== a separate spec reviewer reviews the spec"
+# The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of
+# "Findings and fix rounds" (the same format lines as the code reviewer and the workflow skill), and /spec that
+# launches it after the writer and before the commit. /spec is a conversation, so the lint pins the wording.
+sr=agents/spec-reviewer.md
+sfmt='^(Review: findings \| no findings|Blocking: <n>|Advisory: <n>|- blocking <file>:<line> .*|- advisory <file>:<line> .*)$'
+if [ -f "$sr" ]; then
+  grep -qx 'name: spec-reviewer' "$sr" || { echo "FAIL: $sr has no 'name: spec-reviewer'"; fail=1; }
+  [ "$(sed -n 's/^tools:[[:space:]]*//p' "$sr" | head -1)" = "Read, Grep, Glob" ] || { echo "FAIL: $sr: the tools must be exactly 'Read, Grep, Glob' (no Bash, Write, Edit or Agent)"; fail=1; }
+  json_load schema/nightmill.schema.json
+  sr_default=$(json_get properties.roles.properties.specReviewer.properties.model.default)
+  [ "$(sed -n 's/^model:[[:space:]]*//p' "$sr" | head -1)" = "$sr_default" ] || { echo "FAIL: $sr: model is not the schema default of roles.specReviewer.model ($sr_default)"; fail=1; }
+  for w in 'changes nothing' 'acceptance criterion' 'Not done' 'decision' 'escalation' 'scope' 'blocking' 'advisory' 'no findings'; do
+    grep -qF -- "$w" "$sr" || { echo "FAIL: $sr does not say: $w"; fail=1; }
+  done
+  # the format of the block is the same in the three files
+  if [ -f agents/code-reviewer.md ] && [ "$(grep -E "$sfmt" agents/code-reviewer.md)" != "$(grep -E "$sfmt" "$sr")" ]; then
+    echo "FAIL: the format lines of the findings block differ between agents/code-reviewer.md and $sr"; fail=1
+  fi
+  wsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' skills/workflow/SKILL.md)
+  if [ "$(printf '%s\n' "$wsection" | grep -E "$sfmt")" != "$(grep -E "$sfmt" "$sr")" ]; then
+    echo "FAIL: the format lines of the findings block differ between skills/workflow/SKILL.md and $sr"; fail=1
+  fi
+else
+  echo "FAIL: $sr is missing"; fail=1
+fi
+for w in 'nightmill:spec-reviewer' 'roles.specReviewer.model' 'Findings and fix rounds' 'validate-config' 'Stopped: the specReviewer ranks below' 'Stopped: the spec review could not be had' 'Open review findings' 'Reviewed by the specReviewer role on' 'not a fork'; do
+  grep -qF -- "$w" skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not mention the spec review item: $w"; fail=1; }
 done
 
 echo "== bash files do not use jq"
