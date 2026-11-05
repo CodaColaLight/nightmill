@@ -1,6 +1,6 @@
 # Iteration 17: a slot whose pull request has merged is freed without a manual release
 
-Status: draft, awaiting approval (#60)
+Status: delivered in iteration 17 (PR #79)
 
 Story: #60, epic #47 (Unattended runs). Makes `slot.ps1 -Take` and `slot.sh --take` free every busy slot whose pull
 request has merged before they look for a free slot, and adds `-Reap` / `--reap` to do just that by hand. The freeing

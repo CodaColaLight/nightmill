@@ -4,22 +4,29 @@
 #   slot.sh --take feat/foo [--slot 2] [--base origin/main] [--skip-warmup]
 #   slot.sh --release 1                 # after the PR merged
 #   slot.sh --abandon 1                 # free a slot whose task was dropped (no merged PR)
-# Needs git and (for --release) gh. Run it from inside the project: any checkout or worktree of
+#   slot.sh --reap                      # free every busy slot whose PR has merged (--take does this first)
+# Needs git and (for --release and --reap) gh. Run it from inside the project: any checkout or worktree of
 # it. Configuration comes from .claude/nightmill.json in the main checkout, keys under "worktrees"
 # (see schema/nightmill.schema.json); WORKER_SLOTS overrides worktrees.slots. A slot is never removed:
 # a new task only switches it to a new branch from the base branch, so build output stays warm.
-# A slot is busy from --take to --release or --abandon (a marker file in <root>/.slots). Slot N gets
-# port base + N.
+# A slot is busy from --take to --release, --abandon or an automatic release (a marker file in
+# <root>/.slots). Slot N gets port base + N.
+# Automatic release (--reap, and the first step of every --take; iteration 17): a busy slot is freed when its
+# worktree is clean and gh lists a merged PR for its branch whose last commit is the tip of the local branch
+# (so a reused branch name or work after the merge keeps the slot busy and nothing is deleted). A slot that
+# cannot be judged (gh missing or failing, no fetch) stays busy and a note goes to standard error; the freeing
+# never makes a take fail. Same behaviour as slot.ps1 (-Reap).
 set -euo pipefail
 
 usage() {
-  echo "usage: slot.sh --status | --take <branch> [--slot N] [--base <ref>] [--skip-warmup] | --release N | --abandon N" >&2
+  echo "usage: slot.sh --status | --take <branch> [--slot N] [--base <ref>] [--skip-warmup] | --release N | --abandon N | --reap" >&2
   exit 1
 }
 
-take=""; release=0; abandon=0; status=0; slot=0; base=""; skip=0; porcelain=0
+take=""; release=0; abandon=0; status=0; slot=0; base=""; skip=0; porcelain=0; reap=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --reap) reap=1 ;;
     --status) status=1 ;;
     --porcelain) porcelain=1 ;;
     --take) take=${2:?--take needs a branch}; shift ;;
@@ -64,6 +71,51 @@ dirty_count() { git -C "$1" status --porcelain | wc -l | tr -d ' '; }
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+freed=0
+# reap_all: free every busy slot whose PR has merged (see the header); prints one line per freed slot
+reap_all() {
+  local n dir branch tip tmpf errf flat pr fetched=0 freason ferr
+  for ((n = 1; n <= count; n++)); do
+    has_marker "$n" || continue
+    dir=$(slot_dir "$n")
+    [ -d "$dir" ] || continue
+    [ "$(dirty_count "$dir")" -eq 0 ] || continue
+    branch=$(marker_field "$n" branch)
+    [ -n "$branch" ] || continue
+    tip=$(git -C "$dir" rev-parse "refs/heads/$branch" 2>/dev/null) || continue
+    if ! command -v gh >/dev/null 2>&1; then
+      echo "slot $n: not checked for a merged PR (gh is not on the PATH)" >&2; continue
+    fi
+    tmpf=$(mktemp); errf=$(mktemp)
+    if ! gh pr list --state merged --head "$branch" --json number,headRefOid > "$tmpf" 2> "$errf"; then
+      echo "slot $n: not checked for a merged PR ($(head -n 1 "$errf"))" >&2
+      rm -f "$tmpf" "$errf"; continue
+    fi
+    if ! flat=$(JSON_MODE=flat JSON_FILE="$tmpf" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" 2>/dev/null); then
+      echo "slot $n: not checked for a merged PR (gh did not answer with JSON)" >&2
+      rm -f "$tmpf" "$errf"; continue
+    fi
+    rm -f "$tmpf" "$errf"
+    # the first merged PR, in the order gh printed them, whose head commit is the tip of the local branch
+    pr=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' -v tip="$tip" '
+      $1 ~ /^\[[0-9]+\]\.number$/ { k = $1; sub(/\]\.number$/, "", k); num[k] = $3 }
+      $1 ~ /^\[[0-9]+\]\.headRefOid$/ { k = $1; sub(/\]\.headRefOid$/, "", k); oid[k] = $3; order[++cnt] = k }
+      END { for (i = 1; i <= cnt; i++) if (oid[order[i]] == tip) { print num[order[i]]; exit } }')
+    [ -n "$pr" ] || continue
+    if [ "$fetched" = 0 ]; then
+      if ferr=$(git fetch origin "$base_branch" 2>&1); then fetched=1; else fetched=-1; freason=$(printf '%s\n' "$ferr" | head -n 1); fi
+    fi
+    if [ "$fetched" != 1 ]; then
+      echo "slot $n: not checked for a merged PR (git fetch origin $base_branch failed: $freason)" >&2; continue
+    fi
+    git -C "$dir" switch --detach "origin/$base_branch" >/dev/null 2>&1 || continue
+    git branch -D "$branch" >/dev/null 2>&1 || true
+    rm -f "$(marker "$n")"
+    echo "Slot $n is free (was $branch, PR #$pr), released automatically."
+    freed=$((freed + 1))
+  done
 }
 
 warmup() { # slot dir
@@ -149,8 +201,16 @@ if [ "$status" = 1 ]; then
   exit 0
 fi
 
+if [ "$reap" = 1 ]; then
+  mkdir -p "$state"
+  reap_all
+  [ "$freed" -gt 0 ] || echo "No slot freed."
+  exit 0
+fi
+
 if [ -n "$take" ]; then
   mkdir -p "$state"
+  reap_all
   n=$slot
   if [ "$n" = 0 ]; then
     for ((i = 1; i <= count; i++)); do

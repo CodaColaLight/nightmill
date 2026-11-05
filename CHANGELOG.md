@@ -30,6 +30,19 @@
   wording, keeps the agent's tools and format in step, and now allows exactly the worker and the code reviewer under
   `agents/`. No config key, script or status change.
 
+- Iteration 17 (#60): a slot whose pull request has merged is freed without a manual release. `slot.sh --take` and
+  `slot.ps1 -Take` now first free every busy slot whose pull request has merged, and the new `--reap` / `-Reap` does
+  only that. A slot is freed only when its worktree is clean and `gh pr list --state merged --head <branch>` lists a
+  pull request whose `headRefOid` is the tip of the local branch (a stricter check than `--release`, so a reused
+  branch name or commits made after the merge keep the slot busy and nothing is deleted); freeing is what
+  `--release` does (switch to a detached `origin/<base>`, delete the local branch, remove the marker) and each freed
+  slot is reported in one line, `Slot 1 is free (was feat/a, PR #12), released automatically.` A slot that cannot be
+  judged (no `gh`, `gh` failing or logged out, no fetch) stays busy with a note on standard error and never makes a
+  take fail; `--reap` prints `No slot freed.` when nothing was freed. `--release`, `--abandon`, `--status`, the slot
+  marker and every config key are unchanged. Twelve smoke cases run in both shells against a fake `gh`, the lint
+  checks that both scripts carry the rule and that the README says so, and the README describes when a slot is
+  freed on its own and when it is not.
+
 - Iteration 16 (#34): `/nightmill:models` prints one table of the model of every agent role. The scripts
   `scripts/models.ps1` and `scripts/models.sh` (with `scripts/lib/models.awk`, no `jq`) read the config and the
   schema and print, per role, what it does, the model it runs on, whether that comes from the config or from the
@@ -42,6 +55,7 @@
   in both shells, among them one that requires the counts of the table to agree with `validate-config`, and the
   lint checks that the skill, both scripts and both tests exist, that the scripts only read, and that CI and the
   check run the tests. No config key, status or slot change.
+
 - Iteration 15 (#32): the validator rejects a reviewer ranked below its producer. `validate-config` (PowerShell and
   bash, in `scripts/lib/validate.awk`) checks, after the schema walk, that `specReviewer` ranks at least as high as
   `specWriter` and `codeReviewer` at least as high as `implementer` and `fixer`, judged by `models.ranking`, on the

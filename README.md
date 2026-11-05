@@ -44,7 +44,7 @@ not a conversation.
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
-| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Status`. |
+| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -204,9 +204,18 @@ reviewer on a model ranked below the role it reviews (`specReviewer` below `spec
 
 A slot is a worktree that is never removed. A new task switches it to a new branch from the base
 branch, so build output and installed dependencies stay warm and builds are incremental instead of
-cold. A slot is busy from `-Take` to `-Release` (after the PR merged) or `-Abandon`. Slot N gets
-`base + N` for every configured port, so two servers run side by side. The number of slots follows
+cold. A slot is busy from `-Take` to `-Release` (after the PR merged), `-Abandon` or an automatic release. Slot N
+gets `base + N` for every configured port, so two servers run side by side. The number of slots follows
 `worktrees.slots` or `WORKER_SLOTS`; one per 8 GB of RAM is a sound default.
+
+A take (`-Take` / `--take`) first frees every busy slot whose pull request has merged, so the next `/next` or
+`/fix` finds a free slot without a person running `-Release`; `-Reap` (`--reap`) does only that. A slot is freed
+only when its worktree is clean and `gh` lists a merged pull request for its branch whose last commit is the tip of
+the local branch, so a reused branch name or work after the merge keeps the slot busy and nothing is deleted. A slot
+that cannot be judged (`gh` missing, logged out or failing, no fetch) stays busy, with a note on standard error, and
+never makes a take fail. A slot whose pull request is open, closed without a merge or moved by "update branch" stays
+busy until `-Release` or `-Abandon`. Each freed slot is reported in one line:
+`Slot 1 is free (was feat/a, PR #12), released automatically.`
 
 ## Developing nightmill
 

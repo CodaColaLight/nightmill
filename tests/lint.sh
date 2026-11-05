@@ -454,6 +454,18 @@ for f in skills/next/SKILL.md skills/fix/SKILL.md; do
   done
 done
 
+echo "== slots free themselves"
+# A busy slot whose pull request has merged is freed by -Reap / --reap and by the first step of every take
+# (iteration 17), in both shells, with the tip check and the report text; the README says when it happens.
+for f in scripts/slot.sh scripts/slot.ps1; do
+  for w in 'released automatically' 'headRefOid'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
+  done
+done
+for w in '--reap' '-Reap'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
