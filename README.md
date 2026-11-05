@@ -177,7 +177,9 @@ strongest (aliases and full model ids); models of the same level share one entry
 `"opus=claude-opus-5-5"`. `review.maxFixRounds` (default 2) is how many fix rounds a producer gets after a review.
 
 The workflow skill defines how a skill picks a role's model: the configured model, else the default of the schema,
-passed explicitly; a model that cannot be used stops the run and is reported, never replaced.
+passed explicitly; a model that cannot be used stops the run and is reported, never replaced. `/next` and `/fix`
+hand the coding to an `implementer` or `fixer` subagent on the configured model, and the pull request says which
+model it ran on; the session keeps the board, the slot, the CHANGELOG and the pull request.
 
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),

@@ -1,6 +1,6 @@
 # Iteration 13: /next and /fix hand the coding to a subagent on the configured model
 
-Status: draft, awaiting approval (#35)
+Status: delivered in iteration 13 (PR #61)
 
 Story: #35, epic #29 (Independent code review). Changes `skills/next/SKILL.md` and `skills/fix/SKILL.md` so that the
 tests and the code of a story are written by an `implementer` subagent, and those of a bug fix by a `fixer`

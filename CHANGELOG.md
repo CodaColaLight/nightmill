@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Iteration 13 (#35): `/next` and `/fix` hand the coding to a subagent on the configured model. The tests and the
+  code of a story are written by an `implementer` subagent, the failing test and the fix of a bug by a `fixer`
+  subagent, each launched as a fresh agent (not a fork, not the `worker`) on `roles.<role>.model` or the schema
+  default, passed explicitly, after the session counted the agents against `parallel.maxAgents`. The prompt names
+  the slot's absolute path, forbids pushing, board changes and further agents, and ends with a result block
+  (`Result: complete | partial | failed`). The subagent commits when the check is green; the session keeps the
+  picking line, the statuses, the slot, the manual check, the CHANGELOG entry, the pull request and every hard
+  rule. A `partial` result follows the existing partly-done rule (no auto-merge, the rest filed as a story); a
+  `failed` one opens no pull request and leaves the story In progress; a model that cannot be used stops the run
+  with the line of the workflow skill (in `/fix all` it ends the run, a failed bug is skipped). The pull request
+  says `Written by the implementer role on <model>.` or `Fixed by the fixer role on <model>.` The README says so in
+  one sentence and the lint pins the wording. No config key, script or status change.
 - Iteration 12 (#48): `/nightmill:init` installs the edit permission a lights-out run needs. A new plan line,
   **Edit permission**, adds the rule `Edit(**)` to `permissions.allow` of the personal
   `.claude/settings.local.json`, so `/spec`, `/next` and `/fix` write files inside the project without a prompt

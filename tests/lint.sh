@@ -301,6 +301,35 @@ for w in 'Edit(**)' '.claude/settings.local.json' '### The edit permission'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the edit permission item: $w"; fail=1; }
 done
 
+echo "== /next and /fix hand the coding to a subagent"
+# /next launches an implementer subagent and /fix a fixer subagent on the configured model (iteration 13). Both
+# are conversations, so the lint pins the wording the behaviour depends on; the manual check does the behaviour.
+for pair in "next:implementer" "fix:fixer"; do
+  skill=${pair%%:*}; role=${pair##*:}
+  f=skills/$skill/SKILL.md
+  for w in "roles.$role.model" 'Agent roles and models' 'explicitly' 'not a fork' 'not nightmill:worker' 'parallel.maxAgents' \
+           'never writes the code itself' 'Result: complete | partial | failed' \
+           "Stopped: the $role role cannot run on" "Stopped: the $role returned failed" 'Do not push' 'do not launch other agents'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the subagent item: $w"; fail=1; }
+  done
+  # what the session keeps
+  for w in 'slot' 'gh pr merge' 'Never set Ready or Approved'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f lost what the session keeps: $w"; fail=1; }
+  done
+done
+grep -qF 'Written by the implementer role on' skills/next/SKILL.md || { echo "FAIL: skills/next/SKILL.md: the pull request does not name the implementer's model"; fail=1; }
+grep -qF 'Fixed by the fixer role on' skills/fix/SKILL.md || { echo "FAIL: skills/fix/SKILL.md: the pull request does not name the fixer's model"; fail=1; }
+for w in 'Picking #' 'CHANGELOG'; do
+  grep -qF -- "$w" skills/next/SKILL.md || { echo "FAIL: skills/next/SKILL.md lost what the session keeps: $w"; fail=1; }
+done
+for w in 'Cause:' 'Fix:' 'Test:'; do
+  grep -qF -- "$w" skills/fix/SKILL.md || { echo "FAIL: skills/fix/SKILL.md: the fixer's result block lacks $w"; fail=1; }
+done
+# no agent file for the two roles: the prompt is in the skill, the default model is in the schema
+for a in agents/*.md; do
+  [ "$a" = agents/worker.md ] || { echo "FAIL: $a: the implementer and the fixer have no agent file (the prompt is in the skill)"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
