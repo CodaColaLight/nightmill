@@ -26,9 +26,11 @@ issue on that board is the only thing that starts work:
 ## Setting up
 
 1. Fork the repository and clone your fork.
-2. Start Claude Code from the clone with `claude --plugin-dir .`. The skills under test are then the ones in
-   your working tree. Do not also install `nightmill@nightmill` in that checkout: two copies of the same
-   skills shadow each other.
+2. Start Claude Code in the clone with the released plugin installed (`/plugin install nightmill@nightmill`).
+   To try a skill you changed, start a session in another folder with `claude --plugin-dir <path to your
+   clone>`. Avoid `claude --plugin-dir .` in the folder you edit: a folder loaded that way is a protected
+   path, so Claude Code does not auto-approve writes to it. Do not load the same skills twice (installed and
+   `--plugin-dir`) in one session: they shadow each other.
 3. Set a git identity for the clone. GitHub's no-reply address is fine if you would rather not publish your
    email.
 

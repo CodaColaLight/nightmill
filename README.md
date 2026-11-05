@@ -169,7 +169,8 @@ cold. A slot is busy from `-Take` to `-Release` (after the PR merged) or `-Aband
 ## Developing nightmill
 
 nightmill develops itself with its own workflow: a board, the eight statuses, specs, one check
-command, auto-merge. `.claude/CLAUDE.md` holds the rules for working on it; `docs/decisions/0001` says why.
+command, auto-merge. `.claude/CLAUDE.md` holds the rules for working on it; `docs/decisions/0001` and
+`0003` say why.
 
 ```
 bash tests/check.sh         # everything this machine can run, lists what it skipped
@@ -197,7 +198,9 @@ extracted from one project and must not know that project's name, its maintainer
 domain.
 
 To run the plugin from a checkout instead of the installed copy: `claude --plugin-dir /path/to/nightmill`,
-in this repository or in a project.
+started in a project or in another folder, not in the checkout itself (a folder loaded that way is a
+protected path, so edits to it are not auto-approved). To try a release before it is published, add its
+branch as the marketplace: `claude plugin marketplace add CodaColaLight/nightmill#release/vX.Y.Z`.
 
 ### Releasing
 
