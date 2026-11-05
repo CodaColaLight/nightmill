@@ -295,6 +295,32 @@ for w in 'gh project copy' 'template-board' 'field by field'; do
 done
 grep -qF 'The template board' README.md || { echo "FAIL: README.md has no section 'The template board'"; fail=1; }
 
+echo "== models is wired"
+# /models (iteration 16): the skill, both scripts and both smoke tests exist, the README names the skill, the scripts
+# only read, the roles of the scripts are the roles of the schema, the skill does not name the config file (so it
+# needs no injection), and the check and CI run the smoke tests.
+for f in skills/models/SKILL.md scripts/models.sh scripts/models.ps1 scripts/lib/models.awk tests/smoke-models.sh tests/smoke-models.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+grep -qF '/nightmill:models' README.md || { echo "FAIL: README.md does not mention /nightmill:models"; fail=1; }
+for f in scripts/models.sh scripts/models.ps1 scripts/lib/models.awk; do
+  if [ -f "$f" ] && grep -nE '(^|[^a-z])gh +[a-z]|curl|Set-Content|Out-File|Add-Content|Remove-Item|New-Item|git +(add|commit|push|switch|checkout|fetch|worktree|config|branch|reset|rm|mv|clean|stash|init|merge|rebase|pull)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f writes or calls out; /models only reads"; fail=1
+  fi
+done
+json_load schema/nightmill.schema.json
+while IFS= read -r r; do
+  [ -n "$r" ] || continue
+  grep -qF -- "$r" scripts/lib/models.awk || { echo "FAIL: scripts/lib/models.awk does not know the role $r of the schema"; fail=1; }
+  grep -qF -- "$r" scripts/models.ps1 || { echo "FAIL: scripts/models.ps1 does not know the role $r of the schema"; fail=1; }
+done < <(json_keys properties.roles.properties)
+if grep -qF 'nightmill.json' skills/models/SKILL.md; then
+  echo "FAIL: skills/models/SKILL.md names the config file; it would have to inject it"; fail=1
+fi
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF 'smoke-models' "$f" || { echo "FAIL: $f does not run smoke-models"; fail=1; }
+done
+
 echo "== init installs the edit permission"
 # /init adds the rule Edit(**) to permissions.allow of .claude/settings.local.json (iteration 12). /init is a
 # conversation, so the lint pins the wording the behaviour depends on; the manual check does the behaviour.

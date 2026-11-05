@@ -39,6 +39,7 @@ not a conversation.
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` works through every Ready bug. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, busy slots, stale states flagged. Read-only. |
+| `/nightmill:models` | One table of each agent role's model, where it comes from (the config or the default), its rank and whether the reviewer pairings hold. Read-only. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
@@ -182,7 +183,8 @@ passed explicitly; a model that cannot be used stops the run and is reported, ne
 hand the coding to an `implementer` or `fixer` subagent on the configured model, and the pull request says which
 model it ran on; the session keeps the board, the slot, the CHANGELOG and the pull request. `/spec` hands the
 writing of the spec to a `specWriter` subagent the same way, and the spec pull request says which model it ran
-on; the session keeps the board, the branch and the pull request.
+on; the session keeps the board, the branch and the pull request. `/nightmill:models` prints the table of every
+role, its model, where the model comes from, its rank and whether its pairing holds; it only reads.
 
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
@@ -215,6 +217,7 @@ bash tests/smoke-release.sh # the release script (git only)
 bash tests/smoke-validate.sh # the config validator
 bash tests/smoke-status.sh  # status.sh against fixtures and a fake gh
 bash tests/smoke-template-board.sh # template-board.sh against fixtures and a fake gh
+bash tests/smoke-models.sh  # models.sh: the table of the role models
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -223,6 +226,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-release.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-status.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-models.ps1
 claude plugin validate . --strict
 ```
 
