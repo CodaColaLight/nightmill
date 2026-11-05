@@ -1,0 +1,8 @@
+ #  Title                  Status       Who  PR          Age  Flag
+24  A draft spec PR        Spec review  -    #52 draft    1h
+25  Approved just now      Approved     -    -           10m
+20  Lost in progress       In progress  -    -            5h  stale: In progress, no PR and no busy slot
+21  Just started           In progress  -    -           30m
+22  A closed PR at Review  Review       -    #50 closed   2h  stale: Review but the PR is closed
+23  A merged spec PR       Spec         -    #51 merged   1d
+26  A closed spec PR only  Spec         -    #53 closed   5h  stale: Spec but no spec PR

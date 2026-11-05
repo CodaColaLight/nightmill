@@ -38,6 +38,7 @@ not a conversation.
 | `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. |
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` works through every Ready bug. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
+| `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, busy slots, stale states flagged. Read-only. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
@@ -128,12 +129,14 @@ bash tests/smoke-render.sh  # render-templates.sh
 bash tests/smoke-hook.sh    # the SessionStart hook
 bash tests/smoke-release.sh # the release script (git only)
 bash tests/smoke-validate.sh # the config validator
+bash tests/smoke-status.sh  # status.sh against fixtures and a fake gh
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-release.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-status.ps1
 claude plugin validate . --strict
 ```
 

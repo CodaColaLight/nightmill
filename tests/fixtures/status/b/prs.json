@@ -1,0 +1,46 @@
+[
+  {
+    "number": 50,
+    "title": "Iteration 3: closed (#22)",
+    "headRefName": "feat/c",
+    "state": "CLOSED",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": [
+      {
+        "number": 22
+      }
+    ]
+  },
+  {
+    "number": 51,
+    "title": "docs: iteration 3 spec (#23)",
+    "headRefName": "spec/3-merged",
+    "state": "MERGED",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": []
+  },
+  {
+    "number": 52,
+    "title": "docs: iteration 4 spec (#24)",
+    "headRefName": "spec/4-draft",
+    "state": "OPEN",
+    "isDraft": true,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": []
+  },
+  {
+    "number": 53,
+    "title": "docs: iteration 5 spec (#26)",
+    "headRefName": "spec/5-closed",
+    "state": "CLOSED",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": []
+  }
+]

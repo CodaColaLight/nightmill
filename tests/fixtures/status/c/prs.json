@@ -1,0 +1,57 @@
+[
+  {
+    "number": 60,
+    "title": "Iteration 2: merged (#31)",
+    "headRefName": "feat/merged",
+    "state": "MERGED",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": [
+      {
+        "number": 31
+      }
+    ]
+  },
+  {
+    "number": 61,
+    "title": "Iteration 2: closed (#32)",
+    "headRefName": "feat/closed",
+    "state": "CLOSED",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": [
+      {
+        "number": 32
+      }
+    ]
+  },
+  {
+    "number": 62,
+    "title": "Iteration 2: other (#33)",
+    "headRefName": "feat/other",
+    "state": "OPEN",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "bench",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED"
+      }
+    ],
+    "closingIssuesReferences": [
+      {
+        "number": 33
+      }
+    ]
+  }
+]

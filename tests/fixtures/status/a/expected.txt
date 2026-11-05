@@ -1,0 +1,20 @@
+ #  Title                                 Status       Who     PR                    Age  Flag
+ 2  Config validator against the sche...  Spec review  -       #31 open, ci pass      5h
+ 3  Approved and waiting                  Approved     -       -                      2d
+ 4  Busy one                              In progress  slot 1  #33 open, ci fail      1d
+ 7  Older review                          Review       -       #35 open, ci pending   4d
+ 5  Merged but still at Review            Review       -       #23 merged             3d  stale: Review but the PR is merged
+14  A merged and an open PR               Review       -       #41 open, ci none      1d
+ 6  Healthy review                        Review       alex    #34 open, ci pass      3h
+17  No CI at all, and a very long tit...  Review       -       #44 open, ci none      1h
+16  A draft PR                            Review       -       #43 draft             40m
+15  A legacy status failing               Review       -       #42 open, ci fail     30m
+ 8  Spec with no spec PR                  Spec         -       -                      5h  stale: Spec but no spec PR
+ 9  Fresh spec                            Spec         -       -                     40m
+10  Ready item                            Ready        -       -                      6d
+not shown: 2 at Backlog, 1 at Done (use --all)
+
+slots
+slot  Branch      Since  PR                 Flag
+   1  feat/busy      2h  #33 open, ci fail
+   2  feat/fresh    20m  -

@@ -1,0 +1,278 @@
+{
+  "items": [
+    {
+      "id": "PVTI_1",
+      "content": {
+        "number": 1,
+        "title": "[Epic] Big plan",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/1"
+      },
+      "labels": [
+        "epic"
+      ],
+      "status": "Backlog",
+      "title": "[Epic] Big plan"
+    },
+    {
+      "id": "PVTI_2",
+      "content": {
+        "number": 2,
+        "title": "[Story] Config validator against the schema, run by init and the lint",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/2"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec review",
+      "title": "[Story] Config validator against the schema, run by init and the lint"
+    },
+    {
+      "id": "PVTI_3",
+      "content": {
+        "number": 3,
+        "title": "[Story] Approved and waiting",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/3"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Approved",
+      "title": "[Story] Approved and waiting"
+    },
+    {
+      "id": "PVTI_4",
+      "content": {
+        "number": 4,
+        "title": "[Story] Busy one",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/4"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "In progress",
+      "title": "[Story] Busy one"
+    },
+    {
+      "id": "PVTI_5",
+      "content": {
+        "number": 5,
+        "title": "[Story] Merged but still at Review",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/5"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] Merged but still at Review"
+    },
+    {
+      "id": "PVTI_6",
+      "content": {
+        "number": 6,
+        "title": "[Story] Healthy review",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/6"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] Healthy review",
+      "assignees": [
+        "alex"
+      ]
+    },
+    {
+      "id": "PVTI_7",
+      "content": {
+        "number": 7,
+        "title": "[Bug] Older review",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/7"
+      },
+      "labels": [
+        "bug"
+      ],
+      "status": "Review",
+      "title": "[Bug] Older review"
+    },
+    {
+      "id": "PVTI_8",
+      "content": {
+        "number": 8,
+        "title": "[Story] Spec with no spec PR",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/8"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec",
+      "title": "[Story] Spec with no spec PR"
+    },
+    {
+      "id": "PVTI_9",
+      "content": {
+        "number": 9,
+        "title": "[Story] Fresh spec",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/9"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec",
+      "title": "[Story] Fresh spec"
+    },
+    {
+      "id": "PVTI_10",
+      "content": {
+        "number": 10,
+        "title": "[Story] Ready item",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/10"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Ready",
+      "title": "[Story] Ready item"
+    },
+    {
+      "id": "PVTI_11",
+      "content": {
+        "number": 11,
+        "title": "[Story] Backlog one",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/11"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Backlog",
+      "title": "[Story] Backlog one"
+    },
+    {
+      "id": "PVTI_12",
+      "content": {
+        "number": 12,
+        "title": "[Story] Backlog two",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/12"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Backlog",
+      "title": "[Story] Backlog two"
+    },
+    {
+      "id": "PVTI_13",
+      "content": {
+        "number": 13,
+        "title": "[Story] Done one",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/13"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Done",
+      "title": "[Story] Done one"
+    },
+    {
+      "id": "PVTI_14",
+      "content": {
+        "number": 14,
+        "title": "[Story] A merged and an open PR",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/14"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] A merged and an open PR"
+    },
+    {
+      "id": "PVTI_15",
+      "content": {
+        "number": 15,
+        "title": "[Story] A legacy status failing",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/15"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] A legacy status failing"
+    },
+    {
+      "id": "PVTI_16",
+      "content": {
+        "number": 16,
+        "title": "[Story] A draft PR",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/16"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] A draft PR"
+    },
+    {
+      "id": "PVTI_17",
+      "content": {
+        "number": 17,
+        "title": "[Story] No CI at all, and a very long title that has to be cut",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/17"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] No CI at all, and a very long title that has to be cut"
+    },
+    {
+      "id": "PVTI_99",
+      "content": {
+        "number": 99,
+        "title": "A pull request on the board",
+        "type": "PullRequest",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/99"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "A pull request on the board"
+    }
+  ],
+  "totalCount": 18
+}

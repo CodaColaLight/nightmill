@@ -1,6 +1,6 @@
 # Iteration 8: /status, one table of what waits and what is stuck
 
-Status: draft, awaiting approval (#9)
+Status: delivered in iteration 8 (PR #PRNUM)
 
 Story: #9, epic #4 (Board visibility). Adds `scripts/status.ps1` and `scripts/status.sh`, a `--porcelain`
 listing to `slot.ps1` and `slot.sh`, the skill `skills/status/SKILL.md`, smoke tests and a lint check. No
