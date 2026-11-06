@@ -70,6 +70,7 @@ rule. The spec file is the writer's.
    builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
    `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
    wait for; the session never writes the spec itself instead. The writer is one agent (its prompt forbids launching others).
+   Then check the room on the machine (**Parallel work** in the `workflow` skill).
 3. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
    `model` that **Agent roles and models** in the `workflow` skill gives the role `specWriter`
    (`roles.specWriter.model`, else the schema default), passed explicitly, and the prompt below. When the model
@@ -135,7 +136,8 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    and do the clean-up of "The spec writer". When the validator cannot run (exit code 2, missing script), stop with
    `Stopped: the pairing could not be checked: <the reason>. Nothing was reviewed.` A reviewer model that is not in
    `models.ranking` is only a warning of the validator and does not stop the run.
-2. **Count and launch.** Count the agents as for the writer. One Agent call: `subagent_type`
+2. **Count and launch.** Count the agents as for the writer. Then check the room on the machine (**Parallel work**
+   in the `workflow` skill). One Agent call: `subagent_type`
    `nightmill:spec-reviewer`, not a fork, with the `model` that **Agent roles and models** gives `specReviewer`
    (`roles.specReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
    that section's line for `specReviewer`, naming the status Spec, and do the clean-up.
@@ -156,8 +158,8 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    End with the findings block of the workflow skill, and nothing after it.
    ```
 4. **Read the block.** `no findings`, or advisory findings only: go on to the commit and keep the advisory lines. With
-   blocking findings, while fewer than `review.maxFixRounds` fix rounds have been used: a fix round (a fresh
-   specWriter, the writer's prompt plus the blocking lines and "Fix exactly these blocking findings in the spec file
+   blocking findings, while fewer than `review.maxFixRounds` fix rounds have been used: check the room on the machine
+   (**Parallel work** in the `workflow` skill), then a fix round (a fresh specWriter, the writer's prompt plus the blocking lines and "Fix exactly these blocking findings in the spec file
    and nothing else"), the form check of "Read the result" again (a failure stops the run as there), and a new review
    from step 2 (the pairing is not checked again). No valid block, or an error: stop with
    `Stopped: the spec review could not be had: <the reason>. Nothing was opened.` and do the clean-up.

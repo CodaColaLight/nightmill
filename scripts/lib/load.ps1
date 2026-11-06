@@ -10,13 +10,17 @@
 #                                       the message of an unusable NIGHTMILL_LOAD_FIXTURE
 #   Get-LoadSuggestion -Load -Settings -Busy   an object with Suggest, Reason (the key), Why (the text), all $null when a
 #                                       value is unavailable
+#   Get-RoomSettings $Config            an object with On ([bool]), MinFree, MaxCpu, Pause, MaxWait from
+#                                       parallel.roomCheck, roomMinFreeMB, roomMaxCpuPercent, roomPauseSeconds and
+#                                       roomMaxWaitMinutes (warnings on standard error with the prefix room;
+#                                       docs/specs/iteration-28-machine-room.md)
 #
 # Readers: Windows reads Win32_PerfRawData_PerfOS_Processor (the raw counters, not a load percentage) and
 # Win32_OperatingSystem; pwsh on Linux reads /proc/stat and /proc/meminfo (MemAvailable); pwsh on macOS top, vm_stat
 # and sysctl hw.memsize. $env:NIGHTMILL_LOAD_FIXTURE names a file of samples "<cpu percent> <free MB> <total MB>" read
 # instead (no sleep).
 
-function Get-LoadSetting($Config, [string]$Key, [int]$Low, [int]$High, [int]$Default) {
+function Get-LoadSetting($Config, [string]$Key, [int]$Low, [int]$High, [int]$Default, [string]$Prefix = "load") {
   if ($null -eq $Config -or -not ($Config -is [System.Management.Automation.PSCustomObject])) { return $Default }
   $pp = $Config.PSObject.Properties["parallel"]
   if (-not $pp -or -not ($pp.Value -is [System.Management.Automation.PSCustomObject])) { return $Default }
@@ -24,7 +28,7 @@ function Get-LoadSetting($Config, [string]$Key, [int]$Low, [int]$High, [int]$Def
   if (-not $p -or $null -eq $p.Value) { return $Default }
   $v = $p.Value
   if (($v -is [int] -or $v -is [long]) -and $v -ge $Low -and $v -le $High) { return [int]$v }
-  [Console]::Error.WriteLine("load: parallel.$Key must be a whole number from $Low to $High; using $Default")
+  [Console]::Error.WriteLine("${Prefix}: parallel.$Key must be a whole number from $Low to $High; using $Default")
   return $Default
 }
 
@@ -33,6 +37,25 @@ function Get-LoadSettings($Config) {
   $gb = Get-LoadSetting $Config "memoryPerAgentGB" 1 1024 8
   $window = Get-LoadSetting $Config "loadWindowSeconds" 2 60 10
   return [pscustomobject]@{ Ceiling = $ceiling; GB = $gb; Window = $window }
+}
+
+function Get-RoomSettings($Config) {
+  $on = $true
+  if ($null -ne $Config -and $Config -is [System.Management.Automation.PSCustomObject]) {
+    $pp = $Config.PSObject.Properties["parallel"]
+    if ($pp -and $pp.Value -is [System.Management.Automation.PSCustomObject]) {
+      $p = $pp.Value.PSObject.Properties["roomCheck"]
+      if ($p -and $null -ne $p.Value) {
+        if ($p.Value -is [bool]) { $on = [bool]$p.Value }
+        else { [Console]::Error.WriteLine("room: parallel.roomCheck must be true or false; using true") }
+      }
+    }
+  }
+  $minFree = Get-LoadSetting $Config "roomMinFreeMB" 1 999999 2000 "room"
+  $maxCpu = Get-LoadSetting $Config "roomMaxCpuPercent" 1 100 90 "room"
+  $pause = Get-LoadSetting $Config "roomPauseSeconds" 1 90 60 "room"
+  $maxWait = Get-LoadSetting $Config "roomMaxWaitMinutes" 1 1440 30 "room"
+  return [pscustomobject]@{ On = $on; MinFree = $minFree; MaxCpu = $maxCpu; Pause = $pause; MaxWait = $maxWait }
 }
 
 # Get-LoadReader: linux, macos or windows ($IsLinux and $IsMacOS do not exist in Windows PowerShell 5.1)

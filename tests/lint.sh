@@ -740,6 +740,63 @@ for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-load' "$f" || { echo "FAIL: $f does not run smoke-load"; fail=1; }
 done
 
+echo "== room is wired"
+# A skill checks that the machine has room before it starts an agent (iteration 28): both room scripts and both smoke
+# tests exist, the scripts only read and hold back, they measure 3 samples with the library, the schema, the example and
+# the README carry the five keys, the rule is in the workflow skill once and the three skills point to it at every
+# launch, and the check and CI run the tests.
+for f in scripts/room.sh scripts/room.ps1 tests/smoke-room.sh tests/smoke-room.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+for f in scripts/room.sh scripts/room.ps1; do
+  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|slot\.ps1|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f writes, changes or stops something, or calls a slot script; room only reads and holds back"; fail=1
+  fi
+done
+for w in 'load_measure 3' 'room_settings' '--since'; do
+  grep -qF -- "$w" scripts/room.sh 2>/dev/null || { echo "FAIL: scripts/room.sh does not carry: $w"; fail=1; }
+done
+for w in 'Measure-Load -Samples 3' 'Get-RoomSettings' 'Since'; do
+  grep -qF -- "$w" scripts/room.ps1 2>/dev/null || { echo "FAIL: scripts/room.ps1 does not carry: $w"; fail=1; }
+done
+json_load schema/nightmill.schema.json
+p=properties.parallel.properties.roomCheck
+[ "$(json_get "$p.type")" = boolean ] || { echo "FAIL: schema: parallel.roomCheck is not a boolean"; fail=1; }
+[ "$(json_get "$p.default")" = true ] || { echo "FAIL: schema: parallel.roomCheck default is not true"; fail=1; }
+[ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: parallel.roomCheck has no description"; fail=1; }
+for spec in roomMinFreeMB:2000 roomMaxCpuPercent:90 roomPauseSeconds:60 roomMaxWaitMinutes:30; do
+  k=${spec%%:*}; d=${spec#*:}; p=properties.parallel.properties.$k
+  [ "$(json_get "$p.type")" = integer ] || { echo "FAIL: schema: parallel.$k is not an integer"; fail=1; }
+  [ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: parallel.$k has no description"; fail=1; }
+  [ "$(json_get "$p.default")" = "$d" ] || { echo "FAIL: schema: parallel.$k default is not $d"; fail=1; }
+  [ "$(json_get "$p.minimum")" = 1 ] || { echo "FAIL: schema: parallel.$k minimum is not 1"; fail=1; }
+done
+json_load templates/nightmill.example.json
+for spec in roomCheck:true roomMinFreeMB:2000 roomMaxCpuPercent:90 roomPauseSeconds:60 roomMaxWaitMinutes:30; do
+  k=${spec%%:*}; d=${spec#*:}
+  [ "$(json_get "parallel.$k")" = "$d" ] || { echo "FAIL: templates/nightmill.example.json: parallel.$k is not the schema default $d"; fail=1; }
+done
+for w in 'scripts/room.ps1' 'scripts/room.sh' 'Stopped: no room on this machine' 'never changes the agent limit, stops an agent or releases a slot'; do
+  grep -qF -- "$w" skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not say: $w"; fail=1; }
+done
+for spec in next:7 fix:6 spec:3; do
+  s=skills/${spec%%:*}/SKILL.md; want=${spec#*:}
+  n_room=$(grep -cF 'check the room on the machine' "$s" || true)
+  [ "${n_room:-0}" -ge "$want" ] || { echo "FAIL: $s says 'check the room on the machine' on ${n_room:-0} lines (at least $want expected)"; fail=1; }
+  for w in room.sh room.ps1 roomMin; do
+    if grep -qF -- "$w" "$s"; then echo "FAIL: $s names $w (the rule lives in the workflow skill only)"; fail=1; fi
+  done
+done
+for w in room.sh room.ps1 roomCheck roomMinFreeMB roomMaxCpuPercent roomPauseSeconds roomMaxWaitMinutes; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+for f in tests/smoke-room.sh tests/smoke-room.ps1; do
+  grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
+done
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF 'smoke-room' "$f" || { echo "FAIL: $f does not run smoke-room"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

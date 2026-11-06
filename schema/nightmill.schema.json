@@ -154,7 +154,12 @@
         "doNotPair": { "type": "string", "description": "Kinds of tasks that must not run side by side, for example two benchmark-heavy tasks." },
         "maxSuggestedAgents": { "type": "integer", "minimum": 1, "default": 4, "description": "The highest agent limit scripts/load.* suggests (it uses 1 to 99; the suggestion is never below 1). It bounds the suggestion only, not maxAgents or a value set with slot --capacity." },
         "memoryPerAgentGB": { "type": "integer", "minimum": 1, "default": 8, "description": "Memory one agent's work needs, in GB of 10^9 bytes (1 to 1024), for the memory part of the suggestion of scripts/load.*. The default is the rule of thumb /nightmill:init uses: one agent per 8 GB." },
-        "loadWindowSeconds": { "type": "integer", "minimum": 2, "default": 10, "description": "How long scripts/load.* measures, in seconds (2 to 60): one CPU and memory sample a second." }
+        "loadWindowSeconds": { "type": "integer", "minimum": 2, "default": 10, "description": "How long scripts/load.* measures, in seconds (2 to 60): one CPU and memory sample a second." },
+        "roomCheck": { "type": "boolean", "default": true, "description": "Whether /next, /spec and /fix check that the machine has room (scripts/room.*: free memory and CPU load) before they start an agent, and wait while it has not. false starts agents as before." },
+        "roomMinFreeMB": { "type": "integer", "minimum": 1, "default": 2000, "description": "The free memory, in MB of 10^6 bytes (1 to 999999), below which scripts/room.* holds the start of another agent." },
+        "roomMaxCpuPercent": { "type": "integer", "minimum": 1, "default": 90, "description": "The CPU load, in percent (1 to 100), above which scripts/room.* holds the start of another agent. 100: the CPU never holds a start." },
+        "roomPauseSeconds": { "type": "integer", "minimum": 1, "default": 60, "description": "Seconds scripts/room.* pauses before the next check while there is no room (1 to 90)." },
+        "roomMaxWaitMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "The longest a skill waits for room, in minutes (1 to 1440); then it stops that task and starts nothing." }
       }
     },
     "worktrees": {

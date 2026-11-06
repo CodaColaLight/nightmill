@@ -25,7 +25,8 @@ milestone, iteration number or CHANGELOG entry.
 2. **Decide whether it is a bug.** If the fix needs one of `escalation.storyTriggers` or a design choice,
    stop: say so and suggest the maintainer files it as a story (`/story`).
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
-   `gh project item-edit`). Work in a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
+   `gh project item-edit`). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
+   Work in a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
    (bash: `slot.sh --take ...`); `-Release N` after the merge. In a single checkout without slots,
    `git switch -c <git.fixPrefix><number>-<slug>` from up-to-date `origin/<git.baseBranch>`. Right after the take
    report the step `slot-taken` (see "Reporting the steps" below); from here on every step is reported there.
@@ -38,7 +39,7 @@ milestone, iteration number or CHANGELOG entry.
 5. **Have the fix reviewed, then do the manual check.** A different agent, the `codeReviewer`, reviews the fix and
    the fixer fixes what is blocking (see "The code review" below). A change under any of
    `verification.manualCheckPaths` also gets `verification.manualCheckText`, done by the session (the fixer runs the
-   check, not this).
+   check, not this). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
 6. **Open a PR** titled `fix: <what> (#N)` with `Fixes #N`, directly under it the line
    `Fixed by the fixer role on <model>.` (`<model>` is the exact string passed as `model` in the fixer's Agent call),
    and the sections Cause, Fix and How verified, and the `## Review` section of "The code review" (step 5 there).
@@ -123,7 +124,7 @@ is the tester's.
    `slot.ps1 -Capacity -Porcelain` or `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
    one to end and say what you wait for; the session never writes the test itself instead. The tester is one agent (its
    agent file has no `Agent` tool), and it has returned before the fixer is launched, so a bug runs at most one producer
-   at a time.
+   at a time. Then check the room on the machine (**Parallel work** in the `workflow` skill).
 2. **Launch.** One Agent call: `subagent_type` `nightmill:tester`, not a fork, not nightmill:worker, with the `model`
    that **Agent roles and models** in the `workflow` skill gives the role `tester` (`roles.tester.model`, else the schema
    default), passed explicitly, and the prompt below. When the model cannot be used, stop with the line of that section
@@ -201,6 +202,7 @@ tester's; the fix, and the commit of both, are the fixer's. The fixer is launche
    builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
    `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
    wait for; the session never writes the code itself instead. The fixer is one agent (its prompt forbids launching others).
+   Then check the room on the machine (**Parallel work** in the `workflow` skill).
 2. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
    `model` that **Agent roles and models** in the `workflow` skill gives the role `fixer` (`roles.fixer.model`,
    else the schema default), passed explicitly, and the prompt below. When the model cannot be used, stop with the
@@ -357,8 +359,9 @@ other path is not the tester's, and a tester file is the tester's as a whole. Th
    with the branch and the slot, leave the status at In progress, the slot taken and the round's work uncommitted in
    the slot, and push nothing. The undo itself makes no commit.
 5. **A dispute.** When the fixer's `Disputes:` line is not `none` (and its round was not undone), while a fix round is
-   left: report `dispute-<k>` (role `tester`; k is the fix round the exchange uses), count the agents as in "The
-   tester", record `<dispute base>`, the output of `git -C <slot> rev-parse HEAD`, and launch `nightmill:tester` again
+   left: report `dispute-<k>` (role `tester`; k is the fix round the exchange uses) and count the agents as in "The
+   tester". Then check the room on the machine (**Parallel work** in the `workflow` skill). Record
+   `<dispute base>`, the output of `git -C <slot> rev-parse HEAD`, and launch `nightmill:tester` again
    (one Agent call, not a fork, with the `model` of the role `tester` passed explicitly) with the dispute prompt below.
    Read its result and check it, in this order:
    - `git -C <slot> rev-parse HEAD is still <dispute base>` (the tester committed nothing);
@@ -438,7 +441,8 @@ format, the rounds and the pairing rule are in **Findings and fix rounds** in th
    (the line may name the other producer, then name it). When the validator cannot run (exit code 2, missing
    script), stop with `Stopped: the pairing could not be checked: <the reason>. Nothing was reviewed.` A reviewer
    model that is not in `models.ranking` is only a warning of the validator and does not stop the run.
-2. **Count and launch.** Count the agents as for the fixer. One Agent call: `subagent_type`
+2. **Count and launch.** Count the agents as for the fixer. Then check the room on the machine (**Parallel work**
+   in the `workflow` skill). One Agent call: `subagent_type`
    `nightmill:code-reviewer`, not a fork, with the `model` that **Agent roles and models** gives `codeReviewer`
    (`roles.codeReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
    that section's line for `codeReviewer`, naming the status and the slot.
@@ -491,6 +495,7 @@ are the same for each bug, with these differences:
   `failed` fixer, and each `Stopped:` line of "The tester" except a model that cannot be used, is a skip of that bug
   by the rule below. A model that cannot be used, for the tester or the fixer, is **not** a skip: it ends the whole run with the
   `Stopped:` line, because every later bug would fail the same way, and the report lists the bugs not started.
+  A wait for room that runs out is not a skip either: it ends the run in the same way.
 - **Order and cap.** All open `labels.bug` items with status Ready, by `board.priorities` (highest first),
   then by issue number; no ties to ask about. At most 5 per run; the rest go in the report for the next run.
 - **One branch per bug, each from up-to-date `origin/<git.baseBranch>`**, not on top of the previous fix.

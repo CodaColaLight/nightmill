@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Iteration 28 (#81): a skill waits for room on the machine before it starts an agent. The new check
+  `scripts/room.sh` / `scripts/room.ps1` (with `--since` / `-Since`) measures free memory and CPU load over 3
+  one-second samples with the library of iteration 24 and answers whether the machine has room for one more agent: free
+  memory at least `parallel.roomMinFreeMB` (default 2000) and CPU load at most `parallel.roomMaxCpuPercent` (default
+  90). Exit codes: 0 start, 1 no room yet (the script has printed the `room: waiting` line and paused
+  `parallel.roomPauseSeconds`, default 60; the skill calls it again with the printed `--since`), 2 error, 3 the longest
+  wait (`parallel.roomMaxWaitMinutes`, default 30) ran out. The rule is written once, as the bullet "Room on the machine"
+  in "Parallel work" of the workflow skill; `/next`, `/spec` and `/fix` point to it at every step where they count the
+  agents before a start (a subagent, a take with its warm-up, a manual check, the session's own run of the check), and
+  when the longest wait runs out the skill prints `Stopped: no room on this machine ...` and starts nothing (in
+  `/fix all` it ends the run; `/spec` does its own clean-up). A measure that cannot be read is not checked and said
+  once; a check that fails starts the agent. The check never changes the agent limit, stops an agent or frees a slot.
+  Five new keys under `parallel` (`roomCheck`, the first boolean of the schema, switches it off; `roomMinFreeMB`,
+  `roomMaxCpuPercent`, `roomPauseSeconds`, `roomMaxWaitMinutes`) are ignored by the previous version. The library
+  `scripts/lib/load.*` gains an optional message prefix and `room_settings` / `Get-RoomSettings`; what `scripts/load.*`
+  prints does not change.
+
 - Iteration 27 (#44): the implementer may not change the tester's tests, and a doubtful test goes back to the tester.
   The prompts of the implementer in `/next` and of the fixer in `/fix` forbid editing, renaming, moving, overwriting or
   deleting the tester's files; they may add tests of their own only in files that are not the tester's. The check is git
