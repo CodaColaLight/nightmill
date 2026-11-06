@@ -194,6 +194,10 @@ counts are 0 and there are no finding lines. With a blocking finding still open 
 same, the section says so, and the pull request says
 `Auto-merge is not enabled: blocking review findings are still open (see Review).`
 
+A spec pull request has the same section with `specReviewer role on <model>` as the reviewer and `specWriter role on
+<model>` as the author, after the two lines `Spec for #<issue>.` and `Written by the specWriter role on <model>.` (it
+has no "How verified"); when a blocking finding is still open the comment on the issue says so (see `/spec`).
+
 ## Parallel work
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
@@ -213,8 +217,8 @@ CI runs on every push and PR to `git.baseBranch`; a PR merges only when its bloc
 After opening a PR run `gh pr merge <n> <git.mergeFlags>` (never a plain `gh pr merge`: an admin
 bypass would let a red PR through) when it is a story whose spec was approved, a spec PR, or a
 complete bug fix. Do not, and say why in the PR, when it changes one of `escalation.storyTriggers`,
-is partial, skips a required manual check, has a blocking review finding still open, or the maintainer
-asked to review it. A red PR is fixed, never forced.
+is partial, skips a required manual check, has a blocking review finding still open (a spec PR too), or the
+maintainer asked to review it. A red PR is fixed, never forced.
 
 ## Hard rules
 
