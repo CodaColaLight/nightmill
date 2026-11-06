@@ -233,24 +233,24 @@ load_suggest() {
   if [ "$LOAD_SUGGEST" -gt "$LOAD_CEILING" ]; then LOAD_SUGGEST=$LOAD_CEILING; fi
   if [ "$LOAD_SUGGEST" -lt 1 ]; then LOAD_SUGGEST=1; fi
   if [ "$raw" -gt "$LOAD_CEILING" ]; then
-    LOAD_REASON=ceiling
+    LOAD_REASON="ceiling"
     LOAD_WHY="the ceiling is the limit (parallel.maxSuggestedAgents = $LOAD_CEILING); CPU and memory have room for more"
   elif [ "$mem" -le "$cpu" ]; then
     if [ "$short" = 1 ]; then
-      LOAD_REASON=memory-short
+      LOAD_REASON="memory-short"
       LOAD_WHY="memory is short: $LOAD_FREE MB free is under 10% of $LOAD_TOTAL MB, one agent fewer than the $a in the slots"
     elif [ "$bytotal" -le "$byfree" ]; then
-      LOAD_REASON=memory-total
+      LOAD_REASON="memory-total"
       LOAD_WHY="memory is the limit: $LOAD_TOTAL MB in all holds $bytotal agents at $LOAD_GB GB each"
     else
-      LOAD_REASON=memory-free
+      LOAD_REASON="memory-free"
       LOAD_WHY="memory is the limit: $LOAD_FREE MB free holds $more more agents at $LOAD_GB GB each beside the $a in the slots"
     fi
   elif [ "$a" = 0 ]; then
-    LOAD_REASON=cpu-other
+    LOAD_REASON="cpu-other"
     LOAD_WHY="CPU is the limit: $LOAD_CPU% busy with no slot in use"
   else
-    LOAD_REASON=cpu
+    LOAD_REASON="cpu"
     LOAD_WHY="CPU is the limit: $LOAD_CPU% busy with $a agents in the slots, aiming at 80%"
   fi
 }
