@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Iteration 31 (#68): a page in the browser shows the slots and what waits for the maintainer. `scripts/dashboard.sh` /
+  `scripts/dashboard.ps1` write one self-contained HTML page to the temporary folder
+  (`nightmill-dashboard-<owner>-<repo>.html`) and rewrite it every `worktrees.dashboardRefreshSeconds` seconds until
+  Ctrl-C; the page reloads itself, so there is no server and nothing listens. `--once` / `-Once` renders once and prints
+  the `file://` address; the script opens no browser. The page holds the slot table (state running, stalled, unknown or
+  free as a word as well as a colour, branch, skill, step, last report, pull request and CI, the `stale:` flag) and the
+  items at Spec review and Approved with their pull requests and CI. What cannot be read (no `gh`, logged out, no
+  network) is shown as `unknown` with the reason, never as free or as nothing waiting; after three intervals without a
+  rewrite the page says it is out of date. Every value from outside is escaped, and the page has no link, form or
+  button, so it changes nothing. New `status.sh --porcelain` / `status.ps1 -Porcelain` print the tables of `/status`
+  tab-separated for programs (record kinds `item`, `note`, `slot`, `capacity`); the text form is unchanged. The new key
+  `worktrees.dashboardRefreshSeconds` (default 60, at least 10) is ignored by the previous version.
+
 - Iteration 30 (#82): an opt-in controller adjusts the agent limit from the measured load. One pass is one call of
   `scripts/control.sh` / `scripts/control.ps1` (no argument, nothing left running); the skill `/nightmill:control` runs
   one pass, so `/loop 5m /nightmill:control` is the session's controller and an orchestrator calls the script. The new

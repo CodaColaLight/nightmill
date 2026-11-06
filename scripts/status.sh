@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # scripts/status.sh - one table of what waits for the maintainer and what is stuck (nightmill).
 #
-#   status.sh [--all]
+#   status.sh [--all] [--porcelain]
 #
+# --porcelain prints the same cells for a program, tab separated, one record per line ending with LF:
+# item (#, Status, Who, PR, Age, Flag, Title), note, slot (the ten cells of the Slots section) and capacity
+# (docs/specs/iteration-31-dashboard.md); the text form does not change.
 # Joins the board items, the pull requests and the slots and prints them as one table, Spec review and
 # Approved first, with stale states flagged, then the Slots section: every slot with what its agent is doing
 # (running, stalled or unknown, as slot.sh decides it; iteration 23). --all also lists the items at Backlog and Done. It only reads:
@@ -16,13 +19,15 @@
 # NIGHTMILL_NOW (seconds since 1970, with the local time zone taken as UTC) fixes the clock; the smoke test uses it.
 set -euo pipefail
 
-usage() { echo "usage: status.sh [--all]" >&2; exit 2; }
+usage() { echo "usage: status.sh [--all] [--porcelain]" >&2; exit 2; }
 die() { echo "status.sh: $*" >&2; exit 2; }
 
 all=0
+porcelain=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --all) all=1 ;;
+    --porcelain) porcelain=1 ;;
     -h|--help) usage ;;
     *) echo "unknown option: $1" >&2; usage ;;
   esac
@@ -98,7 +103,9 @@ fi
 
 if [ -n "${NIGHTMILL_NOW:-}" ]; then now=$NIGHTMILL_NOW; nowl=""; else now=$(date +%s); nowl=$(date +%Y-%m-%dT%H:%M:%S); fi
 
-ST_ALL=$all ST_NOW=$now ST_NOWL=$nowl ST_SPECPREFIX=$(json_get git.specPrefix spec/) ST_EPIC=$(json_get labels.epic epic) \
+ST_ALL=$all ST_PORCELAIN=$porcelain ST_NOW=$now ST_NOWL=$nowl ST_SPECPREFIX=$(json_get git.specPrefix spec/) ST_EPIC=$(json_get labels.epic epic) \
   ST_ORDER=$order ST_ITEMS="$tmp/items.flat" ST_PRS="$tmp/prs.flat" ST_AGEFILES="${agefiles# }" ST_SLOTS="$tmp/slots.tsv" \
   ST_SLOTS_CONFIGURED=$slots_configured LC_ALL=C awk -f "$here/lib/status.awk"
-if [ "$slots_configured" = 1 ]; then printf '%s\n' "$capline"; fi
+if [ "$slots_configured" = 1 ]; then
+  if [ "$porcelain" = 1 ]; then printf 'capacity\t%s\n' "${capline#capacity: }"; else printf '%s\n' "$capline"; fi
+fi

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="60">
+<title>nightmill: acme/widgets</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 1.5em; color: #1f2937; }
+table { border-collapse: collapse; margin: 0.5em 0; }
+th, td { border: 1px solid #d1d5db; padding: 0.25em 0.6em; text-align: left; white-space: nowrap; }
+th { background: #f3f4f6; }
+.num { text-align: right; }
+.running { background: #dcfce7; color: #14532d; }
+.stalled { background: #fef3c7; color: #78350f; font-weight: bold; }
+.unknown { background: #e5e7eb; color: #374151; font-style: italic; }
+.free { color: #6b7280; }
+.flagged { background: #fee2e2; color: #7f1d1d; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>nightmill: acme/widgets</h1>
+<p id="rendered" data-epoch="1793880000" data-every="60">Rendered at 2026-11-05 12:00:00<span id="ago"></span>; the page reloads every 60 s.</p>
+<p id="stale" class="flagged" hidden>Out of date: this page has not been rewritten for more than 180 s. Is the dashboard script still running?</p>
+<h2>Slots</h2>
+<table>
+<tr><th>slot</th><th>State</th><th>Agent</th><th>Branch</th><th>Skill</th><th>Step</th><th>Report</th><th>Since</th><th>PR</th><th>Flag</th></tr>
+<tr><td class="num">1</td><td>busy</td><td class="running">running</td><td>feat/run</td><td>next/implementer</td><td>check</td><td class="num">5m</td><td class="num">2h</td><td>#33 open, ci fail</td><td></td></tr>
+<tr><td class="num">2</td><td>busy</td><td class="stalled">stalled</td><td>feat/&lt;b&gt;&amp;&#39;x</td><td>fix/fixer</td><td>test</td><td class="num">2h</td><td class="num">4h</td><td>-</td><td class="flagged">stale: busy, no open PR</td></tr>
+<tr><td class="num">3</td><td>busy</td><td class="unknown">unknown</td><td>feat/old</td><td>?</td><td>?</td><td class="num">-</td><td class="num">2d</td><td>#20 merged</td><td class="flagged">stale: busy, PR merged (slot --release 3)</td></tr>
+<tr><td class="num">4</td><td class="free">free</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+</table>
+<p>capacity: slots 4 (config), agents 2 (default)</p>
+<h2>Waiting for you</h2>
+<table>
+<tr><th>#</th><th>Title</th><th>Status</th><th>PR</th><th>Age</th></tr>
+<tr><td class="num">2</td><td>Read the &lt;b&gt;spec&lt;/b&gt; &amp; &quot;approve&quot; — café</td><td>Spec review</td><td>#31 open, ci pass</td><td class="num">5h</td></tr>
+<tr><td class="num">3</td><td>Approved and waiting</td><td>Approved</td><td>-</td><td class="num">2d</td></tr>
+<tr><td class="num">6</td><td>Path C:\temp and more</td><td>Approved</td><td>-</td><td class="num">1d</td></tr>
+</table>
+<h2>What the words mean</h2>
+<ul>
+<li><span class="running">running</span>: the agent in a busy slot reported a step within the last 30 minutes (worktrees.stalledAfterMinutes).</li>
+<li><span class="stalled">stalled</span>: no report for more than 30 minutes. The session may have ended, crashed or been abandoned, or one step runs long; a slot whose run is over (step done) and that waits for its merge shows it too. Look at it: nothing is stopped or freed.</li>
+<li><span class="unknown">unknown</span>: a busy slot without a report (taken by hand or by an older version), or a value this page could not read. It is never taken as free or done.</li>
+<li><span class="free">free</span>: no agent works in the slot.</li>
+<li><span class="flagged">stale: ...</span>: flagged as /status flags it: a busy slot whose pull request merged or closed, or that has none after 2 hours.</li>
+</ul>
+<script>
+(function () {
+  var r = document.getElementById("rendered");
+  var t = Number(r.getAttribute("data-epoch")), every = Number(r.getAttribute("data-every"));
+  function tick() {
+    var ago = Math.max(0, Math.floor(Date.now() / 1000 - t));
+    document.getElementById("ago").textContent = ", " + ago + " s ago";
+    document.getElementById("stale").hidden = ago <= 3 * every;
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

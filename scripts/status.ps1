@@ -1,7 +1,10 @@
 # scripts/status.ps1 - one table of what waits for the maintainer and what is stuck (nightmill).
 #
-#   status.ps1 [-All]
+#   status.ps1 [-All] [-Porcelain]
 #
+# -Porcelain prints the same cells for a program, tab separated, one record per line ending with LF, as UTF-8:
+# item (#, Status, Who, PR, Age, Flag, Title), note, slot (the ten cells of the Slots section) and capacity
+# (docs/specs/iteration-31-dashboard.md); the text form does not change.
 # Joins the board items, the pull requests and the slots and prints them as one table, Spec review and
 # Approved first, with stale states flagged, then the Slots section: every slot with what its agent is doing
 # (running, stalled or unknown, as slot.ps1 decides it; iteration 23). -All also lists the items at Backlog and Done. It only reads:
@@ -15,12 +18,24 @@
 # $env:NIGHTMILL_NOW (seconds since 1970, with the local time zone taken as UTC) fixes the clock; the smoke test uses it.
 param(
   [switch]$All,
+  [switch]$Porcelain,
   [Parameter(ValueFromRemainingArguments = $true)]$Rest
 )
 $ErrorActionPreference = "Stop"
 
 function Die([string]$msg) { [Console]::Error.WriteLine("status.ps1: $msg"); exit 2 }
-if ($Rest) { [Console]::Error.WriteLine("usage: status.ps1 [-All]"); exit 2 }
+if ($Rest) { [Console]::Error.WriteLine("usage: status.ps1 [-All] [-Porcelain]"); exit 2 }
+
+# -Porcelain: gh's output is decoded as UTF-8 and the records are written as UTF-8 (no byte order mark); the previous
+# encoding is put back in the finally at the end
+$prevOutputEncoding = $null
+if ($Porcelain) {
+  try {
+    $prevOutputEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+  } catch { }
+}
+try {
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { Die "gh is not installed or not on the PATH" }
 $gitDir = git rev-parse --path-format=absolute --git-common-dir 2>$null
@@ -264,6 +279,7 @@ $slotOf = @{}
 foreach ($b in $busy) { $slotOf[$b.Branch] = $b.Slot }
 
 $rows = @(, @("#", "Title", "Status", "Who", "PR", "Age", "Flag"))
+$porc = New-Object System.Collections.Generic.List[string]
 foreach ($s in $shown) {
   $it = $s.Item; $n = $s.N; $st = [string]$it.status
   $title = ([string]$it.title) -replace '^\[(Story|Bug)\] ', ''
@@ -292,21 +308,34 @@ foreach ($s in $shown) {
   $ageText = "-"
   if ($hasAge) { $ageText = Span $s.Age }
   $rows += , @($n, $title, $st, $who, (PrCell $k), $ageText, $flag)
+  # porcelain: the whole decoded title, the prefix removed case-sensitively, every tab, CR and LF one space
+  $whole = (([string]$it.title) -creplace '^\[(Story|Bug)\] ', '') -replace "[`t`r`n]", " "
+  $porc.Add((@("item", $n, $st, $who, (PrCell $k), $ageText, $flag, $whole) -join "`t")) | Out-Null
 }
-if ($shown.Count -eq 0) { Write-Output "nothing to show at these statuses" }
-else { Format-Table2 $rows @($true, $false, $false, $false, $false, $true, $false) }
+if (-not $Porcelain) {
+  if ($shown.Count -eq 0) { Write-Output "nothing to show at these statuses" }
+  else { Format-Table2 $rows @($true, $false, $false, $false, $false, $true, $false) }
+}
 
 $hid = ""
 if ($hiddenBacklog -gt 0) { $hid = "$hiddenBacklog at $stBacklog" }
 if ($hiddenDone -gt 0) { if ($hid) { $hid += ", " }; $hid += "$hiddenDone at $stDone" }
-if ($hid) { Write-Output "not shown: $hid (use --all)" }
-if ($total -gt $limitItems) { Write-Output "note: the board has $total items, only the first $limitItems were read" }
-if ($prs.Count -ge $limitPrs) { Write-Output "note: only the $limitPrs most recent pull requests were read" }
+$notes = @()
+if ($total -gt $limitItems) { $notes += "the board has $total items, only the first $limitItems were read" }
+if ($prs.Count -ge $limitPrs) { $notes += "only the $limitPrs most recent pull requests were read" }
+if ($Porcelain) {
+  foreach ($nt in $notes) { $porc.Add("note`t$nt") | Out-Null }
+} else {
+  if ($hid) { Write-Output "not shown: $hid (use --all)" }
+  foreach ($nt in $notes) { Write-Output "note: $nt" }
+}
 
 if ($hasSlots) {
   # the Slots section (iteration 23): every slot, free and busy; the agent state is the slot script's
-  Write-Output ""
-  Write-Output "slots"
+  if (-not $Porcelain) {
+    Write-Output ""
+    Write-Output "slots"
+  }
   $srows = @(, @("slot", "State", "Agent", "Branch", "Skill", "Step", "Report", "Since", "PR", "Flag"))
   foreach ($row in $slotRows) {
     $b = $row.Busy
@@ -331,7 +360,22 @@ if ($hasSlots) {
     }
     $srows += , @("$($b.Slot)", "busy", $b.Agent, $b.Branch, $who, $step, $rep, (Span $sinceAge), (PrCell $k), $flag)
   }
-  Format-Table2 $srows @($true, $false, $false, $false, $false, $false, $true, $true, $false, $false)
-  Write-Output $capLine
+  if ($Porcelain) {
+    for ($r = 1; $r -lt $srows.Count; $r++) { $porc.Add("slot`t" + ($srows[$r] -join "`t")) | Out-Null }
+    $porc.Add("capacity`t" + ($capLine -replace '^capacity: ', '')) | Out-Null
+  } else {
+    Format-Table2 $srows @($true, $false, $false, $false, $false, $false, $true, $true, $false, $false)
+    Write-Output $capLine
+  }
+}
+if ($Porcelain) {
+  # every record ends with one LF, written once: Write-Output would end the lines with CRLF on Windows
+  $text = ""
+  foreach ($l in $porc) { $text += $l + "`n" }
+  [Console]::Out.Write($text)
+  [Console]::Out.Flush()
 }
 exit 0
+} finally {
+  if ($null -ne $prevOutputEncoding) { try { [Console]::OutputEncoding = $prevOutputEncoding } catch { } }
+}

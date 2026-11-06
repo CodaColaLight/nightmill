@@ -1,0 +1,12 @@
+item	24	Spec review	-	#52 draft	1h		A draft spec PR
+item	25	Approved	-	-	10m		Approved just now
+item	20	In progress	-	-	5h	stale: In progress, no PR and no busy slot	Lost in progress
+item	21	In progress	-	-	30m		Just started
+item	22	Review	-	#50 closed	2h	stale: Review but the PR is closed	A closed PR at Review
+item	23	Spec	-	#51 merged	1d		A merged spec PR
+item	26	Spec	-	#53 closed	5h	stale: Spec but no spec PR	A closed spec PR only
+slot	1	free								
+slot	2	free								
+slot	3	free								
+slot	4	free								
+capacity	slots 4 (config), agents 2 (default)
