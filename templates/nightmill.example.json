@@ -55,7 +55,10 @@
   "parallel": {
     "maxAgents": 2,
     "hotFiles": ["src/main.ts"],
-    "doNotPair": "two benchmark-heavy tasks"
+    "doNotPair": "two benchmark-heavy tasks",
+    "maxSuggestedAgents": 4,
+    "memoryPerAgentGB": 8,
+    "loadWindowSeconds": 10
   },
   "worktrees": {
     "root": "../widgets-wt",

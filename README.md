@@ -45,6 +45,7 @@ not a conversation.
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
+| `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -152,7 +153,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
-| `parallel` | Agent cap, hot files, task pairs to avoid |
+| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled |
 
 `templates/nightmill.example.json` is a complete example.
@@ -266,6 +267,37 @@ stays on disk for when the count goes up again). A lowered agent limit stops no 
 `slot -Status` and `/nightmill:status` show the effective numbers in a `capacity:` line and say `live; config <n>`
 while a set value is in force.
 
+### Is the machine used well?
+
+```sh
+scripts/load.ps1 [-Porcelain]
+bash scripts/load.sh [--porcelain]
+```
+
+The command measures the CPU load and the free memory, shows the effective agent limit, the slots in use and the
+agents running, and suggests an agent limit with one `why:` line. It takes one sample a second for
+`parallel.loadWindowSeconds` seconds (default 10), so it takes that long. The CPU load is the busy share of all
+processors, the mean of the samples; the free memory is the memory the system can hand out without swapping, the
+lowest sample. The sources: `/proc/stat` and `/proc/meminfo` (`MemAvailable`) on Linux, the same files in Git Bash
+(`MemFree`, which carries Windows' available memory), `Win32_PerfRawData_PerfOS_Processor` and
+`Win32_OperatingSystem` in PowerShell on Windows, `top`, `vm_stat` and `sysctl hw.memsize` on macOS. MB and GB are
+decimal.
+
+The suggestion is the smaller of two bounds, at least 1 and at most `parallel.maxSuggestedAgents` (default 4). The
+memory bound is one agent per `parallel.memoryPerAgentGB` (default 8) of the total memory and, beside the agents
+already in the slots, of the free memory; when under 10% of the memory is free it is one fewer than the agents in the
+slots. The CPU bound is the agents in the slots scaled to 80% busy (with no slot in use, no bound unless the CPU is
+already at 80%). The `why:` line names which one decided (the ceiling, memory or CPU). "Agents running" is the number
+of busy slots: the only count a script can read.
+
+It does not see the API's rate limits, the token budget, GPU, disk or network, agents outside the slots (`/spec`'s
+writer, the reviewers, another session), or memory a build will take but has not taken yet; CPU used by other
+programs counts as if the agents used it. A measurement it cannot take is shown as `unavailable` with the reason, and
+then there is no suggestion (exit 1). It changes nothing: to apply a suggestion, run `slot -Capacity -AgentLimit N`
+(`slot.sh --capacity --agent-limit N`). The porcelain form prints one tab-separated line per value, by name: `cpu`,
+`memory-free`, `memory-total`, `window`, `agent-limit`, `slot-count`, `slots-busy`, `agents-running`,
+`memory-per-agent`, `ceiling`, `suggested`.
+
 ## Developing nightmill
 
 nightmill develops itself with its own workflow: a board, the eight statuses, specs, one check
@@ -283,6 +315,7 @@ bash tests/smoke-validate.sh # the config validator
 bash tests/smoke-status.sh  # status.sh against fixtures and a fake gh
 bash tests/smoke-template-board.sh # template-board.sh against fixtures and a fake gh
 bash tests/smoke-models.sh  # models.sh: the table of the role models
+bash tests/smoke-load.sh    # load.sh against a fixture of readings
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -292,6 +325,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-status.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-models.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-load.ps1
 claude plugin validate . --strict
 ```
 

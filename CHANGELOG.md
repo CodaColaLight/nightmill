@@ -37,6 +37,20 @@
   `slot --report`. No config key, status, slot marker or script changes; `/fix` and the rules for the implementer and the
   code reviewer on the tests are the separate stories #43, #44 and #45.
 
+- Iteration 24 (#80): a command shows CPU and memory load and suggests an agent limit. The new read-only command
+  `scripts/load.sh` / `scripts/load.ps1` (with `--porcelain` / `-Porcelain`) measures the CPU load and the free memory
+  over a window of one-second samples (`parallel.loadWindowSeconds`, default 10): the mean of the CPU samples and the
+  lowest free memory, never a single reading. It shows the agent limit and the slots in use from the slot script, the
+  agents running (counted from the busy slots) and a suggested agent limit with one line saying why: the smaller of a
+  memory bound (one agent per `parallel.memoryPerAgentGB`, default 8, of the total and of the free memory, one fewer when
+  under 10% is free) and a CPU bound (the agents in the slots scaled to 80% busy), at least 1 and at most
+  `parallel.maxSuggestedAgents` (default 4). A measurement it cannot take is shown as `unavailable` with the reason and no
+  suggestion (exit 1); errors exit 2. The measurement and the suggestion are in the libraries `scripts/lib/load.sh` and
+  `scripts/lib/load.ps1` for the later stories: `/proc/stat` and `/proc/meminfo` on Linux and in Git Bash, the raw
+  processor counter and `Win32_OperatingSystem` on Windows, `top`, `vm_stat` and `sysctl` on macOS. The smoke tests use
+  `NIGHTMILL_LOAD_FIXTURE`, a file of samples, instead of the machine. The command changes nothing; `slot -Capacity
+  -AgentLimit N` applies a suggestion. The three new keys are ignored by the previous version.
+
 - Iteration 23 (#67): slots record what their agent is doing and `/status` shows it. The new command
   `slot.sh --report <step> --slot N --skill <s> --role <r>` / `slot.ps1 -Report <step> -Slot N -Skill <s> -Role <r>`
   adds four keys to the slot marker after `slot`, `branch` and `since`: `skill`, `role`, `step` and `reported` (the

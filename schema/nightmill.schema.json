@@ -151,7 +151,10 @@
       "properties": {
         "maxAgents": { "type": "integer", "minimum": 1, "default": 2, "description": "Agents (subagents, slot builds) running at the same time on this machine. Rule of thumb: one per 8 GB of RAM." },
         "hotFiles": { "type": "array", "items": { "type": "string" }, "description": "Files or directories only one task may touch at a time." },
-        "doNotPair": { "type": "string", "description": "Kinds of tasks that must not run side by side, for example two benchmark-heavy tasks." }
+        "doNotPair": { "type": "string", "description": "Kinds of tasks that must not run side by side, for example two benchmark-heavy tasks." },
+        "maxSuggestedAgents": { "type": "integer", "minimum": 1, "default": 4, "description": "The highest agent limit scripts/load.* suggests (it uses 1 to 99; the suggestion is never below 1). It bounds the suggestion only, not maxAgents or a value set with slot --capacity." },
+        "memoryPerAgentGB": { "type": "integer", "minimum": 1, "default": 8, "description": "Memory one agent's work needs, in GB of 10^9 bytes (1 to 1024), for the memory part of the suggestion of scripts/load.*. The default is the rule of thumb /nightmill:init uses: one agent per 8 GB." },
+        "loadWindowSeconds": { "type": "integer", "minimum": 2, "default": 10, "description": "How long scripts/load.* measures, in seconds (2 to 60): one CPU and memory sample a second." }
       }
     },
     "worktrees": {
