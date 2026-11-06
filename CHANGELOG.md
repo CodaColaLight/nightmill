@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Iteration 25 (#42): a tester agent writes the failing tests before `/next` implements. The new agent
+  `agents/tester.md` (tools `Read, Grep, Glob, Write, Edit, Bash`, no `Agent`; its `model:` is kept equal to the schema
+  default `sonnet` by the lint) is launched by `/next` as `nightmill:tester` on `roles.tester.model` after the story is
+  In progress and the slot is taken, and before the implementer. It writes at least one test for every acceptance
+  criterion, named for the behaviour it protects, reports which test covers which criterion and reports a criterion it
+  cannot test as `not tested`; it runs the tests, confirms that they fail because the behaviour is missing, and leaves
+  them uncommitted in the slot. It writes only test files and fixtures: the fixed `Test paths:` rule, identical in the
+  agent file and the skill, and the session's `git status --porcelain --untracked-files=all` check, which stops the run
+  with `Stopped: the tester changed files that are not tests` otherwise. The implementer's step 1 now runs the tester's
+  tests, writes a test for each `not tested` criterion and commits the tests with the code once the check is green, so no
+  red commit is ever made and "never commit red" is unchanged. For a partial result the tests of unmet criteria stay
+  uncommitted, are set aside under the stash message `Unmet tests for #<issue>: <title>` (found by that message, because
+  every worktree shares one stash) before the CHANGELOG commit, are named in the pull request and are carried to the new
+  story. The pull request's "How verified" begins with `Tests written first by the tester role on <model>, failing
+  before the code:` and the criterion-to-test list. `/next` reports the step `write-tests` (role `tester`) with
+  `slot --report`. No config key, status, slot marker or script changes; `/fix` and the rules for the implementer and the
+  code reviewer on the tests are the separate stories #43, #44 and #45.
+
 - Iteration 23 (#67): slots record what their agent is doing and `/status` shows it. The new command
   `slot.sh --report <step> --slot N --skill <s> --role <r>` / `slot.ps1 -Report <step> -Slot N -Skill <s> -Role <r>`
   adds four keys to the slot marker after `slot`, `branch` and `since`: `skill`, `role`, `step` and `reported` (the
