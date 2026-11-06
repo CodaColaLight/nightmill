@@ -1,6 +1,6 @@
 # Iteration 31: a page in the browser shows the slots and what waits for the maintainer
 
-Status: delivered in iteration 31 (PR #107)
+Status: delivered in iteration 31 (PR #180)
 
 Story: #68, epic #47 (Unattended runs). Adds one read-only command, `scripts/dashboard.sh` and `scripts/dashboard.ps1`,
 that renders one self-contained HTML page from the data `/status` already gathers: every slot with its agent state
