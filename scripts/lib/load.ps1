@@ -14,6 +14,10 @@
 #                                       parallel.roomCheck, roomMinFreeMB, roomMaxCpuPercent, roomPauseSeconds and
 #                                       roomMaxWaitMinutes (warnings on standard error with the prefix room;
 #                                       docs/specs/iteration-28-machine-room.md)
+#   Get-ControlSettings $Config         an object with Mode (off, report or apply), Min, Max, Cooldown, Interval from
+#                                       parallel.controlMode, controlMinAgents, controlMaxAgents, controlCooldownMinutes
+#                                       and controlIntervalMinutes (warnings on standard error with the prefix control;
+#                                       docs/specs/iteration-30-load-controller.md)
 #
 # Readers: Windows reads Win32_PerfRawData_PerfOS_Processor (the raw counters, not a load percentage) and
 # Win32_OperatingSystem; pwsh on Linux reads /proc/stat and /proc/meminfo (MemAvailable); pwsh on macOS top, vm_stat
@@ -56,6 +60,30 @@ function Get-RoomSettings($Config) {
   $pause = Get-LoadSetting $Config "roomPauseSeconds" 1 90 60 "room"
   $maxWait = Get-LoadSetting $Config "roomMaxWaitMinutes" 1 1440 30 "room"
   return [pscustomobject]@{ On = $on; MinFree = $minFree; MaxCpu = $maxCpu; Pause = $pause; MaxWait = $maxWait }
+}
+
+function Get-ControlSettings($Config) {
+  $mode = "off"
+  if ($null -ne $Config -and $Config -is [System.Management.Automation.PSCustomObject]) {
+    $pp = $Config.PSObject.Properties["parallel"]
+    if ($pp -and $pp.Value -is [System.Management.Automation.PSCustomObject]) {
+      $p = $pp.Value.PSObject.Properties["controlMode"]
+      if ($p -and $null -ne $p.Value) {
+        $v = $p.Value
+        if ($v -is [string] -and ($v -ceq "off" -or $v -ceq "report" -or $v -ceq "apply")) { $mode = $v }
+        else { [Console]::Error.WriteLine('control: parallel.controlMode must be "off", "report" or "apply"; using "off"') }
+      }
+    }
+  }
+  $min = Get-LoadSetting $Config "controlMinAgents" 1 99 1 "control"
+  $max = Get-LoadSetting $Config "controlMaxAgents" 1 99 4 "control"
+  $cooldown = Get-LoadSetting $Config "controlCooldownMinutes" 1 1440 15 "control"
+  $interval = Get-LoadSetting $Config "controlIntervalMinutes" 1 1440 5 "control"
+  if ($min -gt $max) {
+    [Console]::Error.WriteLine("control: parallel.controlMinAgents $min is above parallel.controlMaxAgents $max; using $max for both")
+    $min = $max
+  }
+  return [pscustomobject]@{ Mode = $mode; Min = $min; Max = $max; Cooldown = $cooldown; Interval = $interval }
 }
 
 # Get-LoadReader: linux, macos or windows ($IsLinux and $IsMacOS do not exist in Windows PowerShell 5.1)

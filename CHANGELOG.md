@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Iteration 30 (#82): an opt-in controller adjusts the agent limit from the measured load. One pass is one call of
+  `scripts/control.sh` / `scripts/control.ps1` (no argument, nothing left running); the skill `/nightmill:control` runs
+  one pass, so `/loop 5m /nightmill:control` is the session's controller and an orchestrator calls the script. The new
+  key `parallel.controlMode` (the first `enum` of the schema) is `off` by default; `report` prints what a pass would
+  change and changes nothing; `apply` changes. A pass measures over `parallel.loadWindowSeconds` with the library of the
+  load command, takes its suggestion as the target, keeps it between `controlMinAgents` (default 1) and `controlMaxAgents`
+  (default 4), and applies its own rules: up one step only when the whole window had room and `controlCooldownMinutes`
+  (default 15) have passed since the last change (read from `since` of `capacity.json`), down at once to the target when
+  memory is short, down one step per cooldown when the CPU or the ceiling is the limit. It changes the live numbers only
+  by running `slot --capacity` as a child: the agent limit, and the slot count raised to the new limit when that exceeds
+  it, never lowered; it never edits the config or a marker, stops an agent or frees a slot. Every pass prints one line
+  (old value, new value, the rule and the measure) and `control: next pass in <controlIntervalMinutes> min`; a pass that
+  cannot measure changes nothing, says so and exits 1. The five keys are ignored by the previous version.
+
 - Iteration 29 (#45): the code reviewer checks the tests against the spec and that none was weakened.
   `agents/code-reviewer.md` gets four rules: for every acceptance criterion a test that would fail for a plausible wrong
   implementation (a criterion with no test, or only weak ones, is blocking); no test of the tester's removed, skipped,

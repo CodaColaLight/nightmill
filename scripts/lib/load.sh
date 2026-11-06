@@ -15,6 +15,10 @@
 #   room_settings          ROOM_ON (true or false), ROOM_MIN_FREE, ROOM_MAX_CPU, ROOM_PAUSE, ROOM_MAX_WAIT from
 #                          parallel.roomCheck, roomMinFreeMB, roomMaxCpuPercent, roomPauseSeconds and roomMaxWaitMinutes
 #                          (warnings on standard error with the prefix room; docs/specs/iteration-28-machine-room.md)
+#   control_settings       CONTROL_MODE (off, report or apply), CONTROL_MIN, CONTROL_MAX, CONTROL_COOLDOWN,
+#                          CONTROL_INTERVAL from parallel.controlMode, controlMinAgents, controlMaxAgents,
+#                          controlCooldownMinutes and controlIntervalMinutes (warnings on standard error with the prefix
+#                          control; docs/specs/iteration-30-load-controller.md)
 #
 # Readers (by uname -s): Linux reads /proc/stat and /proc/meminfo (MemAvailable); Git Bash (MINGW, MSYS, CYGWIN) the
 # same files (MemFree, which carries Windows' available memory); macOS (Darwin) top, vm_stat and sysctl hw.memsize.
@@ -58,6 +62,28 @@ room_settings() {
   ROOM_MAX_CPU=$(_load_setting roomMaxCpuPercent 1 100 90 room)
   ROOM_PAUSE=$(_load_setting roomPauseSeconds 1 90 60 room)
   ROOM_MAX_WAIT=$(_load_setting roomMaxWaitMinutes 1 1440 30 room)
+}
+
+control_settings() {
+  local rec kind val
+  CONTROL_MODE="off"
+  rec=$(printf '%s\n' "$JSON_FLAT" | K="parallel.controlMode" LC_ALL=C awk -F '\t' '$1 == ENVIRON["K"] { r = $2 "\t" $3 } END { if (r != "") print r }')
+  if [ -n "$rec" ]; then
+    kind=${rec%%$'\t'*}; val=${rec#*$'\t'}
+    if [ "$kind" = string ] && { [ "$val" = "off" ] || [ "$val" = "report" ] || [ "$val" = "apply" ]; }; then
+      CONTROL_MODE=$val
+    elif [ "$kind" != null ]; then
+      echo 'control: parallel.controlMode must be "off", "report" or "apply"; using "off"' >&2
+    fi
+  fi
+  CONTROL_MIN=$(_load_setting controlMinAgents 1 99 1 control)
+  CONTROL_MAX=$(_load_setting controlMaxAgents 1 99 4 control)
+  CONTROL_COOLDOWN=$(_load_setting controlCooldownMinutes 1 1440 15 control)
+  CONTROL_INTERVAL=$(_load_setting controlIntervalMinutes 1 1440 5 control)
+  if [ "$CONTROL_MIN" -gt "$CONTROL_MAX" ]; then
+    echo "control: parallel.controlMinAgents $CONTROL_MIN is above parallel.controlMaxAgents $CONTROL_MAX; using $CONTROL_MAX for both" >&2
+    CONTROL_MIN=$CONTROL_MAX
+  fi
 }
 
 # _load_aggregate MODE: reads samples "<cpu> <free> <total>" ("-" for a failed reading) on standard input and prints

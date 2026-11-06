@@ -831,6 +831,75 @@ for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-room' "$f" || { echo "FAIL: $f does not run smoke-room"; fail=1; }
 done
 
+echo "== control is wired"
+# An opt-in controller adjusts the agent limit from the measured load (iteration 30): both control scripts, the skill and
+# both smoke tests exist, the scripts change the numbers only through the slot script and stop nothing, the libraries
+# read the five keys, the schema, the example and the README carry them, and the check and CI run the tests.
+for f in scripts/control.sh scripts/control.ps1 skills/control/SKILL.md tests/smoke-control.sh tests/smoke-control.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+for f in scripts/control.sh scripts/control.ps1; do
+  [ -f "$f" ] || continue
+  if grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|Copy-Item|WriteAll|IO\.File\]::|json_marker|--clear|--take|--release|--abandon|--reap|--report|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])gh +[a-z]|(^|[^A-Za-z0-9_-])kill( |$)|(^|[^A-Za-z0-9_-])(mv|cp|tee|mkdir) ' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f writes, removes or stops something; control changes the numbers only through the slot script"; fail=1
+  fi
+done
+if [ -f scripts/control.ps1 ] && grep -nwE 'Clear|Take|Release|Abandon|Reap|Report' scripts/control.ps1 | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  echo "FAIL: scripts/control.ps1 names a slot action other than Capacity, Status, AgentLimit, SlotCount or Porcelain"; fail=1
+fi
+for w in '--capacity' '--agent-limit' '--slot-count' 'load_measure' 'load_suggest' 'control_settings' 'NIGHTMILL_NOW'; do
+  grep -qF -- "$w" scripts/control.sh 2>/dev/null || { echo "FAIL: scripts/control.sh does not carry: $w"; fail=1; }
+done
+for w in 'Capacity' 'AgentLimit' 'SlotCount' 'Measure-Load' 'Get-LoadSuggestion' 'Get-ControlSettings' 'NIGHTMILL_NOW'; do
+  grep -qF -- "$w" scripts/control.ps1 2>/dev/null || { echo "FAIL: scripts/control.ps1 does not carry: $w"; fail=1; }
+done
+for w in control_settings controlMode; do
+  grep -qF -- "$w" scripts/lib/load.sh || { echo "FAIL: scripts/lib/load.sh does not carry: $w"; fail=1; }
+done
+for w in Get-ControlSettings controlMode; do
+  grep -qF -- "$w" scripts/lib/load.ps1 || { echo "FAIL: scripts/lib/load.ps1 does not carry: $w"; fail=1; }
+done
+json_load schema/nightmill.schema.json
+p=properties.parallel.properties.controlMode
+[ "$(json_get "$p.type")" = string ] || { echo "FAIL: schema: parallel.controlMode is not a string"; fail=1; }
+[ "$(json_get "$p.default")" = off ] || { echo "FAIL: schema: parallel.controlMode default is not off"; fail=1; }
+[ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: parallel.controlMode has no description"; fail=1; }
+if [ "$(json_len "$p.enum")" != 3 ] || [ "$(json_get "$p.enum[0]")" != off ] || [ "$(json_get "$p.enum[1]")" != report ] || [ "$(json_get "$p.enum[2]")" != apply ]; then
+  echo "FAIL: schema: parallel.controlMode enum is not off, report, apply"; fail=1
+fi
+for spec in controlMinAgents:1 controlMaxAgents:4 controlCooldownMinutes:15 controlIntervalMinutes:5; do
+  k=${spec%%:*}; d=${spec#*:}; p=properties.parallel.properties.$k
+  [ "$(json_get "$p.type")" = integer ] || { echo "FAIL: schema: parallel.$k is not an integer"; fail=1; }
+  [ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: parallel.$k has no description"; fail=1; }
+  [ "$(json_get "$p.default")" = "$d" ] || { echo "FAIL: schema: parallel.$k default is not $d"; fail=1; }
+  [ "$(json_get "$p.minimum")" = 1 ] || { echo "FAIL: schema: parallel.$k minimum is not 1"; fail=1; }
+done
+json_load templates/nightmill.example.json
+for spec in controlMode:off controlMinAgents:1 controlMaxAgents:4 controlCooldownMinutes:15 controlIntervalMinutes:5; do
+  k=${spec%%:*}; d=${spec#*:}
+  [ "$(json_get "parallel.$k")" = "$d" ] || { echo "FAIL: templates/nightmill.example.json: parallel.$k is not the schema default $d"; fail=1; }
+done
+s=skills/control/SKILL.md
+if [ -f "$s" ]; then
+  for w in 'scripts/control.ps1' 'scripts/control.sh' 'control: next pass in'; do
+    grep -qF -- "$w" "$s" || { echo "FAIL: $s does not say: $w"; fail=1; }
+  done
+  for w in 'nightmill.json' '--agent-limit' '-AgentLimit' '--slot-count' '-SlotCount'; do
+    if grep -qF -- "$w" "$s"; then echo "FAIL: $s names $w (the skill changes nothing itself)"; fail=1; fi
+  done
+fi
+for w in /nightmill:control control.sh control.ps1 /loop controlMode controlMinAgents controlMaxAgents controlCooldownMinutes controlIntervalMinutes 'The controller does not see'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+for f in tests/smoke-control.sh tests/smoke-control.ps1; do
+  for w in NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW; do
+    grep -qF "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not set $w"; fail=1; }
+  done
+done
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF 'smoke-control' "$f" || { echo "FAIL: $f does not run smoke-control"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

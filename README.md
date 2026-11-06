@@ -40,6 +40,7 @@ not a conversation.
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. |
 | `/nightmill:models` | One table of each agent role's model, where it comes from (the config or the default), its rank and whether the reviewer pairings hold. Read-only. |
+| `/nightmill:control` | One pass of the opt-in load controller: measures the load and, in `apply` mode, raises or lowers the agent limit within the configured bounds; `/loop 5m /nightmill:control` runs it in a session. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
@@ -47,6 +48,7 @@ not a conversation.
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
 | `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
 | `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
+| `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -154,7 +156,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
-| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30) |
+| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled |
 
 `templates/nightmill.example.json` is a complete example.
@@ -335,6 +337,46 @@ start back: it never changes the agent limit, stops an agent or frees a slot. A 
 `worktrees.stalledAfterMinutes` shows stalled in `/status` while it waits. To switch the check off:
 `"parallel": { "roomCheck": false }`.
 
+### Adjusting the limit to the load
+
+```sh
+scripts/control.ps1
+bash scripts/control.sh
+```
+
+An opt-in controller adjusts the agent limit to the machine's measured load. `parallel.controlMode` sets its mode:
+`off` (the default) measures and changes nothing; `report` says what it would change and changes nothing; `apply`
+changes the live agent limit with `slot --capacity`, like a hand-set value, shown `live` by `slot --status` and
+`/status`.
+
+One pass is one call of the script. In a session, `/loop 5m /nightmill:control` runs a pass every 5 minutes (use the
+value of `parallel.controlIntervalMinutes`, default 5), or `/loop /nightmill:control` paces itself by the
+`control: next pass in <i> min` line every pass prints. An orchestrator runs `scripts/control.ps1` or
+`bash scripts/control.sh` at that interval. A pass measures over `parallel.loadWindowSeconds` like the load command,
+takes its suggestion as the target and keeps it between `parallel.controlMinAgents` (default 1) and
+`parallel.controlMaxAgents` (default 4).
+
+The rules: the limit goes up one step only after a full window with room and only after
+`parallel.controlCooldownMinutes` (default 15) since the last change; it goes down at once to the target when memory is
+short; it goes down one step per cooldown when the CPU or the ceiling is the limit; a limit outside the bounds is
+brought inside them at once. The slot count is raised to the new limit by any pass that sets the agent limit above the
+slot count, also when that pass lowers the limit but the new limit is still above the slot count; a pass that keeps the
+limit never touches it, and it is never lowered. The last change is the time in `capacity.json`, rewritten by every
+`slot --capacity` set (also one that changes nothing or sets only the slot count), so any such set, by hand or not,
+restarts the cooldown, and `-Clear` hands the start back to the configuration. Leave `WORKER_SLOTS` unset where the
+controller runs, or accept that a raise up to that value writes no live slot count.
+
+Every pass reports in one line: the old value, the new value (or `kept`), the rule and the measure that caused it,
+for example `control: agent limit 2 -> 3, slots 2 -> 3 (room; CPU 10%, free memory 60000 of 64000 MB, busy slots 1,
+suggested 4: ...)`. A pass that cannot measure changes nothing, says `kept (unavailable; ...)` and exits 1. The
+controller never stops an agent, frees a slot or edits the config: busy slots stay busy, and a lowered limit only
+holds back the next start. It leaves nothing running: the loop ends with the session, and the last live values stay
+until `-Clear`, as for a hand-set value.
+
+The controller does not see the API's rate limits, the token budget, or agents outside the slots; nor what the load
+command does not see (GPU, disk, network, memory a build has not taken yet; CPU used by other programs counts as the
+agents').
+
 ## Developing nightmill
 
 nightmill develops itself with its own workflow: a board, the eight statuses, specs, one check
@@ -354,6 +396,7 @@ bash tests/smoke-template-board.sh # template-board.sh against fixtures and a fa
 bash tests/smoke-models.sh  # models.sh: the table of the role models
 bash tests/smoke-load.sh    # load.sh against a fixture of readings
 bash tests/smoke-room.sh   # room.sh against a fixture of readings
+bash tests/smoke-control.sh # control.sh against fixtures of readings and a fixed clock
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -365,6 +408,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-models.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-load.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-control.ps1
 claude plugin validate . --strict
 ```
 
