@@ -165,6 +165,9 @@ have been used, the producer fixes exactly the blocking findings (a new agent of
 fork), runs the check and commits, and the reviewer runs again. A story is reviewed at most `1 + review.maxFixRounds`
 times; with `review.maxFixRounds` at 0 it is reviewed once and nothing is sent back. A reviewer is a fresh agent every
 time and never sees the producer's own account of its work.
+In `/next` and `/fix` the same rounds also pay for a dispute over a tester's test (the tester answers, then a new
+producer runs) and for a round undone because the producer changed the tester's tests: each costs one of
+`review.maxFixRounds`, and `Fix rounds used` counts them.
 
 **The pairing.** Before a reviewer is launched, the reviewer's model must rank at least as high as the producer's. A
 skill checks it with the validator (`validate-config`) and stops, naming both roles and both models, when the validator

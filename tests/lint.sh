@@ -607,6 +607,42 @@ rsection=$(awk '/^## Agent roles and models$/ { s = 1; next } s && /^## / { exit
 printf '%s\n' "$rsection" | grep -E '^\| `tester` \|' | grep -qF 'before the fixer' || { echo "FAIL: skills/workflow/SKILL.md: the tester row of 'Agent roles and models' does not say: before the fixer"; fail=1; }
 grep -qF 'before the fixer' README.md || { echo "FAIL: README.md does not say the tester works before the fixer"; fail=1; }
 
+echo "== the tester's tests are guarded"
+# The implementer and the fixer may not change the tester's files (iteration 27): their prompts forbid it, the session
+# records every tester file as a blob, checks it after every result with git and undoes a change as a failed round, and
+# a disputed test goes back to the tester, who revises it or says why it stands; a dispute and an undone round each use
+# one fix round, and a dispute still open keeps auto-merge off. /next and /fix are conversations, so the lint pins the
+# wording the behaviour depends on (each item on one line); the manual check does the behaviour.
+for w in 'A dispute' 'revised:' 'stands:' 'never weaken a test to let the code pass' 'Change only the files named in the dispute' 'Answers:'; do
+  grep -qF -- "$w" "$ta" || { echo "FAIL: $ta does not say the dispute item: $w"; fail=1; }
+done
+sed -n 's/^description:[[:space:]]*//p' "$ta" 2>/dev/null | head -1 | grep -qF 'disputes' || { echo "FAIL: $ta: the description does not say the tester answers when its tests are disputed"; fail=1; }
+for f in "$nx" "$fx"; do
+  for w in '<tester blobs>' '<round base>' '<dispute base>' 'is still <dispute base>' \
+           'replaces the old line of <tester blobs> for that path' 'keeps its old line' \
+           'whose answers are all stands: fails the check' 'but answered every test in it stands:' \
+           'nothing committed and the dispute is still open' 'diff --no-index -- /dev/null <path>' \
+           'hash-object -w -- <path>' 'rev-parse -q --verify HEAD:<path>' 'merge-base --is-ancestor <round base> HEAD' \
+           'reset --mixed -q <round base>' 'update-index --add --cacheinfo <mode>,<blob>,<path>' 'checkout-index -f --' \
+           'Stopped: the tester returned failed: it deleted <path>' 'do not edit, rename, move, overwrite or delete any of them' \
+           "You may add tests of your own, in files that are not the tester's" \
+           'a change to one fails your round, and the round is undone' \
+           "If you believe a tester's test is wrong or cannot be satisfied, do not change it" \
+           'Disputes: <one line per disputed test' 'Answer a dispute over your' 'The tester has answered the dispute' \
+           'that change is undone' 'dispute-<k>' '## Disputed tests' '- Disputes still open: <d>' \
+           'revised by the tester after a dispute in fix round' \
+           "Auto-merge is not enabled: a dispute over the tester's tests is still open (see Disputed tests)."; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the guard item: $w"; fail=1; }
+  done
+done
+grep -qF "Stopped: the implementer changed the tester's tests" "$nx" || { echo "FAIL: $nx does not stop when the implementer changed the tester's tests"; fail=1; }
+for w in "Stopped: the fixer changed the tester's tests" '-m "Disputed test for #<issue>: <title>"'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not mention the guard item: $w"; fail=1; }
+done
+gsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' skills/workflow/SKILL.md)
+printf '%s\n' "$gsection" | grep -qF "a dispute over a tester's test" || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: a dispute over a tester's test"; fail=1; }
+grep -qF 'Disputed tests' README.md || { echo "FAIL: README.md does not mention Disputed tests"; fail=1; }
+
 echo "== a separate spec reviewer reviews the spec"
 # The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of
 # "Findings and fix rounds" (the same format lines as the code reviewer and the workflow skill), and /spec that

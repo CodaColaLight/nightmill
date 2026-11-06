@@ -202,6 +202,13 @@ uncommitted, and runs it to see it fail for the reason the report gives. A bug i
 any fixer starts (in `/fix all` the bug is skipped). The fixer then makes the test pass and commits it with the fix once
 the check is green; the pull request's How verified names the tester's model and shows the test.
 
+The implementer and the fixer may not edit or delete the tester's files; they add tests of their own only in other
+files. After each of their results the session compares every tester file with what the tester left
+(`git hash-object`) and undoes a change as a failed round. A test the implementer or the fixer believes is wrong goes
+back to the tester as a dispute: the tester revises it or says why it stands. A dispute and an undone round each use
+one of `review.maxFixRounds`; a dispute still open when the rounds are used up is listed in the pull request under
+Disputed tests and keeps auto-merge off, and How verified names the tests the tester revised.
+
 Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the
 change, as a separate agent that never sees the implementer's own account, and send the blocking findings back to the
 implementer or fixer for at most `review.maxFixRounds` rounds. The findings format and the rounds are in the workflow
