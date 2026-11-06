@@ -41,6 +41,7 @@ jobs:
       - run: bash tests/smoke-room.sh
       - run: bash tests/smoke-control.sh
       - run: bash tests/smoke-dashboard.sh
+      - run: bash tests/smoke-panel.sh
 
   smoke-powershell:
     name: PowerShell scripts smoke tests
@@ -59,6 +60,7 @@ jobs:
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-room.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-control.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
 
   validate:
     name: claude plugin validate (not blocking)
@@ -71,3 +73,4 @@ jobs:
           node-version: 22
       - run: npm install -g @anthropic-ai/claude-code
       - run: claude plugin validate . --strict
+      - run: claude plugin test .

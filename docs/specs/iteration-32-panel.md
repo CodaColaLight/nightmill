@@ -1,6 +1,6 @@
 # Iteration 32: a pane beside the Claude chat shows the slots and the agents in them
 
-Status: draft, awaiting approval (#69)
+Status: delivered in iteration 32 (PR #183)
 
 Story: #69, epic #47 (Unattended runs). Ships a mod inside the nightmill plugin: a hooks module, `hooks/panel.tsx`,
 named in `hooks/hooks.json` under `modules` next to the existing `SessionStart` hook. It adds one slash command,

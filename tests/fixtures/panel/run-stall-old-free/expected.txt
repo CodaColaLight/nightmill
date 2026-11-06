@@ -1,0 +1,6 @@
+time	12:00:00
+every	15
+slot	1	busy	running	feat/run	next/implementer	check	5m
+slot	2	busy	stalled	feat/stall	fix/fixer	test	2h
+slot	3	busy	unknown	feat/old	?	?	-
+slot	4	free					

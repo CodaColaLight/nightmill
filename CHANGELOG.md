@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Iteration 32 (#69): a pane beside the Claude chat shows the slots and the agents in them. The plugin ships a Claude
+  Code mod, `hooks/panel.tsx`, named under `modules` in `hooks/hooks.json` next to the `SessionStart` hook. It is off
+  until asked: `/nightmill-slots` opens the pane, `/nightmill-slots off` (or the pane's close mark) closes it, and
+  nothing runs before that. While it is open the pane shows every slot (free or busy, the agent as running, stalled or
+  unknown, branch, skill and step, age of the last report), reads them again every `worktrees.panelRefreshSeconds`
+  seconds and shows the time of the last read. A slot or a read that cannot be understood is shown as `unknown` with
+  the reason and no rows, never as free. The pane is read-only (it draws only text and runs only `scripts/panel.sh` /
+  `scripts/panel.ps1`, which run only `slot --status --porcelain`, with no `gh` and no network); it needs Claude Code
+  2.1.287 or later (terminal, Desktop app Code tab, VS Code extension 2.1.299 or later) and is not drawn in `claude -p`,
+  cloud sessions or on claude.ai. The new key `worktrees.panelRefreshSeconds` (default 15, 5 to 3600) is ignored by the
+  previous version.
+
 ## 0.4.0 (2026-11-06)
 
 - Iteration 31 (#68): a page in the browser shows the slots and what waits for the maintainer. `scripts/dashboard.sh` /
