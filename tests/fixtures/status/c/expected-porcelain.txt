@@ -1,0 +1,6 @@
+item	30	Ready	-	-	1d		Something ready
+slot	1	busy	stalled	feat/merged	next/session	done	1d	1d	#60 merged	stale: busy, PR merged (slot --release 1)
+slot	2	busy	unknown	feat/closed	?	?	-	11h	#61 closed	stale: busy, PR closed (slot --abandon 2)
+slot	3	busy	stalled	feat/stale	next/implementer	check	2d	3d	-	stale: busy, no open PR
+slot	4	busy	running	feat/new	fix/fixer	test	5m	10m	-	
+capacity	slots 4 (config), agents 2 (default)

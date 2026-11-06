@@ -1,0 +1,18 @@
+item	2	Spec review	-	#31 open, ci pass	5h		Config validator against the schema, run by init and the lint
+item	3	Approved	-	-	2d		Approved and waiting
+item	4	In progress	slot 1	#33 open, ci fail	1d		Busy one
+item	7	Review	-	#35 open, ci pending	4d		Older review
+item	5	Review	-	#23 merged	3d	stale: Review but the PR is merged	Merged but still at Review
+item	14	Review	-	#41 open, ci none	1d		A merged and an open PR
+item	6	Review	alex	#34 open, ci pass	3h		Healthy review
+item	17	Review	-	#44 open, ci none	1h		No CI at all, and a very long title that has to be cut
+item	16	Review	-	#43 draft	40m		A draft PR
+item	15	Review	-	#42 open, ci fail	30m		A legacy status failing
+item	8	Spec	-	-	5h	stale: Spec but no spec PR	Spec with no spec PR
+item	9	Spec	-	-	40m		Fresh spec
+item	10	Ready	-	-	6d		Ready item
+slot	1	busy	unknown	feat/busy	?	?	-	2h	#33 open, ci fail	
+slot	2	busy	unknown	feat/fresh	?	?	-	20m	-	
+slot	3	free								
+slot	4	free								
+capacity	slots 4 (config), agents 2 (default)

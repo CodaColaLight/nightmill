@@ -97,8 +97,13 @@ exit 0
     if ($ghFails) { $psi.EnvironmentVariables["GH_FAIL"] = "1" }
     $p = [System.Diagnostics.Process]::Start($psi)
     $errTask = $p.StandardError.ReadToEndAsync()
-    $out = $p.StandardOutput.ReadToEnd()
+    # standard output as bytes, so that the porcelain cases can check for CR bytes
+    $ms = New-Object System.IO.MemoryStream
+    $p.StandardOutput.BaseStream.CopyTo($ms)
     $p.WaitForExit()
+    $script:OutBytes = $ms.ToArray()
+    $out = $utf8.GetString($script:OutBytes)
+    $script:OutRaw = $out
     $script:Out = $out -replace "`r`n", "`n"
     $script:Err = $errTask.Result
     $script:Code = $p.ExitCode
@@ -173,6 +178,60 @@ exit 0
   Expect "stalledAfterMinutes 0" (Join-Path $FIX "c\expected.txt")
   if ($Err -notmatch "(?m)^slot: worktrees\.stalledAfterMinutes must be a whole number of at least 1; using 30\r?$") { Fail "stalledAfterMinutes 0: no note on standard error: $Err" }
   Write-Utf8 $cfgFile $withSlots
+  Run-S $work "c"
+
+  Write-Host "== porcelain"
+  # status.ps1 -Porcelain (iteration 31): the cells of the text tables, tab separated, one record kind per line
+  function Check-Porcelain([string]$name) {
+    if ($script:OutBytes -contains [byte]13) { Fail "$name`: a carriage return in the porcelain output" }
+    $nb = $script:OutBytes.Length
+    if ($nb -lt 1 -or $script:OutBytes[$nb - 1] -ne 10) { Fail "$name`: the porcelain output does not end with LF" }
+    if ($nb -ge 2 -and $script:OutBytes[$nb - 2] -eq 10) { Fail "$name`: the porcelain output ends with an empty line" }
+    foreach ($l in ($script:OutRaw.TrimEnd("`n") -split "`n")) {
+      $nf = @($l -split "`t").Count
+      if ($l.StartsWith("item`t") -and $nf -ne 8) { Fail "$name`: an item line with $nf fields: $l" }
+      if ($l.StartsWith("slot`t") -and $nf -ne 11) { Fail "$name`: a slot line with $nf fields: $l" }
+    }
+  }
+  foreach ($scn in "a", "b", "c") {
+    Set-Markers $scn
+    Run-S $work $scn "-Porcelain"
+    if ($Code -ne 0) { Fail "porcelain $scn`: exit code $Code`: $Err" }
+    $want = Read-Lf (Join-Path $FIX "$scn\expected-porcelain.txt")
+    if ($OutRaw -cne $want) {
+      Write-Host "--- expected"; Write-Host $want; Write-Host "--- got"; Write-Host $OutRaw
+      Fail "porcelain $scn`: the output differs from expected-porcelain.txt"
+    }
+    Check-Porcelain "porcelain $scn"
+  }
+  Set-Markers "a"
+  Run-S $work "a" "-Porcelain"
+  $lines = @($OutRaw -split "`n")
+  if ($lines -notcontains ("slot`t3`tfree" + ("`t" * 8))) { Fail "porcelain: a free slot is not slot, 3, free and eight empty fields" }
+  $item2 = @($lines | Where-Object { $_.StartsWith("item`t2`t") })
+  if ($item2.Count -ne 1 -or -not $item2[0].EndsWith("`tConfig validator against the schema, run by init and the lint")) { Fail "porcelain: the title of item 2 is not whole: $item2" }
+
+  Write-Host "== porcelain without worktrees"
+  Set-Markers "b"
+  Write-Utf8 $cfgFile $noSlots
+  Run-S $work "b" "-Porcelain"
+  if ($Code -ne 0) { Fail "porcelain without worktrees: exit code $Code" }
+  if ($OutRaw -cmatch "(?m)^(slot|capacity)") { Fail "porcelain without worktrees prints a slot or capacity line" }
+  Write-Utf8 $cfgFile $withSlots
+
+  Write-Host "== porcelain -All"
+  Set-Markers "a"
+  Run-S $work "a" "-All -Porcelain"
+  if ($Code -ne 0) { Fail "porcelain -All: exit code $Code" }
+  if ($OutRaw -cnotmatch "(?m)^item`t[0-9]+`tBacklog`t" -or $OutRaw -cnotmatch "(?m)^item`t[0-9]+`tDone`t") { Fail "porcelain -All does not list Backlog and Done" }
+  if ($OutRaw.Contains("not shown")) { Fail "porcelain -All prints 'not shown'" }
+  Check-Porcelain "porcelain -All"
+
+  Write-Host "== porcelain with a failing gh"
+  Run-S $work "a" "-Porcelain" $true
+  if ($Code -ne 2 -or $Err -notmatch "bad credentials") { Fail "porcelain with a failing gh must exit 2 with its message: $Code $Err" }
+  if ($OutBytes.Length -ne 0) { Fail "porcelain with a failing gh printed on standard output: $OutRaw" }
+  Set-Markers "c"
   Run-S $work "c"
 
   Write-Host "== reads only"

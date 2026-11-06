@@ -4,7 +4,8 @@
 #   ST_PRS       gh pr list --json number,title,headRefName,state,isDraft,updatedAt,statusCheckRollup,closingIssuesReferences
 #   ST_AGEFILES  space separated; the pages of the GraphQL query that gives the time of each item's last status change
 #   ST_SLOTS     slot.sh --status --porcelain (plain lines, not flat records)
-# and the settings in ST_* environment variables (see BEGIN). Prints the table of what waits and what is stuck.
+# and the settings in ST_* environment variables (see BEGIN). Prints the table of what waits and what is stuck,
+# or with ST_PORCELAIN=1 the same cells as tab separated records (item, note, slot; iteration 31).
 # The rules are in docs/specs/iteration-8-status.md; scripts/status.ps1 does the same.
 
 function days(y, m, d,   era, yoe, doy, doe) {
@@ -202,6 +203,31 @@ function table(nrows, ncols,   r, c, line) {
   }
 }
 
+# the four escapes json.awk writes back into a flat value (\\ \n \t \r) decoded, read left to right (porcelain only)
+function unflat(s,   out, i, n, c, d) {
+  if (index(s, "\\") == 0) return s
+  out = ""; n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "\\" && i < n) {
+      d = substr(s, i + 1, 1)
+      if (d == "\\") { out = out "\\"; i++; continue }
+      if (d == "n") { out = out "\n"; i++; continue }
+      if (d == "t") { out = out "\t"; i++; continue }
+      if (d == "r") { out = out "\r"; i++; continue }
+    }
+    out = out c
+  }
+  return out
+}
+
+# porcelain: one record, the kind and the fields joined with tabs
+function record(kind, nf, F,   i, line) {
+  line = kind
+  for (i = 1; i <= nf; i++) line = line "\t" F[i]
+  printf "%s\n", line
+}
+
 function before(a, b) { # does shown item a come before b
   if (srank[a] != srank[b]) return (srank[a] < srank[b])
   return (sage[a] > sage[b])
@@ -209,6 +235,7 @@ function before(a, b) { # does shown item a come before b
 
 BEGIN {
   all = (ENVIRON["ST_ALL"] == "1")
+  porcelain = (ENVIRON["ST_PORCELAIN"] == "1")
   now = ENVIRON["ST_NOW"] + 0
   nowl = now
   if (ENVIRON["ST_NOWL"] != "") nowl = stamp(ENVIRON["ST_NOWL"])
@@ -303,21 +330,40 @@ BEGIN {
     R[a, 1] = n; R[a, 2] = title; R[a, 3] = s; R[a, 4] = who; R[a, 5] = prcell(k)
     R[a, 6] = (n in age_at) ? span(sage[a]) : "-"
     R[a, 7] = flag
+    if (porcelain) {
+      # the whole title: decoded, the prefix removed, every tab, CR and LF one space (iteration 31)
+      ptitle_whole = unflat(ititle[i])
+      sub(/^\[(Story|Bug)\] /, "", ptitle_whole)
+      gsub(/[\t\r\n]/, " ", ptitle_whole)
+      F[1] = n; F[2] = s; F[3] = who; F[4] = R[a, 5]; F[5] = R[a, 6]; F[6] = flag; F[7] = ptitle_whole
+      record("item", 7, F)
+    }
   }
-  if (ns == 0) print "nothing to show at these statuses"
-  else table(ns, 7)
+  if (!porcelain) {
+    if (ns == 0) print "nothing to show at these statuses"
+    else table(ns, 7)
+  }
 
   line = ""
   if (hidden_backlog > 0) line = hidden_backlog " at " st_backlog
   if (hidden_done > 0) line = line (line != "" ? ", " : "") hidden_done " at " st_done
-  if (line != "") print "not shown: " line " (use --all)"
-  if (total > limit_items) print "note: the board has " total " items, only the first " limit_items " were read"
-  if (np >= limit_prs) print "note: only the " limit_prs " most recent pull requests were read"
+  if (line != "" && !porcelain) print "not shown: " line " (use --all)"
+  note_board = "the board has " total " items, only the first " limit_items " were read"
+  note_prs = "only the " limit_prs " most recent pull requests were read"
+  if (porcelain) {
+    if (total > limit_items) { F[1] = note_board; record("note", 1, F) }
+    if (np >= limit_prs) { F[1] = note_prs; record("note", 1, F) }
+  } else {
+    if (total > limit_items) print "note: " note_board
+    if (np >= limit_prs) print "note: " note_prs
+  }
 
   if (ENVIRON["ST_SLOTS_CONFIGURED"] == "1") {
     # the Slots section (iteration 23): every slot, free and busy; the agent state is the slot script's
-    print ""
-    print "slots"
+    if (!porcelain) {
+      print ""
+      print "slots"
+    }
     delete R; delete RA
     R[0, 1] = "slot"; R[0, 2] = "State"; R[0, 3] = "Agent"; R[0, 4] = "Branch"; R[0, 5] = "Skill"; R[0, 6] = "Step"
     R[0, 7] = "Report"; R[0, 8] = "Since"; R[0, 9] = "PR"; R[0, 10] = "Flag"
@@ -342,7 +388,12 @@ BEGIN {
       R[s, 3] = sl_agent[s]; R[s, 4] = bbranch[j]; R[s, 5] = who; R[s, 6] = (sl_step[s] == "" ? "?" : sl_step[s])
       R[s, 7] = rep; R[s, 8] = span(sinceage); R[s, 9] = prcell(k); R[s, 10] = flag
     }
-    table(nslots, 10)
+    if (porcelain) {
+      for (s = 1; s <= nslots; s++) {
+        for (c = 1; c <= 10; c++) F[c] = R[s, c]
+        record("slot", 10, F)
+      }
+    } else table(nslots, 10)
   }
   exit 0
 }

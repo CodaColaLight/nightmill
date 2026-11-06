@@ -175,6 +175,55 @@ cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
 run_in "$tmp/work" c
 [ ! -s "$tmp/err.txt" ] || fail "status printed on standard error: $(cat "$tmp/err.txt")"
 
+echo "== porcelain"
+# status.sh --porcelain (iteration 31): the cells of the text tables, tab separated, one record kind per line
+no_cr_one_lf() { # no_cr_one_lf <name>: the last output holds no CR byte and ends with exactly one LF
+  if LC_ALL=C grep -q "$(printf '\r')" "$tmp/out.txt"; then fail "$1: a carriage return in the porcelain output"; fi
+  [ "$(tail -c 1 "$tmp/out.txt" | od -An -tx1 | tr -d ' \n')" = 0a ] || fail "$1: the porcelain output does not end with LF"
+  [ "$(tail -c 2 "$tmp/out.txt" | od -An -tx1 | tr -d ' \n')" != 0a0a ] || fail "$1: the porcelain output ends with an empty line"
+}
+fields_ok() { # fields_ok <name>: every item line has eight fields and every slot line eleven
+  awk -F '\t' '($1 == "item" && NF != 8) || ($1 == "slot" && NF != 11) { bad = 1; print "  " $0 } END { exit bad }' "$tmp/out.txt" >&2 \
+    || fail "$1: a porcelain line with the wrong number of fields"
+}
+for scn in a b c; do
+  markers "$scn"
+  run_in "$tmp/work" "$scn" --porcelain
+  [ "$code" = 0 ] || fail "porcelain $scn: exit code $code: $(cat "$tmp/err.txt")"
+  expect "porcelain $scn" "$FIX/$scn/expected-porcelain.txt"
+  no_cr_one_lf "porcelain $scn"
+  fields_ok "porcelain $scn"
+done
+markers a
+run_in "$tmp/work" a --porcelain
+grep -qxF "$(printf 'slot\t3\tfree\t\t\t\t\t\t\t\t')" "$tmp/out.txt" || fail "porcelain: a free slot is not slot, 3, free and eight empty fields"
+grep -q "$(printf '^item\t2\t')" "$tmp/out.txt" || fail "porcelain: no item 2 line"
+grep "$(printf '^item\t2\t')" "$tmp/out.txt" | grep -q "$(printf '\t')Config validator against the schema, run by init and the lint\$" \
+  || fail "porcelain: the title of item 2 is not whole: $(grep "$(printf '^item\t2\t')" "$tmp/out.txt")"
+echo "== porcelain without worktrees"
+markers b
+cp "$tmp/no-slots.json" "$tmp/work/.claude/nightmill.json"
+run_in "$tmp/work" b --porcelain
+[ "$code" = 0 ] || fail "porcelain without worktrees: exit code $code"
+if grep -qE '^(slot|capacity)' "$tmp/out.txt"; then fail "porcelain without worktrees prints a slot or capacity line"; fi
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
+echo "== porcelain --all"
+markers a
+run_in "$tmp/work" a --all --porcelain
+[ "$code" = 0 ] || fail "porcelain --all: exit code $code"
+grep -q "$(printf '^item\t[0-9]*\tBacklog\t')" "$tmp/out.txt" && grep -q "$(printf '^item\t[0-9]*\tDone\t')" "$tmp/out.txt" || fail "porcelain --all does not list Backlog and Done"
+if grep -q 'not shown' "$tmp/out.txt"; then fail "porcelain --all prints 'not shown'"; fi
+fields_ok "porcelain --all"
+echo "== porcelain with a failing gh"
+set +e
+(cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/a" GH_LOG="$tmp/gh.log" GH_FAIL=1 NIGHTMILL_NOW=$NOW bash "$S" --porcelain) > "$tmp/out.txt" 2> "$tmp/err.txt"
+code=$?
+set -e
+[ "$code" = 2 ] && grep -q 'bad credentials' "$tmp/err.txt" || fail "porcelain with a failing gh must exit 2 with its message: $code $(cat "$tmp/err.txt")"
+[ ! -s "$tmp/out.txt" ] || fail "porcelain with a failing gh printed on standard output: $(cat "$tmp/out.txt")"
+markers c
+run_in "$tmp/work" c
+
 echo "== reads only"
 for c in 'project item-list' 'project view' 'pr list' 'api graphql'; do
   grep -q "$c" "$tmp/gh.log" || fail "gh $c was never called"
