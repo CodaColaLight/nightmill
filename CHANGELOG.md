@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Iteration 27 (#44): the implementer may not change the tester's tests, and a doubtful test goes back to the tester.
+  The prompts of the implementer in `/next` and of the fixer in `/fix` forbid editing, renaming, moving, overwriting or
+  deleting the tester's files; they may add tests of their own only in files that are not the tester's. The check is git
+  commands written into the two skills, not a script: when the tester returns the session records `<tester blobs>` (the
+  tester's text stored with `git hash-object -w`, what HEAD held, the file mode), and after every result of the
+  implementer or the fixer it compares each tester file with its record. A change is a failed round that is undone: the
+  round's commits are taken back with `reset --mixed`, the tester's text is written back from the object store with
+  `update-index --cacheinfo` and `checkout-index`, and the producer's other work stays in the working tree. A producer
+  that believes a test is wrong or cannot be satisfied reports it on the new `Disputes:` line and does not change it; the
+  session launches the tester again (`agents/tester.md` gets a rule for a dispute and an `Answers:` line, `revised:` or
+  `stands:`), decides each disputed file by its hash, replaces the record of a revised file and launches the producer
+  again. A dispute exchange and an undone round each cost one of `review.maxFixRounds`, shared with the review fix
+  rounds; a dispute still open when the rounds are used up is listed in the pull request under `## Disputed tests` and
+  keeps auto-merge off, and How verified lists the tests the tester revised. The report step `dispute-<k>` (role
+  `tester`) is new. No config key, status, slot marker or script changes; the code reviewer's check of the tests is #45's.
+
 - Iteration 26 (#43): a tester agent writes the failing regression test before `/fix` fixes. `/fix` now launches
   `nightmill:tester` (the agent of iteration 25) on `roles.tester.model` after the bug is In progress and the slot is
   taken, and before the fixer, in a new section "The tester" inside step 4 (no step is renumbered). The bug report is the

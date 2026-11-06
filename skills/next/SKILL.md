@@ -49,7 +49,8 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 4. **Have the change reviewed** by a different agent, the `codeReviewer` (see "The code review" below), and let
    the implementer fix what is blocking. Then, if the change touches any of `verification.manualCheckPaths`, do
    `verification.manualCheckText` yourself (the subagent runs the check, not this) and note the steps for the PR.
-5. When the implementer's result is `partial` and lists `unmet:` paths under Left, first copy the text of each
+5. When the implementer's result is `partial` and lists `unmet:` paths under Left or a dispute that is still open
+   (its last result counts), first copy the text of each of those paths and of each disputed file that is not committed
    (`git -C <slot> diff -- <path>` for a changed file, the file for a new one) for step 8, then set them aside with
    `git -C <slot> stash push --include-untracked -m "Unmet tests for #<issue>: <title>" -- <the paths>`, so the tree is
    clean for the rebase and for the release of the slot. Add the CHANGELOG entry for iteration N and change the spec's
@@ -69,16 +70,35 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    `<model>` is the exact string passed as `model` in the tester's Agent call. For a criterion marked `not tested`, the
    line gets `; tested by the implementer: <the test of the implementer's Criteria line>`. Each `Failing` line that is
    not `fails:` follows as `- not failing as expected: <the line>`. Each `unmet:` path of a partial implementer result
-   follows as `- not committed: criterion not met: <path> (criterion <n>)`. The rest of "How verified" (the
-   implementer's tests, the check, the manual check) follows. Set the status to **Review**, read it back, and check it
+   follows as `- not committed: criterion not met: <path> (criterion <n>)`. Each test the tester revised after a
+   dispute (only for a path whose hash changed) follows as
+   `- revised by the tester after a dispute in fix round <k>: <test name> (<file>): <what changed>`, from its `Answers`
+   line. The rest of "How verified" (the implementer's tests, the check, the manual check) follows. When a dispute is still open (see "The tester's files"),
+   add after `## Review`:
+
+   ```
+   ## Disputed tests
+
+   - Disputes still open: <d>
+   - disputed <file>: <test name>: <the producer's reason, as it wrote it>; tester: <stands: <why> | not asked: no fix round left>
+   - set aside, not committed: <the paths, comma-separated> (stash "<the stash's message>")
+   - committed as it was, disputed: <the paths, comma-separated>
+   ```
+
+   with one `disputed` line per open dispute; `tester:` is the tester's last `Answers` line for that test, `stands: ...`,
+   or `not asked: no fix round left`. A disputed file that was already committed and left committed goes on the line
+   `committed as it was, disputed`, not on the `set aside` line; each of the two lines appears only when it has a
+   path. Set the status to **Review**, read it back, and check it
    again after a minute (board automation may have changed it).
 7. Enable auto-merge: `gh pr merge <pr> <git.mergeFlags>`, because the spec was approved. Do **not**,
    and say why in the PR, when the PR changes one of `escalation.storyTriggers`, is partial, skipped
-   a required manual check, or has blocking review findings left.
+   a required manual check, or has blocking review findings left, or has a dispute over the tester's tests still
+   open. Then say `Auto-merge is not enabled: a dispute over the tester's tests is still open (see Disputed tests).`
 8. If the story ends up only partly done: file the rest as a new story under the same epic (`/story`),
    link both issues, say so in the PR. The PR still closes the old issue; never tick criteria that were not met.
    When tests of unmet criteria were set aside in step 5, the new story's body lists their paths, the stash's message
-   `Unmet tests for #<issue>: <title>` and the text copied in step 5, so the tests are not lost.
+   `Unmet tests for #<issue>: <title>` and the text copied in step 5, so the tests are not lost; a disputed test also
+   carries the producer's reason and the tester's last answer.
 
 ## Reporting the steps
 
@@ -99,6 +119,7 @@ reports nothing.
 | the implementer, before every run of the check | `implementer` | `check` |
 | the implementer, before its commit | `implementer` | `commit` |
 | just before each launch of the code reviewer ("The code review", step 2) | `codeReviewer` | `code-review` |
+| just before the tester's dispute launch for fix round k ("The tester's files", rule 5) | `tester` | `dispute-<k>` |
 | just before the launch of fix round k ("The code review", step 4) | `implementer` | `fix-round-<k>` |
 | the manual check (step 4), when it applies | `session` | `manual-check` |
 | the CHANGELOG entry and the rebase (step 5) | `session` | `changelog` |
@@ -138,7 +159,8 @@ The session keeps the board, the slot and every hard rule; the failing tests are
    Then:
    - `Result: complete` or `Result: partial`, and both checks hold: go on with "The implementer". Keep the tester's
      `Criteria` and `Failing` lines, `<tester files>` and the model passed, for the implementer's prompt and the pull
-     request.
+     request. Then record `<tester blobs>` (see "The tester's files" below); a path whose file is missing stops with
+     `Stopped: the tester returned failed: it deleted <path>`.
    - A path that is not a test path: print
      `Stopped: the tester changed files that are not tests: <the paths, comma-separated>` with the branch and the slot.
    - `Result: failed`, no result block, an error, a commit, or no changed path outside that exception: print
@@ -188,15 +210,19 @@ went on.
    cannot be used, stop with the line of that section for `implementer`
    (`Stopped: the implementer role cannot run on <model>: <the reason>. Nothing was started on another model.`)
    and add that the status of #<issue> is In progress and the slot is taken.
-3. **Read the result.** The subagent's last message ends with the result block below. Check the branch:
+3. **Read the result.** First check the tester's files (see "The tester's files"); a change is undone there before
+   anything below. The subagent's last message ends with the result block below. Check the branch:
    `git -C <slot> status --short` is empty and `git -C <slot> log origin/<git.baseBranch>..HEAD` is not. Do not
    re-run the whole check to verify it; CI is the independent run.
    - `Result: complete`: go on with step 4.
    - `Result: partial`: go on with step 4; steps 7 and 8 apply (no auto-merge, the rest filed as a new story,
      the criteria that were not met are not ticked). For a `Result: partial`, the tree check accepts exactly the paths
-     the result lists under Left as `unmet: <path> (criterion <n>)` that are in `<tester files>`:
-     `git -C <slot> status --porcelain --untracked-files=all` may list those paths and no other. Any other dirty path
-     fails the check as it does today. The same holds when "The code review" reads the result of a fix round.
+     the result lists under Left as `unmet: <path> (criterion <n>)` and the files its `Disputes:` lines name, when they
+     are in `<tester files>`: `git -C <slot> status --porcelain --untracked-files=all` may list those paths and no
+     other, and `git -C <slot> log origin/<git.baseBranch>..HEAD` may be empty only when the `Disputes:` line is not
+     `none`. Any other dirty path fails the check as it does today. The same holds when "The code review" reads the
+     result of a fix round.
+   - A `Disputes:` line that is not `none`: answer it (see "The tester's files", rule 5) before the code review.
    - `Result: failed`, no result block, or an error: open no pull request. Print
      `Stopped: the implementer returned failed: <Left>` with the branch and the slot, leave the status at
      In progress, commit and push nothing. Do not start another agent on this story in this run; never set Ready.
@@ -226,6 +252,14 @@ that also holds tests of other criteria stays uncommitted as a whole) and list i
 back after the commit: find the entry with that message in `git -C <slot path> stash list` and pop that one,
 `git -C <slot path> stash pop stash@{<n>}`, never the top entry without looking (every worktree shares one stash).
 
+The tester's files are not yours: do not edit, rename, move, overwrite or delete any of them, not even to add a test.
+You may add tests of your own, in files that are not the tester's (new files, or test files the tester did not touch).
+The session checks every tester file against what the tester left after you return; a change to one fails your round, and the round is undone.
+If you believe a tester's test is wrong or cannot be satisfied, do not change it: list it under Disputes as
+`<test name> (<file>): <why, one line>`, leave its file as it is, set it aside with the files of unmet criteria (the
+same stash command and message) to run the check and commit the rest, put it back, and report `partial`. The session
+passes the dispute to the tester.
+
 Do this:
 1. Run the tester's tests and watch them fail. For each criterion the tester marked `not tested`, write a test named
    for the behaviour it protects and watch it fail.
@@ -251,8 +285,147 @@ Tests: <the tests added or changed>
 Check: <the check's last summary line>, green or red
 Commits: <hash and subject, one per line; none>
 Manual check: needed | not needed (<the verification.manualCheckPaths touched>)
+Disputes: <one line per disputed test: <test name> (<file>): <why it is wrong or cannot be satisfied, one line>; none>
 Left: <what is not done and why; nothing>
 ```
+
+A fix round after a dispute gets this paragraph at the end of the prompt, after any blocking findings of an earlier
+review that are still to fix (both are passed):
+
+```markdown
+The tester has answered the dispute:
+<the tester's Answers lines>
+A revised test is in its file, uncommitted; a test that stands is unchanged. Make them pass without changing them, run
+the check, commit. If you still believe a test is wrong, report it under Disputes again.
+```
+
+A fix round after an undone round gets this paragraph at the end of the prompt:
+
+```markdown
+The previous round changed the tester's files <the paths, comma-separated>; that change is undone: the files hold the
+tester's text again, and the commits of that round are back in the working tree, uncommitted. Finish the work without
+changing the tester's files, run the check, commit.
+```
+
+## The tester's files
+
+The implementer makes the tester's tests pass without touching them, and a test it disputes goes back to the tester.
+The tester's files are exactly the paths of `<tester files>` (and the new files a dispute adds, rule 5); every other
+path is not the tester's, and a tester file is the tester's as a whole. The session runs every command below.
+
+1. **Record.** For every path of `<tester files>`, one line of `<tester blobs>`: `<path> <blob> <head> <mode>`, where
+   `<blob>` is printed by `git -C <slot> hash-object -w -- <path>` (the content the tester left, written into the
+   object store as the pristine copy), `<head>` by `git -C <slot> rev-parse -q --verify HEAD:<path>` (`none` when it
+   prints nothing: the file is new), and `<mode>` is the first field of `git -C <slot> ls-tree HEAD -- <path>` when
+   `<head>` is not `none`, else the mode of the line `new file mode <mode>` that
+   `git -C <slot> diff --no-index -- /dev/null <path>` prints (git alone, the same in bash and PowerShell; its exit code
+   1 means only that the files differ). A path whose file is missing when it is recorded stops the run with
+   `Stopped: the tester returned failed: it deleted <path>`. The pristine copy lives only in the object store, never in
+   the stash (shared by all worktrees) and never in a file of the slot.
+2. **Before every launch of the implementer** (the first and every fix round) record `<round base>`, the output of
+   `git -C <slot> rev-parse HEAD`.
+3. **Check.** After every result of the implementer (the first launch and every fix round, whatever the `Result:`
+   says, also `failed` and a missing block) and before any other check of that result, check every line of
+   `<tester blobs>`. A tester file is unchanged when both hold:
+   - `git -C <slot> hash-object -- <path>` prints `<blob>` (the file exists and holds the tester's text), and
+   - `git -C <slot> rev-parse -q --verify HEAD:<path>` prints `<blob>` (committed as the tester wrote it) or prints
+     `<head>` (not committed: still as before the tester; for `<head>` `none`, it prints nothing).
+
+   Anything else is a change: an edited, emptied, moved or deleted file, or a commit that holds other content at that
+   path. A tester file left uncommitted and unchanged (the test of an unmet criterion, a disputed test) is not a change,
+   and neither is a file committed with the tester's text. The rule looks at the result, not the history. The hashes
+   are taken with git's filters (never `--no-filters`), so a line-ending conversion on checkout is not a change.
+4. **Undo.** When one or more tester files changed, undo the round, in this order:
+   1. `git -C <slot> merge-base --is-ancestor <round base> HEAD` must succeed (the branch still contains the round's
+      start); otherwise stop with `Stopped: the implementer returned failed: the branch no longer contains <round base>`.
+   2. `git -C <slot> reset --mixed -q <round base>`: the round's commits are taken back; their changes, and everything
+      else the round left in the working tree, stay in the working tree, uncommitted. Nothing is deleted, nothing is
+      pushed (nothing was pushed yet), no stash entry is popped or dropped.
+   3. For every changed tester file, from its line of `<tester blobs>`:
+      `git -C <slot> update-index --add --cacheinfo <mode>,<blob>,<path>`, then `git -C <slot> checkout-index -f -- <path>`
+      (writes the tester's text into the working tree, creating its directory, with git's filters), then
+      `git -C <slot> reset -q -- <path>` (the index at that path is HEAD's again; the file is uncommitted, as the tester
+      left it). Git writes the file; no shell redirection is used, so the bytes are the same in bash and PowerShell.
+   4. Check every line of `<tester blobs>` again by rule 3; one that still fails stops with
+      `Stopped: the implementer returned failed: the tester's file <path> could not be restored`.
+
+   The round is then failed: it counts as one fix round (see "The code review", step 4). Its `Disputes:` line is not
+   passed to the tester; a later round may report it again. With `Result: failed` or no result block, the stop line of
+   "The implementer", step 3, follows, with `; its change to the tester's tests was undone: <the paths>` added after
+   `<Left>`. Otherwise, while a fix round is left, report `fix-round-<k>` and launch the next round with the
+   implementer's prompt and the paragraph "The previous round changed the tester's files ..."; when the undone round
+   was a review fix round, the blocking findings it was to fix are passed again in that prompt, and when it followed a
+   dispute exchange, the tester's answers are passed again as well ("The tester has answered the dispute"). When no fix
+   round is left, print
+   `Stopped: the implementer changed the tester's tests: <the paths, comma-separated>. The change was undone and no fix round is left.`
+   with the branch and the slot, leave the status at In progress, the slot taken and the round's work uncommitted in
+   the slot, and push nothing. The undo itself makes no commit.
+5. **A dispute.** When the implementer's `Disputes:` line is not `none` (and its round was not undone), while a fix
+   round is left: report `dispute-<k>` (role `tester`; k is the fix round the exchange uses), count the agents as in
+   "The tester", record `<dispute base>`, the output of `git -C <slot> rev-parse HEAD`, and launch `nightmill:tester`
+   again (one Agent call, not a fork, with the `model` of the role `tester` passed explicitly) with the dispute prompt
+   below. Read its result and check it, in this order:
+   - `git -C <slot> rev-parse HEAD is still <dispute base>` (the tester committed nothing);
+   - every path of `git -C <slot> status --porcelain --untracked-files=all` is a test path by the `Test paths:` line of
+     "The tester";
+   - every line of `<tester blobs>` whose file is not named in a dispute is unchanged by rule 3;
+   - every listed path that is not in `<tester files>` is untracked (`??`, a new file);
+   - every disputed file exists.
+
+   Then decide each disputed path by its hash alone, `git -C <slot> hash-object -- <path>` against the `<blob>` of its
+   line of `<tester blobs>`; the three cases exclude each other:
+   - a disputed path whose hash equals its <blob> keeps its old line;
+   - a disputed path whose hash differs from its <blob> and has a revised: answer is revised: its new line replaces the old line of <tester blobs> for that path;
+   - a disputed path whose hash differs from its <blob> and whose answers are all stands: fails the check, with `Stopped: the tester returned failed: it changed <path> but answered every test in it stands:`.
+
+   A revised path's new line is recorded by rule 1, so the check after the next round compares against the revised
+   text and an undone round restores it. A file with both a revised and a standing test is revised (its hash changed);
+   its standing tests keep their `stands:` lines under `Answers:`. Record, by rule 1, a line of `<tester blobs>` for
+   every new file and add the new files to `<tester files>`. A `Result:` other than `complete`, a missing block or
+   `Answers:` line, or a failed check stops with `Stopped: the tester returned failed: <Left, or the check that failed>`
+   with the branch and the slot (status In progress, slot taken; commit, push and revert nothing). Otherwise report
+   `fix-round-<k>`, record `<round base>` and launch the implementer with its prompt and the paragraph "The tester has
+   answered the dispute"; the exchange and that launch are one fix round.
+
+   When no fix round is left, the dispute is not sent to the tester; it stays open (step 6, `## Disputed tests`, and
+   step 7). When the implementer committed nothing at all and the dispute is still open, stop before the code review with
+   `Stopped: the implementer returned failed: nothing committed and the dispute is still open: <the Disputes lines>`
+   with the branch and the slot (status In progress, slot taken, the files left as they are).
+
+The code review runs after every result of the implementer that is not undone and not answered by a dispute exchange,
+so the last result is always reviewed and a story is still reviewed at most `1 + review.maxFixRounds` times.
+
+The tester's dispute prompt, with the placeholders filled in:
+
+```markdown
+Answer a dispute over your tests for story #<issue> "<title>" in <owner>/<repo>.
+
+The slot: <absolute slot path>, branch <branch>. Use that absolute path for every file and `git -C <slot path>` for
+every git command; your working directory is not the slot. The code exists now, partly committed on the branch.
+Do not commit: leave every file you change uncommitted in the slot.
+
+The spec: <path in the slot> (read it completely; it is the contract).
+The acceptance criteria of the issue, in order: <the criteria, verbatim>.
+
+The implementer disputes these tests (<test name> (<file>): <its reason>):
+<the producer's Disputes lines, verbatim>
+
+Your tests are at: <tester files, one per line>. Change only the files named above; you may add new files on the
+test paths.
+
+The project's testing rules:
+- the check: <verification.check>
+- the bench rule: <verification.benchRule, or "none">
+- the invariants: <config invariants, one per line>
+
+In this project iterations.specDir is <iterations.specDir>, iterations.decisionsDir is <iterations.decisionsDir> and
+iterations.changelog is <iterations.changelog>.
+
+End with the result block of your instructions, with one Answers line per disputed test, and nothing after it.
+```
+
+The tester's dispute prompt carries no reason of the implementer beyond its `Disputes` lines, and none of its other
+lines.
 
 ## The code review
 
@@ -289,10 +462,11 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    End with the findings block of the workflow skill, and nothing after it.
    ```
 4. **Read the block.** `no findings`, or advisory findings only: go on and keep the advisory lines. With blocking
-   findings, while fewer than `review.maxFixRounds` fix rounds have been used: launch the fix (a fresh implementer, as
+   findings, while fewer than `review.maxFixRounds` fix rounds have been used (a dispute exchange and an undone round
+   count too): launch the fix (a fresh implementer, as
    in "The implementer", with its prompt and, added at the end, "Fix exactly these blocking findings and nothing
-   else, run the check, commit": the blocking lines), read its `Result:` block as before (`failed` stops the run as
-   there), and review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop
+   else, run the check, commit": the blocking lines), read its `Result:` block as in "The implementer", step 3 (the
+   tester's files first, then a dispute) (`failed` stops the run as there), and review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop
    with `Stopped: the code review could not be had: <the reason>. Nothing was opened.`
 5. **After the last review: the `## Review` section.** Build the section that **Findings and fix rounds** describes
    (the paragraph "The pull request" of the `workflow` skill) from what you held during the run: the blocks of all
