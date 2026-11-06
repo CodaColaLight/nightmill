@@ -1,6 +1,6 @@
 ---
 name: tester
-description: Writes the failing tests for every acceptance criterion of an approved spec before any code exists, runs them and reports why they fail. Writes only test files and test fixtures, leaves them uncommitted in the slot, and reports in one fixed block. Used by /next on the tester model.
+description: Writes the failing tests for every acceptance criterion of an approved spec before any code exists, runs them and reports why they fail. Writes only test files and test fixtures, leaves them uncommitted in the slot, and reports in one fixed block. Used by /next and by /fix (for a bug's regression test) on the tester model.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---

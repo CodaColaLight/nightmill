@@ -166,7 +166,7 @@ so is every key inside them: a role that is absent, or whose `model` is empty, t
 |---|---|---|
 | `specWriter` | Writes the spec of a Ready story | `opus` |
 | `specReviewer` | Reviews a spec before it goes to Spec review | `opus` |
-| `tester` | Writes the failing tests from the approved spec, before the implementer | `sonnet` |
+| `tester` | Writes the failing tests from the approved spec, before the implementer, and a bug's regression test from the report, before the fixer | `sonnet` |
 | `implementer` | Writes the code of an Approved story | `opus` |
 | `codeReviewer` | Reviews the change before the pull request opens | `opus` |
 | `fixer` | Fixes a bug | `opus` |
@@ -195,6 +195,11 @@ least one test for every acceptance criterion from the approved spec into the sl
 them fail for the missing behaviour; it writes only test files and fixtures, and the session stops when it leaves
 anything else. The implementer then makes those tests pass and commits them with the code once the check is green. The
 pull request's How verified names the tester's model and which test covers which criterion.
+
+`/fix` does the same before the fixer: the `tester` writes a regression test from the bug report into the slot,
+uncommitted, and runs it to see it fail for the reason the report gives. A bug it cannot reproduce stops the run before
+any fixer starts (in `/fix all` the bug is skipped). The fixer then makes the test pass and commits it with the fix once
+the check is green; the pull request's How verified names the tester's model and shows the test.
 
 Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the
 change, as a separate agent that never sees the implementer's own account, and send the blocking findings back to the

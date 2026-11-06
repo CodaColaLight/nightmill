@@ -111,7 +111,7 @@ Seven roles do the work of a story. Each runs as a subagent on the model the con
 |---|---|---|---|
 | `specWriter` | writes the spec of a Ready story | the spec file | `specReviewer` |
 | `specReviewer` | reviews a spec before it goes to Spec review | findings on the spec | the maintainer |
-| `tester` | writes the failing tests from the approved spec, before the implementer | the tests | `codeReviewer`, with the change |
+| `tester` | writes the failing tests from the approved spec, before the implementer, and a bug's regression test from the report, before the fixer | the tests | `codeReviewer`, with the change |
 | `implementer` | writes the code of an Approved story | the change | `codeReviewer` |
 | `codeReviewer` | reviews the change before the pull request opens | findings on the change | the maintainer |
 | `fixer` | fixes a bug | the fix and its regression test | `codeReviewer` |

@@ -1,6 +1,6 @@
 # Iteration 26: a tester agent writes the failing regression test before /fix fixes
 
-Status: draft, awaiting approval (#43)
+Status: delivered in iteration 26 (PR #95)
 
 Story: #43, epic #41 (Independent test writing). Puts the tester of iteration 25 (`agents/tester.md`) in front of the
 fixer in `skills/fix/SKILL.md`: after the bug is In progress and the slot is taken, and before the fixer is launched, a
