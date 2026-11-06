@@ -48,12 +48,17 @@ chmod +x "$tmp/bin/gh"
 
 # shellcheck source=../scripts/lib/json.sh
 . "$here/scripts/lib/json.sh"
-markers() { # markers <scenario>: set the busy slots of the scenario
+markers() { # markers <scenario>: set the busy slots of the scenario; a line with the four report columns (skill,
+  # role, step, reported) is a seven-key marker, a line without them the three-key marker of a take
   rm -rf "$tmp/wt"; mkdir -p "$tmp/wt/.slots"
-  local n branch since
-  while IFS=$'\t' read -r n branch since; do
+  local n branch since skill role step reported
+  while IFS=$'\t' read -r n branch since skill role step reported; do
     [ -n "$n" ] || continue
-    json_marker "$n" "$branch" "$since" > "$tmp/wt/.slots/slot-$n.json"
+    if [ -n "$skill" ]; then
+      json_marker_report "$n" "$branch" "$since" "$skill" "$role" "$step" "$reported" > "$tmp/wt/.slots/slot-$n.json"
+    else
+      json_marker "$n" "$branch" "$since" > "$tmp/wt/.slots/slot-$n.json"
+    fi
   done < "$FIX/$1/markers.txt"
 }
 
@@ -123,7 +128,8 @@ grep -q '^ *21  .*In progress' "$tmp/out.txt" && ! grep -q '^ *21  .*stale' "$tm
 grep -q '^ *22  .*stale: Review but the PR is closed$' "$tmp/out.txt" || fail "Review with a closed PR is not flagged"
 ! grep -q '^ *23  .*stale' "$tmp/out.txt" || fail "Spec with a merged spec PR must not be flagged"
 grep -q '^ *26  .*stale: Spec but no spec PR$' "$tmp/out.txt" || fail "Spec with only a closed spec PR is not flagged"
-grep -q '^slots: none busy$' "$tmp/out.txt" || fail "'slots: none busy'"
+! grep -q 'slots: none busy' "$tmp/out.txt" || fail "'slots: none busy' is still printed"
+for n in 1 2 3 4; do grep -qx "   $n  free" "$tmp/out.txt" || fail "slot $n is not a free row that ends after free"; done
 [ "$(tail -n 1 "$tmp/out.txt")" = "capacity: slots 4 (config), agents 2 (default)" ] || fail "the capacity line is not the last line"
 
 echo "== the capacity line says when live values are in force"
@@ -151,6 +157,23 @@ grep -q 'stale: busy, PR merged (slot --release 1)$' "$tmp/out.txt" || fail "a b
 grep -q 'stale: busy, PR closed (slot --abandon 2)$' "$tmp/out.txt" || fail "a busy slot with a closed PR"
 grep -q 'feat/stale .*stale: busy, no open PR$' "$tmp/out.txt" || fail "an old busy slot without a PR"
 grep -q 'feat/new ' "$tmp/out.txt" && ! grep -q 'feat/new .*stale' "$tmp/out.txt" || fail "a new busy slot without a PR must not be flagged"
+# the Slots section (iteration 23): every slot with its agent state, skill, step and the age of the last report
+grep -qx 'slot  State  Agent    Branch       Skill             Step   Report  Since  PR          Flag' "$tmp/out.txt" || fail "the header of the Slots section"
+grep -q '^   1  busy   stalled  feat/merged  next/session      done       1d ' "$tmp/out.txt" || fail "slot 1: stalled, next/session, done"
+grep -q '^   2  busy   unknown  feat/closed  ?                 ?           - ' "$tmp/out.txt" || fail "slot 2: a three-key marker is unknown, ?, -"
+grep -q '^   3  busy   stalled  feat/stale   next/implementer  check      2d ' "$tmp/out.txt" || fail "slot 3: stalled"
+grep -qx '   4  busy   running  feat/new     fix/fixer         test       5m    10m  -' "$tmp/out.txt" || fail "slot 4: running, a Report of 5m"
+
+echo "== an unusable stalledAfterMinutes: the same table and the slot script's note"
+sed 's/"slots": 4 }/"slots": 4, "stalledAfterMinutes": 0 }/' "$tmp/with-slots.json" > "$tmp/work/.claude/nightmill.json"
+grep -q '"stalledAfterMinutes": 0' "$tmp/work/.claude/nightmill.json" || fail "the config copy has no stalledAfterMinutes"
+run_in "$tmp/work" c
+[ "$code" = 0 ] || fail "stalledAfterMinutes 0: exit code $code"
+expect "stalledAfterMinutes 0" "$FIX/c/expected.txt"
+grep -qx 'slot: worktrees.stalledAfterMinutes must be a whole number of at least 1; using 30' "$tmp/err.txt" || fail "stalledAfterMinutes 0: no note on standard error: $(cat "$tmp/err.txt")"
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
+run_in "$tmp/work" c
+[ ! -s "$tmp/err.txt" ] || fail "status printed on standard error: $(cat "$tmp/err.txt")"
 
 echo "== reads only"
 for c in 'project item-list' 'project view' 'pr list' 'api graphql'; do

@@ -40,7 +40,8 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 2. Take a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
    or `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
    worktree; `-Release N` after the merge. Without slots, `git switch -c` from up-to-date `origin/<git.baseBranch>`.
-   Respect the agent limit and `parallel.hotFiles`.
+   Respect the agent limit and `parallel.hotFiles`. Right after the take report the step `slot-taken` (see
+   "Reporting the steps" below); from here on every step is reported there.
 3. **Hand the coding to the implementer.** The session never writes the code itself; the tests and the code are
    written by a subagent in the role `implementer` (see "The implementer" below): count the agents, launch it,
    read its result.
@@ -60,6 +61,35 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    a required manual check, or has blocking review findings left.
 8. If the story ends up only partly done: file the rest as a new story under the same epic (`/story`),
    link both issues, say so in the PR. The PR still closes the old issue; never tick criteria that were not met.
+
+## Reporting the steps
+
+A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call of the
+shell in use, with N the slot number the take printed (`Slot N is yours`):
+`"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill next -Role <role>` or
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --report <step> --slot <n> --skill next --role <role>`. A report that
+fails never stops the run: go on, and name a failed report you made yourself once, in your final message. A report
+is not a board status. A run without slots (no `worktrees`, `git switch -c` in a single checkout) took no slot and
+reports nothing.
+
+| When | Role | Step |
+|---|---|---|
+| right after the take (step 2.2) | `session` | `slot-taken` |
+| just before the implementer is launched (step 3) | `implementer` | `implement` |
+| the implementer, before its step 1 / step 2 | `implementer` | `tests` / `code` |
+| the implementer, before every run of the check | `implementer` | `check` |
+| the implementer, before its commit | `implementer` | `commit` |
+| just before each launch of the code reviewer ("The code review", step 2) | `codeReviewer` | `code-review` |
+| just before the launch of fix round k ("The code review", step 4) | `implementer` | `fix-round-<k>` |
+| the manual check (step 4), when it applies | `session` | `manual-check` |
+| the CHANGELOG entry and the rebase (step 5) | `session` | `changelog` |
+| opening the pull request (step 6) | `session` | `pull-request` |
+| after step 7 (and step 8 when it applies) | `session` | `done` |
+| on any `Stopped:` line after the take | `session` | `stopped` |
+
+The implementer reports its own steps (the paragraph in its prompt); the session reports the others, the code review
+too, because the code reviewer cannot run a script. A slot whose last step is `done` waits for its merge and shows
+`stalled` once `worktrees.stalledAfterMinutes` has passed, until it is freed.
 
 ## The implementer
 
@@ -86,7 +116,9 @@ pull request and every hard rule. The tests and the code are the implementer's.
      `Stopped: the implementer returned failed: <Left>` with the branch and the slot, leave the status at
      In progress, commit and push nothing. Do not start another agent on this story in this run; never set Ready.
 
-The prompt, with the placeholders filled in (the criteria and the body verbatim):
+The prompt, with the placeholders filled in (the criteria and the body verbatim; the report command with the absolute
+path of the script, as `${CLAUDE_PLUGIN_ROOT}` expands in the session; a fix round's prompt carries it too, so inside a
+fix round the step `fix-round-<k>` is followed by the steps of the prompt):
 
 ```markdown
 You are the implementer for story #<issue> "<title>" in <owner>/<repo>.
@@ -102,6 +134,11 @@ Do this:
 2. Implement until the tests pass. <verification.benchRule, when set>
 3. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
    names the story. Never commit red.
+
+Report your progress with `<the report command of the shell in use, with --slot <n> --skill next --role implementer
+(PowerShell: -Slot, -Skill, -Role) and the step as the value of --report / -Report>`: before step 1 (`tests`), before
+step 2 (`code`), before every run of the check (`check`) and before the commit (`commit`). It writes only the slot's
+marker outside the repository and is not a status; when it fails, go on.
 
 Do not push, do not open or edit a pull request, do not touch the board, any issue or any status, do not edit
 `CHANGELOG.md` or the spec's status line, do not create or switch branches, do not delete files (report them

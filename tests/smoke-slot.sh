@@ -396,4 +396,182 @@ reset_gh; prepare 1 feat/m12
 cleanup
 if bash "$S" --slot-count 3 >/dev/null 2>&1; then fail "--slot-count without --capacity is not a usage error"; fi
 
+echo "== reports"
+# --report (iteration 23): the skill, the role, the step and the time of the last report in the slot's marker, and
+# --status --porcelain with the agent state (running, stalled, unknown) and the reported fields
+reset_gh
+S1="$tmp/wt/.slots"
+mtext() { cat "$(marker "$1")"; }
+mget() { ( json_load "$(marker "$1")" && json_get "$2" ); } # mget <n> <key>
+# shellcheck source=../scripts/lib/json.sh
+. "$here/scripts/lib/json.sh"
+# rep <arguments>: run slot.sh with them; standard output in $out, standard error in $err, the exit code in $rc
+rep() { set +e; out=$(bash "$S" "$@" 2>"$tmp/err.txt"); rc=$?; set -e; err=$(cat "$tmp/err.txt"); }
+stamp_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$'
+bash "$S" --take feat/r1 --slot 1 >/dev/null 2>&1
+t_branch=$(mget 1 branch); t_since=$(mget 1 since)
+
+# 1 a report writes the fields
+rep --report tests --slot 1 --skill next --role implementer
+[ "$rc" = 0 ] || fail "report: exit $rc: $err"
+[ -z "$out" ] && [ -z "$err" ] || fail "report printed something: $out / $err"
+[ "$(grep -o '"[a-z]*":' "$(marker 1)" | tr -d '\n')" = '"slot":"branch":"since":"skill":"role":"step":"reported":' ] || fail "report: marker keys: $(mtext 1)"
+[ "$t_branch" = feat/r1 ] && [ "$(mget 1 branch)" = "$t_branch" ] && [ "$(mget 1 since)" = "$t_since" ] && [ "$(mget 1 slot)" = 1 ] || fail "report: slot, branch or since changed: $(mtext 1)"
+[ "$(mget 1 skill)/$(mget 1 role)/$(mget 1 step)" = next/implementer/tests ] || fail "report: skill, role, step: $(mtext 1)"
+r1=$(mget 1 reported)
+[[ "$r1" =~ $stamp_re ]] || fail "report: reported has not the form YYYY-MM-DDTHH:MM:SS: $r1"
+want=$(printf '{\n  "slot": 1,\n  "branch": "feat/r1",\n  "since": "%s",\n  "skill": "next",\n  "role": "implementer",\n  "step": "tests",\n  "reported": "%s"\n}' "$t_since" "$r1")
+[ "$(mtext 1)" = "$want" ] || fail "report: the marker text: $(mtext 1)"
+[ "$(tail -c 1 "$(marker 1)" | od -An -c | tr -d ' ')" = '\n' ] || fail "report: the marker does not end with a newline"
+if grep -q $'\r' "$(marker 1)"; then fail "report: the marker is not LF"; fi
+[ ! -e "$S1/slot-1.report.tmp" ] || fail "report: the temporary file is left"
+
+# 2 a second report replaces the step and the time and keeps since
+printf '{\n  "slot": 1,\n  "branch": "feat/r1",\n  "since": "%s",\n  "skill": "next",\n  "role": "implementer",\n  "step": "tests",\n  "reported": "2020-01-01T00:00:00"\n}\n' "$t_since" > "$(marker 1)"
+rep --report check --slot 1 --skill next --role implementer
+[ "$rc" = 0 ] || fail "second report: exit $rc: $err"
+[ "$(mget 1 step)" = check ] || fail "second report: step: $(mtext 1)"
+[ "$(mget 1 reported)" != "2020-01-01T00:00:00" ] && [[ "$(mget 1 reported)" =~ $stamp_re ]] || fail "second report: reported: $(mtext 1)"
+[ "$(mget 1 since)" = "$t_since" ] || fail "second report: since changed: $(mtext 1)"
+
+# 3 refusals change nothing
+before=$(mtext 1)
+refused() { # refused <expected standard error> <arguments...>; "usage" for the usage line
+  local want=$1; shift
+  rep "$@"
+  [ "$rc" = 1 ] || fail "refusal ($*): exit $rc"
+  if [ "$want" = usage ]; then
+    [[ "$err" == "usage: "* ]] || fail "refusal ($*): no usage line: $err"
+  else
+    [ "$err" = "$want" ] || fail "refusal ($*): message: $err"
+  fi
+  [ -z "$out" ] || fail "refusal ($*): printed $out"
+  [ "$(mtext 1)" = "$before" ] || fail "refusal ($*): the marker changed: $(mtext 1)"
+  [ ! -e "$S1/slot-1.report.tmp" ] && [ ! -e "$S1/slot-2.report.tmp" ] || fail "refusal ($*): a temporary file is left"
+  [ ! -e "$(marker 2)" ] || fail "refusal ($*): a marker of slot 2 was written"
+}
+long41=$(printf 'a%.0s' $(seq 41)); long40=$(printf 'b%.0s' $(seq 40))
+refused "report needs a slot number" --report tests --skill next --role implementer
+refused "report needs a slot number" --report tests --slot 0 --skill next --role implementer
+refused "slot 2 is not in use" --report tests --slot 2 --skill next --role implementer
+for v in "" "a b" "a.b" "$long41" $'a\tb'; do
+  refused "report: the step must be 1 to 40 letters, digits or -, got \"$v\"" --report "$v" --slot 1 --skill next --role implementer
+done
+refused 'report: the skill must be 1 to 40 letters, digits or -, got ""' --report tests --slot 1 --role implementer
+refused 'report: the role must be 1 to 40 letters, digits or -, got ""' --report tests --slot 1 --skill next
+refused 'report: the skill must be 1 to 40 letters, digits or -, got "n/x"' --report tests --slot 1 --skill n/x --role implementer
+refused usage --report tests --slot 1 --skill next --role implementer --status
+refused usage --status --skill next
+refused usage --role implementer --slot 1
+refused usage --report tests --slot 1 --skill next --role implementer --capacity
+refused usage --report
+cp "$(marker 1)" "$tmp/marker-good.json"
+printf 'not json\n' > "$(marker 1)"; before=$(mtext 1)
+refused "slot 1: the marker is not valid JSON" --report tests --slot 1 --skill next --role implementer
+cp "$tmp/marker-good.json" "$(marker 1)"
+rep --report "$long40" --slot 1 --skill fix --role fixer
+[ "$rc" = 0 ] && [ "$(mget 1 step)" = "$long40" ] && [ "$(mget 1 skill)/$(mget 1 role)" = fix/fixer ] || fail "a step of 40 characters was refused: $err"
+
+# 4 porcelain carries the fields
+rep --report check --slot 1 --skill next --role implementer
+r1=$(mget 1 reported)
+porc=$(bash "$S" --status --porcelain)
+[ "$(printf '%s\n' "$porc" | sed -n 1p)" = "1${T}busy${T}feat/r1${T}${t_since}${T}${T}running${T}next${T}implementer${T}check${T}${r1}" ] || fail "porcelain with a report: $porc"
+[ "$(printf '%s\n' "$porc" | sed -n 1p | awk -F '\t' '{ print NF }')" = 10 ] || fail "porcelain: not ten fields: $porc"
+[ "$(printf '%s\n' "$porc" | sed -n 2p)" = "2${T}free" ] || fail "porcelain: the free line changed: $porc"
+
+# 5 running and stalled by the default threshold (30 minutes); 2026-11-05T11:30:00 is 1793878200 on the clock of the
+# scripts (local time read as UTC)
+hand() { # hand <n> <step> <reported> [file]: a seven-key marker written by hand
+  printf '{\n  "slot": %s,\n  "branch": "feat/r%s",\n  "since": "2026-11-05T09:00:00",\n  "skill": "next",\n  "role": "implementer",\n  "step": "%s",\n  "reported": "%s"\n}\n' "$1" "$1" "$2" "$3" > "${4:-$(marker "$1")}"
+}
+agent() { # agent <now> [n]: field 6 of slot n (1) in --status --porcelain with NIGHTMILL_NOW=<now>; stderr in $tmp/err.txt
+  NIGHTMILL_NOW=$1 bash "$S" --status --porcelain 2>"$tmp/err.txt" | awk -F '\t' -v n="${2:-1}" '$1 == n { print $6 }'
+}
+B=1793878200
+hand 1 check 2026-11-05T11:30:00
+[ "$(agent $((B + 1800)))" = running ] || fail "1800 seconds after the report is not running"
+[ "$(agent $((B + 1801)))" = stalled ] || fail "1801 seconds after the report is not stalled"
+[ "$(agent $((B - 600)))" = running ] || fail "a report in the future is not running"
+[ ! -s "$tmp/err.txt" ] || fail "the default threshold printed: $(cat "$tmp/err.txt")"
+
+# 6 the threshold comes from the config
+cp "$CFG" "$tmp/cfg-reports.json"
+setcfg() { sed "s/\"slots\": 2,/\"slots\": 2, \"stalledAfterMinutes\": $1,/" "$tmp/cfg-reports.json" > "$CFG"; }
+setcfg 5
+grep -q '"stalledAfterMinutes": 5,' "$CFG" || fail "the config copy has no stalledAfterMinutes"
+[ "$(agent $((B + 300)))" = running ] || fail "threshold 5: 300 seconds is not running"
+[ "$(agent $((B + 301)))" = stalled ] || fail "threshold 5: 301 seconds is not stalled"
+
+# 7 an unusable threshold falls back to 30
+warn="slot: worktrees.stalledAfterMinutes must be a whole number of at least 1; using 30"
+for v in 0 -5 2.5 30.0 '"30"' '"x"' true; do
+  setcfg "$v"
+  set +e; NIGHTMILL_NOW=$((B + 1800)) bash "$S" --status --porcelain >"$tmp/out.txt" 2>"$tmp/err.txt"; rc=$?; set -e
+  [ "$rc" = 0 ] || fail "threshold $v: exit $rc"
+  [ "$(cat "$tmp/err.txt")" = "$warn" ] || fail "threshold $v: standard error: $(cat "$tmp/err.txt")"
+  [ "$(awk -F '\t' '$1 == 1 { print $6 }' "$tmp/out.txt")" = running ] || fail "threshold $v: 1800 seconds is not running"
+  [ "$(agent $((B + 1801)))" = stalled ] || fail "threshold $v: 1801 seconds is not stalled"
+done
+setcfg null
+[ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] && [ ! -s "$tmp/err.txt" ] || fail "threshold null: $(cat "$tmp/err.txt")"
+cp "$tmp/cfg-reports.json" "$CFG"
+[ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] && [ ! -s "$tmp/err.txt" ] || fail "no threshold key: $(cat "$tmp/err.txt")"
+# without worktrees the root is ../<checkout>-wt and there are two slots
+sed '/"worktrees": {/,/^  }/d; s/"git": { "baseBranch": "main" },/"git": { "baseBranch": "main" }/' "$tmp/cfg-reports.json" > "$CFG"
+! grep -q worktrees "$CFG" || fail "the config copy still has worktrees"
+mkdir -p "$tmp/work-wt/.slots"; hand 1 check 2026-11-05T11:30:00 "$tmp/work-wt/.slots/slot-1.json"
+[ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] && [ ! -s "$tmp/err.txt" ] || fail "no worktrees: $(cat "$tmp/err.txt")"
+rm -rf "$tmp/work-wt"
+cp "$tmp/cfg-reports.json" "$CFG"
+
+# 8 the step plays no part
+for s in "done" "stopped"; do
+  hand 1 "$s" 2026-11-05T11:30:00
+  [ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] || fail "the step $s changes the agent state"
+done
+
+# 9 a marker of the previous version is busy with an unknown step
+json_marker 1 feat/r1 2026-11-05T09:00:00 > "$(marker 1)"
+line=$(NIGHTMILL_NOW=$B bash "$S" --status --porcelain | sed -n 1p)
+[ "$line" = "1${T}busy${T}feat/r1${T}2026-11-05T09:00:00${T}${T}unknown${T}${T}${T}${T}" ] || fail "a three-key marker: $line"
+hand 1 check yesterday
+[ "$(agent "$B")" = unknown ] || fail "a reported that is not of the form is not unknown"
+# a retiring slot (above the count) takes a report too
+json_marker 3 feat/r3 2026-11-05T09:00:00 > "$(marker 3)"
+rep --report check --slot 3 --skill fix --role fixer
+[ "$rc" = 0 ] || fail "report on a retiring slot: $err"
+line=$(bash "$S" --status --porcelain | sed -n 3p)
+[ "$(printf '%s\n' "$line" | cut -f1-2,5-9)" = "3${T}busy${T}retiring${T}running${T}fix${T}fixer${T}check" ] || fail "a retiring slot with a report: $line"
+rm -f "$(marker 3)"
+
+# 11 the take and the human --status are unchanged
+hand 1 code 2026-11-05T11:30:00
+grep -q '^slot 1  ready           busy: feat/r1 since 2026-11-05T09:00:00$' <<<"$(bash "$S" --status)" || fail "status without --porcelain changed: $(bash "$S" --status)"
+
+# 12 --status stays read-only
+hand 2 check 2026-11-05T11:00:00
+: > "$tmp/gh.log"; m1=$(mtext 1); m2=$(mtext 2)
+bash "$S" --status --porcelain >/dev/null; bash "$S" --status >/dev/null
+[ ! -s "$tmp/gh.log" ] || fail "status with reports asked gh: $(cat "$tmp/gh.log")"
+[ "$(mtext 1)" = "$m1" ] && [ "$(mtext 2)" = "$m2" ] || fail "status changed a marker with a report"
+rm -f "$(marker 2)"
+
+# 10 a reported slot is abandoned, reaped and released as before
+out=$(bash "$S" --abandon 1)
+[ "$out" = "Slot 1 is free (was feat/r1; the local branch is kept, delete it yourself if unwanted)." ] || fail "abandon of a reported slot: $out"
+[ ! -f "$(marker 1)" ] || fail "abandon left the marker of a reported slot"
+reset_gh; prepare 1 feat/rm; bash "$S" --report "done" --slot 1 --skill next --role session; merged feat/rm 31 "$tip"
+[ "$(mget 1 step)" = "done" ] || fail "the report before the reap"
+out=$(bash "$S" --reap 2>/dev/null)
+[ "$out" = "Slot 1 is free (was feat/rm, PR #31), released automatically." ] || fail "reap of a reported slot: $out"
+[ ! -f "$(marker 1)" ] || fail "reap left the marker of a reported slot"
+reset_gh; prepare 1 feat/rl; bash "$S" --report "done" --slot 1 --skill fix --role session; merged feat/rl 32 "$tip"
+out=$(bash "$S" --release 1 2>/dev/null | tail -n 1)
+[ "$out" = "Slot 1 is free (was feat/rl, PR #32)." ] || fail "release of a reported slot: $out"
+[ ! -f "$(marker 1)" ] || fail "release left the marker of a reported slot"
+rep --report check --slot 1 --skill next --role implementer
+[ "$rc" = 1 ] && [ "$err" = "slot 1 is not in use" ] && [ ! -e "$(marker 1)" ] || fail "a report after the release brought the marker back: $err"
+reset_gh
+
 echo "SMOKE OK"

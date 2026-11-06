@@ -2,8 +2,9 @@
 #
 #   status.ps1 [-All]
 #
-# Joins the board items, the pull requests and the busy slots and prints them as one table, Spec review and
-# Approved first, with stale states flagged. -All also lists the items at Backlog and Done. It only reads:
+# Joins the board items, the pull requests and the slots and prints them as one table, Spec review and
+# Approved first, with stale states flagged, then the Slots section: every slot with what its agent is doing
+# (running, stalled or unknown, as slot.ps1 decides it; iteration 23). -All also lists the items at Backlog and Done. It only reads:
 # gh project item-list / project view, gh pr list, gh api graphql (a query), slot.ps1 -Status -Porcelain and
 # slot.ps1 -Capacity (the last line, when the project has worktrees).
 # Run it from inside the project: any checkout or worktree of it. Settings come from .claude/nightmill.json
@@ -82,6 +83,20 @@ if ($env:NIGHTMILL_NOW) {
   $nowLocal = [long]([datetime]::SpecifyKind((Get-Date), [DateTimeKind]::Utc) - $epoch0).TotalSeconds
 }
 
+# StampOf YYYY-MM-DDTHH:MM:SS: seconds since 1970 with the time read as UTC, by the arithmetic of stamp in
+# lib/status.awk (not a date parser, so every value of the form gives a number, as in slot.ps1)
+function StampOf([string]$s) {
+  $yr = [long]$s.Substring(0, 4); $mon = [long]$s.Substring(5, 2); $day = [long]$s.Substring(8, 2)
+  if ($mon -le 2) { $yr-- }
+  $yy = if ($yr -ge 0) { $yr } else { $yr - 399 }
+  $era = [long][math]::Truncate($yy / 400)
+  $yoe = $yr - $era * 400
+  $shift = if ($mon -gt 2) { -3 } else { 9 }
+  $doy = [long][math]::Truncate((153 * ($mon + $shift) + 2) / 5) + $day - 1
+  $doe = $yoe * 365 + [long][math]::Truncate($yoe / 4) - [long][math]::Truncate($yoe / 100) + $doy
+  return [long](($era * 146097 + $doe - 719468) * 86400 + [long]$s.Substring(11, 2) * 3600 + [long]$s.Substring(14, 2) * 60 + [long]$s.Substring(17, 2))
+}
+
 function Span([long]$sec) {
   if ($sec -lt 0) { $sec = 0 }
   if ($sec -lt 3600) { return "$([math]::Floor($sec / 60))m" }
@@ -127,6 +142,7 @@ for ($page = 1; $page -le 20; $page++) {
 
 $hasSlots = [bool]$cfg.PSObject.Properties["worktrees"]
 $busy = @()
+$slotRows = @()
 if ($hasSlots) {
   try { $lines = @(& (Join-Path $PSScriptRoot "slot.ps1") -Status -Porcelain) } catch { Die "slot.ps1 failed: $($_.Exception.Message)" }
   # the capacity line, with the text of slot.ps1 -Capacity (iteration 22)
@@ -134,12 +150,19 @@ if ($hasSlots) {
   $capSlots = (@($capLines | Where-Object { "$_" -like "slots: *" }) | Select-Object -First 1)
   $capAgents = (@($capLines | Where-Object { "$_" -like "agents: *" }) | Select-Object -First 1)
   $capLine = "capacity: " + ("$capSlots" -replace '^slots: ', 'slots ') + ", " + ("$capAgents" -replace '^agents: ', 'agents ')
+  # every line of slot.ps1 -Status -Porcelain, in its order; a busy line has ten fields (iteration 23)
   foreach ($l in $lines) {
-    $f = ([string]$l) -split "`t"
-    if ($f.Count -ge 4 -and $f[1] -eq "busy") {
+    $f = @(([string]$l) -split "`t")
+    while ($f.Count -lt 10) { $f += "" }
+    $row = [pscustomobject]@{ Slot = $f[0]; State = $f[1]; Busy = $null }
+    if ($f[1] -eq "busy") {
       $since = [datetime]::ParseExact($f[3], "yyyy-MM-ddTHH:mm:ss", [Globalization.CultureInfo]::InvariantCulture)
-      $busy += [pscustomobject]@{ Slot = $f[0]; Branch = $f[2]; Since = ToEpoch ([datetime]::SpecifyKind($since, [DateTimeKind]::Utc)) }
+      $b = [pscustomobject]@{ Slot = $f[0]; Branch = $f[2]; Since = ToEpoch ([datetime]::SpecifyKind($since, [DateTimeKind]::Utc))
+        Agent = $f[5]; Skill = $f[6]; Role = $f[7]; Step = $f[8]; Reported = $f[9] }
+      $busy += $b
+      $row.Busy = $b
     }
+    $slotRows += $row
   }
 }
 
@@ -281,23 +304,34 @@ if ($total -gt $limitItems) { Write-Output "note: the board has $total items, on
 if ($prs.Count -ge $limitPrs) { Write-Output "note: only the $limitPrs most recent pull requests were read" }
 
 if ($hasSlots) {
+  # the Slots section (iteration 23): every slot, free and busy; the agent state is the slot script's
   Write-Output ""
-  if ($busy.Count -eq 0) { Write-Output "slots: none busy" }
-  else {
-    Write-Output "slots"
-    $srows = @(, @("slot", "Branch", "Since", "PR", "Flag"))
-    foreach ($b in $busy) {
-      $k = Pick "" "head" $b.Branch
-      $sinceAge = $nowLocal - $b.Since
-      $flag = ""
-      if ($k) {
-        if ($k.State -eq "merged") { $flag = "stale: busy, PR merged (slot --release $($b.Slot))" }
-        elseif ($k.State -eq "closed") { $flag = "stale: busy, PR closed (slot --abandon $($b.Slot))" }
-      } elseif ($sinceAge -gt $grace) { $flag = "stale: busy, no open PR" }
-      $srows += , @("$($b.Slot)", $b.Branch, (Span $sinceAge), (PrCell $k), $flag)
+  Write-Output "slots"
+  $srows = @(, @("slot", "State", "Agent", "Branch", "Skill", "Step", "Report", "Since", "PR", "Flag"))
+  foreach ($row in $slotRows) {
+    $b = $row.Busy
+    if ($null -eq $b) { $srows += , @("$($row.Slot)", $row.State, "", "", "", "", "", "", "", ""); continue }
+    $k = Pick "" "head" $b.Branch
+    $sinceAge = $nowLocal - $b.Since
+    $flag = ""
+    if ($k) {
+      if ($k.State -eq "merged") { $flag = "stale: busy, PR merged (slot --release $($b.Slot))" }
+      elseif ($k.State -eq "closed") { $flag = "stale: busy, PR closed (slot --abandon $($b.Slot))" }
+    } elseif ($sinceAge -gt $grace) { $flag = "stale: busy, no open PR" }
+    if (-not $b.Skill -and -not $b.Role) { $who = "?" }
+    else {
+      $sk = if ($b.Skill) { $b.Skill } else { "?" }
+      $ro = if ($b.Role) { $b.Role } else { "?" }
+      $who = "$sk/$ro"
     }
-    Format-Table2 $srows @($true, $false, $true, $false, $false)
+    $step = if ($b.Step) { $b.Step } else { "?" }
+    $rep = "-"
+    if ($b.Reported -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\z') {
+      $rep = Span ($nowLocal - (StampOf $b.Reported))
+    }
+    $srows += , @("$($b.Slot)", "busy", $b.Agent, $b.Branch, $who, $step, $rep, (Span $sinceAge), (PrCell $k), $flag)
   }
+  Format-Table2 $srows @($true, $false, $false, $false, $false, $false, $true, $true, $false, $false)
   Write-Output $capLine
 }
 exit 0

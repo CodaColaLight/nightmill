@@ -490,6 +490,35 @@ for w in '--capacity' '-Capacity' 'WORKER_SLOTS'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 
+echo "== slots report what their agent does"
+# A skill that works in a slot records its skill, role, step and the time in the slot's marker (iteration 23): both
+# slot scripts have the report command and decide running or stalled from worktrees.stalledAfterMinutes; /status
+# prints the agent state the slot script gives (no rule of its own) in one Slots section; /next and /fix report at
+# each step; the schema, the example and the README carry the key, and the README says what the states mean.
+for f in scripts/slot.sh scripts/slot.ps1; do
+  for w in 'reported' 'stalledAfterMinutes'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the report item: $w"; fail=1; }
+  done
+done
+grep -qF -- '--report' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --report"; fail=1; }
+grep -qF -- '-Report' scripts/slot.ps1 || { echo "FAIL: scripts/slot.ps1 has no -Report"; fail=1; }
+for f in scripts/lib/status.awk scripts/status.ps1; do
+  if grep -qF 'slots: none busy' "$f"; then echo "FAIL: $f still prints 'slots: none busy' (the Slots section lists every slot)"; fail=1; fi
+  if grep -qF 'stalledAfterMinutes' "$f"; then echo "FAIL: $f reads stalledAfterMinutes (the slot script decides running or stalled)"; fail=1; fi
+done
+for f in skills/next/SKILL.md skills/fix/SKILL.md; do
+  for w in '--report' '-Report' 'slot-taken' 'code-review' 'done'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the report item: $w"; fail=1; }
+  done
+done
+grep -qF '"stalledAfterMinutes": { "type": "integer", "minimum": 1, "default": 30,' schema/nightmill.schema.json || { echo "FAIL: the schema has no stalledAfterMinutes with default 30"; fail=1; }
+for f in templates/nightmill.example.json README.md; do
+  grep -qF 'stalledAfterMinutes' "$f" || { echo "FAIL: $f does not mention stalledAfterMinutes"; fail=1; }
+done
+for w in 'running' 'stalled' 'unknown'; do
+  grep -qF -- "**$w**" README.md || { echo "FAIL: README.md does not say what $w means"; fail=1; }
+done
+
 echo "== a separate spec reviewer reviews the spec"
 # The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of
 # "Findings and fix rounds" (the same format lines as the code reviewer and the workflow skill), and /spec that

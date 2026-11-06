@@ -27,7 +27,8 @@ milestone, iteration number or CHANGELOG entry.
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
    `gh project item-edit`). Work in a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
    (bash: `slot.sh --take ...`); `-Release N` after the merge. In a single checkout without slots,
-   `git switch -c <git.fixPrefix><number>-<slug>` from up-to-date `origin/<git.baseBranch>`.
+   `git switch -c <git.fixPrefix><number>-<slug>` from up-to-date `origin/<git.baseBranch>`. Right after the take
+   report the step `slot-taken` (see "Reporting the steps" below); from here on every step is reported there.
 4. **Hand the fix to the fixer.** The session never writes the code itself; the failing test and the fix are
    written by a subagent in the role `fixer` (see "The fixer" below): count the agents, launch it, read its
    result. It writes the test that fails for the reason in the issue first, fixes the cause with the smallest
@@ -43,6 +44,34 @@ milestone, iteration number or CHANGELOG entry.
    manual steps, and the `## Review` section of "The code review" (step 5 there). Set the status to Review and read it
    back. For a complete fix enable auto-merge (`gh pr merge <pr> <git.mergeFlags>`); not for a partial fix, one
    that has blocking review findings left, or one that touches `escalation.storyTriggers` (that is a story).
+
+## Reporting the steps
+
+A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call of the
+shell in use, with N the slot number the take printed (`Slot N is yours`):
+`"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill fix -Role <role>` or
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --report <step> --slot <n> --skill fix --role <role>`. A report that
+fails never stops the run: go on, and name a failed report you made yourself once, in your final message. A report
+is not a board status. A run without slots (no `worktrees`, `git switch -c` in a single checkout) took no slot and
+reports nothing. In batch mode each bug reports to its own slot.
+
+| When | Role | Step |
+|---|---|---|
+| right after the take (step 3) | `session` | `slot-taken` |
+| just before the fixer is launched (step 4) | `fixer` | `fix` |
+| the fixer, before its step 1 / step 2 | `fixer` | `test` / `code` |
+| the fixer, before every run of the check | `fixer` | `check` |
+| the fixer, before its commit | `fixer` | `commit` |
+| just before each launch of the code reviewer | `codeReviewer` | `code-review` |
+| just before the launch of fix round k | `fixer` | `fix-round-<k>` |
+| the manual check (step 5), when it applies | `session` | `manual-check` |
+| opening the pull request (step 6) | `session` | `pull-request` |
+| after step 6 | `session` | `done` |
+| on any `Stopped:` line, or a bug skipped in batch mode, after the take | `session` | `stopped` |
+
+The fixer reports its own steps (the paragraph in its prompt); the session reports the others, the code review too,
+because the code reviewer cannot run a script. A slot whose last step is `done` waits for its merge and shows
+`stalled` once `worktrees.stalledAfterMinutes` has passed, until it is freed.
 
 ## The fixer
 
@@ -69,7 +98,9 @@ the fix are the fixer's.
      `Stopped: the fixer returned failed: <Left>` with the branch and the slot, leave the status at In progress,
      commit and push nothing. Do not start another agent on this bug in this run; never set Ready.
 
-The prompt, with the placeholders filled in (the issue body verbatim):
+The prompt, with the placeholders filled in (the issue body verbatim; the report command with the absolute path of the
+script, as `${CLAUDE_PLUGIN_ROOT}` expands in the session; a fix round's prompt carries it too, so inside a fix round
+the step `fix-round-<k>` is followed by the steps of the prompt):
 
 ```markdown
 You are the fixer for bug #<issue> "<title>" in <owner>/<repo>.
@@ -86,6 +117,11 @@ Do this:
 3. If the fix changes a rule or number that a spec states, correct that spec's text. Do not add a CHANGELOG entry.
 4. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
    names the bug. Never commit red.
+
+Report your progress with `<the report command of the shell in use, with --slot <n> --skill fix --role fixer
+(PowerShell: -Slot, -Skill, -Role) and the step as the value of --report / -Report>`: before step 1 (`test`), before
+step 2 (`code`), before every run of the check (`check`) and before the commit (`commit`). It writes only the slot's
+marker outside the repository and is not a status; when it fails, go on.
 
 Do not push, do not open or edit a pull request, do not touch the board, any issue or any status, do not create
 or switch branches, do not delete files (report them under Left instead), and do not launch other agents. Do not

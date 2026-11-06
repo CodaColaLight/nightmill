@@ -159,6 +159,7 @@
       "properties": {
         "root": { "type": "string", "description": "Where slot worktrees live, relative to the main checkout. Default: ../<checkout-folder>-wt" },
         "slots": { "type": "integer", "minimum": 1, "default": 2, "description": "Number of permanent slots. WORKER_SLOTS in the environment overrides it." },
+        "stalledAfterMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "Minutes without a report after which the agent in a busy slot counts as stalled instead of running (slot --status --porcelain, /status). /next and /fix report at each step with slot --report." },
         "ports": {
           "type": "object",
           "additionalProperties": { "type": "integer" },
