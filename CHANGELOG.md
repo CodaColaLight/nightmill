@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Iteration 26 (#43): a tester agent writes the failing regression test before `/fix` fixes. `/fix` now launches
+  `nightmill:tester` (the agent of iteration 25) on `roles.tester.model` after the bug is In progress and the slot is
+  taken, and before the fixer, in a new section "The tester" inside step 4 (no step is renumbered). The bug report is the
+  one criterion (`1. <title> is fixed.`); the tester writes a regression test into the slot, runs it, confirms that it
+  fails for the reason in the report and leaves it uncommitted. The session records `<tester files>`, checks them with the
+  `Test paths:` rule and `git status --porcelain --untracked-files=all`, and stops with `Stopped: the tester changed
+  files that are not tests` or `Stopped: the tester returned failed` as `/next` does. Only a `Result: complete` counts as
+  reproduced: otherwise `Stopped: the tester could not reproduce bug #<issue>: <reason>. The fixer was not started.`
+  (a skip in `/fix all`, with nothing committed and `not reproduced: <reason>` in the final table). The fixer's step 1
+  becomes "Run the tester's test and watch it fail for the reason in the issue"; it commits the test with the fix once the
+  check is green (the session checks the test is in `git diff --name-only`), so no red commit is ever made and "never
+  commit red" is unchanged. The pull request's How verified begins with `Reproduced first by the tester role on <model>,
+  failing before the fix:`, the tester's lines and the test's diff (or a pointer to the files when it is longer than 60
+  lines). `/fix` reports the step `write-tests` (role `tester`) with `slot --report`; batch mode runs one producer at a
+  time. The body of `agents/tester.md` is unchanged (only its `description:` names `/fix`); no config key, status or slot
+  marker changes. The rule that the fixer may not edit the test is #44's, the code reviewer's check of the tests is #45's.
+
 - Iteration 25 (#42): a tester agent writes the failing tests before `/next` implements. The new agent
   `agents/tester.md` (tools `Read, Grep, Glob, Write, Edit, Bash`, no `Agent`; its `model:` is kept equal to the schema
   default `sonnet` by the lint) is launched by `/next` as `nightmill:tester` on `roles.tester.model` after the story is
