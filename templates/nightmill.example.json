@@ -63,7 +63,12 @@
     "roomMinFreeMB": 2000,
     "roomMaxCpuPercent": 90,
     "roomPauseSeconds": 60,
-    "roomMaxWaitMinutes": 30
+    "roomMaxWaitMinutes": 30,
+    "controlMode": "off",
+    "controlMinAgents": 1,
+    "controlMaxAgents": 4,
+    "controlCooldownMinutes": 15,
+    "controlIntervalMinutes": 5
   },
   "worktrees": {
     "root": "../widgets-wt",

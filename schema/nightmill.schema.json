@@ -159,7 +159,12 @@
         "roomMinFreeMB": { "type": "integer", "minimum": 1, "default": 2000, "description": "The free memory, in MB of 10^6 bytes (1 to 999999), below which scripts/room.* holds the start of another agent." },
         "roomMaxCpuPercent": { "type": "integer", "minimum": 1, "default": 90, "description": "The CPU load, in percent (1 to 100), above which scripts/room.* holds the start of another agent. 100: the CPU never holds a start." },
         "roomPauseSeconds": { "type": "integer", "minimum": 1, "default": 60, "description": "Seconds scripts/room.* pauses before the next check while there is no room (1 to 90)." },
-        "roomMaxWaitMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "The longest a skill waits for room, in minutes (1 to 1440); then it stops that task and starts nothing." }
+        "roomMaxWaitMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "The longest a skill waits for room, in minutes (1 to 1440); then it stops that task and starts nothing." },
+        "controlMode": { "type": "string", "enum": ["off", "report", "apply"], "default": "off", "description": "The load controller (scripts/control.*, /nightmill:control): off does nothing; report measures and prints what it would change, changing nothing; apply raises or lowers the live agent limit (and raises the slot count when needed) with slot --capacity, within controlMinAgents and controlMaxAgents. It never stops an agent." },
+        "controlMinAgents": { "type": "integer", "minimum": 1, "default": 1, "description": "The lowest agent limit the load controller sets (1 to 99)." },
+        "controlMaxAgents": { "type": "integer", "minimum": 1, "default": 4, "description": "The highest agent limit the load controller sets (1 to 99). Its target never exceeds maxSuggestedAgents either." },
+        "controlCooldownMinutes": { "type": "integer", "minimum": 1, "default": 15, "description": "Minutes after the last change of the live numbers before the load controller raises the agent limit by one more step or lowers it for CPU (1 to 1440). Short memory lowers it at once." },
+        "controlIntervalMinutes": { "type": "integer", "minimum": 1, "default": 5, "description": "How often the load controller should run, in minutes (1 to 1440): the interval for /loop and for an orchestrator. Each pass prints it." }
       }
     },
     "worktrees": {
