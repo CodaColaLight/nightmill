@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Iteration 23 (#67): slots record what their agent is doing and `/status` shows it. The new command
+  `slot.sh --report <step> --slot N --skill <s> --role <r>` / `slot.ps1 -Report <step> -Slot N -Skill <s> -Role <r>`
+  adds four keys to the slot marker after `slot`, `branch` and `since`: `skill`, `role`, `step` and `reported` (the
+  local time of the report); both shells write the same bytes, and a report never brings back a slot that was released.
+  `/next` and `/fix`, and the implementer and fixer they launch, report at each step (the step tables are in the two
+  skills; `/spec` takes no slot and reports nothing). The new config key `worktrees.stalledAfterMinutes` (integer, at
+  least 1, default 30; an unusable value falls back to 30 with a note on standard error) sets how old the last report
+  may be: an agent state is `running` while the report is at most that old, `stalled` after that and `unknown` when the
+  slot has no report (a marker of the previous version, a take by hand). `slot --status --porcelain` has ten fields for a
+  busy slot (fields 1 to 4 unchanged, field 5 `retiring` or empty, then the agent state, skill, role, step and
+  `reported`). `/status` prints one Slots section that lists every slot, free and busy, with the agent state, skill and
+  role, step, the age of the last report, the pull request and the existing `stale:` flags; `slots: none busy` is gone.
+  A slot that waits for its merge after its last report shows `stalled` once the threshold has passed. The marker and the
+  config stay readable by the previous version. The change is a story trigger (a new config key and a change to the slot
+  marker format).
+
 - Iteration 22 (#78): the slot count and the agent limit can be changed during a session. The new command
   `slot.sh --capacity` / `slot.ps1 -Capacity` shows the numbers, sets them (`--slot-count N`, `--agent-limit M`, or
   `-SlotCount` / `-AgentLimit`), clears them (`--clear`) and prints them for a program (`--porcelain`). The values are

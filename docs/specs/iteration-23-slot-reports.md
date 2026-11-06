@@ -1,6 +1,6 @@
 # Iteration 23: slots record what their agent is doing and /status shows it
 
-Status: draft, awaiting approval (#67)
+Status: delivered in iteration 23 (PR #92)
 
 Story: #67, epic #47 (Unattended runs). Adds one command to the slot scripts, `slot.sh --report <step>` and
 `slot.ps1 -Report <step>`, that writes which skill and role works in a slot, its current step and the time of the
