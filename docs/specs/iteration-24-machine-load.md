@@ -1,6 +1,6 @@
 # Iteration 24: a command shows CPU and memory load and suggests an agent limit
 
-Status: draft, awaiting approval (#80)
+Status: delivered in iteration 24 (PR #96)
 
 Story: #80, epic #47 (Unattended runs). Adds one read-only command, `scripts/load.sh` and `scripts/load.ps1`, that
 measures the machine's CPU load and free memory over a short window, shows the effective agent limit, the slots in use
