@@ -8,3 +8,4 @@
 26  A closed spec PR only  Spec         -    #53 closed   5h  stale: Spec but no spec PR
 
 slots: none busy
+capacity: slots 4 (config), agents 2 (default)

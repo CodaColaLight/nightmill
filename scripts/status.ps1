@@ -4,7 +4,8 @@
 #
 # Joins the board items, the pull requests and the busy slots and prints them as one table, Spec review and
 # Approved first, with stale states flagged. -All also lists the items at Backlog and Done. It only reads:
-# gh project item-list / project view, gh pr list, gh api graphql (a query) and slot.ps1 -Status -Porcelain.
+# gh project item-list / project view, gh pr list, gh api graphql (a query), slot.ps1 -Status -Porcelain and
+# slot.ps1 -Capacity (the last line, when the project has worktrees).
 # Run it from inside the project: any checkout or worktree of it. Settings come from .claude/nightmill.json
 # in the main checkout (github, board.statuses, labels.epic, git.specPrefix, worktrees). The rules and the
 # texts are in docs/specs/iteration-8-status.md; status.sh prints the same.
@@ -128,6 +129,11 @@ $hasSlots = [bool]$cfg.PSObject.Properties["worktrees"]
 $busy = @()
 if ($hasSlots) {
   try { $lines = @(& (Join-Path $PSScriptRoot "slot.ps1") -Status -Porcelain) } catch { Die "slot.ps1 failed: $($_.Exception.Message)" }
+  # the capacity line, with the text of slot.ps1 -Capacity (iteration 22)
+  try { $capLines = @(& (Join-Path $PSScriptRoot "slot.ps1") -Capacity) } catch { Die "slot.ps1 failed: $($_.Exception.Message)" }
+  $capSlots = (@($capLines | Where-Object { "$_" -like "slots: *" }) | Select-Object -First 1)
+  $capAgents = (@($capLines | Where-Object { "$_" -like "agents: *" }) | Select-Object -First 1)
+  $capLine = "capacity: " + ("$capSlots" -replace '^slots: ', 'slots ') + ", " + ("$capAgents" -replace '^agents: ', 'agents ')
   foreach ($l in $lines) {
     $f = ([string]$l) -split "`t"
     if ($f.Count -ge 4 -and $f[1] -eq "busy") {
@@ -292,5 +298,6 @@ if ($hasSlots) {
     }
     Format-Table2 $srows @($true, $false, $true, $false, $false)
   }
+  Write-Output $capLine
 }
 exit 0

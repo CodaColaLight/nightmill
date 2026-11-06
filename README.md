@@ -44,7 +44,7 @@ not a conversation.
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
-| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`. |
+| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -210,7 +210,7 @@ A slot is a worktree that is never removed. A new task switches it to a new bran
 branch, so build output and installed dependencies stay warm and builds are incremental instead of
 cold. A slot is busy from `-Take` to `-Release` (after the PR merged), `-Abandon` or an automatic release. Slot N
 gets `base + N` for every configured port, so two servers run side by side. The number of slots follows
-`worktrees.slots` or `WORKER_SLOTS`; one per 8 GB of RAM is a sound default.
+`worktrees.slots` or `WORKER_SLOTS`, or a value set during the session (below); one per 8 GB of RAM is a sound default.
 
 A take (`-Take` / `--take`) first frees every busy slot whose pull request has merged, so the next `/next` or
 `/fix` finds a free slot without a person running `-Release`; `-Reap` (`--reap`) does only that. A slot is freed
@@ -220,6 +220,29 @@ that cannot be judged (`gh` missing, logged out or failing, no fetch) stays busy
 never makes a take fail. A slot whose pull request is open, closed without a merge or moved by "update branch" stays
 busy until `-Release` or `-Abandon`. Each freed slot is reported in one line:
 `Slot 1 is free (was feat/a, PR #12), released automatically.`
+
+### Changing the numbers during a session
+
+The slot count and the agent limit (how many agents run at once) can be raised or lowered while a session runs,
+without a restart:
+
+```sh
+scripts/slot.ps1 -Capacity                              # show the numbers and where they come from
+scripts/slot.ps1 -Capacity -SlotCount 3 -AgentLimit 3   # set one or both
+scripts/slot.ps1 -Capacity -Clear                       # back to the configuration
+bash scripts/slot.sh --capacity [--slot-count N] [--agent-limit M] [--clear] [--porcelain]
+```
+
+A value is a whole number from 1 to 99; an invalid one changes nothing and says why. A set value wins over
+`WORKER_SLOTS`, which wins over the configuration (`worktrees.slots`, `parallel.maxAgents`; 2 when absent). The values
+are kept in `<worktrees.root>/.slots/capacity.json`, beside the slot markers and outside the repository, until
+`-Clear` or until set again; the tracked `.claude/nightmill.json` is never edited. A raised slot count is used by the
+next take (the new worktrees are created on first use). Lowering it never touches a busy slot: a busy slot above the
+new count is shown as retiring, is no longer handed out, and drops out of the list once it is released (its worktree
+stays on disk for when the count goes up again). A lowered agent limit stops no running agent: `/next`, `/spec` and
+`/fix` read the limit each time they decide whether to start another agent and wait until fewer run than it allows.
+`slot -Status` and `/nightmill:status` show the effective numbers in a `capacity:` line and say `live; config <n>`
+while a set value is in force.
 
 ## Developing nightmill
 

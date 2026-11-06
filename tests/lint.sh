@@ -466,6 +466,30 @@ for w in '--reap' '-Reap'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 
+echo "== capacity is wired"
+# The slot count and the agent limit can be changed during a session (iteration 22): both slot scripts keep the live
+# values in capacity.json and have the capacity command, the skills read the agent limit from it at every decision to
+# start an agent (not once from the configuration), and the README says how and what wins.
+for f in scripts/slot.sh scripts/slot.ps1; do
+  grep -qF 'capacity.json' "$f" || { echo "FAIL: $f does not keep the live values in capacity.json"; fail=1; }
+done
+grep -qF -- '--capacity' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --capacity"; fail=1; }
+grep -qF -- '-Capacity' scripts/slot.ps1 || { echo "FAIL: scripts/slot.ps1 has no -Capacity"; fail=1; }
+for w in '--capacity --porcelain' '-Capacity -Porcelain'; do
+  grep -qF -- "$w" skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with $w"; fail=1; }
+done
+for f in skills/next/SKILL.md skills/fix/SKILL.md skills/spec/SKILL.md; do
+  if ! grep -qF -- '--capacity --porcelain' "$f" && ! grep -qF -- '-Capacity -Porcelain' "$f"; then
+    echo "FAIL: $f does not read the agent limit with the capacity command"; fail=1
+  fi
+  if grep -qF 'At `parallel.maxAgents` wait' "$f"; then
+    echo "FAIL: $f still waits at parallel.maxAgents read once (the agent limit is read at every decision)"; fail=1
+  fi
+done
+for w in '--capacity' '-Capacity' 'WORKER_SLOTS'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+
 echo "== a separate spec reviewer reviews the spec"
 # The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of
 # "Findings and fix rounds" (the same format lines as the code reviewer and the workflow skill), and /spec that

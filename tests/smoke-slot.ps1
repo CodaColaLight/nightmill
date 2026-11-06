@@ -1,6 +1,7 @@
 # tests/smoke-slot.ps1 - slot.ps1 against a throwaway repository: status, take (with warm-up and
 # port hints), a full board, the lockfile-hash skip, abandon, and the automatic release of a slot whose pull
-# request has merged (-Reap and the first step of every -Take), with -Release, against a fake gh.
+# request has merged (-Reap and the first step of every -Take), with -Release, against a fake gh, and the
+# capacity command (-Capacity: the slot count and the agent limit changed during a session).
 # Runs on Windows PowerShell 5.1 and pwsh.
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
@@ -287,6 +288,183 @@ try {
   $r = SlotE "-Reap"
   if ($r.Out.Trim() -ne $none) { Fail "nothing to free: wrong output: $($r.Out)" }
   if ([System.IO.File]::ReadAllText($ghLog).Length -ne 0) { Fail "nothing to free: gh was asked: $([System.IO.File]::ReadAllText($ghLog))" }
+
+  Write-Host "== capacity"
+  # -Capacity (iteration 22): the slot count and the agent limit, set during a session in <root>/.slots/capacity.json
+  $C = "$tmp\wt\.slots\capacity.json"
+  $CFG = "$work\.claude\nightmill.json"
+  $cfgBefore = [System.IO.File]::ReadAllText($CFG)
+  function Cap([string]$arguments = "", [hashtable]$extraEnv = @{}) { SlotE ("-Capacity " + $arguments) $extraEnv }
+  function Lines([string]$text) { @($text -split "`n" | Where-Object { $_ -ne "" }) }
+  function Read-Cap { if (Test-Path $C) { [System.IO.File]::ReadAllText($C) } else { "<none>" } }
+  function Porc { Lines (SlotE "-Status -Porcelain").Out }
+  $T = "`t"
+  Reset-Gh; if (Test-Path $C) { Remove-Item $C }
+
+  # 1 no value prints the numbers
+  $r = Cap
+  if ($r.Out -ne "slots: 2 (config)`nagents: 2 (default)`n") { Fail "capacity show: $($r.Out) / $($r.Err)" }
+  $r = Cap "" @{ WORKER_SLOTS = "4" }
+  if ($r.Out -ne "slots: 4 (WORKER_SLOTS; config 2)`nagents: 2 (default)`n") { Fail "capacity show with WORKER_SLOTS: $($r.Out)" }
+  if (Test-Path $C) { Fail "showing wrote capacity.json" }
+
+  # 2 set prints one line and keeps the file; the tracked config is not edited
+  $r = Cap "-SlotCount 3 -AgentLimit 3"
+  if ($r.Out -ne "capacity: slots 2 -> 3, agents 2 -> 3`n") { Fail "capacity set: $($r.Out) / $($r.Err)" }
+  $cap = [System.IO.File]::ReadAllText($C)
+  if ($cap -notmatch '(?m)^  "slots": 3,$') { Fail "capacity.json has no slots 3: $cap" }
+  if ($cap -notmatch '(?m)^  "maxAgents": 3,$') { Fail "capacity.json has no maxAgents 3: $cap" }
+  if ($cap -notmatch '(?m)^  "since": "[0-9-]*T[0-9:]*"$') { Fail "capacity.json has no since: $cap" }
+  if ($cap.Contains("`r")) { Fail "capacity.json is not LF" }
+  if ([System.IO.File]::ReadAllText($CFG) -cne $cfgBefore) { Fail "the config file was edited" }
+  if (git -C $work status --porcelain) { Fail "the checkout is not clean after a set" }
+  $r = Cap
+  if ($r.Out -ne "slots: 3 (live; config 2)`nagents: 3 (live; config 2)`n") { Fail "capacity show after set: $($r.Out)" }
+  $r = Cap "-AgentLimit 4"
+  if ($r.Out -ne "capacity: agents 3 -> 4`n") { Fail "capacity set agents only: $($r.Out)" }
+  if ((Lines (Cap).Out)[0] -ne "slots: 3 (live; config 2)") { Fail "setting the agent limit changed the slot count" }
+  $r = Cap "-SlotCount 3"
+  if ($r.Out -ne "capacity: slots 3 (unchanged)`n") { Fail "capacity set unchanged: $($r.Out)" }
+  $null = Cap "-AgentLimit 3"
+
+  # 3 raising makes the new slot available; its worktree is created by the take
+  if (Test-Path "$tmp\wt\slot-3") { Fail "slot 3 exists before it was taken" }
+  foreach ($i in 1, 2, 3) {
+    $r = SlotE "-Take feat/c$i"
+    if ($r.Out -notmatch "Slot $i is yours") { Fail "raised count: take $i did not get slot $i`: $($r.Out) / $($r.Err)" }
+  }
+  if (-not (Test-Path "$tmp\wt\slot-3")) { Fail "the take did not create the worktree of slot 3" }
+
+  # 4 lowering never touches a busy slot: it is retiring until released
+  $m2 = [System.IO.File]::ReadAllText((Marker 2)); $m3 = [System.IO.File]::ReadAllText((Marker 3))
+  $h2 = ([string](git -C "$tmp\wt\slot-2" rev-parse HEAD)).Trim(); $h3 = ([string](git -C "$tmp\wt\slot-3" rev-parse HEAD)).Trim()
+  $r = Cap "-SlotCount 1"
+  if ($r.Out -ne "capacity: slots 3 -> 1`n") { Fail "capacity lower: $($r.Out)" }
+  if ([System.IO.File]::ReadAllText((Marker 2)) -ne $m2 -or [System.IO.File]::ReadAllText((Marker 3)) -ne $m3) { Fail "lowering changed a marker" }
+  if (([string](git -C "$tmp\wt\slot-2" rev-parse HEAD)).Trim() -ne $h2 -or ([string](git -C "$tmp\wt\slot-3" rev-parse HEAD)).Trim() -ne $h3) { Fail "lowering changed a worktree" }
+  if ((git -C "$tmp\wt\slot-3" branch --show-current) -ne "feat/c3") { Fail "lowering switched slot 3" }
+  $st = Slot -Status
+  if ($st -notmatch "(?m)^slots = 1  root = ") { Fail "status header after lowering: $st" }
+  if ($st -notmatch [regex]::Escape("capacity: slots 1 (live; config 2), agents 3 (live; config 2)")) { Fail "status capacity line: $st" }
+  if ($st -notmatch "(?m)^slot 2  ready           busy: feat/c2 since .* \(retiring\)\r?$") { Fail "status: slot 2 is not retiring: $st" }
+  if ($st -notmatch "(?m)^slot 3  ready           busy: feat/c3 since .* \(retiring\)\r?$") { Fail "status: slot 3 is not retiring: $st" }
+  if ($st -notmatch "(?m)^slot 1 .*busy: feat/c1 since [0-9T:-]*\r?$") { Fail "status: slot 1 must not be retiring: $st" }
+  $p = Porc
+  if ($p.Count -ne 3) { Fail "porcelain after lowering: $($p -join ' | ')" }
+  if (($p[0] -split $T).Count -ne 4) { Fail "porcelain: slot 1 has a fifth field: $($p[0])" }
+  $f = $p[1] -split $T; if ($f[0] -ne "2" -or $f[1] -ne "busy" -or $f[2] -ne "feat/c2" -or $f[4] -ne "retiring") { Fail "porcelain: slot 2: $($p[1])" }
+  $f = $p[2] -split $T; if ($f[0] -ne "3" -or $f[1] -ne "busy" -or $f[2] -ne "feat/c3" -or $f[4] -ne "retiring") { Fail "porcelain: slot 3: $($p[2])" }
+  $r = SlotE "-Take feat/c9"
+  if ($r.Code -eq 0) { Fail "a take above the lowered count should fail" }
+  if ($r.Err -notmatch "all 1 slots are busy") { Fail "take after lowering: wrong message: $($r.Err)" }
+  Merged feat/c3 23 $h3; Merged feat/c2 22 $h2
+  $r = SlotE "-Release 3"
+  if ($r.Code -ne 0) { Fail "releasing the retiring slot 3 failed: $($r.Err)" }
+  $p = Porc
+  if ((@($p | ForEach-Object { ($_ -split $T)[0] }) -join " ") -ne "1 2") { Fail "after releasing slot 3: $($p -join ' | ')" }
+  $r = SlotE "-Release 2"
+  if ($r.Code -ne 0) { Fail "releasing the retiring slot 2 failed: $($r.Err)" }
+  $p = Porc
+  if ((@($p | ForEach-Object { ($_ -split $T)[0] }) -join " ") -ne "1") { Fail "after releasing slot 2: $($p -join ' | ')" }
+  if ((Slot -Status) -match "(?m)^slot 2") { Fail "a free slot above the count is listed" }
+  if (-not (Test-Path "$tmp\wt\slot-2") -or -not (Test-Path "$tmp\wt\slot-3")) { Fail "a worktree above the count was removed" }
+  Reset-Gh
+
+  # 5 a raised count brings a retired slot back, warm
+  $null = Cap "-SlotCount 3"
+  $p = Porc
+  if ($p.Count -ne 3 -or $p[1] -ne "2`tfree" -or $p[2] -ne "3`tfree") { Fail "raised again: slots 2 and 3 are not free: $($p -join ' | ')" }
+  if ((SlotE "-Take feat/c4").Out -notmatch "Slot 2 is yours") { Fail "raised again: slot 2 not taken" }
+  if ((SlotE "-Take feat/c5").Out -notmatch "Slot 3 is yours") { Fail "raised again: slot 3 not taken" }
+  foreach ($n in 1, 2, 3) { $null = Slot -Abandon $n }
+
+  # 6 -Reap frees a retiring slot whose pull request has merged
+  Reset-Gh; Prepare 3 feat/r3; Merged feat/r3 24 $tip
+  $null = Cap "-SlotCount 1"
+  $r = SlotE "-Reap"
+  if ($r.Out.Trim() -ne "Slot 3 is free (was feat/r3, PR #24), released automatically.") { Fail "reap of a retiring slot: $($r.Out) / $($r.Err)" }
+  if (Test-Path (Marker 3)) { Fail "reap of a retiring slot: the marker is still there" }
+  Reset-Gh
+
+  # 7 invalid values change nothing and say why
+  $capBefore = Read-Cap
+  foreach ($opt in "SlotCount", "AgentLimit") {
+    $name = if ($opt -eq "SlotCount") { "-SlotCount" } else { "-AgentLimit" }
+    foreach ($v in "0", "-1", "2.5", "x", "", "100") {
+      $r = Cap "-$opt `"$v`""
+      if ($r.Code -ne 1) { Fail "invalid $name '$v': exit $($r.Code) / $($r.Err)" }
+      if ($r.Err.Trim() -cne "capacity: $name must be a whole number from 1 to 99, got `"$v`"") { Fail "invalid $name '$v': message: $($r.Err)" }
+      if ($r.Out) { Fail "invalid $name '$v': printed $($r.Out)" }
+      if ((Read-Cap) -cne $capBefore) { Fail "invalid $name '$v' changed capacity.json" }
+    }
+  }
+  $r = Cap "-SlotCount 2 -AgentLimit x"
+  if ($r.Code -eq 0) { Fail "a valid value with an invalid one was accepted" }
+  if ((Read-Cap) -cne $capBefore) { Fail "a valid value given with an invalid one was written" }
+  Remove-Item $C
+  $r = Cap "-SlotCount 0"
+  if ($r.Code -eq 0) { Fail "invalid value without a file was accepted" }
+  if (Test-Path $C) { Fail "an invalid value created capacity.json" }
+
+  # 8 -Clear
+  $null = Cap "-SlotCount 3 -AgentLimit 3"
+  $r = Cap "-Clear"
+  if ($r.Out -ne "capacity: cleared (slots 3 -> 2, agents 3 -> 2)`n") { Fail "clear: $($r.Out)" }
+  if (Test-Path $C) { Fail "clear left capacity.json" }
+  $r = Cap "-Clear"
+  if ($r.Out -ne "capacity: nothing to clear`n") { Fail "second clear: $($r.Out)" }
+  $r = Cap "-Clear -SlotCount 2"
+  if ($r.Code -eq 0) { Fail "-Clear with a value is not a usage error" }
+  if ($r.Err -notmatch "(?m)^usage: ") { Fail "-Clear with a value: no usage line: $($r.Err)" }
+  $r = Cap "-SlotCount 2 -SlotCount 3"
+  if ($r.Code -eq 0) { Fail "a value given twice is not a usage error" }
+  if (Test-Path $C) { Fail "a usage error wrote capacity.json" }
+
+  # 9 and 10 precedence, shown and in porcelain
+  $r = Cap "-Porcelain"
+  if ($r.Out -ne "slots`t2`tconfig`t2`nagents`t2`tdefault`t2`n") { Fail "porcelain config/default: $($r.Out)" }
+  $r = Cap "-Porcelain" @{ WORKER_SLOTS = "4" }
+  if ($r.Out -ne "slots`t4`tWORKER_SLOTS`t2`nagents`t2`tdefault`t2`n") { Fail "porcelain WORKER_SLOTS: $($r.Out)" }
+  $r = Cap "-Porcelain -SlotCount 3 -AgentLimit 3"
+  if ($r.Out -ne "slots`t3`tlive`t2`nagents`t3`tlive`t2`n") { Fail "porcelain set: $($r.Out)" }
+  if ((Lines (Cap "" @{ WORKER_SLOTS = "4" }).Out)[0] -ne "slots: 3 (live; config 2)") { Fail "live does not win over WORKER_SLOTS" }
+  if ((Lines (SlotE "-Status -Porcelain" @{ WORKER_SLOTS = "4" }).Out).Count -ne 3) { Fail "-Status does not use the live count over WORKER_SLOTS" }
+  $null = Cap "-Clear"
+  [System.IO.File]::WriteAllText($CFG, $cfgBefore.Replace('"git": { "baseBranch": "main" },', '"git": { "baseBranch": "main" }, "parallel": { "maxAgents": 5 },'))
+  if (-not [System.IO.File]::ReadAllText($CFG).Contains('"maxAgents": 5')) { Fail "the config copy has no maxAgents" }
+  if ((Lines (Cap).Out)[1] -ne "agents: 5 (config)") { Fail "config does not win over the default: $((Cap).Out)" }
+  if ((Lines (Cap "-Porcelain").Out)[1] -ne "agents`t5`tconfig`t5") { Fail "porcelain config agents" }
+  $null = Cap "-AgentLimit 3"
+  if ((Lines (Cap).Out)[1] -ne "agents: 3 (live; config 5)") { Fail "live does not win over the config: $((Cap).Out)" }
+  if ((Lines (Cap "-Porcelain").Out)[1] -ne "agents`t3`tlive`t5") { Fail "porcelain live agents over config" }
+  $null = Cap "-Clear"
+  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+
+  # 11 an unusable capacity.json is ignored with a note
+  function Test-Unusable([string]$content, [string]$want, [string]$reason) {
+    [System.IO.File]::WriteAllText($C, "$content`n")
+    $r = Cap
+    if ($r.Out -ne $want) { Fail "unusable capacity.json '$content': $($r.Out)" }
+    if ($r.Err.Trim() -cne "slot: capacity.json: $reason; using the configuration") { Fail "unusable capacity.json '$content': note: $($r.Err)" }
+  }
+  Test-Unusable 'not json' "slots: 2 (config)`nagents: 2 (default)`n" "not valid JSON"
+  Test-Unusable '[1, 2]' "slots: 2 (config)`nagents: 2 (default)`n" "not an object"
+  Test-Unusable '{ "slots": "x" }' "slots: 2 (config)`nagents: 2 (default)`n" "slots is not a whole number from 1 to 99"
+  Test-Unusable '{ "slots": 0, "maxAgents": 3 }' "slots: 2 (config)`nagents: 3 (live; config 2)`n" "slots is not a whole number from 1 to 99"
+  [System.IO.File]::WriteAllText($C, "not json`n")
+  $r = SlotE "-Take feat/u"
+  if ($r.Out -notmatch "Slot 1 is yours") { Fail "a take with an unusable capacity.json failed: $($r.Err)" }
+  if ((SlotE "-Status").Code -ne 0) { Fail "a status with an unusable capacity.json failed" }
+  $null = Slot -Abandon 1
+  Remove-Item $C
+
+  # 12 nothing else changed: the marker keys, and no capacity.json without -Capacity
+  Reset-Gh; Prepare 1 feat/m12
+  $keys = ((([System.IO.File]::ReadAllText((Marker 1)) | ConvertFrom-Json).PSObject.Properties.Name) | Sort-Object) -join ","
+  if ($keys -ne "branch,since,slot") { Fail "marker keys after capacity: $keys" }
+  if (Test-Path $C) { Fail "a take wrote capacity.json" }
+  Clear-Slots
+  if ((SlotE "-SlotCount 3").Code -eq 0) { Fail "-SlotCount without -Capacity is not a usage error" }
 
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {

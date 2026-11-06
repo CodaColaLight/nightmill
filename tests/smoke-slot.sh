@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/smoke-slot.sh - slot.sh against a throwaway repository: status, take (with warm-up and
 # port hints), a full board, the lockfile-hash skip, abandon, and the automatic release of a slot whose pull
-# request has merged (--reap and the first step of every take), with --release, against a fake gh.
+# request has merged (--reap and the first step of every take), with --release, against a fake gh, and the
+# capacity command (--capacity: the slot count and the agent limit changed during a session).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d)
@@ -235,5 +236,164 @@ reset_gh
 out=$(bash "$S" --reap 2>/dev/null)
 [ "$out" = "No slot freed." ] || fail "nothing to free: wrong output: $out"
 [ ! -s "$tmp/gh.log" ] || fail "nothing to free: gh was asked: $(cat "$tmp/gh.log")"
+
+echo "== capacity"
+# --capacity (iteration 22): the slot count and the agent limit, set during a session in <root>/.slots/capacity.json
+C="$tmp/wt/.slots/capacity.json"
+CFG="$tmp/work/.claude/nightmill.json"
+cp "$CFG" "$tmp/cfg-before.json"
+nl=$'\n'
+show() { bash "$S" --capacity "$@"; }
+reset_gh; rm -f "$C"
+
+# 1 no value prints the numbers
+out=$(show)
+[ "$out" = "slots: 2 (config)${nl}agents: 2 (default)" ] || fail "capacity show: $out"
+out=$(WORKER_SLOTS=4 bash "$S" --capacity)
+[ "$out" = "slots: 4 (WORKER_SLOTS; config 2)${nl}agents: 2 (default)" ] || fail "capacity show with WORKER_SLOTS: $out"
+[ ! -e "$C" ] || fail "showing wrote capacity.json"
+
+# 2 set prints one line and keeps the file; the tracked config is not edited
+out=$(show --slot-count 3 --agent-limit 3)
+[ "$out" = "capacity: slots 2 -> 3, agents 2 -> 3" ] || fail "capacity set: $out"
+grep -q '^  "slots": 3,$' "$C" || fail "capacity.json has no slots 3: $(cat "$C")"
+grep -q '^  "maxAgents": 3,$' "$C" || fail "capacity.json has no maxAgents 3: $(cat "$C")"
+grep -q '^  "since": "[0-9-]*T[0-9:]*"$' "$C" || fail "capacity.json has no since: $(cat "$C")"
+cmp -s "$CFG" "$tmp/cfg-before.json" || fail "the config file was edited"
+[ -z "$(git -C "$tmp/work" status --porcelain)" ] || fail "the checkout is not clean after a set"
+out=$(show)
+[ "$out" = "slots: 3 (live; config 2)${nl}agents: 3 (live; config 2)" ] || fail "capacity show after set: $out"
+out=$(show --agent-limit 4)
+[ "$out" = "capacity: agents 3 -> 4" ] || fail "capacity set agents only: $out"
+[ "$(show | head -n 1)" = "slots: 3 (live; config 2)" ] || fail "setting the agent limit changed the slot count"
+out=$(show --slot-count 3)
+[ "$out" = "capacity: slots 3 (unchanged)" ] || fail "capacity set unchanged: $out"
+show --agent-limit 3 >/dev/null
+
+# 3 raising makes the new slot available; its worktree is created by the take
+[ ! -d "$tmp/wt/slot-3" ] || fail "slot 3 exists before it was taken"
+for i in 1 2 3; do
+  grep -q "Slot $i is yours" <<<"$(bash "$S" --take "feat/c$i" 2>/dev/null)" || fail "raised count: take $i did not get slot $i"
+done
+[ -d "$tmp/wt/slot-3" ] || fail "the take did not create the worktree of slot 3"
+
+# 4 lowering never touches a busy slot: it is retiring until released
+m2=$(cat "$(marker 2)"); m3=$(cat "$(marker 3)")
+h2=$(git -C "$tmp/wt/slot-2" rev-parse HEAD); h3=$(git -C "$tmp/wt/slot-3" rev-parse HEAD)
+out=$(show --slot-count 1)
+[ "$out" = "capacity: slots 3 -> 1" ] || fail "capacity lower: $out"
+[ "$(cat "$(marker 2)")" = "$m2" ] && [ "$(cat "$(marker 3)")" = "$m3" ] || fail "lowering changed a marker"
+[ "$(git -C "$tmp/wt/slot-2" rev-parse HEAD)" = "$h2" ] && [ "$(git -C "$tmp/wt/slot-3" rev-parse HEAD)" = "$h3" ] || fail "lowering changed a worktree"
+[ "$(git -C "$tmp/wt/slot-3" branch --show-current)" = "feat/c3" ] || fail "lowering switched slot 3"
+st=$(bash "$S" --status)
+grep -q '^slots = 1  root = ' <<<"$st" || fail "status header after lowering: $st"
+grep -q '^capacity: slots 1 (live; config 2), agents 3 (live; config 2)$' <<<"$st" || fail "status capacity line: $st"
+grep -q '^slot 2  ready           busy: feat/c2 since .* (retiring)$' <<<"$st" || fail "status: slot 2 is not retiring: $st"
+grep -q '^slot 3  ready           busy: feat/c3 since .* (retiring)$' <<<"$st" || fail "status: slot 3 is not retiring: $st"
+grep -q '^slot 1 .*busy: feat/c1 since [0-9T:-]*$' <<<"$st" || fail "status: slot 1 must not be retiring: $st"
+porc=$(bash "$S" --status --porcelain)
+[ "$(printf '%s\n' "$porc" | wc -l | tr -d ' ')" = 3 ] || fail "porcelain after lowering: $porc"
+[ "$(printf '%s\n' "$porc" | sed -n 1p | cut -f5)" = "" ] || fail "porcelain: slot 1 has a fifth field: $porc"
+[ "$(printf '%s\n' "$porc" | sed -n 2p | cut -f1-3,5)" = "2${T}busy${T}feat/c2${T}retiring" ] || fail "porcelain: slot 2: $porc"
+[ "$(printf '%s\n' "$porc" | sed -n 3p | cut -f1-3,5)" = "3${T}busy${T}feat/c3${T}retiring" ] || fail "porcelain: slot 3: $porc"
+if bash "$S" --take feat/c9 >/dev/null 2>"$tmp/err.txt"; then fail "a take above the lowered count should fail"; fi
+grep -q 'all 1 slots are busy' "$tmp/err.txt" || fail "take after lowering: wrong message: $(cat "$tmp/err.txt")"
+merged feat/c3 23 "$h3"; merged feat/c2 22 "$h2"
+bash "$S" --release 3 >/dev/null 2>&1 || fail "releasing the retiring slot 3 failed"
+porc=$(bash "$S" --status --porcelain)
+[ "$(printf '%s\n' "$porc" | cut -f1 | tr '\n' ' ')" = "1 2 " ] || fail "after releasing slot 3: $porc"
+bash "$S" --release 2 >/dev/null 2>&1 || fail "releasing the retiring slot 2 failed"
+porc=$(bash "$S" --status --porcelain)
+[ "$(printf '%s\n' "$porc" | cut -f1 | tr '\n' ' ')" = "1 " ] || fail "after releasing slot 2: $porc"
+grep -q '^slot 2' <<<"$(bash "$S" --status)" && fail "a free slot above the count is listed"
+[ -d "$tmp/wt/slot-2" ] && [ -d "$tmp/wt/slot-3" ] || fail "a worktree above the count was removed"
+reset_gh
+
+# 5 a raised count brings a retired slot back, warm
+show --slot-count 3 >/dev/null
+porc=$(bash "$S" --status --porcelain)
+[ "$(printf '%s\n' "$porc" | sed -n '2,3p')" = "2${T}free${nl}3${T}free" ] || fail "raised again: slots 2 and 3 are not free: $porc"
+grep -q "Slot 2 is yours" <<<"$(bash "$S" --take feat/c4 2>/dev/null)" || fail "raised again: slot 2 not taken"
+grep -q "Slot 3 is yours" <<<"$(bash "$S" --take feat/c5 2>/dev/null)" || fail "raised again: slot 3 not taken"
+for n in 1 2 3; do bash "$S" --abandon "$n" >/dev/null; done
+
+# 6 --reap frees a retiring slot whose pull request has merged
+reset_gh; prepare 3 feat/r3; merged feat/r3 24 "$tip"
+show --slot-count 1 >/dev/null
+out=$(bash "$S" --reap 2>/dev/null)
+[ "$out" = "Slot 3 is free (was feat/r3, PR #24), released automatically." ] || fail "reap of a retiring slot: $out"
+[ ! -f "$(marker 3)" ] || fail "reap of a retiring slot: the marker is still there"
+reset_gh
+
+# 7 invalid values change nothing and say why
+cp "$C" "$tmp/cap-before.json"
+for opt in --slot-count --agent-limit; do
+  for v in 0 -1 2.5 x "" 100; do
+    set +e; bash "$S" --capacity "$opt" "$v" >"$tmp/out.txt" 2>"$tmp/err.txt"; rc=$?; set -e
+    [ "$rc" = 1 ] || fail "invalid $opt '$v': exit $rc"
+    grep -qxF "capacity: $opt must be a whole number from 1 to 99, got \"$v\"" "$tmp/err.txt" || fail "invalid $opt '$v': message: $(cat "$tmp/err.txt")"
+    [ ! -s "$tmp/out.txt" ] || fail "invalid $opt '$v': printed $(cat "$tmp/out.txt")"
+    cmp -s "$C" "$tmp/cap-before.json" || fail "invalid $opt '$v' changed capacity.json"
+  done
+done
+if bash "$S" --capacity --slot-count 2 --agent-limit x >/dev/null 2>&1; then fail "a valid value with an invalid one was accepted"; fi
+cmp -s "$C" "$tmp/cap-before.json" || fail "a valid value given with an invalid one was written"
+rm -f "$C"
+if bash "$S" --capacity --slot-count 0 >/dev/null 2>&1; then fail "invalid value without a file was accepted"; fi
+[ ! -e "$C" ] || fail "an invalid value created capacity.json"
+
+# 8 --clear
+show --slot-count 3 --agent-limit 3 >/dev/null
+out=$(show --clear)
+[ "$out" = "capacity: cleared (slots 3 -> 2, agents 3 -> 2)" ] || fail "clear: $out"
+[ ! -e "$C" ] || fail "clear left capacity.json"
+out=$(show --clear)
+[ "$out" = "capacity: nothing to clear" ] || fail "second clear: $out"
+if bash "$S" --capacity --clear --slot-count 2 >/dev/null 2>"$tmp/err.txt"; then fail "--clear with a value is not a usage error"; fi
+grep -q '^usage: ' "$tmp/err.txt" || fail "--clear with a value: no usage line: $(cat "$tmp/err.txt")"
+if bash "$S" --capacity --slot-count 2 --slot-count 3 >/dev/null 2>&1; then fail "a value given twice is not a usage error"; fi
+[ ! -e "$C" ] || fail "a usage error wrote capacity.json"
+
+# 9 and 10 precedence, shown and in porcelain
+[ "$(show --porcelain)" = "slots${T}2${T}config${T}2${nl}agents${T}2${T}default${T}2" ] || fail "porcelain config/default: $(show --porcelain)"
+[ "$(WORKER_SLOTS=4 bash "$S" --capacity --porcelain)" = "slots${T}4${T}WORKER_SLOTS${T}2${nl}agents${T}2${T}default${T}2" ] || fail "porcelain WORKER_SLOTS"
+out=$(show --porcelain --slot-count 3 --agent-limit 3)
+[ "$out" = "slots${T}3${T}live${T}2${nl}agents${T}3${T}live${T}2" ] || fail "porcelain set: $out"
+[ "$(WORKER_SLOTS=4 bash "$S" --capacity | head -n 1)" = "slots: 3 (live; config 2)" ] || fail "live does not win over WORKER_SLOTS"
+[ "$(WORKER_SLOTS=4 bash "$S" --status --porcelain | wc -l | tr -d ' ')" = 3 ] || fail "--status does not use the live count over WORKER_SLOTS"
+show --clear >/dev/null
+sed 's/"git": { "baseBranch": "main" },/"git": { "baseBranch": "main" }, "parallel": { "maxAgents": 5 },/' "$tmp/cfg-before.json" > "$CFG"
+grep -q '"maxAgents": 5' "$CFG" || fail "the config copy has no maxAgents"
+[ "$(show | sed -n 2p)" = "agents: 5 (config)" ] || fail "config does not win over the default: $(show)"
+[ "$(show --porcelain | sed -n 2p)" = "agents${T}5${T}config${T}5" ] || fail "porcelain config agents"
+show --agent-limit 3 >/dev/null
+[ "$(show | sed -n 2p)" = "agents: 3 (live; config 5)" ] || fail "live does not win over the config: $(show)"
+[ "$(show --porcelain | sed -n 2p)" = "agents${T}3${T}live${T}5" ] || fail "porcelain live agents over config"
+show --clear >/dev/null
+cp "$tmp/cfg-before.json" "$CFG"
+
+# 11 an unusable capacity.json is ignored with a note
+unusable() { # unusable <content> <expected show output> <reason>
+  printf '%s\n' "$1" > "$C"
+  out=$(bash "$S" --capacity 2>"$tmp/err.txt")
+  [ "$out" = "$2" ] || fail "unusable capacity.json '$1': $out"
+  grep -qxF "slot: capacity.json: $3; using the configuration" "$tmp/err.txt" || fail "unusable capacity.json '$1': note: $(cat "$tmp/err.txt")"
+}
+unusable 'not json' "slots: 2 (config)${nl}agents: 2 (default)" "not valid JSON"
+unusable '[1, 2]' "slots: 2 (config)${nl}agents: 2 (default)" "not an object"
+unusable '{ "slots": "x" }' "slots: 2 (config)${nl}agents: 2 (default)" "slots is not a whole number from 1 to 99"
+unusable '{ "slots": 0, "maxAgents": 3 }' "slots: 2 (config)${nl}agents: 3 (live; config 2)" "slots is not a whole number from 1 to 99"
+printf 'not json\n' > "$C"
+grep -q "Slot 1 is yours" <<<"$(bash "$S" --take feat/u 2>/dev/null)" || fail "a take with an unusable capacity.json failed"
+bash "$S" --status >/dev/null 2>&1 || fail "a status with an unusable capacity.json failed"
+bash "$S" --abandon 1 >/dev/null 2>&1
+rm -f "$C"
+
+# 12 nothing else changed: the marker keys, and no capacity.json without --capacity
+reset_gh; prepare 1 feat/m12
+[ "$(grep -o '"[a-z]*":' "$(marker 1)" | tr -d '\n')" = '"slot":"branch":"since":' ] || fail "marker keys after capacity: $(cat "$(marker 1)")"
+[ ! -e "$C" ] || fail "a take wrote capacity.json"
+cleanup
+if bash "$S" --slot-count 3 >/dev/null 2>&1; then fail "--slot-count without --capacity is not a usage error"; fi
 
 echo "SMOKE OK"

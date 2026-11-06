@@ -1,6 +1,6 @@
 # Iteration 22: change the slot count and the agent limit during a session
 
-Status: draft, awaiting approval (#78)
+Status: delivered in iteration 22 (PR #89)
 
 Story: #78, epic #47 (Unattended runs). Adds one command to the slot scripts, `slot.sh --capacity` and
 `slot.ps1 -Capacity`, that shows and sets the number of slots and the number of agents that may run at once, keeps

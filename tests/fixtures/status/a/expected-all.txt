@@ -20,3 +20,4 @@ slots
 slot  Branch      Since  PR                 Flag
    1  feat/busy      2h  #33 open, ci fail
    2  feat/fresh    20m  -
+capacity: slots 4 (config), agents 2 (default)

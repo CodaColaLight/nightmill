@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Iteration 22 (#78): the slot count and the agent limit can be changed during a session. The new command
+  `slot.sh --capacity` / `slot.ps1 -Capacity` shows the numbers, sets them (`--slot-count N`, `--agent-limit M`, or
+  `-SlotCount` / `-AgentLimit`), clears them (`--clear`) and prints them for a program (`--porcelain`). The values are
+  kept in the untracked `<worktrees.root>/.slots/capacity.json` beside the slot markers, win over `WORKER_SLOTS` and
+  over the configuration, do not expire until cleared and never edit `.claude/nightmill.json`; the previous version
+  ignores the file. A value must be a whole number from 1 to 99 and an invalid one changes nothing. Lowering the slot
+  count touches no busy slot, marker or worktree: a busy slot above the count is `retiring` (a fifth field in
+  `--status --porcelain`), is no longer handed out and goes on being released, reaped and abandoned; raising it
+  brings the slots back. `slot --status` and `/status` print a `capacity:` line that says when the numbers are live.
+  `/next`, `/spec`, `/fix` and the workflow skill read the agent limit with `--capacity --porcelain` at every
+  decision to start an agent, not once per session; a lowered limit stops no running agent. No config key, no change
+  to the slot marker or the status flow.
+
 ## 0.3.0 (2026-11-06)
 
 - Iteration 21 (#40): the spec review is recorded in the spec pull request and open blocking findings stop
