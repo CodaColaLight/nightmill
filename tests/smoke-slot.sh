@@ -526,7 +526,7 @@ rm -rf "$tmp/work-wt"
 cp "$tmp/cfg-reports.json" "$CFG"
 
 # 8 the step plays no part
-for s in done stopped; do
+for s in "done" "stopped"; do
   hand 1 "$s" 2026-11-05T11:30:00
   [ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] || fail "the step $s changes the agent state"
 done
@@ -561,12 +561,12 @@ rm -f "$(marker 2)"
 out=$(bash "$S" --abandon 1)
 [ "$out" = "Slot 1 is free (was feat/r1; the local branch is kept, delete it yourself if unwanted)." ] || fail "abandon of a reported slot: $out"
 [ ! -f "$(marker 1)" ] || fail "abandon left the marker of a reported slot"
-reset_gh; prepare 1 feat/rm; bash "$S" --report done --slot 1 --skill next --role session; merged feat/rm 31 "$tip"
-[ "$(mget 1 step)" = done ] || fail "the report before the reap"
+reset_gh; prepare 1 feat/rm; bash "$S" --report "done" --slot 1 --skill next --role session; merged feat/rm 31 "$tip"
+[ "$(mget 1 step)" = "done" ] || fail "the report before the reap"
 out=$(bash "$S" --reap 2>/dev/null)
 [ "$out" = "Slot 1 is free (was feat/rm, PR #31), released automatically." ] || fail "reap of a reported slot: $out"
 [ ! -f "$(marker 1)" ] || fail "reap left the marker of a reported slot"
-reset_gh; prepare 1 feat/rl; bash "$S" --report done --slot 1 --skill fix --role session; merged feat/rl 32 "$tip"
+reset_gh; prepare 1 feat/rl; bash "$S" --report "done" --slot 1 --skill fix --role session; merged feat/rl 32 "$tip"
 out=$(bash "$S" --release 1 2>/dev/null | tail -n 1)
 [ "$out" = "Slot 1 is free (was feat/rl, PR #32)." ] || fail "release of a reported slot: $out"
 [ ! -f "$(marker 1)" ] || fail "release left the marker of a reported slot"
