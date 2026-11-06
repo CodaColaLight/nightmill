@@ -15,7 +15,9 @@
 not shown: 2 at Backlog, 1 at Done (use --all)
 
 slots
-slot  Branch      Since  PR                 Flag
-   1  feat/busy      2h  #33 open, ci fail
-   2  feat/fresh    20m  -
+slot  State  Agent    Branch      Skill  Step  Report  Since  PR                 Flag
+   1  busy   unknown  feat/busy   ?      ?          -     2h  #33 open, ci fail
+   2  busy   unknown  feat/fresh  ?      ?          -    20m  -
+   3  free
+   4  free
 capacity: slots 4 (config), agents 2 (default)

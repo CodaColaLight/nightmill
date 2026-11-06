@@ -24,6 +24,12 @@
 # worktrees.slots, then 2. Agent limit: the live value, then parallel.maxAgents, then 2. A busy slot above a
 # lowered count is retiring: it is no longer handed out, is never touched, and is no longer listed once released.
 # Same behaviour as slot.sh (--capacity).
+#   slot.ps1 -Report <step> -Slot N -Skill <skill> -Role <role>   # record what the slot's agent is doing
+# Reports (-Report; iteration 23): a skill that works in a slot writes its skill, its role, the current step and the
+# time of the report into the slot's marker (the keys skill, role, step, reported after slot, branch, since).
+# -Status -Porcelain prints them with the agent state: running while the last report is at most
+# worktrees.stalledAfterMinutes (default 30) old, stalled after that, unknown without a report. The take does not
+# report. Same behaviour as slot.sh (--report).
 param(
   [string]$Take,
   [int]$Release = 0,
@@ -37,13 +43,20 @@ param(
   [switch]$Capacity,
   [string]$SlotCount,
   [string]$AgentLimit,
-  [switch]$Clear
+  [switch]$Clear,
+  [string]$Report,
+  [string]$Skill,
+  [string]$Role
 )
 $ErrorActionPreference = "Stop"
-$usageText = "usage: slot.ps1 -Status | -Take <branch> [-Slot N] [-Base <ref>] [-SkipWarmup] | -Release N | -Abandon N | -Reap | -Capacity [-SlotCount N] [-AgentLimit M] [-Clear] [-Porcelain]"
+$usageText = "usage: slot.ps1 -Status | -Take <branch> [-Slot N] [-Base <ref>] [-SkipWarmup] | -Release N | -Abandon N | -Reap | -Capacity [-SlotCount N] [-AgentLimit M] [-Clear] [-Porcelain] | -Report <step> -Slot N -Skill <s> -Role <r>"
 $hasSlots = $PSBoundParameters.ContainsKey("SlotCount")
 $hasAgents = $PSBoundParameters.ContainsKey("AgentLimit")
+$hasReport = $PSBoundParameters.ContainsKey("Report")
 function Exit-Usage { [Console]::Error.WriteLine($usageText); exit 1 }
+if ($hasReport) {
+  if ($Take -or $Release -gt 0 -or $Abandon -gt 0 -or $Reap -or $Status -or $Capacity) { Exit-Usage }
+} elseif ($PSBoundParameters.ContainsKey("Skill") -or $PSBoundParameters.ContainsKey("Role")) { Exit-Usage }
 
 # The main checkout, wherever this is run from (it may itself be a worktree).
 $gitDir = git rev-parse --path-format=absolute --git-common-dir 2>$null
@@ -136,6 +149,57 @@ function Read-Marker($n) {
   if (Test-Path $p) { Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 }
 function Write-Lf($path, $text) { [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false)) }
+# Get-Text <marker> <key>: the value as the text in the file ("" when absent or null); PowerShell 7 reads a date-like
+# string as a date, which is formatted back with ToString("s")
+function Get-Text($m, [string]$key) {
+  if ($null -eq $m) { return "" }
+  $p = $m.PSObject.Properties[$key]
+  if (-not $p -or $null -eq $p.Value) { return "" }
+  if ($p.Value -is [datetime]) { return $p.Value.ToString("s") }
+  return [string]$p.Value
+}
+# ConvertTo-JsonString <text>: the text as a JSON string literal, escaped as json_quote of lib/json.sh does
+function ConvertTo-JsonString([string]$s) {
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  foreach ($ch in $s.ToCharArray()) {
+    $c = [int]$ch
+    if ($ch -eq '"') { [void]$sb.Append('\"') }
+    elseif ($ch -eq '\') { [void]$sb.Append('\\') }
+    elseif ($c -eq 10) { [void]$sb.Append('\n') }
+    elseif ($c -eq 9) { [void]$sb.Append('\t') }
+    elseif ($c -eq 13) { [void]$sb.Append('\r') }
+    elseif ($c -eq 8) { [void]$sb.Append('\b') }
+    elseif ($c -eq 12) { [void]$sb.Append('\f') }
+    elseif ($c -lt 32) { [void]$sb.Append(('\u{0:x4}' -f $c)) }
+    else { [void]$sb.Append($ch) }
+  }
+  [void]$sb.Append('"')
+  return $sb.ToString()
+}
+function Test-Stamp([string]$s) { return ($s -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\z') }
+# Get-Stamp YYYY-MM-DDTHH:MM:SS: seconds since 1970 with the time read as UTC, the arithmetic of stamp in lib/status.awk
+function Get-Stamp([string]$s) {
+  $yr = [long]$s.Substring(0, 4); $mon = [long]$s.Substring(5, 2); $day = [long]$s.Substring(8, 2)
+  if ($mon -le 2) { $yr-- }
+  $yy = if ($yr -ge 0) { $yr } else { $yr - 399 }
+  $era = [long][math]::Truncate($yy / 400)
+  $yoe = $yr - $era * 400
+  $shift = if ($mon -gt 2) { -3 } else { 9 }
+  $doy = [long][math]::Truncate((153 * ($mon + $shift) + 2) / 5) + $day - 1
+  $doe = $yoe * 365 + [long][math]::Truncate($yoe / 4) - [long][math]::Truncate($yoe / 100) + $doy
+  return [long](($era * 146097 + $doe - 719468) * 86400 + [long]$s.Substring(11, 2) * 3600 + [long]$s.Substring(14, 2) * 60 + [long]$s.Substring(17, 2))
+}
+# Get-StalledAfter: the threshold in minutes, worktrees.stalledAfterMinutes or 30 (an unusable value with one note)
+function Get-StalledAfter {
+  if (-not $wt) { return 30 }
+  $p = $wt.PSObject.Properties["stalledAfterMinutes"]
+  if (-not $p -or $null -eq $p.Value) { return 30 }
+  $v = $p.Value
+  if (($v -is [int] -or $v -is [long]) -and $v -ge 1 -and $v -le 999999) { return [long]$v }
+  [Console]::Error.WriteLine("slot: worktrees.stalledAfterMinutes must be a whole number of at least 1; using 30")
+  return 30
+}
 
 # Run a native command and keep its output and its error text apart (redirecting a native command's stderr in
 # Windows PowerShell 5.1 turns its progress lines into errors); returns Out, Err and Code.
@@ -304,14 +368,59 @@ if ($Capacity) {
 }
 if ($Clear -or $hasSlots -or $hasAgents) { Exit-Usage }
 
+if ($hasReport) {
+  # -Report <step> -Slot N -Skill <skill> -Role <role>: rewrite the marker of slot N with the report
+  if ($Slot -le 0) { [Console]::Error.WriteLine("report needs a slot number"); exit 1 }
+  $mp = Get-Marker $Slot
+  if (-not (Test-Path -LiteralPath $mp)) { [Console]::Error.WriteLine("slot $Slot is not in use"); exit 1 }
+  foreach ($pair in @(@("step", $Report), @("skill", $Skill), @("role", $Role))) {
+    if ([string]$pair[1] -cnotmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,39}\z') {
+      [Console]::Error.WriteLine("report: the $($pair[0]) must be 1 to 40 letters, digits or -, got `"$($pair[1])`""); exit 1
+    }
+  }
+  $text = [System.IO.File]::ReadAllText($mp)
+  $invalid = $false
+  try { $m = ConvertFrom-Json -InputObject $text } catch { $m = $null; $invalid = $true }
+  if ($invalid -or ($null -eq $m -and $text.Trim() -ne "null")) { [Console]::Error.WriteLine("slot ${Slot}: the marker is not valid JSON"); exit 1 }
+  $lines = @(
+    "{",
+    "  `"slot`": $Slot,",
+    "  `"branch`": $(ConvertTo-JsonString (Get-Text $m 'branch')),",
+    "  `"since`": $(ConvertTo-JsonString (Get-Text $m 'since')),",
+    "  `"skill`": $(ConvertTo-JsonString $Skill),",
+    "  `"role`": $(ConvertTo-JsonString $Role),",
+    "  `"step`": $(ConvertTo-JsonString $Report),",
+    "  `"reported`": $(ConvertTo-JsonString (Get-Date).ToString('s'))",
+    "}"
+  )
+  $tmpReport = Join-Path $state "slot-$Slot.report.tmp"
+  Write-Lf $tmpReport (($lines -join "`n") + "`n")
+  # moved over the marker only while it still exists: a report never brings back a released slot
+  if (Test-Path -LiteralPath $mp) { [System.IO.File]::Replace($tmpReport, $mp, [NullString]::Value) }
+  else { Remove-Item -LiteralPath $tmpReport }
+  exit 0
+}
+
 if ($Status -and $Porcelain) {
-  # <n> TAB busy TAB <branch> TAB <since>, or <n> TAB free; a busy slot above the count gets a fifth field, retiring
+  # A free slot: <n> TAB free. A busy slot, ten fields: <n> TAB busy TAB <branch> TAB <since> TAB <retiring> TAB
+  # <agent> TAB <skill> TAB <role> TAB <step> TAB <reported>; retiring for a busy slot above the count, else empty;
+  # agent: running, stalled or unknown (see the header)
+  $threshold = (Get-StalledAfter) * 60
+  if ($env:NIGHTMILL_NOW) { $now = [long]$env:NIGHTMILL_NOW } else { $now = Get-Stamp ((Get-Date).ToString("s")) }
   $top = Get-LastSlot
   for ($i = 1; $i -le $top; $i++) {
     $m = Read-Marker $i
     if ($m) {
-      if ($i -gt $count) { Write-Output ("{0}`tbusy`t{1}`t{2}`tretiring" -f $i, $m.branch, $m.since) }
-      else { Write-Output ("{0}`tbusy`t{1}`t{2}" -f $i, $m.branch, $m.since) }
+      $retiring = ""
+      if ($i -gt $count) { $retiring = "retiring" }
+      $reported = Get-Text $m "reported"
+      $agent = "unknown"
+      if (Test-Stamp $reported) {
+        $age = $now - (Get-Stamp $reported)
+        if ($age -lt 0) { $age = 0 }
+        if ($age -le $threshold) { $agent = "running" } else { $agent = "stalled" }
+      }
+      Write-Output ((@("$i", "busy", (Get-Text $m "branch"), (Get-Text $m "since"), $retiring, $agent, (Get-Text $m "skill"), (Get-Text $m "role"), (Get-Text $m "step"), $reported)) -join "`t")
     } elseif ($i -le $count) { Write-Output ("{0}`tfree" -f $i) }
   }
   exit 0
@@ -326,7 +435,7 @@ if ($Status) {
     $m = Read-Marker $i
     if ($i -gt $count -and -not $m) { continue }
     $where = if (Test-Path $dir) { "ready" } else { "not created yet" }
-    $busy = if ($m) { "busy: $($m.branch) since $($m.since)" } else { "free" }
+    $busy = if ($m) { "busy: $(Get-Text $m 'branch') since $(Get-Text $m 'since')" } else { "free" }
     if ($i -gt $count) { $busy += " (retiring)" }
     $dirty = ""
     if (Test-Path $dir) {

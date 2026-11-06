@@ -7,5 +7,9 @@
 23  A merged spec PR       Spec         -    #51 merged   1d
 26  A closed spec PR only  Spec         -    #53 closed   5h  stale: Spec but no spec PR
 
-slots: none busy
+slots
+slot  State  Agent  Branch  Skill  Step  Report  Since  PR  Flag
+   1  free
+   2  free
+   3  free
 capacity: slots 3 (live; config 4), agents 3 (live; config 2)

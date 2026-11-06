@@ -351,7 +351,7 @@ try {
   if ($st -notmatch "(?m)^slot 1 .*busy: feat/c1 since [0-9T:-]*\r?$") { Fail "status: slot 1 must not be retiring: $st" }
   $p = Porc
   if ($p.Count -ne 3) { Fail "porcelain after lowering: $($p -join ' | ')" }
-  if (($p[0] -split $T).Count -ne 4) { Fail "porcelain: slot 1 has a fifth field: $($p[0])" }
+  $f = $p[0] -split $T; if ($f.Count -ne 10 -or $f[4] -ne "") { Fail "porcelain: slot 1 has a fifth field: $($p[0])" }
   $f = $p[1] -split $T; if ($f[0] -ne "2" -or $f[1] -ne "busy" -or $f[2] -ne "feat/c2" -or $f[4] -ne "retiring") { Fail "porcelain: slot 2: $($p[1])" }
   $f = $p[2] -split $T; if ($f[0] -ne "3" -or $f[1] -ne "busy" -or $f[2] -ne "feat/c3" -or $f[4] -ne "retiring") { Fail "porcelain: slot 3: $($p[2])" }
   $r = SlotE "-Take feat/c9"
@@ -465,6 +465,196 @@ try {
   if (Test-Path $C) { Fail "a take wrote capacity.json" }
   Clear-Slots
   if ((SlotE "-SlotCount 3").Code -eq 0) { Fail "-SlotCount without -Capacity is not a usage error" }
+
+  Write-Host "== reports"
+  # -Report (iteration 23): the skill, the role, the step and the time of the last report in the slot's marker, and
+  # -Status -Porcelain with the agent state (running, stalled, unknown) and the reported fields
+  Reset-Gh
+  $S1 = "$tmp\wt\.slots"
+  function MText([int]$n) { [System.IO.File]::ReadAllText((Marker $n)) }
+  function MGet([int]$n, [string]$key) {
+    $v = (MText $n | ConvertFrom-Json).PSObject.Properties[$key]
+    if (-not $v -or $null -eq $v.Value) { return "" }
+    if ($v.Value -is [datetime]) { return $v.Value.ToString("s") }
+    return [string]$v.Value
+  }
+  $stampRe = '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$'
+  $null = Slot -Take feat/r1 -Slot 1
+  $tBranch = MGet 1 "branch"; $tSince = MGet 1 "since"
+
+  # 1 a report writes the fields
+  $r = SlotE "-Report tests -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 0) { Fail "report: exit $($r.Code): $($r.Err)" }
+  if ($r.Out -or $r.Err) { Fail "report printed something: $($r.Out) / $($r.Err)" }
+  $keys = ([regex]::Matches((MText 1), '"([a-z]+)":') | ForEach-Object { $_.Groups[1].Value }) -join ","
+  if ($keys -ne "slot,branch,since,skill,role,step,reported") { Fail "report: marker keys: $(MText 1)" }
+  if ($tBranch -ne "feat/r1" -or (MGet 1 "branch") -ne $tBranch -or (MGet 1 "since") -ne $tSince -or (MGet 1 "slot") -ne "1") { Fail "report: slot, branch or since changed: $(MText 1)" }
+  if ("$(MGet 1 'skill')/$(MGet 1 'role')/$(MGet 1 'step')" -ne "next/implementer/tests") { Fail "report: skill, role, step: $(MText 1)" }
+  $r1 = MGet 1 "reported"
+  if ($r1 -notmatch $stampRe) { Fail "report: reported has not the form YYYY-MM-DDTHH:MM:SS: $r1" }
+  $want = "{`n  `"slot`": 1,`n  `"branch`": `"feat/r1`",`n  `"since`": `"$tSince`",`n  `"skill`": `"next`",`n  `"role`": `"implementer`",`n  `"step`": `"tests`",`n  `"reported`": `"$r1`"`n}`n"
+  if ((MText 1) -cne $want) { Fail "report: the marker text (the bytes of slot.sh): $(MText 1)" }
+  if (Test-Path "$S1\slot-1.report.tmp") { Fail "report: the temporary file is left" }
+
+  # 2 a second report replaces the step and the time and keeps since
+  [System.IO.File]::WriteAllText((Marker 1), $want.Replace("`"reported`": `"$r1`"", "`"reported`": `"2020-01-01T00:00:00`""))
+  $r = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 0) { Fail "second report: exit $($r.Code): $($r.Err)" }
+  if ((MGet 1 "step") -ne "check") { Fail "second report: step: $(MText 1)" }
+  if ((MGet 1 "reported") -eq "2020-01-01T00:00:00" -or (MGet 1 "reported") -notmatch $stampRe) { Fail "second report: reported: $(MText 1)" }
+  if ((MGet 1 "since") -ne $tSince) { Fail "second report: since changed: $(MText 1)" }
+
+  # 3 refusals change nothing
+  $before = MText 1
+  function Test-Refused([string]$want, [string]$arguments) {
+    $r = SlotE $arguments
+    if ($r.Code -ne 1) { Fail "refusal ($arguments): exit $($r.Code) / $($r.Err)" }
+    if ($want -eq "usage") { if ($r.Err -notmatch "^usage: ") { Fail "refusal ($arguments): no usage line: $($r.Err)" } }
+    elseif ($r.Err -cne "$want`n") { Fail "refusal ($arguments): message: $($r.Err)" }
+    if ($r.Out) { Fail "refusal ($arguments): printed $($r.Out)" }
+    if ((MText 1) -cne $before) { Fail "refusal ($arguments): the marker changed: $(MText 1)" }
+    if ((Test-Path "$S1\slot-1.report.tmp") -or (Test-Path "$S1\slot-2.report.tmp")) { Fail "refusal ($arguments): a temporary file is left" }
+    if (Test-Path (Marker 2)) { Fail "refusal ($arguments): a marker of slot 2 was written" }
+  }
+  $long41 = "a" * 41; $long40 = "b" * 40
+  Test-Refused "report needs a slot number" "-Report tests -Skill next -Role implementer"
+  Test-Refused "report needs a slot number" "-Report tests -Slot 0 -Skill next -Role implementer"
+  Test-Refused "slot 2 is not in use" "-Report tests -Slot 2 -Skill next -Role implementer"
+  foreach ($v in "", "a b", "a.b", $long41, "a`tb") {
+    Test-Refused "report: the step must be 1 to 40 letters, digits or -, got `"$v`"" "-Report `"$v`" -Slot 1 -Skill next -Role implementer"
+  }
+  Test-Refused 'report: the skill must be 1 to 40 letters, digits or -, got ""' "-Report tests -Slot 1 -Role implementer"
+  Test-Refused 'report: the role must be 1 to 40 letters, digits or -, got ""' "-Report tests -Slot 1 -Skill next"
+  Test-Refused 'report: the skill must be 1 to 40 letters, digits or -, got "n/x"' "-Report tests -Slot 1 -Skill n/x -Role implementer"
+  Test-Refused "usage" "-Report tests -Slot 1 -Skill next -Role implementer -Status"
+  Test-Refused "usage" "-Status -Skill next"
+  Test-Refused "usage" "-Role implementer -Slot 1"
+  Test-Refused "usage" "-Report tests -Slot 1 -Skill next -Role implementer -Capacity"
+  # -Report with no value is refused by PowerShell's parameter binding (its own message, exit code not 0)
+  $r = SlotE "-Report"
+  if ($r.Code -eq 0) { Fail "-Report without a value was accepted" }
+  if ((MText 1) -cne $before) { Fail "-Report without a value changed the marker" }
+  $good = MText 1
+  [System.IO.File]::WriteAllText((Marker 1), "not json`n"); $before = MText 1
+  Test-Refused "slot 1: the marker is not valid JSON" "-Report tests -Slot 1 -Skill next -Role implementer"
+  [System.IO.File]::WriteAllText((Marker 1), $good)
+  $r = SlotE "-Report $long40 -Slot 1 -Skill fix -Role fixer"
+  if ($r.Code -ne 0 -or (MGet 1 "step") -ne $long40 -or "$(MGet 1 'skill')/$(MGet 1 'role')" -ne "fix/fixer") { Fail "a step of 40 characters was refused: $($r.Err)" }
+
+  # 4 porcelain carries the fields
+  $null = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
+  $r1 = MGet 1 "reported"
+  $p = Porc
+  if ($p[0] -cne "1${T}busy${T}feat/r1${T}${tSince}${T}${T}running${T}next${T}implementer${T}check${T}$r1") { Fail "porcelain with a report: $($p -join ' | ')" }
+  if (($p[0] -split $T).Count -ne 10) { Fail "porcelain: not ten fields: $($p[0])" }
+  if ($p[1] -cne "2${T}free") { Fail "porcelain: the free line changed: $($p[1])" }
+
+  # 5 running and stalled by the default threshold (30 minutes); 2026-11-05T11:30:00 is 1793878200 on the clock of the
+  # scripts (local time read as UTC)
+  function Hand([int]$n, [string]$step, [string]$reported, [string]$file = "") {
+    if (-not $file) { $file = Marker $n }
+    [System.IO.File]::WriteAllText($file, "{`n  `"slot`": $n,`n  `"branch`": `"feat/r$n`",`n  `"since`": `"2026-11-05T09:00:00`",`n  `"skill`": `"next`",`n  `"role`": `"implementer`",`n  `"step`": `"$step`",`n  `"reported`": `"$reported`"`n}`n")
+  }
+  # Agent <now> [n]: field 6 of slot n (1) in -Status -Porcelain with NIGHTMILL_NOW=<now>; the run in $script:last
+  function Agent([long]$now, [int]$n = 1) {
+    $script:last = SlotE "-Status -Porcelain" @{ NIGHTMILL_NOW = "$now" }
+    foreach ($l in (Lines $script:last.Out)) { $f = $l -split $T; if ($f[0] -eq "$n") { return $f[5] } }
+    return "<none>"
+  }
+  $B = [long]1793878200
+  Hand 1 "check" "2026-11-05T11:30:00"
+  if ((Agent ($B + 1800)) -ne "running") { Fail "1800 seconds after the report is not running" }
+  if ((Agent ($B + 1801)) -ne "stalled") { Fail "1801 seconds after the report is not stalled" }
+  if ((Agent ($B - 600)) -ne "running") { Fail "a report in the future is not running" }
+  if ($last.Err) { Fail "the default threshold printed: $($last.Err)" }
+
+  # 6 the threshold comes from the config
+  function Set-Cfg([string]$v) { [System.IO.File]::WriteAllText($CFG, $cfgBefore.Replace('"slots": 2,', "`"slots`": 2, `"stalledAfterMinutes`": $v,")) }
+  Set-Cfg "5"
+  if (-not [System.IO.File]::ReadAllText($CFG).Contains('"stalledAfterMinutes": 5,')) { Fail "the config copy has no stalledAfterMinutes" }
+  if ((Agent ($B + 300)) -ne "running") { Fail "threshold 5: 300 seconds is not running" }
+  if ((Agent ($B + 301)) -ne "stalled") { Fail "threshold 5: 301 seconds is not stalled" }
+
+  # 7 an unusable threshold falls back to 30
+  $warn = "slot: worktrees.stalledAfterMinutes must be a whole number of at least 1; using 30"
+  foreach ($v in "0", "-5", "2.5", "30.0", '"30"', '"x"', "true") {
+    Set-Cfg $v
+    $a = Agent ($B + 1800)
+    if ($last.Code -ne 0) { Fail "threshold $v`: exit $($last.Code)" }
+    if ($last.Err -cne "$warn`n") { Fail "threshold $v`: standard error: $($last.Err)" }
+    if ($a -ne "running") { Fail "threshold $v`: 1800 seconds is not running" }
+    if ((Agent ($B + 1801)) -ne "stalled") { Fail "threshold $v`: 1801 seconds is not stalled" }
+  }
+  function Test-Default([string]$what) {
+    if ((Agent ($B + 1800)) -ne "running" -or $last.Err) { Fail "$what`: 1800 seconds: $($last.Err)" }
+    if ((Agent ($B + 1801)) -ne "stalled" -or $last.Err) { Fail "$what`: 1801 seconds: $($last.Err)" }
+  }
+  Set-Cfg "null"; Test-Default "threshold null"
+  [System.IO.File]::WriteAllText($CFG, $cfgBefore); Test-Default "no threshold key"
+  # without worktrees the root is ../<checkout>-wt and there are two slots
+  $noWt = [regex]::Replace($cfgBefore, '(?s),\s*"worktrees": \{.*?\r?\n  \}', '')
+  if ($noWt.Contains("worktrees")) { Fail "the config copy still has worktrees" }
+  [System.IO.File]::WriteAllText($CFG, $noWt)
+  New-Item -ItemType Directory -Force "$tmp\work-wt\.slots" | Out-Null
+  Hand 1 "check" "2026-11-05T11:30:00" "$tmp\work-wt\.slots\slot-1.json"
+  Test-Default "no worktrees"
+  Remove-Item -Recurse -Force "$tmp\work-wt"
+  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+
+  # 8 the step plays no part
+  foreach ($stepName in "done", "stopped") {
+    Hand 1 $stepName "2026-11-05T11:30:00"
+    if ((Agent ($B + 1800)) -ne "running" -or (Agent ($B + 1801)) -ne "stalled") { Fail "the step $stepName changes the agent state" }
+  }
+
+  # 9 a marker of the previous version is busy with an unknown step
+  [System.IO.File]::WriteAllText((Marker 1), "{`n  `"slot`": 1,`n  `"branch`": `"feat/r1`",`n  `"since`": `"2026-11-05T09:00:00`"`n}`n")
+  $line = (Lines (SlotE "-Status -Porcelain" @{ NIGHTMILL_NOW = "$B" }).Out)[0]
+  if ($line -cne "1${T}busy${T}feat/r1${T}2026-11-05T09:00:00${T}${T}unknown${T}${T}${T}${T}") { Fail "a three-key marker: $line" }
+  Hand 1 "check" "yesterday"
+  if ((Agent $B) -ne "unknown") { Fail "a reported that is not of the form is not unknown" }
+  # a retiring slot (above the count) takes a report too
+  [System.IO.File]::WriteAllText((Marker 3), "{`n  `"slot`": 3,`n  `"branch`": `"feat/r3`",`n  `"since`": `"2026-11-05T09:00:00`"`n}`n")
+  $r = SlotE "-Report check -Slot 3 -Skill fix -Role fixer"
+  if ($r.Code -ne 0) { Fail "report on a retiring slot: $($r.Err)" }
+  $f = (Porc)[2] -split $T
+  if ((@($f[0], $f[1], $f[4], $f[5], $f[6], $f[7], $f[8]) -join "|") -ne "3|busy|retiring|running|fix|fixer|check") { Fail "a retiring slot with a report: $($f -join '|')" }
+  Remove-Item (Marker 3)
+
+  # 11 the take and the human -Status are unchanged
+  Hand 1 "code" "2026-11-05T11:30:00"
+  $st = Slot -Status
+  if ($st -notmatch "(?m)^slot 1  ready           busy: feat/r1 since 2026-11-05T09:00:00\r?$") { Fail "status without -Porcelain changed: $st" }
+
+  # 12 -Status stays read-only
+  Hand 2 "check" "2026-11-05T11:00:00"
+  [System.IO.File]::WriteAllText($ghLog, ""); $m1 = MText 1; $m2 = MText 2
+  $null = Porc; $null = Slot -Status
+  if ([System.IO.File]::ReadAllText($ghLog).Length -ne 0) { Fail "status with reports asked gh: $([System.IO.File]::ReadAllText($ghLog))" }
+  if ((MText 1) -cne $m1 -or (MText 2) -cne $m2) { Fail "status changed a marker with a report" }
+  Remove-Item (Marker 2)
+
+  # 10 a reported slot is abandoned, reaped and released as before
+  $r = SlotE "-Abandon 1"
+  if ($r.Out.Trim() -ne "Slot 1 is free (was feat/r1; the local branch is kept, delete it yourself if unwanted).") { Fail "abandon of a reported slot: $($r.Out) / $($r.Err)" }
+  if (Test-Path (Marker 1)) { Fail "abandon left the marker of a reported slot" }
+  Reset-Gh; Prepare 1 feat/rm
+  $r = SlotE "-Report done -Slot 1 -Skill next -Role session"
+  if ($r.Code -ne 0 -or (MGet 1 "step") -ne "done") { Fail "the report before the reap: $($r.Err)" }
+  Merged feat/rm 31 $tip
+  $r = SlotE "-Reap"
+  if ($r.Out.Trim() -ne "Slot 1 is free (was feat/rm, PR #31), released automatically.") { Fail "reap of a reported slot: $($r.Out) / $($r.Err)" }
+  if (Test-Path (Marker 1)) { Fail "reap left the marker of a reported slot" }
+  Reset-Gh; Prepare 1 feat/rl
+  $null = SlotE "-Report done -Slot 1 -Skill fix -Role session"
+  Merged feat/rl 32 $tip
+  $r = SlotE "-Release 1"
+  $last = (@($r.Out -split "`n" | Where-Object { $_.Trim() -ne "" }) | Select-Object -Last 1).Trim()
+  if ($last -ne "Slot 1 is free (was feat/rl, PR #32).") { Fail "release of a reported slot: $($r.Out) / $($r.Err)" }
+  if (Test-Path (Marker 1)) { Fail "release left the marker of a reported slot" }
+  $r = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 1 -or $r.Err -cne "slot 1 is not in use`n" -or (Test-Path (Marker 1))) { Fail "a report after the release brought the marker back: $($r.Err)" }
+  Reset-Gh
 
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {

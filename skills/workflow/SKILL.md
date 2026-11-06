@@ -202,7 +202,11 @@ has no "How verified"); when a blocking finding is still open the comment on the
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
   script (`-Take <branch>`), free it after the merge (`-Release N`), list them (`-Status`). The
-  scripts are at `${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1` and `${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh`.
+  scripts are at `${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1` and `${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh`. A skill
+  that works in a slot reports each step with `-Report <step>` / `--report <step>` (the steps are in `/next` and
+  `/fix`), and `/status` shows the slot `running` while the last report is at most `worktrees.stalledAfterMinutes`
+  old, `stalled` after that (also a slot that waits for its merge after its last step, `done`), `unknown` without a
+  report.
 - At most the agent limit agents (subagents, slot builds, your own builds) at the same time. The limit is the live
   value set during the session, else `parallel.maxAgents`. Read it at every decision to start an agent, never once per
   session: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Capacity -Porcelain` or

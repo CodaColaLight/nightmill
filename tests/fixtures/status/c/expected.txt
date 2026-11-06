@@ -2,9 +2,9 @@
 30  Something ready  Ready   -    -    1d
 
 slots
-slot  Branch       Since  PR          Flag
-   1  feat/merged     1d  #60 merged  stale: busy, PR merged (slot --release 1)
-   2  feat/closed    11h  #61 closed  stale: busy, PR closed (slot --abandon 2)
-   3  feat/stale      3d  -           stale: busy, no open PR
-   4  feat/new       10m  -
+slot  State  Agent    Branch       Skill             Step   Report  Since  PR          Flag
+   1  busy   stalled  feat/merged  next/session      done       1d     1d  #60 merged  stale: busy, PR merged (slot --release 1)
+   2  busy   unknown  feat/closed  ?                 ?           -    11h  #61 closed  stale: busy, PR closed (slot --abandon 2)
+   3  busy   stalled  feat/stale   next/implementer  check      2d     3d  -           stale: busy, no open PR
+   4  busy   running  feat/new     fix/fixer         test       5m    10m  -
 capacity: slots 4 (config), agents 2 (default)

@@ -229,13 +229,18 @@ BEGIN {
   for (i = 1; i <= nf; i++) load_ages(agefiles[i])
 
   # slots
+  # every line of slot.sh --status --porcelain, in its order; a busy line has ten fields (iteration 23)
   nslots = 0; nbusy = 0
   while ((getline line < ENVIRON["ST_SLOTS"]) > 0) {
-    splitrec(line, r)
+    for (f = 1; f <= 10; f++) r[f] = ""
+    split(line, r, "\t")
     nslots++
+    sl_n[nslots] = r[1]; sl_state[nslots] = r[2]
     if (r[2] == "busy") {
       nbusy++
       bslot[nbusy] = r[1]; bbranch[nbusy] = r[3]; bsince[nbusy] = r[4]
+      sl_busy[nslots] = nbusy
+      sl_agent[nslots] = r[6]; sl_skill[nslots] = r[7]; sl_role[nslots] = r[8]; sl_step[nslots] = r[9]; sl_rep[nslots] = r[10]
     }
   }
   close(ENVIRON["ST_SLOTS"])
@@ -310,26 +315,34 @@ BEGIN {
   if (np >= limit_prs) print "note: only the " limit_prs " most recent pull requests were read"
 
   if (ENVIRON["ST_SLOTS_CONFIGURED"] == "1") {
+    # the Slots section (iteration 23): every slot, free and busy; the agent state is the slot script's
     print ""
-    if (nbusy == 0) print "slots: none busy"
-    else {
-      print "slots"
-      delete R; delete RA
-      R[0, 1] = "slot"; R[0, 2] = "Branch"; R[0, 3] = "Since"; R[0, 4] = "PR"; R[0, 5] = "Flag"
-      RA[1] = 1; RA[3] = 1
-      for (j = 1; j <= nbusy; j++) {
-        k = pick(0, "head", bbranch[j])
-        sinceage = nowl - stamp(bsince[j])
-        flag = ""
-        if (k >= 0) {
-          sstate = prstate(k)
-          if (sstate == "merged") flag = "stale: busy, PR merged (slot --release " bslot[j] ")"
-          else if (sstate == "closed") flag = "stale: busy, PR closed (slot --abandon " bslot[j] ")"
-        } else if (sinceage > grace) flag = "stale: busy, no open PR"
-        R[j, 1] = bslot[j]; R[j, 2] = bbranch[j]; R[j, 3] = span(sinceage); R[j, 4] = prcell(k); R[j, 5] = flag
-      }
-      table(nbusy, 5)
+    print "slots"
+    delete R; delete RA
+    R[0, 1] = "slot"; R[0, 2] = "State"; R[0, 3] = "Agent"; R[0, 4] = "Branch"; R[0, 5] = "Skill"; R[0, 6] = "Step"
+    R[0, 7] = "Report"; R[0, 8] = "Since"; R[0, 9] = "PR"; R[0, 10] = "Flag"
+    RA[1] = 1; RA[7] = 1; RA[8] = 1
+    for (s = 1; s <= nslots; s++) {
+      for (c = 1; c <= 10; c++) R[s, c] = ""
+      R[s, 1] = sl_n[s]; R[s, 2] = sl_state[s]
+      if (!(s in sl_busy)) continue
+      j = sl_busy[s]
+      k = pick(0, "head", bbranch[j])
+      sinceage = nowl - stamp(bsince[j])
+      flag = ""
+      if (k >= 0) {
+        sstate = prstate(k)
+        if (sstate == "merged") flag = "stale: busy, PR merged (slot --release " bslot[j] ")"
+        else if (sstate == "closed") flag = "stale: busy, PR closed (slot --abandon " bslot[j] ")"
+      } else if (sinceage > grace) flag = "stale: busy, no open PR"
+      if (sl_skill[s] == "" && sl_role[s] == "") who = "?"
+      else who = (sl_skill[s] == "" ? "?" : sl_skill[s]) "/" (sl_role[s] == "" ? "?" : sl_role[s])
+      rep = "-"
+      if (sl_rep[s] ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]$/) rep = span(nowl - stamp(sl_rep[s]))
+      R[s, 3] = sl_agent[s]; R[s, 4] = bbranch[j]; R[s, 5] = who; R[s, 6] = (sl_step[s] == "" ? "?" : sl_step[s])
+      R[s, 7] = rep; R[s, 8] = span(sinceage); R[s, 9] = prcell(k); R[s, 10] = flag
     }
+    table(nslots, 10)
   }
   exit 0
 }

@@ -70,7 +70,12 @@ exit 0
     foreach ($line in (Read-Lf (Join-Path $FIX "$scn\markers.txt")) -split "`n") {
       if (-not $line) { continue }
       $f = $line -split "`t"
-      Write-Utf8 (Join-Path $wt ".slots\slot-$($f[0]).json") ("{`n  `"slot`": $($f[0]),`n  `"branch`": `"$($f[1])`",`n  `"since`": `"$($f[2])`"`n}`n")
+      # a line with the four report columns (skill, role, step, reported) is a seven-key marker (iteration 23)
+      if ($f.Count -ge 7) {
+        Write-Utf8 (Join-Path $wt ".slots\slot-$($f[0]).json") ("{`n  `"slot`": $($f[0]),`n  `"branch`": `"$($f[1])`",`n  `"since`": `"$($f[2])`",`n  `"skill`": `"$($f[3])`",`n  `"role`": `"$($f[4])`",`n  `"step`": `"$($f[5])`",`n  `"reported`": `"$($f[6])`"`n}`n")
+      } else {
+        Write-Utf8 (Join-Path $wt ".slots\slot-$($f[0]).json") ("{`n  `"slot`": $($f[0]),`n  `"branch`": `"$($f[1])`",`n  `"since`": `"$($f[2])`"`n}`n")
+      }
     }
   }
 
@@ -124,6 +129,8 @@ exit 0
   if ($Code -ne 0) { Fail "exit code $Code`: $Err" }
   Expect "no busy slot" (Join-Path $FIX "b\expected.txt")
   if ((@($Out -split "`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1) -ne "capacity: slots 4 (config), agents 2 (default)") { Fail "the capacity line is not the last line" }
+  if ($Out.Contains("slots: none busy")) { Fail "'slots: none busy' is still printed" }
+  foreach ($n in 1, 2, 3, 4) { if ($Out -notmatch "(?m)^   $n  free$") { Fail "slot $n is not a free row that ends after free" } }
 
   Write-Host "== the capacity line says when live values are in force"
   $capFile = Join-Path $tmp "wt\.slots\capacity.json"
@@ -145,6 +152,28 @@ exit 0
   Run-S $work "c"
   if ($Code -ne 0) { Fail "exit code $Code`: $Err" }
   Expect "slots" (Join-Path $FIX "c\expected.txt")
+  if ($Err) { Fail "status printed on standard error: $Err" }
+  # the Slots section (iteration 23): every slot with its agent state, skill, step and the age of the last report
+  foreach ($want in @(
+      "(?m)^slot  State  Agent    Branch       Skill             Step   Report  Since  PR          Flag$",
+      "(?m)^   1  busy   stalled  feat/merged  next/session      done       1d ",
+      "(?m)^   2  busy   unknown  feat/closed  \?                 \?           - ",
+      "(?m)^   3  busy   stalled  feat/stale   next/implementer  check      2d ",
+      "(?m)^   4  busy   running  feat/new     fix/fixer         test       5m    10m  -$")) {
+    if ($Out -notmatch $want) { Fail "the Slots section has no line $want" }
+  }
+  foreach ($flag in "stale: busy, PR merged (slot --release 1)", "stale: busy, PR closed (slot --abandon 2)", "stale: busy, no open PR") {
+    if (-not $Out.Contains($flag)) { Fail "the flag '$flag' is gone" }
+  }
+
+  Write-Host "== an unusable stalledAfterMinutes: the same table and the slot script's note"
+  Write-Utf8 $cfgFile $withSlots.Replace('"slots": 4 }', '"slots": 4, "stalledAfterMinutes": 0 }')
+  Run-S $work "c"
+  if ($Code -ne 0) { Fail "stalledAfterMinutes 0: exit code $Code`: $Err" }
+  Expect "stalledAfterMinutes 0" (Join-Path $FIX "c\expected.txt")
+  if ($Err -notmatch "(?m)^slot: worktrees\.stalledAfterMinutes must be a whole number of at least 1; using 30\r?$") { Fail "stalledAfterMinutes 0: no note on standard error: $Err" }
+  Write-Utf8 $cfgFile $withSlots
+  Run-S $work "c"
 
   Write-Host "== reads only"
   $log = [IO.File]::ReadAllText((Join-Path $tmp "gh.log"))

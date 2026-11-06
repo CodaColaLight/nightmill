@@ -38,13 +38,13 @@ not a conversation.
 | `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. |
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` works through every Ready bug. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
-| `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, busy slots, stale states flagged. Read-only. |
+| `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. |
 | `/nightmill:models` | One table of each agent role's model, where it comes from (the config or the default), its rank and whether the reviewer pairings hold. Read-only. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
-| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`. |
+| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -153,7 +153,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
 | `parallel` | Agent cap, hot files, task pairs to avoid |
-| `worktrees` | Slot root, count, port bases, warm-up commands, run hints |
+| `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled |
 
 `templates/nightmill.example.json` is a complete example.
 
@@ -220,6 +220,17 @@ that cannot be judged (`gh` missing, logged out or failing, no fetch) stays busy
 never makes a take fail. A slot whose pull request is open, closed without a merge or moved by "update branch" stays
 busy until `-Release` or `-Abandon`. Each freed slot is reported in one line:
 `Slot 1 is free (was feat/a, PR #12), released automatically.`
+
+### What a slot's agent is doing
+
+`/next` and `/fix`, and the implementer and fixer they launch, record their skill, role and current step in the
+slot's marker at each step (`-Report <step>` / `--report <step>`). `/nightmill:status` lists every slot with its agent
+state: **running** while the last report is at most `worktrees.stalledAfterMinutes` minutes old (default 30),
+**stalled** when it is older (the session may have ended, crashed or been abandoned; look at it, and free the slot with
+`-Abandon` if it was dropped), **unknown** when the slot has no report (taken by hand or by an older version). A slot
+whose run is over (step `done`) and that waits for its merge also shows stalled once the threshold has passed;
+`-Release`, `-Reap` or the next take frees it. Nothing is stopped or freed because a slot is stalled, and a step longer
+than the threshold (a long code review or check) shows stalled while it runs; `/spec` takes no slot and is not shown.
 
 ### Changing the numbers during a session
 

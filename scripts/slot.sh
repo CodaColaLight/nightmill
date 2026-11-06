@@ -7,6 +7,7 @@
 #   slot.sh --reap                      # free every busy slot whose PR has merged (--take does this first)
 #   slot.sh --capacity [--slot-count N] [--agent-limit M] [--porcelain]   # show or set the numbers for the session
 #   slot.sh --capacity --clear          # back to the configuration's numbers
+#   slot.sh --report <step> --slot N --skill <skill> --role <role>   # record what the slot's agent is doing
 # Needs git and (for --release and --reap) gh. Run it from inside the project: any checkout or worktree of
 # it. Configuration comes from .claude/nightmill.json in the main checkout, keys under "worktrees"
 # (see schema/nightmill.schema.json); WORKER_SLOTS overrides worktrees.slots. A slot is never removed:
@@ -24,17 +25,26 @@
 # worktrees.slots, then 2. Agent limit: the live value, then parallel.maxAgents, then 2. A busy slot above a
 # lowered count is retiring: it is no longer handed out, is never touched, and is no longer listed once released.
 # Same behaviour as slot.ps1 (-Capacity).
+# Reports (--report; iteration 23): a skill that works in a slot writes its skill, its role, the current step and the
+# time of the report into the slot's marker (the keys skill, role, step, reported after slot, branch, since).
+# --status --porcelain prints them with the agent state: running while the last report is at most
+# worktrees.stalledAfterMinutes (default 30) old, stalled after that, unknown without a report. The take does not
+# report. Same behaviour as slot.ps1 (-Report).
 set -euo pipefail
 
 usage() {
-  echo "usage: slot.sh --status | --take <branch> [--slot N] [--base <ref>] [--skip-warmup] | --release N | --abandon N | --reap | --capacity [--slot-count N] [--agent-limit M] [--clear] [--porcelain]" >&2
+  echo "usage: slot.sh --status | --take <branch> [--slot N] [--base <ref>] [--skip-warmup] | --release N | --abandon N | --reap | --capacity [--slot-count N] [--agent-limit M] [--clear] [--porcelain] | --report <step> --slot N --skill <s> --role <r>" >&2
   exit 1
 }
 
 take=""; release=0; abandon=0; status=0; slot=0; base=""; skip=0; porcelain=0; reap=0
 capacity=0; clear=0; set_slots=""; set_agents=""; has_slots=0; has_agents=0
+report=""; has_report=0; skill=""; has_skill=0; role=""; has_role=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --report) [ $# -ge 2 ] || usage; report=$2; has_report=1; shift ;;
+    --skill) [ $# -ge 2 ] || usage; skill=$2; has_skill=1; shift ;;
+    --role) [ $# -ge 2 ] || usage; role=$2; has_role=1; shift ;;
     --reap) reap=1 ;;
     --capacity) capacity=1 ;;
     --clear) clear=1 ;;
@@ -52,6 +62,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+if [ "$has_report" = 1 ]; then
+  { [ -z "$take" ] && [ "$release" = 0 ] && [ "$abandon" = 0 ] && [ "$reap" = 0 ] && [ "$status" = 0 ] && [ "$capacity" = 0 ]; } || usage
+elif [ "$has_skill" = 1 ] || [ "$has_role" = 1 ]; then
+  usage
+fi
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
 
@@ -138,6 +153,34 @@ slot_dir() { echo "$root/slot-$1"; }
 marker() { echo "$state/slot-$1.json"; }
 has_marker() { [ -f "$(marker "$1")" ]; }
 marker_field() { ( json_load "$(marker "$1")" && json_get "$2" ); }
+# marker_fields N: branch, since, skill, role, step and reported of the marker, separated by the unit separator
+# (\037, not whitespace, so that empty fields stay); empty when absent
+marker_fields() {
+  ( json_load "$(marker "$1")" || exit 0
+    printf '%s\037%s\037%s\037%s\037%s\037%s' "$(json_get branch)" "$(json_get since)" "$(json_get skill)" "$(json_get role)" "$(json_get step)" "$(json_get reported)" )
+}
+is_stamp() { [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$ ]]; }
+# epoch_of YYYY-MM-DDTHH:MM:SS: seconds since 1970 with the time read as UTC, the arithmetic of stamp in lib/status.awk
+epoch_of() {
+  local s=$1 y m d era yoe doy doe
+  y=$((10#${s:0:4})); m=$((10#${s:5:2})); d=$((10#${s:8:2}))
+  if [ "$m" -le 2 ]; then y=$((y - 1)); fi
+  era=$(( (y >= 0 ? y : y - 399) / 400 ))
+  yoe=$((y - era * 400))
+  doy=$(( (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1 ))
+  doe=$((yoe * 365 + yoe / 4 - yoe / 100 + doy))
+  echo $(( (era * 146097 + doe - 719468) * 86400 + 10#${s:11:2} * 3600 + 10#${s:14:2} * 60 + 10#${s:17:2} ))
+}
+# stalled_after: the threshold in minutes, worktrees.stalledAfterMinutes or 30 (an unusable value with one note)
+stalled_after() {
+  local rec kind val
+  rec=$(printf '%s\n' "$JSON_FLAT" | LC_ALL=C awk -F '\t' '$1 == "worktrees.stalledAfterMinutes" { print $2 "\t" $3 }')
+  kind=${rec%%$'\t'*}; val=${rec#*$'\t'}
+  if [ -z "$rec" ] || [ "$kind" = null ]; then echo 30; return 0; fi
+  if [ "$kind" = number ] && [[ "$val" =~ ^[1-9][0-9]{0,5}$ ]]; then echo "$val"; return 0; fi
+  echo "slot: worktrees.stalledAfterMinutes must be a whole number of at least 1; using 30" >&2
+  echo 30
+}
 dirty_count() { git -C "$1" status --porcelain | wc -l | tr -d ' '; }
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
@@ -297,16 +340,44 @@ if [ "$capacity" = 1 ]; then
 fi
 if [ "$clear" = 1 ] || [ "$has_slots" = 1 ] || [ "$has_agents" = 1 ]; then usage; fi
 
+if [ "$has_report" = 1 ]; then
+  # --report <step> --slot N --skill <skill> --role <role>: rewrite the marker of slot N with the report
+  if ! [[ "$slot" =~ ^[0-9]+$ ]] || [ $((10#$slot)) = 0 ]; then echo "report needs a slot number" >&2; exit 1; fi
+  n=$((10#$slot))
+  has_marker "$n" || { echo "slot $n is not in use" >&2; exit 1; }
+  name_ok() { [[ "$1" =~ ^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789][ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-]{0,39}$ ]]; }
+  for what in step skill role; do
+    case "$what" in step) v=$report ;; skill) v=$skill ;; role) v=$role ;; esac
+    name_ok "$v" || { echo "report: the $what must be 1 to 40 letters, digits or -, got \"$v\"" >&2; exit 1; }
+  done
+  mk=$(marker "$n")
+  json_load "$mk" 2>/dev/null || { echo "slot $n: the marker is not valid JSON" >&2; exit 1; }
+  tmpr="$state/slot-$n.report.tmp"
+  json_marker_report "$n" "$(json_get branch)" "$(json_get since)" "$skill" "$role" "$report" "$(date +%Y-%m-%dT%H:%M:%S)" > "$tmpr"
+  # moved over the marker only while it still exists: a report never brings back a released slot
+  if [ -f "$mk" ]; then mv -f "$tmpr" "$mk"; else rm -f "$tmpr"; fi
+  exit 0
+fi
+
 if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
-  # <n> TAB busy TAB <branch> TAB <since>, or <n> TAB free; a busy slot above the count gets a fifth field, retiring
+  # A free slot: <n> TAB free. A busy slot, ten fields: <n> TAB busy TAB <branch> TAB <since> TAB <retiring> TAB
+  # <agent> TAB <skill> TAB <role> TAB <step> TAB <reported>; retiring for a busy slot above the count, else empty;
+  # agent: running, stalled or unknown (see the header)
+  threshold=$(( $(stalled_after) * 60 ))
+  if [ -n "${NIGHTMILL_NOW:-}" ]; then now=$NIGHTMILL_NOW; else now=$(epoch_of "$(date +%Y-%m-%dT%H:%M:%S)"); fi
   top=$(last_slot)
   for ((i = 1; i <= top; i++)); do
     if has_marker "$i"; then
-      if [ "$i" -gt "$count" ]; then
-        printf '%s\tbusy\t%s\t%s\tretiring\n' "$i" "$(marker_field "$i" branch)" "$(marker_field "$i" since)"
-      else
-        printf '%s\tbusy\t%s\t%s\n' "$i" "$(marker_field "$i" branch)" "$(marker_field "$i" since)"
+      m_branch=""; m_since=""; m_skill=""; m_role=""; m_step=""; m_reported=""
+      IFS=$'\037' read -r m_branch m_since m_skill m_role m_step m_reported <<<"$(marker_fields "$i")" || true
+      retiring=""; if [ "$i" -gt "$count" ]; then retiring=retiring; fi
+      agent=unknown
+      if is_stamp "${m_reported:-}"; then
+        age=$((now - $(epoch_of "$m_reported"))); if [ "$age" -lt 0 ]; then age=0; fi
+        if [ "$age" -le "$threshold" ]; then agent=running; else agent=stalled; fi
       fi
+      printf '%s\tbusy\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$i" "${m_branch:-}" "${m_since:-}" "$retiring" "$agent" \
+        "${m_skill:-}" "${m_role:-}" "${m_step:-}" "${m_reported:-}"
     elif [ "$i" -le "$count" ]; then
       printf '%s\tfree\n' "$i"
     fi

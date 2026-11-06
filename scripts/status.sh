@@ -3,8 +3,9 @@
 #
 #   status.sh [--all]
 #
-# Joins the board items, the pull requests and the busy slots and prints them as one table, Spec review and
-# Approved first, with stale states flagged. --all also lists the items at Backlog and Done. It only reads:
+# Joins the board items, the pull requests and the slots and prints them as one table, Spec review and
+# Approved first, with stale states flagged, then the Slots section: every slot with what its agent is doing
+# (running, stalled or unknown, as slot.sh decides it; iteration 23). --all also lists the items at Backlog and Done. It only reads:
 # gh project item-list / project view, gh pr list, gh api graphql (a query), slot.sh --status --porcelain and
 # slot.sh --capacity (the last line, when the project has worktrees).
 # Run it from inside the project: any checkout or worktree of it. Settings come from .claude/nightmill.json
@@ -88,6 +89,8 @@ slots_configured=0
 if json_has worktrees; then
   slots_configured=1
   bash "$here/slot.sh" --status --porcelain > "$tmp/slots.tsv" 2> "$tmp/err" || die "slot.sh failed: $(tr '\n' ' ' < "$tmp/err")"
+  # a note of the slot script (an unusable worktrees.stalledAfterMinutes) is passed through
+  cat "$tmp/err" >&2
   # the capacity line, with the text of slot.sh --capacity (iteration 22)
   bash "$here/slot.sh" --capacity > "$tmp/capacity.txt" 2> "$tmp/err" || die "slot.sh failed: $(tr '\n' ' ' < "$tmp/err")"
   capline="capacity: $(sed -n 's/^slots: /slots /p' "$tmp/capacity.txt"), $(sed -n 's/^agents: /agents /p' "$tmp/capacity.txt")"
