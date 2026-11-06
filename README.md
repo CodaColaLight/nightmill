@@ -469,4 +469,4 @@ request has to satisfy. Report a security problem privately, as described in `SE
 
 ## Status and license
 
-Version 0.3.0. Apache License 2.0, see `LICENSE`.
+Version 0.4.0. Apache License 2.0, see `LICENSE`.
