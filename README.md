@@ -47,6 +47,7 @@ not a conversation.
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
 | `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
+| `scripts/dashboard.ps1`, `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
 | `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
 | `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
@@ -157,7 +158,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5) |
-| `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled |
+| `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser |
 
 `templates/nightmill.example.json` is a complete example.
 
@@ -262,6 +263,32 @@ state: **running** while the last report is at most `worktrees.stalledAfterMinut
 whose run is over (step `done`) and that waits for its merge also shows stalled once the threshold has passed;
 `-Release`, `-Reap` or the next take frees it. Nothing is stopped or freed because a slot is stalled, and a step longer
 than the threshold (a long code review or check) shows stalled while it runs; `/spec` takes no slot and is not shown.
+
+### Watching the run in a browser
+
+To keep the slots in view during a run, start the dashboard in a terminal, from inside the project:
+
+```
+scripts/dashboard.ps1
+bash scripts/dashboard.sh
+```
+
+It prints a `file://` address; open it once in a browser (the script opens none itself). The page is a file in the
+temporary folder (`nightmill-dashboard-<owner>-<repo>.html`), never in the project. It shows the Slots section of
+`/nightmill:status` (every slot, its agent state, branch, skill and step, the age of the last report, the pull request
+and CI, the `stale:` flag) and the items at Spec review and Approved with their pull requests and CI. The script
+rewrites it every `worktrees.dashboardRefreshSeconds` seconds (default 60; each rewrite calls `gh` as `/status` does)
+and the page reloads itself as often. No server runs and nothing listens.
+
+The words are those of the section above: **running** while the last report is at most
+`worktrees.stalledAfterMinutes` minutes old, **stalled** after that, **unknown** without a report. The page shows each
+state as a word as well as a colour. A part it cannot read (no `gh`, logged out, no network) is shown as `unknown` with
+the reason, never as free or as nothing waiting; the slot states, which need no network, stay.
+
+To stop it, press Ctrl-C in that terminal or close the terminal; nothing keeps running. The page stays as last written
+and, after three intervals without a rewrite, says it is out of date. The page has no buttons or links and changes
+nothing. `--once` (`-Once`) renders it once. The data comes from `status.sh --porcelain` (`status.ps1 -Porcelain`),
+which prints the tables of `/status` tab-separated for programs (the record kinds `item`, `note`, `slot`, `capacity`).
 
 ### Changing the numbers during a session
 
@@ -397,6 +424,7 @@ bash tests/smoke-models.sh  # models.sh: the table of the role models
 bash tests/smoke-load.sh    # load.sh against a fixture of readings
 bash tests/smoke-room.sh   # room.sh against a fixture of readings
 bash tests/smoke-control.sh # control.sh against fixtures of readings and a fixed clock
+bash tests/smoke-dashboard.sh # dashboard.sh against fixtures and a fake gh
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -409,6 +437,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-models.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-load.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-control.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
 claude plugin validate . --strict
 ```
 

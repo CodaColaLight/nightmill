@@ -900,6 +900,45 @@ for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-control' "$f" || { echo "FAIL: $f does not run smoke-control"; fail=1; }
 done
 
+echo "== dashboard is wired"
+# A page in the browser shows the slots and what waits (iteration 31): the dashboard scripts, the renderer, both smoke
+# tests and the expected page exist; the three dashboard files only read (no slot action, no gh call, no listener, no
+# browser opener, nothing on the page that links, loads or acts); they carry the refresh, the escaping, the clock and
+# the porcelain call; status has its porcelain form; the schema, the example and the README carry the key; the check
+# and CI run the tests.
+for f in scripts/dashboard.sh scripts/dashboard.ps1 scripts/lib/dashboard.awk tests/smoke-dashboard.sh tests/smoke-dashboard.ps1 tests/fixtures/dashboard/run-stall-old-free/expected.html; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+for f in scripts/dashboard.sh scripts/dashboard.ps1 scripts/lib/dashboard.awk; do
+  [ -f "$f" ] || continue
+  if grep -nE -- '--take|--release|--abandon|--reap|--report|--capacity|-Take|-Release|-Abandon|-Reap|-Report|-Capacity|item-edit|pr merge|issue edit|issue comment|mutation|(^|[^A-Za-z0-9_-])gh +[a-z]|HttpListener|TcpListener|socat|nc -l|http\.server|Start-Process|xdg-open|open http|cmd /c start|<form|<button|<input|<a |href|src=|<link|@import|url\(|fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f changes, serves, opens or links something; the dashboard only reads and shows"; fail=1
+  fi
+done
+for f in scripts/dashboard.ps1 scripts/lib/dashboard.awk; do
+  for w in 'http-equiv="refresh"' '&amp;' '&lt;' '&gt;' '&quot;' '&#39;'; do
+    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
+  done
+done
+for f in scripts/dashboard.sh scripts/dashboard.ps1; do
+  for w in NIGHTMILL_NOW dashboardRefreshSeconds stalledAfterMinutes; do
+    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
+  done
+done
+grep -qF -- 'status.sh" --porcelain' scripts/dashboard.sh 2>/dev/null || { echo "FAIL: scripts/dashboard.sh does not call status.sh --porcelain"; fail=1; }
+grep -qF -- '-Porcelain' scripts/dashboard.ps1 2>/dev/null || { echo "FAIL: scripts/dashboard.ps1 does not call status.ps1 -Porcelain"; fail=1; }
+grep -qF -- '--porcelain)' scripts/status.sh || { echo "FAIL: scripts/status.sh has no --porcelain"; fail=1; }
+grep -qF -- '[switch]$Porcelain' scripts/status.ps1 || { echo "FAIL: scripts/status.ps1 has no -Porcelain"; fail=1; }
+grep -qF -- '"dashboardRefreshSeconds": { "type": "integer", "minimum": 10, "default": 60,' schema/nightmill.schema.json || { echo "FAIL: schema: worktrees.dashboardRefreshSeconds is not an integer of at least 10, default 60"; fail=1; }
+json_load templates/nightmill.example.json
+[ "$(json_get worktrees.dashboardRefreshSeconds)" = 60 ] || { echo "FAIL: templates/nightmill.example.json: worktrees.dashboardRefreshSeconds is not 60"; fail=1; }
+for w in dashboard.sh dashboard.ps1 dashboardRefreshSeconds Ctrl-C --porcelain; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF 'smoke-dashboard' "$f" || { echo "FAIL: $f does not run smoke-dashboard"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

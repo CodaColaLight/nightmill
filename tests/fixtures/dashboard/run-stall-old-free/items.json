@@ -1,0 +1,80 @@
+{
+  "items": [
+    {
+      "id": "PVTI_2",
+      "content": {
+        "number": 2,
+        "title": "[Story] Read the <b>spec</b> & \"approve\" — café",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/2"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Spec review",
+      "title": "[Story] Read the <b>spec</b> & \"approve\" — café"
+    },
+    {
+      "id": "PVTI_3",
+      "content": {
+        "number": 3,
+        "title": "[Story] Approved and waiting",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/3"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Approved",
+      "title": "[Story] Approved and waiting"
+    },
+    {
+      "id": "PVTI_4",
+      "content": {
+        "number": 4,
+        "title": "[Story] Busy one",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/4"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "In progress",
+      "title": "[Story] Busy one"
+    },
+    {
+      "id": "PVTI_5",
+      "content": {
+        "number": 5,
+        "title": "[Story] At review",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/5"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Review",
+      "title": "[Story] At review"
+    },
+    {
+      "id": "PVTI_6",
+      "content": {
+        "number": 6,
+        "title": "[Story] Path C:\\temp\tand more",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/6"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Approved",
+      "title": "[Story] Path C:\\temp\tand more"
+    }
+  ],
+  "totalCount": 5
+}

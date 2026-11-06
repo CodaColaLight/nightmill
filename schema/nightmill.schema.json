@@ -173,6 +173,7 @@
         "root": { "type": "string", "description": "Where slot worktrees live, relative to the main checkout. Default: ../<checkout-folder>-wt" },
         "slots": { "type": "integer", "minimum": 1, "default": 2, "description": "Number of permanent slots. WORKER_SLOTS in the environment overrides it." },
         "stalledAfterMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "Minutes without a report after which the agent in a busy slot counts as stalled instead of running (slot --status --porcelain, /status). /next and /fix report at each step with slot --report." },
+        "dashboardRefreshSeconds": { "type": "integer", "minimum": 10, "default": 60, "description": "How often scripts/dashboard.* rewrites the page in the browser, in seconds (10 to 3600); the page reloads itself as often. Each rewrite reads the board and the pull requests with gh once." },
         "ports": {
           "type": "object",
           "additionalProperties": { "type": "integer" },

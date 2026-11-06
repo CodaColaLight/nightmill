@@ -1,0 +1,68 @@
+[
+  {
+    "number": 31,
+    "title": "Spec for #2 (#2)",
+    "headRefName": "spec/2-read",
+    "state": "OPEN",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS"
+      }
+    ],
+    "closingIssuesReferences": []
+  },
+  {
+    "number": 33,
+    "title": "Iteration 5: busy (#4)",
+    "headRefName": "feat/run",
+    "state": "OPEN",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "name": "tests",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE"
+      }
+    ],
+    "closingIssuesReferences": [
+      {
+        "number": 4
+      }
+    ]
+  },
+  {
+    "number": 34,
+    "title": "Iteration 6: at review (#5)",
+    "headRefName": "feat/review",
+    "state": "OPEN",
+    "isDraft": false,
+    "updatedAt": "2026-11-05T11:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": [
+      {
+        "number": 5
+      }
+    ]
+  },
+  {
+    "number": 20,
+    "title": "Iteration 3: old (#9)",
+    "headRefName": "feat/old",
+    "state": "MERGED",
+    "isDraft": false,
+    "updatedAt": "2026-11-04T08:00:00Z",
+    "statusCheckRollup": [],
+    "closingIssuesReferences": [
+      {
+        "number": 9
+      }
+    ]
+  }
+]
