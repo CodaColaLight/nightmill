@@ -19,7 +19,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # The project: one config with four slots and no panelRefreshSeconds, in a throwaway repository.
 git init -q -b main "$tmp/work"
-cd "$tmp/work"
+cd "$tmp/work" || exit 1
 mkdir -p .claude
 cat > "$tmp/with-slots.json" <<'EOF'
 {
@@ -123,12 +123,11 @@ for v in 0 4 3601 2.5 15.0 '"15"' true; do
   [ "$code" = 0 ] || fail "$v: exit code $code: $(cat "$tmp/err.txt")"
   same "panelRefreshSeconds $v" "$tmp/want.txt"
 done
-for v in null; do
-  with_worktrees_key "\"panelRefreshSeconds\": $v"
-  run_p "$tmp/work"
-  [ "$code" = 0 ] || fail "$v: exit code $code"
-  same "panelRefreshSeconds $v" "$tmp/good.txt"
-done
+v=null
+with_worktrees_key "\"panelRefreshSeconds\": $v"
+run_p "$tmp/work"
+[ "$code" = 0 ] || fail "$v: exit code $code: $(cat "$tmp/err.txt")"
+same "panelRefreshSeconds $v" "$tmp/good.txt"
 cp "$tmp/with-slots.json" .claude/nightmill.json
 run_p "$tmp/work"
 same "no panelRefreshSeconds" "$tmp/good.txt"
