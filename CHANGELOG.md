@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0 (2026-11-06)
+
 - Iteration 21 (#40): the spec review is recorded in the spec pull request and open blocking findings stop
   auto-merge. The body of the spec pull request, under `Spec for #<issue>.` and the writer's line, now has the
   `## Review` section that iteration 19 defined for code pull requests, with `specReviewer` as the reviewer and
