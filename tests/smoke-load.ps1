@@ -300,6 +300,21 @@ try {
   Code-Is "no config" 2
   if (-not $Err.Contains("run /nightmill:init")) { Fail "no config: the message does not say run /nightmill:init: $Err" }
 
+  Write-Host "== a failed slot script stops the command with its standard error on one line"
+  # a copy of load.ps1 and its lib beside a stub slot.ps1 that writes two lines to standard error and exits 3
+  $stub = Join-Path $tmp "stub"
+  New-Item -ItemType Directory $stub | Out-Null
+  Copy-Item -LiteralPath $L -Destination $stub
+  Copy-Item -LiteralPath (Join-Path $here "scripts\lib") -Destination $stub -Recurse
+  Write-Utf8 (Join-Path $stub "slot.ps1") "[Console]::Error.WriteLine('stub: the slots are unreadable')`n[Console]::Error.WriteLine('stub: second line')`nexit 3`n"
+  $realL = $L
+  $L = Join-Path $stub "load.ps1"
+  Run "a"
+  $L = $realL
+  Code-Is "failed slot script" 2
+  if ($Out) { Write-Host $Out; Fail "failed slot script: something on standard output" }
+  if ($Err -ne "load: slot.ps1 failed: stub: the slots are unreadable stub: second line`n") { Fail "failed slot script: standard error is '$Err'" }
+
   Write-Host "LOAD OK" -ForegroundColor Green
 } finally {
   Set-Location $here

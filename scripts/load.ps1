@@ -34,10 +34,23 @@ $settings = Get-LoadSettings $cfg
 
 # The slot numbers, from the slot script of the same plugin (its standard error passes through)
 $slotScript = Join-Path $PSScriptRoot "slot.ps1"
+# The slot script writes its messages with [Console]::Error or throws; both are caught here: its standard error into a
+# StringWriter while it runs (passed on when it succeeds), a thrown message after it. On a failure both are folded onto
+# one line as load.sh does (line ends to spaces, trailing spaces dropped).
 function Invoke-Slot([hashtable]$slotArgs) {
   $global:LASTEXITCODE = 0
-  try { $out = @(& $slotScript @slotArgs) } catch { Stop-Load "load: slot.ps1 failed: $($_.Exception.Message -replace '\r?\n', ' ')" }
-  if ($LASTEXITCODE -ne 0) { Stop-Load "load: slot.ps1 failed: exit code $LASTEXITCODE" }
+  $realErr = [Console]::Error
+  $errText = New-Object System.IO.StringWriter
+  $thrown = $null
+  [Console]::SetError($errText)
+  try { $out = @(& $slotScript @slotArgs) } catch { $thrown = $_.Exception.Message } finally { [Console]::SetError($realErr) }
+  $code = $LASTEXITCODE
+  $text = $errText.ToString()
+  if ($null -ne $thrown -or $code -ne 0) {
+    if ($null -ne $thrown) { $text += $thrown + "`n" }
+    Stop-Load "load: slot.ps1 failed: $(($text -replace '\r?\n', ' ').TrimEnd(' '))"
+  }
+  if ($text) { [Console]::Error.Write($text) }
   return $out
 }
 $capLines = Invoke-Slot @{ Capacity = $true; Porcelain = $true }

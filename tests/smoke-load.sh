@@ -308,4 +308,19 @@ run_in "$tmp/plain" a
 code_is "no config" 2
 grep -qF 'run /nightmill:init' "$tmp/err.txt" || fail "no config: the message does not say run /nightmill:init"
 
+echo "== a failed slot script stops the command with its standard error on one line"
+# a copy of load.sh and its lib beside a stub slot.sh that writes two lines to standard error and exits 3
+mkdir "$tmp/stub"
+cp "$L" "$tmp/stub/load.sh"
+cp -R "$here/scripts/lib" "$tmp/stub/lib"
+printf '%s\n' "echo 'stub: the slots are unreadable' >&2" "echo 'stub: second line' >&2" "exit 3" > "$tmp/stub/slot.sh"
+real_L=$L
+L="$tmp/stub/load.sh"
+run a
+L=$real_L
+code_is "failed slot script" 2
+[ ! -s "$tmp/out.txt" ] || { cat "$tmp/out.txt"; fail "failed slot script: something on standard output"; }
+[ "$(cat "$tmp/err.txt")" = "load: slot.sh failed: stub: the slots are unreadable stub: second line" ] || fail "failed slot script: standard error is '$(cat "$tmp/err.txt")'"
+[ "$(wc -l < "$tmp/err.txt" | tr -d ' ')" = 1 ] || fail "failed slot script: more than one line on standard error"
+
 echo "LOAD OK"
