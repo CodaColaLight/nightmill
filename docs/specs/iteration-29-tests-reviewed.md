@@ -1,6 +1,6 @@
 # Iteration 29: the code reviewer checks the tests against the spec and that none was weakened
 
-Status: draft, awaiting approval (#45)
+Status: delivered in iteration 29 (PR #105)
 
 Story: #45, epic #41 (Independent test writing). The code reviewer of iteration 18 judges the tests as part of its
 review: for every acceptance criterion a test covers it and would fail for a wrong implementation; no test of the

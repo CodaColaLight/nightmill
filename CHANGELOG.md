@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Iteration 29 (#45): the code reviewer checks the tests against the spec and that none was weakened.
+  `agents/code-reviewer.md` gets four rules: for every acceptance criterion a test that would fail for a plausible wrong
+  implementation (a criterion with no test, or only weak ones, is blocking); no test of the tester's removed, skipped,
+  loosened or made conditional, compared with what the tester first wrote; an assertion that is always true, a test that
+  never fails and a test of only a mock are reported (blocking when a criterion relies on them, advisory otherwise);
+  and a finding whose fix belongs in the tester's tests begins its text with `test: `. The reviewer's prompt in `/next`
+  and `/fix` gains three lines: the tester's files, each `committed` or `not committed`, the tester's own revisions
+  after its first launch as `git diff <original blob> <blob>` (from the new `<tester originals>`, never replaced) and the
+  `Test paths:` line, pasted when the prompt is filled in; the reviewer gets no account of the producer or of the tester.
+  The findings format is unchanged. A blocking line that begins with `test: ` is a test finding whatever file it names:
+  it goes to the tester through the dispute launch of iteration 27 (named paths sorted into three kinds: a tester file,
+  a path that does not exist yet, an existing file that is not the tester's), the other blocking lines go to the
+  implementer or the fixer, in the same fix round, which costs one of `review.maxFixRounds` whatever it holds; a test
+  finding the tester answers `stands:` is not sent again and stays open, so auto-merge stays off by the existing
+  sentence; a different number of `Answers` lines than findings is a failed tester result. How verified shows the
+  tester's answer (`tester's answer to the code review in fix round <k>`); the report step is `test-finding-<k>` (role
+  `tester`); the workflow skill gets two sentences in "Findings and fix rounds". No config key, status, slot marker,
+  script or change to `agents/tester.md`.
+
 - Iteration 28 (#81): a skill waits for room on the machine before it starts an agent. The new check
   `scripts/room.sh` / `scripts/room.ps1` (with `--since` / `-Since`) measures free memory and CPU load over 3
   one-second samples with the library of iteration 24 and answers whether the machine has room for one more agent: free
