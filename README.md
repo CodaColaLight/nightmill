@@ -217,6 +217,15 @@ skill; the reviewer is `agents/code-reviewer.md` and can only read. The pull req
 reviewer's and the author's model, the rounds used and the findings fixed and still open, and a blocking finding that
 is still open keeps auto-merge off.
 
+The code reviewer also judges the tests: for every acceptance criterion a test that would fail for a wrong
+implementation, no test of the tester's removed, skipped, loosened or made conditional (compared with what the tester
+first wrote, from the copies `git hash-object` kept), and no assertion that is always true, test that never fails or
+test of only a mock that a criterion relies on. It sees the tester's files and the tester's own revisions, never the
+implementer's or the tester's account. A blocking finding on a missing or weak test, or on the tester's tests, begins
+with `test: ` and is a test finding: it goes back to the tester, the other findings to the implementer or fixer, in the
+same fix round. A tester that says why its test stands is shown in How verified, and the finding stays open for the
+maintainer.
+
 Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
 and warns about keys it does not know, with a hint for a likely typo. It also rejects a config that puts a

@@ -48,7 +48,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    from the spec (see "The tester" below); then a subagent in the role `implementer` writes the code that makes them
    pass (see "The implementer" below): for each, count the agents, launch it, read its result.
 4. **Have the change reviewed** by a different agent, the `codeReviewer` (see "The code review" below), and let
-   the implementer fix what is blocking. Then, if the change touches any of `verification.manualCheckPaths`, the
+   the implementer fix what is blocking in the code and the tester what is blocking in its tests. Then, if the change touches any of `verification.manualCheckPaths`, the
    manual check applies. Before it, check the room on the machine (**Parallel work** in the `workflow` skill). Then
    do `verification.manualCheckText` yourself (the subagent runs the check, not this) and note the steps for the PR.
 5. When the implementer's result is `partial` and lists `unmet:` paths under Left or a dispute that is still open
@@ -76,7 +76,9 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    follows as `- not committed: criterion not met: <path> (criterion <n>)`. Each test the tester revised after a
    dispute (only for a path whose hash changed) follows as
    `- revised by the tester after a dispute in fix round <k>: <test name> (<file>): <what changed>`, from its `Answers`
-   line. The rest of "How verified" (the implementer's tests, the check, the manual check) follows. When a dispute is still open (see "The tester's files"),
+   line. Each answer of the tester to a test finding follows as
+   `- tester's answer to the code review in fix round <k>: <the Answers line, as the tester wrote it>`.
+   The rest of "How verified" (the implementer's tests, the check, the manual check) follows. When a dispute is still open (see "The tester's files"),
    add after `## Review`:
 
    ```
@@ -123,6 +125,7 @@ reports nothing.
 | the implementer, before its commit | `implementer` | `commit` |
 | just before each launch of the code reviewer ("The code review", step 2) | `codeReviewer` | `code-review` |
 | just before the tester's dispute launch for fix round k ("The tester's files", rule 5) | `tester` | `dispute-<k>` |
+| just before the tester's launch for the test findings of fix round k ("The code review", step 4) | `tester` | `test-finding-<k>` |
 | just before the launch of fix round k ("The code review", step 4) | `implementer` | `fix-round-<k>` |
 | the manual check (step 4), when it applies | `session` | `manual-check` |
 | the CHANGELOG entry and the rebase (step 5) | `session` | `changelog` |
@@ -325,7 +328,10 @@ path is not the tester's, and a tester file is the tester's as a whole. The sess
    `git -C <slot> diff --no-index -- /dev/null <path>` prints (git alone, the same in bash and PowerShell; its exit code
    1 means only that the files differ). A path whose file is missing when it is recorded stops the run with
    `Stopped: the tester returned failed: it deleted <path>`. The pristine copy lives only in the object store, never in
-   the stash (shared by all worktrees) and never in a file of the slot.
+   the stash (shared by all worktrees) and never in a file of the slot. Keep `<tester originals>` beside them: one line
+   `<path> <blob> <round>` per tester file, with the `<path>` and `<blob>` of its line here and round 0; a line of it is
+   never replaced. A file a later launch of the tester adds gets its line there too, with the blob first recorded for it
+   and the fix round it was added in.
 2. **Before every launch of the implementer** (the first and every fix round) record `<round base>`, the output of
    `git -C <slot> rev-parse HEAD`.
 3. **Check.** After every result of the implementer (the first launch and every fix round, whatever the `Result:`
@@ -397,6 +403,12 @@ path is not the tester's, and a tester file is the tester's as a whole. The sess
    `Stopped: the implementer returned failed: nothing committed and the dispute is still open: <the Disputes lines>`
    with the branch and the slot (status In progress, slot taken, the files left as they are).
 
+   The tester's launch for test findings of the code review ("The code review", step 4) is checked and recorded by this
+   rule, with the paths named in the test findings in the place of the disputed files, by kind. A named path in
+   `<tester files>` is a disputed file: it exists, and the three hash cases decide it. A named path that does not exist in the slot is not a disputed file: it is exempt from the check that every disputed file exists and from every check that it is unchanged; the tester may create it, or write the missing test in another new file on a test path, or create nothing, and every file it creates is checked and recorded as a new file.
+   A named path that exists and is not in `<tester files>` is not a disputed file: the check that every listed path not
+   in `<tester files>` is untracked keeps it unchanged.
+
 The code review runs after every result of the implementer that is not undone and not answered by a dispute exchange,
 so the last result is always reviewed and a story is still reviewed at most `1 + review.maxFixRounds` times.
 
@@ -451,7 +463,8 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    (`roles.codeReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
    that section's line for `codeReviewer`, naming the status and the slot.
 3. **The prompt**, filled in by the session. It carries facts, not the implementer's own account (its `Criteria`,
-   `Left` and `Decisions` lines): the reviewer shares no context with the implementer.
+   `Left`, `Decisions` and `Disputes` lines) and not the tester's (its `Criteria`, `Failing` and `Answers` lines): the
+   reviewer shares no context with either.
 
    ```markdown
    Review the change on branch <branch> in the checkout at <absolute slot path> (use that path for every file you
@@ -462,18 +475,103 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    The invariants of the project: <config invariants, one per line>.
    The implementer's check: <its Check: line>.
 
+   The tester's files, written before the code: <one line per path of <tester files>: <path>: committed | not committed; none>.
+   The tester's revisions after its first launch, as `git diff <original blob> <blob>`: <per revised file: `<path>, revised in fix round <k>[, <k>]:` and the diff; per added file: `<path>: added by the tester in fix round <k>`, and when revised later, `revised in fix round <k>:` and the diff; none>.
+   The test paths: <the `Test paths:` line of "The tester", step 3, pasted verbatim>; in this project iterations.specDir is <iterations.specDir>, iterations.decisionsDir is <iterations.decisionsDir> and iterations.changelog is <iterations.changelog>.
+
    The change, as `git diff <base>...<branch>`: <the diff; when it is longer than 2000 lines, the --stat and the
    instruction to read the files>.
 
    End with the findings block of the workflow skill, and nothing after it.
    ```
+
+   The session fills in the tester's part from git: a tester file is `committed` when
+   `git -C <slot> rev-parse -q --verify HEAD:<path>` prints its `<blob>` of `<tester blobs>`, else `not committed`; for
+   every tester file whose `<blob>` differs from its line of `<tester originals>`, the diff
+   `git -C <slot> diff <original blob> <blob>`, headed by the path and the fix rounds in which the tester revised it (the
+   session remembers the round of each of its launches that revised the file); a file the tester added in fix round k is
+   listed as added, without a diff (the reviewer reads it), and when the tester revised it in a later round, the added
+   line is followed by the diff from the blob it was added with. These diffs are given in full and never cut; the
+   2000-line rule counts the change's diff alone. With no tester file both lines say `none`. The test paths line is
+   filled in with the `Test paths:` line of "The tester", step 3, pasted verbatim, and the values of the three keys it
+   names.
 4. **Read the block.** `no findings`, or advisory findings only: go on and keep the advisory lines. With blocking
-   findings, while fewer than `review.maxFixRounds` fix rounds have been used (a dispute exchange and an undone round
-   count too): launch the fix (a fresh implementer, as
-   in "The implementer", with its prompt and, added at the end, "Fix exactly these blocking findings and nothing
-   else, run the check, commit": the blocking lines), read its `Result:` block as in "The implementer", step 3 (the
-   tester's files first, then a dispute) (`failed` stops the run as there), and review again from step 2 (the pairing is checked once, not again). No valid block, or an error: stop
-   with `Stopped: the code review could not be had: <the reason>. Nothing was opened.`
+   findings, while fewer than `review.maxFixRounds` fix rounds have been used (a dispute exchange, an undone round and a
+   round for test findings count too), sort the blocking lines. A blocking line is a test finding when its text begins with `test: `, whatever file it names;
+   every other blocking line is a code finding. A test finding with the same file and text as one the tester answered `stands:` earlier in this run is not sent to the tester again; it stays open.
+   Then fix round k:
+   - **Test findings first.** With test findings to send: report `test-finding-<k>` and count the agents as for a
+     dispute launch. Then check the room on the machine (**Parallel work** in the `workflow` skill). Record
+     `<dispute base>`, launch `nightmill:tester` (on `roles.tester.model`, passed explicitly, not a fork) with the
+     test-finding prompt below, and check and record its result by rule 5 of "The tester's files", each named path by
+     its kind: a path in `<tester files>` is decided by hash; a path that did not exist may be created or left absent;
+     an existing file outside `<tester files>` stays unchanged. Every file the tester created is recorded as new in
+     `<tester blobs>` and `<tester originals>` (round k). Its `Answers` lines come one per test finding, in their order.
+     When their number differs from the number of test findings sent (a missing or an extra line), the result is failed:
+     stop with `Stopped: the tester returned failed: <the reason>`, the reason naming both counts, as rule 5 stops
+     (status In progress, slot taken; commit, push and revert nothing). A model that cannot be used stops with the line
+     of **Agent roles and models** for `tester`, adding that the status of #<issue> is In progress and the slot is
+     taken.
+   - **Then the implementer.** When there is a code finding or the tester revised or wrote a test (an `Answers` line is
+     `revised:`, or it added a new file beside answers that are all `stands:`): report `fix-round-<k>` and launch the
+     fix (a fresh implementer, as in "The implementer", with its prompt and, added at the end, the paragraph "The tester has answered the code review" below when the tester was launched in this round,
+     and "Fix exactly these blocking findings and nothing else, run the check, commit": the code findings' lines, when
+     there are any), read its `Result:` block as in "The implementer", step 3 (the tester's files first, then a
+     dispute) (`failed` stops the run as there), and review again from step 2 (the pairing is checked once, not
+     again).
+   - **Otherwise** (every test finding was answered `stands:` or stays open, the tester added no file, and there is no
+     code finding): launch no implementer and review no more; this review is the last.
+
+   Round k is one fix round when the tester or the implementer was launched in it, whatever the number and kinds of
+   findings. No valid block, or an error: stop with
+   `Stopped: the code review could not be had: <the reason>. Nothing was opened.`
+
+   The tester's test-finding prompt, with the placeholders filled in:
+
+   ```markdown
+   Answer the code review's findings on your tests for story #<issue> "<title>" in <owner>/<repo>.
+
+   The slot: <absolute slot path>, branch <branch>. Use that absolute path for every file and `git -C <slot path>` for
+   every git command; your working directory is not the slot. The code exists now, committed on the branch.
+   Do not commit: leave every file you change uncommitted in the slot.
+
+   The spec: <path in the slot> (read it completely; it is the contract).
+   The acceptance criteria of the issue, in order: <the criteria, verbatim>.
+
+   The code reviewer reported these findings on your tests (`<file>:<line> test: <what is wrong>`):
+   <the test findings, one per line, without the leading "- blocking ">
+
+   In your instructions read "a dispute" as these findings, "the disputed tests" as the tests they name (for a missing test, the test to write), and "the implementer" as the code reviewer.
+   A finding that asks for a missing test is answered by writing it (`revised:`) or by saying why no test can be written
+   (`stands:`). Never weaken a test to answer a finding.
+
+   Your tests are at: <tester files, one per line>. Change only those of them the findings name; you may add new files on
+   the test paths. The paths the findings name, one per line, each with the one sentence of its kind:
+   <path>: this file exists: revise it or say why it stands.
+   <path>: this path does not exist yet: create it, or write the missing test in another new file on a test path, or say why none is needed.
+   <path>: this file is not yours: leave it unchanged; write the missing test in a new file on a test path, or say why none is needed.
+
+   The project's testing rules:
+   - the check: <verification.check>
+   - the bench rule: <verification.benchRule, or "none">
+   - the invariants: <config invariants, one per line>
+
+   In this project iterations.specDir is <iterations.specDir>, iterations.decisionsDir is <iterations.decisionsDir> and
+   iterations.changelog is <iterations.changelog>.
+
+   End with the result block of your instructions, with one Answers line per finding, in their order, and nothing after it.
+   ```
+
+   It carries no line of the implementer's result and no advisory finding. The paragraph added to the implementer's
+   prompt in a round in which the tester answered test findings, at the end of the prompt, before the code findings
+   when there are any:
+
+   ```markdown
+   The tester has answered the code review's findings on its tests:
+   <the tester's Answers lines>
+   A revised or new test is in its file, uncommitted; a test that stands is unchanged. Make them pass without changing
+   them, run the check, commit. If you believe a test is wrong, report it under Disputes.
+   ```
 5. **After the last review: the `## Review` section.** Build the section that **Findings and fix rounds** describes
    (the paragraph "The pull request" of the `workflow` skill) from what you held during the run: the blocks of all
    reviews, the fix rounds used and the models you passed to the Agent calls. `Findings still open` are those of the

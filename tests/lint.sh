@@ -643,6 +643,40 @@ gsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f =
 printf '%s\n' "$gsection" | grep -qF "a dispute over a tester's test" || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: a dispute over a tester's test"; fail=1; }
 grep -qF 'Disputed tests' README.md || { echo "FAIL: README.md does not mention Disputed tests"; fail=1; }
 
+echo "== the code reviewer reviews the tests"
+# The code reviewer judges the tests (iteration 29): every criterion has a test that would fail for a wrong
+# implementation, no test of the tester's was weakened compared with what it first wrote, and a test that cannot fail is
+# reported. A finding whose fix belongs in the tester's tests begins with "test: " and goes to the tester through the
+# dispute launch, in the same fix round as the code findings. The skills and the agent are conversations, so the lint
+# pins the wording the behaviour depends on (each item on one line); the manual check does the behaviour.
+for w in 'would fail for a plausible wrong implementation' "No test of the tester's was weakened" 'removed, skipped, loosened' \
+         'made conditional' 'is not removed' 'always true' 'never fails' 'only a mock' 'begins its text with' '`test: `' \
+         'rule 1 wins' "never an existing file that is not the tester's" 'matches the `Test paths:` line in your prompt'; do
+  grep -qF -- "$w" "$cr" || { echo "FAIL: $cr does not say the test review item: $w"; fail=1; }
+done
+if grep -qF 'or the like' "$cr"; then echo "FAIL: $cr says 'or the like' (name what is meant)"; fail=1; fi
+for f in "$nx" "$fx"; do
+  for w in '<tester originals>' 'diff <original blob> <blob>' "The tester's files, written before the code" \
+           "The tester's revisions after its first launch" "and not the tester's" \
+           'A blocking line is a test finding when its text begins with' '`test: `, whatever file it names' \
+           'is not sent to the tester again' 'test-finding-<k>' "Answer the code review's findings on your" \
+           'read "a dispute" as these findings' 'The tester has answered the code review' \
+           "tester's answer to the code review in fix round" 'the `Test paths:` line of "The tester", step 3' \
+           'exempt from the check that every disputed file exists' 'this file exists: revise it or say why it stands' \
+           'this path does not exist yet: create it, or write the missing test in another new file on a test path, or say why none is needed' \
+           'this file is not yours: leave it unchanged' 'When their number differs from the number of test findings sent'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the test review item: $w"; fail=1; }
+  done
+done
+n_crit=$(grep -cF 'The one acceptance criterion: 1. <title> is fixed.' "$fx" || true)
+[ "${n_crit:-0}" -ge 2 ] || { echo "FAIL: $fx says 'The one acceptance criterion: 1. <title> is fixed.' on ${n_crit:-0} lines (at least 2 expected)"; fail=1; }
+crsection=$(awk '/^## The code review$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' "$fx")
+printf '%s\n' "$crsection" | grep -qF 'The one acceptance criterion: 1. <title> is fixed.' || { echo "FAIL: $fx: the reviewer's prompt does not carry the one acceptance criterion"; fail=1; }
+for w in 'loosened or made conditional' 'is a test finding'; do
+  printf '%s\n' "$gsection" | grep -qF -- "$w" || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+done
+grep -qF 'test finding' README.md || { echo "FAIL: README.md does not mention a test finding"; fail=1; }
+
 echo "== a separate spec reviewer reviews the spec"
 # The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of
 # "Findings and fix rounds" (the same format lines as the code reviewer and the workflow skill), and /spec that

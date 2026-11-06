@@ -155,9 +155,10 @@ missing (a test that is not there) names the file where it belongs and `-` as th
 result, with `Blocking: 0` and `Advisory: 0` and no finding lines. The two counts equal the number of finding lines of
 each kind. A reply that is not of this form is no review.
 
-**Blocking** is a finding that breaks something the story promised or the project requires: a criterion without a test,
-a change that does not do what the spec says, work beyond the spec, a violated invariant, an item of the "Not done"
-list done anyway, a check that is not green. Everything else is **advisory**. Advisory findings are reported and never
+**Blocking** is a finding that breaks something the story promised or the project requires: a criterion without a test
+or with only tests that would not fail for a wrong implementation, a tester's test removed, skipped,
+loosened or made conditional, a change that does not do what the spec says, work beyond the spec, a violated invariant,
+an item of the "Not done" list done anyway, a check that is not green. Everything else is **advisory**. Advisory findings are reported and never
 sent back.
 
 **Rounds.** The first review is round 0. While blocking findings remain and fewer than `review.maxFixRounds` fix rounds
@@ -167,7 +168,11 @@ times; with `review.maxFixRounds` at 0 it is reviewed once and nothing is sent b
 time and never sees the producer's own account of its work.
 In `/next` and `/fix` the same rounds also pay for a dispute over a tester's test (the tester answers, then a new
 producer runs) and for a round undone because the producer changed the tester's tests: each costs one of
-`review.maxFixRounds`, and `Fix rounds used` counts them.
+`review.maxFixRounds`, and `Fix rounds used` counts them. In `/next` and `/fix` a blocking finding of the code reviewer
+whose text begins with `test: ` is a test finding, whatever file it names: it goes to the `tester`, the others to the
+producer, in the same fix round, which costs one of `review.maxFixRounds` whatever it holds; a test finding the tester
+answered `stands:` is not sent to it again, and a round in which the tester answered every test finding `stands:`, added
+no file and there is no code finding ends the rounds.
 
 **The pairing.** Before a reviewer is launched, the reviewer's model must rank at least as high as the producer's. A
 skill checks it with the validator (`validate-config`) and stops, naming both roles and both models, when the validator
