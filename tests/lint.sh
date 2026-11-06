@@ -624,6 +624,54 @@ for w in 'Open review findings' 'Review notes' 'Reviewed by the specReviewer rol
   if grep -qF -- "$w" skills/spec/SKILL.md; then echo "FAIL: skills/spec/SKILL.md still has the interim text '$w' of iteration 20 (it is replaced by the Review section)"; fail=1; fi
 done
 
+echo "== load is wired"
+# A read-only command measures CPU load and free memory and suggests an agent limit (iteration 24): both scripts, both
+# libraries and both smoke tests exist, the scripts only read, the libraries carry every reader, the schema, the example
+# and the README carry the three keys, /init's rule of thumb is the schema default, and the check and CI run the tests.
+for f in scripts/load.sh scripts/load.ps1 scripts/lib/load.sh scripts/lib/load.ps1 tests/smoke-load.sh tests/smoke-load.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+for f in scripts/load.sh scripts/load.ps1 scripts/lib/load.sh scripts/lib/load.ps1; do
+  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo "FAIL: $f writes or changes something; load only reads"; fail=1
+  fi
+done
+for f in scripts/lib/load.sh scripts/lib/load.ps1; do
+  for w in NIGHTMILL_LOAD_FIXTURE /proc/stat /proc/meminfo MemAvailable vm_stat hw.memsize; do
+    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry the reader item: $w"; fail=1; }
+  done
+done
+for w in Win32_PerfRawData_PerfOS_Processor Win32_OperatingSystem; do
+  grep -qF -- "$w" scripts/lib/load.ps1 2>/dev/null || { echo "FAIL: scripts/lib/load.ps1 does not read $w"; fail=1; }
+done
+for w in LoadPercentage Get-Counter; do
+  if grep -qF -- "$w" scripts/lib/load.ps1 2>/dev/null; then echo "FAIL: scripts/lib/load.ps1 uses $w (see the spec of iteration 24)"; fail=1; fi
+done
+json_load schema/nightmill.schema.json
+for spec in maxSuggestedAgents:4:1 memoryPerAgentGB:8:1 loadWindowSeconds:10:2; do
+  k=${spec%%:*}; rest=${spec#*:}; d=${rest%%:*}; lo=${rest#*:}; p=properties.parallel.properties.$k
+  [ "$(json_get "$p.type")" = integer ] || { echo "FAIL: schema: parallel.$k is not an integer"; fail=1; }
+  [ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: parallel.$k has no description"; fail=1; }
+  [ "$(json_get "$p.default")" = "$d" ] || { echo "FAIL: schema: parallel.$k default is not $d"; fail=1; }
+  [ "$(json_get "$p.minimum")" = "$lo" ] || { echo "FAIL: schema: parallel.$k minimum is not $lo"; fail=1; }
+done
+gb_default=$(json_get properties.parallel.properties.memoryPerAgentGB.default)
+json_load templates/nightmill.example.json
+for spec in maxSuggestedAgents:4 memoryPerAgentGB:8 loadWindowSeconds:10; do
+  k=${spec%%:*}; d=${spec#*:}
+  [ "$(json_get "parallel.$k")" = "$d" ] || { echo "FAIL: templates/nightmill.example.json: parallel.$k is not the schema default $d"; fail=1; }
+done
+grep -qF -- "one per $gb_default GB" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not say 'one per $gb_default GB' (the schema default of parallel.memoryPerAgentGB)"; fail=1; }
+for w in load.sh load.ps1 maxSuggestedAgents memoryPerAgentGB loadWindowSeconds 'rate limits' 'token budget'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+for f in tests/smoke-load.sh tests/smoke-load.ps1; do
+  grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
+done
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF 'smoke-load' "$f" || { echo "FAIL: $f does not run smoke-load"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
