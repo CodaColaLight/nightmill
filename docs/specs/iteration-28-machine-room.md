@@ -1,6 +1,6 @@
 # Iteration 28: a skill waits for room on the machine before it starts an agent
 
-Status: draft, awaiting approval (#81)
+Status: delivered in iteration 28 (PR #102)
 
 Story: #81, epic #47 (Unattended runs). Adds one check, `scripts/room.sh` and `scripts/room.ps1`, that measures free
 memory and CPU load with the library of iteration 24 (`scripts/lib/load.*`) and answers whether the machine has room
