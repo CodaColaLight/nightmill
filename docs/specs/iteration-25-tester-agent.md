@@ -1,6 +1,6 @@
 # Iteration 25: a tester agent writes the failing tests before /next implements
 
-Status: draft, awaiting approval (#42)
+Status: delivered in iteration 25 (PR #93)
 
 Story: #42, epic #41 (Independent test writing). Adds the agent `agents/tester.md` and a tester step in
 `skills/next/SKILL.md`: after the story is In progress and the slot is taken, and before the implementer is launched, a

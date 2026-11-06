@@ -42,25 +42,43 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    worktree; `-Release N` after the merge. Without slots, `git switch -c` from up-to-date `origin/<git.baseBranch>`.
    Respect the agent limit and `parallel.hotFiles`. Right after the take report the step `slot-taken` (see
    "Reporting the steps" below); from here on every step is reported there.
-3. **Hand the coding to the implementer.** The session never writes the code itself; the tests and the code are
-   written by a subagent in the role `implementer` (see "The implementer" below): count the agents, launch it,
-   read its result.
+3. **Have the tests written first, then hand the coding to the implementer.**
+   The session never writes the tests or the code itself. A subagent in the role `tester` writes the failing tests
+   from the spec (see "The tester" below); then a subagent in the role `implementer` writes the code that makes them
+   pass (see "The implementer" below): for each, count the agents, launch it, read its result.
 4. **Have the change reviewed** by a different agent, the `codeReviewer` (see "The code review" below), and let
    the implementer fix what is blocking. Then, if the change touches any of `verification.manualCheckPaths`, do
    `verification.manualCheckText` yourself (the subagent runs the check, not this) and note the steps for the PR.
-5. Add the CHANGELOG entry for iteration N and change the spec's status line to
-   `Status: delivered in iteration <N> (PR #<pr>)`. Rebase on `origin/<git.baseBranch>`; on a CHANGELOG
+5. When the implementer's result is `partial` and lists `unmet:` paths under Left, first copy the text of each
+   (`git -C <slot> diff -- <path>` for a changed file, the file for a new one) for step 8, then set them aside with
+   `git -C <slot> stash push --include-untracked -m "Unmet tests for #<issue>: <title>" -- <the paths>`, so the tree is
+   clean for the rebase and for the release of the slot. Add the CHANGELOG entry for iteration N and change the spec's
+   status line to `Status: delivered in iteration <N> (PR #<pr>)`. Rebase on `origin/<git.baseBranch>`; on a CHANGELOG
    conflict keep both entries in iteration order.
 6. Open a PR titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
    `Written by the implementer role on <model>.` (`<model>` is the exact string passed as `model` in the
-   Agent call), and a "How verified" section written from the result block (tests, the check) and your own
-   manual check, and the `## Review` section of "The code review" (step 5 there). Set the status to **Review**, read it
-   back, and check it again after a minute (board automation may have changed it).
+   Agent call), and a "How verified" section written from the tester's and the implementer's result blocks (tests, the
+   check) and your own manual check, and the `## Review` section of "The code review" (step 5 there). "How verified"
+   begins with:
+
+   ```
+   Tests written first by the tester role on <model>, failing before the code:
+   - <the tester's Criteria lines, one per line, as it wrote them>
+   ```
+
+   `<model>` is the exact string passed as `model` in the tester's Agent call. For a criterion marked `not tested`, the
+   line gets `; tested by the implementer: <the test of the implementer's Criteria line>`. Each `Failing` line that is
+   not `fails:` follows as `- not failing as expected: <the line>`. Each `unmet:` path of a partial implementer result
+   follows as `- not committed: criterion not met: <path> (criterion <n>)`. The rest of "How verified" (the
+   implementer's tests, the check, the manual check) follows. Set the status to **Review**, read it back, and check it
+   again after a minute (board automation may have changed it).
 7. Enable auto-merge: `gh pr merge <pr> <git.mergeFlags>`, because the spec was approved. Do **not**,
    and say why in the PR, when the PR changes one of `escalation.storyTriggers`, is partial, skipped
    a required manual check, or has blocking review findings left.
 8. If the story ends up only partly done: file the rest as a new story under the same epic (`/story`),
    link both issues, say so in the PR. The PR still closes the old issue; never tick criteria that were not met.
+   When tests of unmet criteria were set aside in step 5, the new story's body lists their paths, the stash's message
+   `Unmet tests for #<issue>: <title>` and the text copied in step 5, so the tests are not lost.
 
 ## Reporting the steps
 
@@ -75,6 +93,7 @@ reports nothing.
 | When | Role | Step |
 |---|---|---|
 | right after the take (step 2.2) | `session` | `slot-taken` |
+| just before the tester is launched (step 3, "The tester") | `tester` | `write-tests` |
 | just before the implementer is launched (step 3) | `implementer` | `implement` |
 | the implementer, before its step 1 / step 2 | `implementer` | `tests` / `code` |
 | the implementer, before every run of the check | `implementer` | `check` |
@@ -91,10 +110,73 @@ The implementer reports its own steps (the paragraph in its prompt); the session
 too, because the code reviewer cannot run a script. A slot whose last step is `done` waits for its merge and shows
 `stalled` once `worktrees.stalledAfterMinutes` has passed, until it is freed.
 
+## The tester
+
+The session keeps the board, the slot and every hard rule; the failing tests are the tester's.
+
+1. **Count.** Before the launch count the agents running, as for the implementer (the live agent limit from
+   `slot.ps1 -Capacity -Porcelain` or `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
+   one to end and say what you wait for; the session never writes the tests itself instead. The tester is one agent (its
+   agent file has no `Agent` tool), and it has returned before the implementer is launched, so a story runs at most one
+   producer at a time.
+2. **Launch.** One Agent call: `subagent_type` `nightmill:tester`, not a fork, not nightmill:worker, with the `model`
+   that **Agent roles and models** in the `workflow` skill gives the role `tester` (`roles.tester.model`, else the schema
+   default), passed explicitly, and the prompt below. When the model cannot be used, stop with the line of that section
+   for `tester` (`Stopped: the tester role cannot run on <model>: <the reason>. Nothing was started on another model.`)
+   and add that the status of #<issue> is In progress and the slot is taken; no implementer is launched.
+3. **Read the result.** The subagent's last message ends with the block of `agents/tester.md`. Record `<tester files>`,
+   the paths of `git -C <slot> status --porcelain --untracked-files=all` (the path after the two status letters; every
+   file is listed, not only its directory), then check, in this order:
+   - `git -C <slot> log origin/<git.baseBranch>..HEAD` is empty (the tester committed nothing), and `<tester files>`
+     is not empty; the one exception is a `Result: partial` whose every `Criteria` line is `not tested`, where nothing
+     is written, `<tester files>` is empty and there is nothing to check;
+   - every path of `<tester files>` is a test path by this line, with `iterations.specDir`, `iterations.decisionsDir`
+     and `iterations.changelog` read from the configuration:
+
+     `Test paths: a directory in the path is named test, tests, __tests__, spec, testdata, fixtures or __fixtures__, or the file name starts with test_ or test-, or contains _test. .test. -test. _spec. .spec. Test. or Tests.; never under iterations.specDir or iterations.decisionsDir, never iterations.changelog.`
+
+   Then:
+   - `Result: complete` or `Result: partial`, and both checks hold: go on with "The implementer". Keep the tester's
+     `Criteria` and `Failing` lines, `<tester files>` and the model passed, for the implementer's prompt and the pull
+     request.
+   - A path that is not a test path: print
+     `Stopped: the tester changed files that are not tests: <the paths, comma-separated>` with the branch and the slot.
+   - `Result: failed`, no result block, an error, a commit, or no changed path outside that exception: print
+     `Stopped: the tester returned failed: <Left, or the reason>` with the branch and the slot.
+
+   On either `Stopped:` line: launch no implementer, open no pull request, leave the status at In progress and the slot
+   taken, commit, push and revert nothing. Do not start another agent on this story in this run; never set Ready.
+
+The prompt, with the placeholders filled in (the criteria and the body verbatim):
+
+```markdown
+Write the failing tests for story #<issue> "<title>" in <owner>/<repo>.
+
+The slot: <absolute slot path>, branch <branch>. Use that absolute path for every file and `git -C <slot path>` for
+every git command; your working directory is not the slot. The branch holds no code for this story yet.
+Do not commit: leave the tests uncommitted in the slot.
+
+The spec: <path in the slot> (read it completely; it is the contract).
+The acceptance criteria of the issue, in order: <the criteria, verbatim>.
+The issue body, in full: <body>.
+
+The project's testing rules:
+- the check: <verification.check>
+- the bench rule: <verification.benchRule, or "none">
+- the invariants: <config invariants, one per line>
+
+In this project iterations.specDir is <iterations.specDir>, iterations.decisionsDir is <iterations.decisionsDir> and
+iterations.changelog is <iterations.changelog>.
+
+End with the result block of your instructions, and nothing after it.
+```
+
 ## The implementer
 
 The session keeps the picking line, the board statuses, the slot, the manual check, the CHANGELOG entry, the
-pull request and every hard rule. The tests and the code are the implementer's.
+pull request and every hard rule. The failing tests are the tester's; the code, and a test for a criterion the tester
+did not test, are the implementer's, and so is the commit of both. The implementer is launched only after "The tester"
+went on.
 
 1. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
    builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
@@ -111,14 +193,19 @@ pull request and every hard rule. The tests and the code are the implementer's.
    re-run the whole check to verify it; CI is the independent run.
    - `Result: complete`: go on with step 4.
    - `Result: partial`: go on with step 4; steps 7 and 8 apply (no auto-merge, the rest filed as a new story,
-     the criteria that were not met are not ticked).
+     the criteria that were not met are not ticked). For a `Result: partial`, the tree check accepts exactly the paths
+     the result lists under Left as `unmet: <path> (criterion <n>)` that are in `<tester files>`:
+     `git -C <slot> status --porcelain --untracked-files=all` may list those paths and no other. Any other dirty path
+     fails the check as it does today. The same holds when "The code review" reads the result of a fix round.
    - `Result: failed`, no result block, or an error: open no pull request. Print
      `Stopped: the implementer returned failed: <Left>` with the branch and the slot, leave the status at
      In progress, commit and push nothing. Do not start another agent on this story in this run; never set Ready.
 
 The prompt, with the placeholders filled in (the criteria and the body verbatim; the report command with the absolute
 path of the script, as `${CLAUDE_PLUGIN_ROOT}` expands in the session; a fix round's prompt carries it too, so inside a
-fix round the step `fix-round-<k>` is followed by the steps of the prompt):
+fix round the step `fix-round-<k>` is followed by the steps of the prompt, and the paragraph on the tester's tests
+too). When the tester wrote nothing, that paragraph is instead "The tester could test no acceptance criterion and
+wrote no test.":
 
 ```markdown
 You are the implementer for story #<issue> "<title>" in <owner>/<repo>.
@@ -129,8 +216,19 @@ Work only in the slot at <absolute slot path>, on branch <branch>. Use that abso
 Read the spec <path in the slot> completely: it is the contract. The acceptance criteria of the issue are:
 <the criteria, verbatim>. The issue body, in full: <body>.
 
+The tester has written the tests for the acceptance criteria into the slot's working tree and has not committed them;
+they fail because the code does not exist yet. They are at: <tester files, one per line>. Which test covers which
+criterion: <the tester's Criteria lines>. Commit them together with your code, once the check is green.
+If you cannot meet a criterion, do not commit the tester's test of it: leave that file uncommitted in the slot (a file
+that also holds tests of other criteria stays uncommitted as a whole) and list it under Left as
+`unmet: <path> (criterion <n>)`. To run the check and commit the rest, set those files aside with
+`git -C <slot path> stash push --include-untracked -m "Unmet tests for #<issue>: <title>" -- <the paths>`, and put them
+back after the commit: find the entry with that message in `git -C <slot path> stash list` and pop that one,
+`git -C <slot path> stash pop stash@{<n>}`, never the top entry without looking (every worktree shares one stash).
+
 Do this:
-1. Turn each acceptance criterion into a test named for the behaviour it protects, and watch it fail.
+1. Run the tester's tests and watch them fail. For each criterion the tester marked `not tested`, write a test named
+   for the behaviour it protects and watch it fail.
 2. Implement until the tests pass. <verification.benchRule, when set>
 3. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
    names the story. Never commit red.
