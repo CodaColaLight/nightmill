@@ -58,7 +58,12 @@
     "doNotPair": "two benchmark-heavy tasks",
     "maxSuggestedAgents": 4,
     "memoryPerAgentGB": 8,
-    "loadWindowSeconds": 10
+    "loadWindowSeconds": 10,
+    "roomCheck": true,
+    "roomMinFreeMB": 2000,
+    "roomMaxCpuPercent": 90,
+    "roomPauseSeconds": 60,
+    "roomMaxWaitMinutes": 30
   },
   "worktrees": {
     "root": "../widgets-wt",

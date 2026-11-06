@@ -219,6 +219,19 @@ has no "How verified"); when a blocking finding is still open the comment on the
   ones; queue or do the work inline otherwise. A lowered limit stops no running agent: wait until fewer run than it
   says. The slot count is changed the same way (`-Capacity -SlotCount N`, `--capacity --slot-count N`); a raised count
   is used by the next take.
+- **Room on the machine.** When the count allows a start (a subagent, a slot build such as a take's warm-up, your own
+  build), check right before it that the machine has room, after the count and before the step report of that launch
+  (only a `dispute-<k>` step is reported before its count):
+  `"${CLAUDE_PLUGIN_ROOT}/scripts/room.ps1"` or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/room.sh"`. Exit 0: start; say a
+  `not checked: unavailable` line once per run. Exit 1: say its `room: waiting` line, then run it again at once with
+  the value of its `room: call again with` line (`-Since <n>`, `--since <n>`; the script has paused), until another
+  exit code; then count again before the start. Exit 3: start nothing and print
+  `Stopped: no room on this machine to start the <role, slot, manual check or check> after <w> min: <the details of its gave-up line>. Nothing was started.`
+  The check itself commits, pushes, reverts, stops or releases nothing, and the board status stays. In `/next` and
+  `/fix` the slot (taken or not), the branch and the files stay as they are; `/spec` does its clean-up of "The spec
+  writer" step 5, as for its other `Stopped:` lines. Exit 2, or a script that cannot run: say once per run
+  `The room check failed: <its standard error on one line>; starting without it.` and start.
+  The check never changes the agent limit, stops an agent or releases a slot; `parallel.roomCheck` false turns it off.
 - Not two tasks over the same files; `parallel.hotFiles` stay with one task. Never pair
   `parallel.doNotPair`. Rebase on the base branch before the PR.
 - Prefer a fresh agent with a short, specific prompt over a fork. Give a role's agent the model that **Agent roles

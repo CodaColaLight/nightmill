@@ -12,16 +12,19 @@
 #                          or fixture); a value is empty when unavailable and its _WHY holds the reason. Returns 2 (the
 #                          message on standard error) for an unusable NIGHTMILL_LOAD_FIXTURE, else 0
 #   load_suggest BUSY      LOAD_SUGGEST, LOAD_REASON (the key), LOAD_WHY (the text); empty when a value is unavailable
+#   room_settings          ROOM_ON (true or false), ROOM_MIN_FREE, ROOM_MAX_CPU, ROOM_PAUSE, ROOM_MAX_WAIT from
+#                          parallel.roomCheck, roomMinFreeMB, roomMaxCpuPercent, roomPauseSeconds and roomMaxWaitMinutes
+#                          (warnings on standard error with the prefix room; docs/specs/iteration-28-machine-room.md)
 #
 # Readers (by uname -s): Linux reads /proc/stat and /proc/meminfo (MemAvailable); Git Bash (MINGW, MSYS, CYGWIN) the
 # same files (MemFree, which carries Windows' available memory); macOS (Darwin) top, vm_stat and sysctl hw.memsize.
 # NIGHTMILL_LOAD_FIXTURE names a file of samples "<cpu percent> <free MB> <total MB>" read instead (no sleep).
 # No jq, no bc: the arithmetic runs in bash integers and in awk.
 
-# _load_setting KEY LOW HIGH DEFAULT: the value of parallel.KEY when it is a whole number from LOW to HIGH, else DEFAULT
-# (with one warning on standard error unless the key is absent or null)
+# _load_setting KEY LOW HIGH DEFAULT [PREFIX]: the value of parallel.KEY when it is a whole number from LOW to HIGH, else
+# DEFAULT (with one warning on standard error, beginning PREFIX: (default load), unless the key is absent or null)
 _load_setting() {
-  local key=$1 lo=$2 hi=$3 def=$4 rec kind val
+  local key=$1 lo=$2 hi=$3 def=$4 prefix=${5:-load} rec kind val
   rec=$(printf '%s\n' "$JSON_FLAT" | K="parallel.$key" LC_ALL=C awk -F '\t' '$1 == ENVIRON["K"] { r = $2 "\t" $3 } END { if (r != "") print r }')
   if [ -z "$rec" ]; then echo "$def"; return 0; fi
   kind=${rec%%$'\t'*}; val=${rec#*$'\t'}
@@ -29,7 +32,7 @@ _load_setting() {
   if [ "$kind" = number ] && [[ "$val" =~ ^[1-9][0-9]{0,5}$ ]] && [ "$val" -ge "$lo" ] && [ "$val" -le "$hi" ]; then
     echo "$val"; return 0
   fi
-  echo "load: parallel.$key must be a whole number from $lo to $hi; using $def" >&2
+  echo "$prefix: parallel.$key must be a whole number from $lo to $hi; using $def" >&2
   echo "$def"
 }
 
@@ -37,6 +40,24 @@ load_settings() {
   LOAD_CEILING=$(_load_setting maxSuggestedAgents 1 99 4)
   LOAD_GB=$(_load_setting memoryPerAgentGB 1 1024 8)
   LOAD_WINDOW=$(_load_setting loadWindowSeconds 2 60 10)
+}
+
+room_settings() {
+  local rec kind val
+  ROOM_ON="true"
+  rec=$(printf '%s\n' "$JSON_FLAT" | K="parallel.roomCheck" LC_ALL=C awk -F '\t' '$1 == ENVIRON["K"] { r = $2 "\t" $3 } END { if (r != "") print r }')
+  if [ -n "$rec" ]; then
+    kind=${rec%%$'\t'*}; val=${rec#*$'\t'}
+    if [ "$kind" = boolean ] && { [ "$val" = "true" ] || [ "$val" = "false" ]; }; then
+      ROOM_ON=$val
+    elif [ "$kind" != null ]; then
+      echo "room: parallel.roomCheck must be true or false; using true" >&2
+    fi
+  fi
+  ROOM_MIN_FREE=$(_load_setting roomMinFreeMB 1 999999 2000 room)
+  ROOM_MAX_CPU=$(_load_setting roomMaxCpuPercent 1 100 90 room)
+  ROOM_PAUSE=$(_load_setting roomPauseSeconds 1 90 60 room)
+  ROOM_MAX_WAIT=$(_load_setting roomMaxWaitMinutes 1 1440 30 room)
 }
 
 # _load_aggregate MODE: reads samples "<cpu> <free> <total>" ("-" for a failed reading) on standard input and prints

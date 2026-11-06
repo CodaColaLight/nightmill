@@ -37,7 +37,8 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    issue comment `/spec` left (`Spec: <path> (PR #<pr>)`), else the milestone's spec in
    `iterations.specDir`. Read it completely; the spec is the contract. The iteration number N is the one
    in the spec's file name.
-2. Take a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
+2. Before it, check the room on the machine (**Parallel work** in the `workflow` skill). Take a slot:
+   `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
    or `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
    worktree; `-Release N` after the merge. Without slots, `git switch -c` from up-to-date `origin/<git.baseBranch>`.
    Respect the agent limit and `parallel.hotFiles`. Right after the take report the step `slot-taken` (see
@@ -47,8 +48,9 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    from the spec (see "The tester" below); then a subagent in the role `implementer` writes the code that makes them
    pass (see "The implementer" below): for each, count the agents, launch it, read its result.
 4. **Have the change reviewed** by a different agent, the `codeReviewer` (see "The code review" below), and let
-   the implementer fix what is blocking. Then, if the change touches any of `verification.manualCheckPaths`, do
-   `verification.manualCheckText` yourself (the subagent runs the check, not this) and note the steps for the PR.
+   the implementer fix what is blocking. Then, if the change touches any of `verification.manualCheckPaths`, the
+   manual check applies. Before it, check the room on the machine (**Parallel work** in the `workflow` skill). Then
+   do `verification.manualCheckText` yourself (the subagent runs the check, not this) and note the steps for the PR.
 5. When the implementer's result is `partial` and lists `unmet:` paths under Left or a dispute that is still open
    (its last result counts), first copy the text of each of those paths and of each disputed file that is not committed
    (`git -C <slot> diff -- <path>` for a changed file, the file for a new one) for step 8, then set them aside with
@@ -56,6 +58,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    clean for the rebase and for the release of the slot. Add the CHANGELOG entry for iteration N and change the spec's
    status line to `Status: delivered in iteration <N> (PR #<pr>)`. Rebase on `origin/<git.baseBranch>`; on a CHANGELOG
    conflict keep both entries in iteration order.
+   Before you run the check for that commit, check the room on the machine (**Parallel work** in the `workflow` skill).
 6. Open a PR titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
    `Written by the implementer role on <model>.` (`<model>` is the exact string passed as `model` in the
    Agent call), and a "How verified" section written from the tester's and the implementer's result blocks (tests, the
@@ -139,7 +142,7 @@ The session keeps the board, the slot and every hard rule; the failing tests are
    `slot.ps1 -Capacity -Porcelain` or `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
    one to end and say what you wait for; the session never writes the tests itself instead. The tester is one agent (its
    agent file has no `Agent` tool), and it has returned before the implementer is launched, so a story runs at most one
-   producer at a time.
+   producer at a time. Then check the room on the machine (**Parallel work** in the `workflow` skill).
 2. **Launch.** One Agent call: `subagent_type` `nightmill:tester`, not a fork, not nightmill:worker, with the `model`
    that **Agent roles and models** in the `workflow` skill gives the role `tester` (`roles.tester.model`, else the schema
    default), passed explicitly, and the prompt below. When the model cannot be used, stop with the line of that section
@@ -204,6 +207,7 @@ went on.
    builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
    `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
    wait for; the session never writes the code itself instead. The implementer is one agent (its prompt forbids launching others).
+   Then check the room on the machine (**Parallel work** in the `workflow` skill).
 2. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
    `model` that **Agent roles and models** in the `workflow` skill gives the role `implementer`
    (`roles.implementer.model`, else the schema default), passed explicitly, and the prompt below. When the model
@@ -361,8 +365,9 @@ path is not the tester's, and a tester file is the tester's as a whole. The sess
    with the branch and the slot, leave the status at In progress, the slot taken and the round's work uncommitted in
    the slot, and push nothing. The undo itself makes no commit.
 5. **A dispute.** When the implementer's `Disputes:` line is not `none` (and its round was not undone), while a fix
-   round is left: report `dispute-<k>` (role `tester`; k is the fix round the exchange uses), count the agents as in
-   "The tester", record `<dispute base>`, the output of `git -C <slot> rev-parse HEAD`, and launch `nightmill:tester`
+   round is left: report `dispute-<k>` (role `tester`; k is the fix round the exchange uses) and count the agents as in
+   "The tester". Then check the room on the machine (**Parallel work** in the `workflow` skill). Record
+   `<dispute base>`, the output of `git -C <slot> rev-parse HEAD`, and launch `nightmill:tester`
    again (one Agent call, not a fork, with the `model` of the role `tester` passed explicitly) with the dispute prompt
    below. Read its result and check it, in this order:
    - `git -C <slot> rev-parse HEAD is still <dispute base>` (the tester committed nothing);
@@ -440,7 +445,8 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    (the line may name the other producer, then name it). When the validator cannot run (exit code 2, missing
    script), stop with `Stopped: the pairing could not be checked: <the reason>. Nothing was reviewed.` A reviewer
    model that is not in `models.ranking` is only a warning of the validator and does not stop the run.
-2. **Count and launch.** Count the agents as for the implementer. One Agent call: `subagent_type`
+2. **Count and launch.** Count the agents as for the implementer. Then check the room on the machine
+   (**Parallel work** in the `workflow` skill). One Agent call: `subagent_type`
    `nightmill:code-reviewer`, not a fork, with the `model` that **Agent roles and models** gives `codeReviewer`
    (`roles.codeReviewer.model`, else the schema default), passed explicitly. When the model cannot be used, stop with
    that section's line for `codeReviewer`, naming the status and the slot.

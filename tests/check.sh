@@ -26,6 +26,7 @@ run "smoke-status.sh" bash tests/smoke-status.sh
 run "smoke-template-board.sh" bash tests/smoke-template-board.sh
 run "smoke-models.sh" bash tests/smoke-models.sh
 run "smoke-load.sh" bash tests/smoke-load.sh
+run "smoke-room.sh" bash tests/smoke-room.sh
 
 ps=""
 if command -v pwsh >/dev/null 2>&1; then ps=pwsh; elif command -v powershell >/dev/null 2>&1; then ps=powershell; fi
@@ -39,6 +40,7 @@ if [ -n "$ps" ]; then
   run "smoke-template-board.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
   run "smoke-models.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-models.ps1
   run "smoke-load.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-load.ps1
+  run "smoke-room.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-room.ps1
 else
   skipped+=("PowerShell smoke tests (no pwsh or powershell)")
 fi

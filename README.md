@@ -46,6 +46,7 @@ not a conversation.
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
 | `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
+| `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -153,7 +154,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
-| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10) |
+| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled |
 
 `templates/nightmill.example.json` is a complete example.
@@ -305,6 +306,26 @@ then there is no suggestion (exit 1). It changes nothing: to apply a suggestion,
 `memory-free`, `memory-total`, `window`, `agent-limit`, `slot-count`, `slots-busy`, `agents-running`,
 `memory-per-agent`, `ceiling`, `suggested`.
 
+### Room for one more agent
+
+```sh
+scripts/room.ps1 [-Since <seconds>]
+bash scripts/room.sh [--since <seconds>]
+```
+
+Before `/next`, `/spec` and `/fix` start an agent (every subagent, every take of a slot and the manual check), right
+after they count the agents, they check that the machine has room for it: the free memory must be at least
+`parallel.roomMinFreeMB` (2000 MB by default) and the CPU load at most `parallel.roomMaxCpuPercent` (90% by default),
+over 3 one-second samples taken with the readers of the load command. While there is no room the skill says what it
+waits for in one line (`room: waiting for memory: free memory 1500 MB, limit at least 2000 MB (waited 0 of 30 min; next
+check in 60 s)`), pauses `parallel.roomPauseSeconds` (60 s by default) and checks again, and starts the agent as soon
+as there is room. After the longest wait, `parallel.roomMaxWaitMinutes` (30 min by default), it stops that task with a
+`Stopped:` line and starts nothing; the story stays where it is, and `/fix all` ends its run. A measure that cannot be
+taken is not checked, and the skill says so once; with neither, the skill starts as before. The check only holds a
+start back: it never changes the agent limit, stops an agent or frees a slot. A slot whose skill waits longer than
+`worktrees.stalledAfterMinutes` shows stalled in `/status` while it waits. To switch the check off:
+`"parallel": { "roomCheck": false }`.
+
 ## Developing nightmill
 
 nightmill develops itself with its own workflow: a board, the eight statuses, specs, one check
@@ -323,6 +344,7 @@ bash tests/smoke-status.sh  # status.sh against fixtures and a fake gh
 bash tests/smoke-template-board.sh # template-board.sh against fixtures and a fake gh
 bash tests/smoke-models.sh  # models.sh: the table of the role models
 bash tests/smoke-load.sh    # load.sh against a fixture of readings
+bash tests/smoke-room.sh   # room.sh against a fixture of readings
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -333,6 +355,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-status.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-models.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-load.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
 claude plugin validate . --strict
 ```
 
