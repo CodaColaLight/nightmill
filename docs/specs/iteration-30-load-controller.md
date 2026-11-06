@@ -1,6 +1,6 @@
 # Iteration 30: an opt-in controller adjusts the agent limit from the measured load
 
-Status: draft, awaiting approval (#82)
+Status: delivered in iteration 30 (PR #106)
 
 Story: #82, epic #47 (Unattended runs). Adds one controller pass, `scripts/control.sh` and `scripts/control.ps1`, that
 measures CPU load and free memory with the library of iteration 24 (`scripts/lib/load.*`), takes that library's
