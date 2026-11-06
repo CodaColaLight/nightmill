@@ -939,6 +939,57 @@ for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-dashboard' "$f" || { echo "FAIL: $f does not run smoke-dashboard"; fail=1; }
 done
 
+echo "== slots pane is wired"
+# A pane beside the Claude chat shows the slots (iteration 32): a hooks module named under "modules" in hooks.json,
+# the panel scripts it runs, their smoke tests and the expected records exist; the module and the scripts only read
+# (no button, input, select or link, no file, store, state, prompt, tool, agent, http or model call, no slot action, no
+# gh call, no reader of the slot markers); the scripts carry the porcelain call, the clock and the interval key; the
+# schema, the example and the README carry the key and the versions; the check and CI run the tests. Each phrase stands
+# on one line of its file.
+for f in hooks/panel.tsx hooks/panel.test.tsx scripts/panel.sh scripts/panel.ps1 tests/smoke-panel.sh tests/smoke-panel.ps1 tests/fixtures/panel/run-stall-old-free/expected.txt tests/fixtures/panel/run-stall-old-free/markers.txt; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+grep -qF '"modules": ["./panel.tsx"]' hooks/hooks.json 2>/dev/null || { echo "FAIL: hooks/hooks.json does not name the module: \"modules\": [\"./panel.tsx\"]"; fail=1; }
+grep -q '"SessionStart"' hooks/hooks.json 2>/dev/null || { echo "FAIL: hooks/hooks.json lost its SessionStart hook"; fail=1; }
+for w in 'nightmill-slots' 'Windows_NT' 'scripts/panel.ps1' 'scripts/panel.sh' '$.clock.every(' '$.ui.open(' "'unknown'"; do
+  grep -qF -- "$w" hooks/panel.tsx 2>/dev/null || { echo "FAIL: hooks/panel.tsx does not carry: $w"; fail=1; }
+done
+# outside comment lines the module draws nothing that can be pressed and reaches nothing but the panel script
+if [ -f hooks/panel.tsx ]; then
+  panel_code=$(grep -vE '^[[:space:]]*(//|/\*|\*)' hooks/panel.tsx || true)
+  for w in Button Input Select Link onPress '$.fs.' '$.store.' '$.state.' '$.prompt.' '$.tool.' '$.agent.' '$.http.' '$.model.' '$.command.run' '$.session.append' 'slot.sh' 'slot.ps1' '.slots'; do
+    if printf '%s\n' "$panel_code" | grep -qF -- "$w"; then echo "FAIL: hooks/panel.tsx uses $w outside a comment; the pane is read-only and runs only the panel script"; fail=1; fi
+  done
+fi
+grep -qF -- 'slot.sh" --status --porcelain' scripts/panel.sh 2>/dev/null || { echo "FAIL: scripts/panel.sh does not call slot.sh --status --porcelain"; fail=1; }
+grep -qF -- '-Status -Porcelain' scripts/panel.ps1 2>/dev/null || { echo "FAIL: scripts/panel.ps1 does not call slot.ps1 -Status -Porcelain"; fail=1; }
+for f in scripts/panel.sh scripts/panel.ps1; do
+  for w in panelRefreshSeconds NIGHTMILL_NOW; do
+    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
+  done
+  if [ -f "$f" ]; then
+    panel_script=$(grep -vE '^[[:space:]]*#' "$f" || true)
+    for w in '.slots' '--take' '--release' '--abandon' '--reap' '--report' '--capacity' '-Take' '-Release' '-Abandon' '-Reap' '-Report' '-Capacity'; do
+      if printf '%s\n' "$panel_script" | grep -qF -- "$w"; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
+    done
+    if printf '%s\n' "$panel_script" | grep -qE '(^|[^A-Za-z0-9_-])gh +[a-z]'; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
+  fi
+done
+grep -qF '"panelRefreshSeconds": { "type": "integer", "minimum": 5, "default": 15,' schema/nightmill.schema.json || { echo "FAIL: schema: worktrees.panelRefreshSeconds is not an integer of at least 5, default 15"; fail=1; }
+json_load templates/nightmill.example.json
+[ "$(json_get worktrees.panelRefreshSeconds)" = 15 ] || { echo "FAIL: templates/nightmill.example.json: worktrees.panelRefreshSeconds is not 15"; fail=1; }
+for w in /nightmill-slots panelRefreshSeconds 2.1.287 panel.ps1; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+for f in tests/check.sh .github/workflows/ci.yml; do
+  for w in smoke-panel 'claude plugin test'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry: $w"; fail=1; }
+  done
+done
+for w in 'claude plugin test --help' 'claude plugin test not available'; do
+  grep -qF -- "$w" tests/check.sh || { echo "FAIL: tests/check.sh does not carry: $w"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

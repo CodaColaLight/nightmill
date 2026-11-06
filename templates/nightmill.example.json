@@ -75,6 +75,7 @@
     "slots": 2,
     "stalledAfterMinutes": 30,
     "dashboardRefreshSeconds": 60,
+    "panelRefreshSeconds": 15,
     "ports": { "server": 8100, "client": 5200 },
     "warmup": [{ "dir": "client", "command": "npm ci", "lockfile": "client/package-lock.json" }],
     "runHints": [

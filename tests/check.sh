@@ -4,6 +4,7 @@
 #   2. the bash smoke tests (they need git and the tools every POSIX shell has, no jq)
 #   3. the PowerShell smoke tests (when powershell or pwsh is on the PATH)
 #   4. claude plugin validate --strict (when claude is on the PATH)
+#   5. claude plugin test . (the module test hooks/panel.test.tsx; when claude has the plugin test subcommand)
 # Exit code is non-zero when any step that ran failed. Skipped steps are listed at the end.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
@@ -29,6 +30,7 @@ run "smoke-load.sh" bash tests/smoke-load.sh
 run "smoke-room.sh" bash tests/smoke-room.sh
 run "smoke-control.sh" bash tests/smoke-control.sh
 run "smoke-dashboard.sh" bash tests/smoke-dashboard.sh
+run "smoke-panel.sh" bash tests/smoke-panel.sh
 
 ps=""
 if command -v pwsh >/dev/null 2>&1; then ps=pwsh; elif command -v powershell >/dev/null 2>&1; then ps=powershell; fi
@@ -45,14 +47,21 @@ if [ -n "$ps" ]; then
   run "smoke-room.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-room.ps1
   run "smoke-control.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-control.ps1
   run "smoke-dashboard.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
+  run "smoke-panel.ps1" "$ps" -NoProfile -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
 else
   skipped+=("PowerShell smoke tests (no pwsh or powershell)")
 fi
 
 if command -v claude >/dev/null 2>&1; then
   run "claude plugin validate" claude plugin validate . --strict
+  if claude plugin test --help >/dev/null 2>&1 </dev/null; then
+    run "claude plugin test" claude plugin test .
+  else
+    skipped+=("claude plugin test not available")
+  fi
 else
   skipped+=("claude plugin validate (claude is not installed)")
+  skipped+=("claude plugin test not available")
 fi
 
 echo

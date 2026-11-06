@@ -40,6 +40,7 @@ not a conversation.
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. |
 | `/nightmill:models` | One table of each agent role's model, where it comes from (the config or the default), its rank and whether the reviewer pairings hold. Read-only. |
+| `/nightmill-slots [off]` | Opens a read-only pane beside the chat with every slot and its agent (running, stalled, unknown), rereading them every `panelRefreshSeconds`; `off` closes it. Needs Claude Code 2.1.287 or later (see "Watching the run beside the chat"). |
 | `/nightmill:control` | One pass of the opt-in load controller: measures the load and, in `apply` mode, raises or lowers the agent limit within the configured bounds; `/loop 5m /nightmill:control` runs it in a session. |
 | `/nightmill:check` | Runs the project's check command and fixes the cause of a failure. |
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
@@ -47,6 +48,7 @@ not a conversation.
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
 | `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
+| `scripts/panel.ps1`, `scripts/panel.sh` | Read-only: the slot lines the pane draws, from `slot --status --porcelain`. |
 | `scripts/dashboard.ps1`, `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
 | `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
 | `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
@@ -158,7 +160,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5) |
-| `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser |
+| `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser, and `panelRefreshSeconds` (default 15): how often the slots pane beside the chat reads the slots again |
 
 `templates/nightmill.example.json` is a complete example.
 
@@ -289,6 +291,34 @@ To stop it, press Ctrl-C in that terminal or close the terminal; nothing keeps r
 and, after three intervals without a rewrite, says it is out of date. The page has no buttons or links and changes
 nothing. `--once` (`-Once`) renders it once. The data comes from `status.sh --porcelain` (`status.ps1 -Porcelain`),
 which prints the tables of `/status` tab-separated for programs (the record kinds `item`, `note`, `slot`, `capacity`).
+
+### Watching the run beside the chat
+
+The plugin also carries a pane for the Claude chat itself (a Claude Code mod, `hooks/panel.tsx`). It shows every slot,
+free or busy, the agent state, the branch, the skill and step and the age of the last report: the Slots section of
+`/nightmill:status` without the pull request, CI and flag columns. While the pane is open it reads them again every
+`worktrees.panelRefreshSeconds` seconds (default 15) and shows the time of the last read. **running**, **stalled** and
+**unknown** mean what they mean in "What a slot's agent is doing".
+
+`/nightmill-slots` opens it, also while a run is going in that session. `/nightmill-slots off` or the pane's close
+mark closes it and stops the reading. Nothing opens it by itself, and nothing runs until it is opened. To keep the
+plugin's mod from loading at all, the only switches are Claude Code's own: `"disableAllHooks": true` in the user
+settings (which also silences the `SessionStart` hint) or `--safe-mode`. The skills, `/nightmill:status` and the page
+in the browser work without it.
+
+The pane changes nothing: it has no buttons or links, it runs only `scripts/panel.*`, and that runs only
+`slot --status --porcelain` (no `gh`, no network). A slot that cannot be read is shown as `unknown` with the reason,
+never as free; when the slots cannot be read at all, the pane says so and shows no rows rather than the last ones.
+
+Where it works: Claude Code 2.1.287 or later in a terminal (also an editor's integrated terminal and the JetBrains
+plugin), the Code tab of the Desktop app from 2.1.286, and the VS Code extension's chat panel from extension 2.1.299
+(2.1.304 where the session does not fetch feature flags, such as on Bedrock). It is not drawn in `claude -p`, the
+Agent SDK, cloud sessions, the Desktop app's WSL sessions, or on claude.ai and the mobile app (Remote Control draws it
+in the terminal on the machine); there the command says it cannot show the pane, or is not offered. Claude Code before
+2.1.287 does not show the pane. An organization can turn installed mods off, and mods are early access in Claude Code
+and may change between its releases.
+
+On Windows the pane runs `scripts/panel.ps1` with Windows PowerShell, elsewhere `scripts/panel.sh` with bash.
 
 ### Changing the numbers during a session
 
@@ -425,6 +455,7 @@ bash tests/smoke-load.sh    # load.sh against a fixture of readings
 bash tests/smoke-room.sh   # room.sh against a fixture of readings
 bash tests/smoke-control.sh # control.sh against fixtures of readings and a fixed clock
 bash tests/smoke-dashboard.sh # dashboard.sh against fixtures and a fake gh
+bash tests/smoke-panel.sh   # panel.sh against fixtures
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
@@ -438,10 +469,14 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-load.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-control.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
 claude plugin validate . --strict
+claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```
 
-CI runs all of them. The lint fails on any word from the private word list (`tests/forbidden-words.local.txt`): nightmill was
+CI runs all of them. `tests/check.sh` runs `claude plugin test .` when `claude` is on the PATH and has the
+`plugin test` subcommand, and lists it as skipped otherwise; CI runs it in the `validate` job, which does not block a
+merge. The lint fails on any word from the private word list (`tests/forbidden-words.local.txt`): nightmill was
 extracted from one project and must not know that project's name, its maintainer's name or its
 domain.
 
