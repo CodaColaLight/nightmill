@@ -1,6 +1,6 @@
 # Iteration 27: the implementer may not change the tester's tests, and a doubtful test goes back to the tester
 
-Status: draft, awaiting approval (#44)
+Status: delivered in iteration 27 (PR #99)
 
 Story: #44, epic #41 (Independent test writing). Guards the tests that the tester of iterations 25 and 26 writes: the
 implementer's prompt in `/next` and the fixer's prompt in `/fix` forbid editing or deleting the tester's files; after
