@@ -1,11 +1,12 @@
 # tools/make-social-preview.ps1 - renders docs/social-preview.png (1280 x 640): the plugin icon on dark purple
-# with "Nightmill" set in Creepster and one line under it. The PNG is derived output; GitHub takes it only
+# with "Nightmill" and a slogan under it set in Creepster, and a tagline along the bottom edge. The PNG is derived output; GitHub takes it only
 # through the web UI (Settings > General > Social preview), there is no API for it.
 #   powershell -ExecutionPolicy Bypass -File tools\make-social-preview.ps1 [-Out docs\social-preview.png]
 # Needs .claude-plugin\icon.png (run tools\make-icon.ps1 first if it changed) and tools\fonts\Creepster-Regular.ttf
 # (SIL Open Font License 1.1, licence next to it).
 param(
   [string]$Out = (Join-Path (Split-Path $PSScriptRoot -Parent) "docs\social-preview.png"),
+  [string]$Slogan = "Code in your sleep",
   [string]$Tagline = "A lights-out development workflow for Claude Code"
 )
 $ErrorActionPreference = "Stop"
@@ -34,7 +35,7 @@ $iconSize = 600
 $g.DrawImage($icon, 20, ($H - $iconSize) / 2, $iconSize, $iconSize)
 $icon.Dispose()
 
-# Wordmark: the largest Creepster size that fits the right-hand column, left aligned, with the tagline under it.
+# Wordmark: the largest Creepster size that fits the right-hand column, left aligned.
 $fonts = New-Object System.Drawing.Text.PrivateFontCollection
 $fonts.AddFontFile($fontFile)
 $family = $fonts.Families[0]
@@ -48,19 +49,29 @@ do {
 } while ($tw -gt $colW)
 $th = $g.MeasureString("Nightmill", $title, 4000, $fmt).Height
 
-# The tagline shrinks from 28 px until it fits the column (a longer -Tagline stays inside the card).
+# The slogan sits under the wordmark in the same font, at 42% of its size, shrunk until it fits the column.
+$slSize = [math]::Floor($size * 0.42)
+do {
+  $sl = New-Object System.Drawing.Font $family, $slSize, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
+  $slW = $g.MeasureString($Slogan, $sl, 4000, $fmt).Width
+  if ($slW -gt $colW) { $slSize -= 2; $sl.Dispose() }
+} while ($slW -gt $colW)
+$slH = $g.MeasureString($Slogan, $sl, 4000, $fmt).Height
+$gap = 8
+$y = ($H - ($th + $gap + $slH)) / 2 - 20
+$g.DrawString("Nightmill", $title, [System.Drawing.Brushes]::White, $colX, $y, $fmt)
+$g.DrawString($Slogan, $sl, (New-Object System.Drawing.SolidBrush $lavender), ($colX + 6), ($y + $th + $gap), $fmt)
+
+# The tagline goes along the bottom edge, centred on the card; it shrinks from 28 px until it fits (a longer
+# -Tagline stays inside the card).
 $tagSize = 28.0
 do {
   $tag = New-Object System.Drawing.Font "Segoe UI", $tagSize, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
   $tagW = $g.MeasureString($Tagline, $tag, 4000, $fmt).Width
-  if ($tagW -gt ($colW - 6)) { $tagSize -= 1; $tag.Dispose() }
-} while ($tagW -gt ($colW - 6))
+  if ($tagW -gt ($W - 120)) { $tagSize -= 1; $tag.Dispose() }
+} while ($tagW -gt ($W - 120))
 $tagH = $g.MeasureString($Tagline, $tag, 4000, $fmt).Height
-$gap = 24
-$blockH = $th + $gap + $tagH
-$y = ($H - $blockH) / 2
-$g.DrawString("Nightmill", $title, [System.Drawing.Brushes]::White, $colX, $y, $fmt)
-$g.DrawString($Tagline, $tag, (New-Object System.Drawing.SolidBrush $lavender), ($colX + 6), ($y + $th + $gap), $fmt)
+$g.DrawString($Tagline, $tag, (New-Object System.Drawing.SolidBrush $lavender), (($W - $tagW) / 2), ($H - 28 - $tagH), $fmt)
 
 New-Item -ItemType Directory -Force (Split-Path $Out -Parent) | Out-Null
 $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)

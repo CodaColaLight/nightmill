@@ -1,5 +1,6 @@
 # tools/make-icon.ps1 - renders .claude-plugin/icon.png (1024 px, square): a white crescent moon
-# and a white windmill on dark purple. Edit the numbers here and re-run; the PNG is derived output.
+# and a white windmill on dark purple, with three small black bats flying away from the moon.
+# Edit the numbers here and re-run; the PNG is derived output.
 #   powershell -ExecutionPolicy Bypass -File tools\make-icon.ps1 [-Size 1024] [-Out .claude-plugin\icon.png]
 param(
   [int]$Size = 1024,
@@ -69,6 +70,46 @@ $g.FillEllipse($bg, ($hubX - 13) * $s, ($hubY - 13) * $s, 26 * $s, 26 * $s)
 $dw = 54; $dh = 105
 $g.FillRectangle($bg, ($hubX - $dw / 2) * $s, (900 - $dh) * $s, $dw * $s, $dh * $s)
 $g.FillEllipse($bg, ($hubX - $dw / 2) * $s, (900 - $dh - $dw / 2) * $s, $dw * $s, $dw * $s)
+
+# Bats: black silhouettes that leave the moon and grow as they come closer, on the free right-hand side
+# of the sky. The outline is drawn once in units of half a wingspan (x right, y down) and mirrored for
+# the left wing; each bat is scaled, tilted and moved to its place.
+$black = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
+$wing = @(
+  @(0.10, -0.06), @(0.30, -0.30), @(0.62, -0.44), @(1.00, -0.34),   # leading edge out to the tip
+  @(0.80, -0.08), @(0.80, 0.06), @(0.58, 0.00), @(0.55, 0.14),      # trailing edge, scalloped
+  @(0.34, 0.06), @(0.28, 0.20), @(0.10, 0.14)
+)
+function Fill-Bat([double]$cx, [double]$cy, [double]$span, [double]$tilt) {
+  $u = $span / 2 * $s
+  $m = New-Object System.Drawing.Drawing2D.Matrix
+  $m.Translate([single]($cx * $s), [single]($cy * $s))
+  $m.Rotate([single]$tilt)
+  $parts = New-Object System.Collections.ArrayList
+  foreach ($sign in 1, -1) {
+    $pts = foreach ($p in $wing) { New-Object System.Drawing.PointF ([single]($sign * $p[0] * $u)), ([single]($p[1] * $u)) }
+    $a = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $a.AddPolygon([System.Drawing.PointF[]]$pts)
+    [void]$parts.Add($a)
+    $e = New-Object System.Drawing.Drawing2D.GraphicsPath                                                   # ear
+    $e.AddPolygon([System.Drawing.PointF[]]@(
+      (New-Object System.Drawing.PointF ([single]($sign * 0.02 * $u)), ([single](-0.28 * $u))),
+      (New-Object System.Drawing.PointF ([single]($sign * 0.09 * $u)), ([single](-0.42 * $u))),
+      (New-Object System.Drawing.PointF ([single]($sign * 0.12 * $u)), ([single](-0.26 * $u)))))
+    [void]$parts.Add($e)
+  }
+  $body = New-Object System.Drawing.Drawing2D.GraphicsPath
+  $body.AddEllipse([single](-0.11 * $u), [single](-0.20 * $u), [single](0.22 * $u), [single](0.48 * $u))
+  [void]$parts.Add($body)
+  $head = New-Object System.Drawing.Drawing2D.GraphicsPath
+  $head.AddEllipse([single](-0.09 * $u), [single](-0.31 * $u), [single](0.18 * $u), [single](0.18 * $u))
+  [void]$parts.Add($head)
+  # Every part is filled on its own, so overlapping parts of opposite orientation cannot cancel out.
+  foreach ($part in $parts) { $part.Transform($m); $g.FillPath($black, $part) }
+}
+foreach ($bat in @(@(740, 340, 70, -14), @(668, 442, 104, 9), @(618, 562, 146, -7))) {
+  Fill-Bat $bat[0] $bat[1] $bat[2] $bat[3]
+}
 
 New-Item -ItemType Directory -Force (Split-Path $Out -Parent) | Out-Null
 $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
