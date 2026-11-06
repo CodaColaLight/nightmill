@@ -67,8 +67,9 @@ rule. The spec file is the writer's.
    `git fetch`, then create `<git.specPrefix><N>-<slug>` from `origin/<git.baseBranch>` and switch to it.
    Remember the branch you came from. You choose `<slug>`; the file path is known before the launch.
 2. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
-   builds). At `parallel.maxAgents` wait for one to end and say what you wait for; the session never writes the
-   spec itself instead. The writer is one agent (its prompt forbids launching others).
+   builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
+   `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
+   wait for; the session never writes the spec itself instead. The writer is one agent (its prompt forbids launching others).
 3. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
    `model` that **Agent roles and models** in the `workflow` skill gives the role `specWriter`
    (`roles.specWriter.model`, else the schema default), passed explicitly, and the prompt below. When the model

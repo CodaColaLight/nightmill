@@ -7,3 +7,4 @@ slot  Branch       Since  PR          Flag
    2  feat/closed    11h  #61 closed  stale: busy, PR closed (slot --abandon 2)
    3  feat/stale      3d  -           stale: busy, no open PR
    4  feat/new       10m  -
+capacity: slots 4 (config), agents 2 (default)

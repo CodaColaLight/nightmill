@@ -5,6 +5,8 @@
 #   slot.sh --release 1                 # after the PR merged
 #   slot.sh --abandon 1                 # free a slot whose task was dropped (no merged PR)
 #   slot.sh --reap                      # free every busy slot whose PR has merged (--take does this first)
+#   slot.sh --capacity [--slot-count N] [--agent-limit M] [--porcelain]   # show or set the numbers for the session
+#   slot.sh --capacity --clear          # back to the configuration's numbers
 # Needs git and (for --release and --reap) gh. Run it from inside the project: any checkout or worktree of
 # it. Configuration comes from .claude/nightmill.json in the main checkout, keys under "worktrees"
 # (see schema/nightmill.schema.json); WORKER_SLOTS overrides worktrees.slots. A slot is never removed:
@@ -16,17 +18,28 @@
 # (so a reused branch name or work after the merge keeps the slot busy and nothing is deleted). A slot that
 # cannot be judged (gh missing or failing, no fetch) stays busy and a note goes to standard error; the freeing
 # never makes a take fail. Same behaviour as slot.ps1 (-Reap).
+# Capacity (--capacity; iteration 22): the slot count and the agent limit can be set during a session. The set
+# values are kept in <root>/.slots/capacity.json (untracked, shared by every worktree) until --capacity --clear
+# or until set again; the tracked config is never edited. Slot count: the live value, then WORKER_SLOTS, then
+# worktrees.slots, then 2. Agent limit: the live value, then parallel.maxAgents, then 2. A busy slot above a
+# lowered count is retiring: it is no longer handed out, is never touched, and is no longer listed once released.
+# Same behaviour as slot.ps1 (-Capacity).
 set -euo pipefail
 
 usage() {
-  echo "usage: slot.sh --status | --take <branch> [--slot N] [--base <ref>] [--skip-warmup] | --release N | --abandon N | --reap" >&2
+  echo "usage: slot.sh --status | --take <branch> [--slot N] [--base <ref>] [--skip-warmup] | --release N | --abandon N | --reap | --capacity [--slot-count N] [--agent-limit M] [--clear] [--porcelain]" >&2
   exit 1
 }
 
 take=""; release=0; abandon=0; status=0; slot=0; base=""; skip=0; porcelain=0; reap=0
+capacity=0; clear=0; set_slots=""; set_agents=""; has_slots=0; has_agents=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --reap) reap=1 ;;
+    --capacity) capacity=1 ;;
+    --clear) clear=1 ;;
+    --slot-count) { [ $# -ge 2 ] && [ "$has_slots" = 0 ]; } || usage; set_slots=$2; has_slots=1; shift ;;
+    --agent-limit) { [ $# -ge 2 ] && [ "$has_agents" = 0 ]; } || usage; set_agents=$2; has_agents=1; shift ;;
     --status) status=1 ;;
     --porcelain) porcelain=1 ;;
     --take) take=${2:?--take needs a branch}; shift ;;
@@ -57,11 +70,69 @@ mkdir -p "$main/$root_rel"
 root=$(cd "$main/$root_rel" && pwd)
 state="$root/.slots"
 
-count=$(q worktrees.slots); count=${count:-2}
 if [ -n "${WORKER_SLOTS:-}" ]; then
   [[ "$WORKER_SLOTS" =~ ^[1-9][0-9]?$ ]] || { echo "WORKER_SLOTS must be a number from 1 to 99" >&2; exit 1; }
-  count=$WORKER_SLOTS
 fi
+
+# The numbers: what the configuration alone gives, and the effective ones (see the header)
+cap="$state/capacity.json"
+cfg_slots=$(q worktrees.slots); cfg_slots_from=config
+if [ -z "$cfg_slots" ]; then cfg_slots=2; cfg_slots_from=default; fi
+cfg_agents=$(q parallel.maxAgents); cfg_agents_from=config
+if [ -z "$cfg_agents" ]; then cfg_agents=2; cfg_agents_from=default; fi
+valid_n() { [[ "$1" =~ ^[1-9][0-9]?$ ]]; }
+
+# read_capacity: the usable values of capacity.json in live_slots and live_agents (empty when not set); an unusable
+# file or value is ignored, with one note on standard error
+read_capacity() {
+  local flat k rec kind val reason=""
+  live_slots=""; live_agents=""
+  [ -f "$cap" ] || return 0
+  if ! flat=$(JSON_MODE=flat JSON_FILE="$cap" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" 2>/dev/null); then
+    echo "slot: capacity.json: not valid JSON; using the configuration" >&2; return 0
+  fi
+  rec=${flat%%$'\n'*}
+  if [ "$(printf '%s\n' "$rec" | cut -f2)" != object ]; then
+    echo "slot: capacity.json: not an object; using the configuration" >&2; return 0
+  fi
+  for k in slots maxAgents; do
+    rec=$(printf '%s\n' "$flat" | K=$k LC_ALL=C awk -F '\t' '$1 == ENVIRON["K"] { print $2 "\t" $3 }')
+    [ -n "$rec" ] || continue
+    kind=${rec%%$'\t'*}; val=${rec#*$'\t'}
+    if [ "$kind" = number ] && valid_n "$val"; then
+      if [ "$k" = slots ]; then live_slots=$val; else live_agents=$val; fi
+    else
+      reason="${reason:+$reason, }$k is not a whole number from 1 to 99"
+    fi
+  done
+  if [ -n "$reason" ]; then echo "slot: capacity.json: $reason; using the configuration" >&2; fi
+  return 0
+}
+
+# resolve: count and slots_from, agents and agents_from, from the live values, WORKER_SLOTS and the configuration
+resolve() {
+  if [ -n "$live_slots" ]; then count=$live_slots; slots_from=live
+  elif [ -n "${WORKER_SLOTS:-}" ]; then count=$WORKER_SLOTS; slots_from=WORKER_SLOTS
+  else count=$cfg_slots; slots_from=$cfg_slots_from; fi
+  if [ -n "$live_agents" ]; then agents=$live_agents; agents_from=live
+  else agents=$cfg_agents; agents_from=$cfg_agents_from; fi
+}
+# from <source> <value of the configuration alone>: the text in brackets
+from() { case "$1" in live|WORKER_SLOTS) echo "$1; config $2" ;; *) echo "$1" ;; esac; }
+
+read_capacity
+resolve
+
+# last_slot: the last slot to list or reap: the count, or a higher slot that is busy (retiring)
+last_slot() {
+  local f n top=$count
+  for f in "$state"/slot-*.json; do
+    [ -e "$f" ] || continue
+    n=${f##*/slot-}; n=${n%.json}
+    if [[ "$n" =~ ^[1-9][0-9]*$ ]] && [ "$n" -gt "$top" ]; then top=$n; fi
+  done
+  echo "$top"
+}
 
 slot_dir() { echo "$root/slot-$1"; }
 marker() { echo "$state/slot-$1.json"; }
@@ -76,8 +147,9 @@ sha256() {
 freed=0
 # reap_all: free every busy slot whose PR has merged (see the header); prints one line per freed slot
 reap_all() {
-  local n dir branch tip tmpf errf flat pr fetched=0 freason ferr
-  for ((n = 1; n <= count; n++)); do
+  local n dir branch tip tmpf errf flat pr fetched=0 freason ferr top
+  top=$(last_slot)
+  for ((n = 1; n <= top; n++)); do
     has_marker "$n" || continue
     dir=$(slot_dir "$n")
     [ -d "$dir" ] || continue
@@ -172,12 +244,70 @@ hints() { # slot dir branch
   fi
 }
 
-if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
-  # <n> TAB busy TAB <branch> TAB <since>, or <n> TAB free
-  for ((i = 1; i <= count; i++)); do
-    if has_marker "$i"; then
-      printf '%s\tbusy\t%s\t%s\n' "$i" "$(marker_field "$i" branch)" "$(marker_field "$i" since)"
+if [ "$capacity" = 1 ]; then
+  { [ -z "$take" ] && [ "$release" = 0 ] && [ "$abandon" = 0 ] && [ "$status" = 0 ] && [ "$reap" = 0 ]; } || usage
+  if [ "$clear" = 1 ] && { [ "$has_slots" = 1 ] || [ "$has_agents" = 1 ]; }; then usage; fi
+  bad=0
+  if [ "$has_slots" = 1 ] && ! valid_n "$set_slots"; then
+    echo "capacity: --slot-count must be a whole number from 1 to 99, got \"$set_slots\"" >&2; bad=1
+  fi
+  if [ "$has_agents" = 1 ] && ! valid_n "$set_agents"; then
+    echo "capacity: --agent-limit must be a whole number from 1 to 99, got \"$set_agents\"" >&2; bad=1
+  fi
+  [ "$bad" = 0 ] || exit 1
+  was_slots=$count; was_agents=$agents; msg=""
+  if [ "$clear" = 1 ]; then
+    if [ -f "$cap" ]; then
+      rm -f "$cap"
+      live_slots=""; live_agents=""; resolve
+      msg="capacity: cleared (slots $was_slots -> $count, agents $was_agents -> $agents)"
     else
+      msg="capacity: nothing to clear"
+    fi
+  elif [ "$has_slots" = 1 ] || [ "$has_agents" = 1 ]; then
+    if [ "$has_slots" = 1 ]; then live_slots=$set_slots; fi
+    if [ "$has_agents" = 1 ]; then live_agents=$set_agents; fi
+    # written to a temporary file in the same folder and moved over the old one: a reader never sees half a file
+    mkdir -p "$state"
+    tmpf=$(mktemp "$state/capacity.json.XXXXXX")
+    {
+      printf '{\n'
+      if [ -n "$live_slots" ]; then printf '  "slots": %s,\n' "$live_slots"; fi
+      if [ -n "$live_agents" ]; then printf '  "maxAgents": %s,\n' "$live_agents"; fi
+      printf '  "since": %s\n}\n' "$(json_quote "$(date +%Y-%m-%dT%H:%M:%S)")"
+    } > "$tmpf"
+    mv -f "$tmpf" "$cap"
+    resolve
+    change() { if [ "$2" = "$3" ]; then echo "$1 $3 (unchanged)"; else echo "$1 $2 -> $3"; fi; }
+    msg="capacity: "
+    if [ "$has_slots" = 1 ]; then msg="$msg$(change slots "$was_slots" "$count")"; fi
+    if [ "$has_slots" = 1 ] && [ "$has_agents" = 1 ]; then msg="$msg, "; fi
+    if [ "$has_agents" = 1 ]; then msg="$msg$(change agents "$was_agents" "$agents")"; fi
+  fi
+  if [ "$porcelain" = 1 ]; then
+    printf 'slots\t%s\t%s\t%s\n' "$count" "$slots_from" "$cfg_slots"
+    printf 'agents\t%s\t%s\t%s\n' "$agents" "$agents_from" "$cfg_agents"
+  elif [ -n "$msg" ]; then
+    echo "$msg"
+  else
+    echo "slots: $count ($(from "$slots_from" "$cfg_slots"))"
+    echo "agents: $agents ($(from "$agents_from" "$cfg_agents"))"
+  fi
+  exit 0
+fi
+if [ "$clear" = 1 ] || [ "$has_slots" = 1 ] || [ "$has_agents" = 1 ]; then usage; fi
+
+if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
+  # <n> TAB busy TAB <branch> TAB <since>, or <n> TAB free; a busy slot above the count gets a fifth field, retiring
+  top=$(last_slot)
+  for ((i = 1; i <= top; i++)); do
+    if has_marker "$i"; then
+      if [ "$i" -gt "$count" ]; then
+        printf '%s\tbusy\t%s\t%s\tretiring\n' "$i" "$(marker_field "$i" branch)" "$(marker_field "$i" since)"
+      else
+        printf '%s\tbusy\t%s\t%s\n' "$i" "$(marker_field "$i" branch)" "$(marker_field "$i" since)"
+      fi
+    elif [ "$i" -le "$count" ]; then
       printf '%s\tfree\n' "$i"
     fi
   done
@@ -186,11 +316,15 @@ fi
 
 if [ "$status" = 1 ]; then
   echo "slots = $count  root = $root"
-  for ((i = 1; i <= count; i++)); do
+  echo "capacity: slots $count ($(from "$slots_from" "$cfg_slots")), agents $agents ($(from "$agents_from" "$cfg_agents"))"
+  top=$(last_slot)
+  for ((i = 1; i <= top; i++)); do
+    if [ "$i" -gt "$count" ] && ! has_marker "$i"; then continue; fi
     dir=$(slot_dir "$i")
     where="not created yet"; [ -d "$dir" ] && where="ready"
     busy="free"
     if has_marker "$i"; then busy="busy: $(marker_field "$i" branch) since $(marker_field "$i" since)"; fi
+    if [ "$i" -gt "$count" ]; then busy="$busy (retiring)"; fi
     dirty=""
     if [ -d "$dir" ]; then
       n=$(dirty_count "$dir")

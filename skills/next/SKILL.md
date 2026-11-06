@@ -40,7 +40,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 2. Take a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
    or `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
    worktree; `-Release N` after the merge. Without slots, `git switch -c` from up-to-date `origin/<git.baseBranch>`.
-   Respect `parallel.maxAgents` and `parallel.hotFiles`.
+   Respect the agent limit and `parallel.hotFiles`.
 3. **Hand the coding to the implementer.** The session never writes the code itself; the tests and the code are
    written by a subagent in the role `implementer` (see "The implementer" below): count the agents, launch it,
    read its result.
@@ -67,8 +67,9 @@ The session keeps the picking line, the board statuses, the slot, the manual che
 pull request and every hard rule. The tests and the code are the implementer's.
 
 1. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
-   builds). At `parallel.maxAgents` wait for one to end and say what you wait for; the session never writes the
-   code itself instead. The implementer is one agent (its prompt forbids launching others).
+   builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
+   `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
+   wait for; the session never writes the code itself instead. The implementer is one agent (its prompt forbids launching others).
 2. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
    `model` that **Agent roles and models** in the `workflow` skill gives the role `implementer`
    (`roles.implementer.model`, else the schema default), passed explicitly, and the prompt below. When the model

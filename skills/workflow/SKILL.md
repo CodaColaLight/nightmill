@@ -203,8 +203,14 @@ has no "How verified"); when a blocking finding is still open the comment on the
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
   script (`-Take <branch>`), free it after the merge (`-Release N`), list them (`-Status`). The
   scripts are at `${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1` and `${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh`.
-- At most `parallel.maxAgents` agents (subagents, slot builds, your own builds) at the same time.
-  Before launching one, count the running ones; queue or do the work inline otherwise.
+- At most the agent limit agents (subagents, slot builds, your own builds) at the same time. The limit is the live
+  value set during the session, else `parallel.maxAgents`. Read it at every decision to start an agent, never once per
+  session: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Capacity -Porcelain` or
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --capacity --porcelain` (the line `agents`, second field). When the
+  command fails, use `parallel.maxAgents` of the configuration and say so. Before launching one, count the running
+  ones; queue or do the work inline otherwise. A lowered limit stops no running agent: wait until fewer run than it
+  says. The slot count is changed the same way (`-Capacity -SlotCount N`, `--capacity --slot-count N`); a raised count
+  is used by the next take.
 - Not two tasks over the same files; `parallel.hotFiles` stay with one task. Never pair
   `parallel.doNotPair`. Rebase on the base branch before the PR.
 - Prefer a fresh agent with a short, specific prompt over a fork. Give a role's agent the model that **Agent roles

@@ -124,12 +124,22 @@ grep -q '^ *22  .*stale: Review but the PR is closed$' "$tmp/out.txt" || fail "R
 ! grep -q '^ *23  .*stale' "$tmp/out.txt" || fail "Spec with a merged spec PR must not be flagged"
 grep -q '^ *26  .*stale: Spec but no spec PR$' "$tmp/out.txt" || fail "Spec with only a closed spec PR is not flagged"
 grep -q '^slots: none busy$' "$tmp/out.txt" || fail "'slots: none busy'"
+[ "$(tail -n 1 "$tmp/out.txt")" = "capacity: slots 4 (config), agents 2 (default)" ] || fail "the capacity line is not the last line"
+
+echo "== the capacity line says when live values are in force"
+printf '{\n  "slots": 3,\n  "maxAgents": 3,\n  "since": "2026-11-05T11:00:00"\n}\n' > "$tmp/wt/.slots/capacity.json"
+run_in "$tmp/work" b
+[ "$code" = 0 ] || fail "exit code $code: $(cat "$tmp/err.txt")"
+expect "live capacity" "$FIX/b/expected-live.txt"
+grep -qx 'capacity: slots 3 (live; config 4), agents 3 (live; config 2)' "$tmp/out.txt" || fail "the live capacity line"
+rm -f "$tmp/wt/.slots/capacity.json"
 
 echo "== the same without a worktrees section: no slots part"
 cp "$tmp/no-slots.json" "$tmp/work/.claude/nightmill.json"
 run_in "$tmp/work" b
 expect "no slots configured" "$FIX/b/expected-noslots.txt"
 ! grep -q 'slots' "$tmp/out.txt" || fail "the slots part must be left out"
+! grep -q '^capacity:' "$tmp/out.txt" || fail "no capacity line without a worktrees section"
 cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
 
 echo "== busy slots and their flags"

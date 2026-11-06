@@ -5,7 +5,8 @@
 #
 # Joins the board items, the pull requests and the busy slots and prints them as one table, Spec review and
 # Approved first, with stale states flagged. --all also lists the items at Backlog and Done. It only reads:
-# gh project item-list / project view, gh pr list, gh api graphql (a query) and slot.sh --status --porcelain.
+# gh project item-list / project view, gh pr list, gh api graphql (a query), slot.sh --status --porcelain and
+# slot.sh --capacity (the last line, when the project has worktrees).
 # Run it from inside the project: any checkout or worktree of it. Settings come from .claude/nightmill.json
 # in the main checkout (github, board.statuses, labels.epic, git.specPrefix, worktrees). The rules and the
 # texts are in docs/specs/iteration-8-status.md; status.ps1 prints the same.
@@ -87,6 +88,9 @@ slots_configured=0
 if json_has worktrees; then
   slots_configured=1
   bash "$here/slot.sh" --status --porcelain > "$tmp/slots.tsv" 2> "$tmp/err" || die "slot.sh failed: $(tr '\n' ' ' < "$tmp/err")"
+  # the capacity line, with the text of slot.sh --capacity (iteration 22)
+  bash "$here/slot.sh" --capacity > "$tmp/capacity.txt" 2> "$tmp/err" || die "slot.sh failed: $(tr '\n' ' ' < "$tmp/err")"
+  capline="capacity: $(sed -n 's/^slots: /slots /p' "$tmp/capacity.txt"), $(sed -n 's/^agents: /agents /p' "$tmp/capacity.txt")"
 fi
 
 if [ -n "${NIGHTMILL_NOW:-}" ]; then now=$NIGHTMILL_NOW; nowl=""; else now=$(date +%s); nowl=$(date +%Y-%m-%dT%H:%M:%S); fi
@@ -94,3 +98,4 @@ if [ -n "${NIGHTMILL_NOW:-}" ]; then now=$NIGHTMILL_NOW; nowl=""; else now=$(dat
 ST_ALL=$all ST_NOW=$now ST_NOWL=$nowl ST_SPECPREFIX=$(json_get git.specPrefix spec/) ST_EPIC=$(json_get labels.epic epic) \
   ST_ORDER=$order ST_ITEMS="$tmp/items.flat" ST_PRS="$tmp/prs.flat" ST_AGEFILES="${agefiles# }" ST_SLOTS="$tmp/slots.tsv" \
   ST_SLOTS_CONFIGURED=$slots_configured LC_ALL=C awk -f "$here/lib/status.awk"
+if [ "$slots_configured" = 1 ]; then printf '%s\n' "$capline"; fi

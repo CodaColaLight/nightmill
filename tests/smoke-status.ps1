@@ -123,11 +123,21 @@ exit 0
   Run-S $work "b"
   if ($Code -ne 0) { Fail "exit code $Code`: $Err" }
   Expect "no busy slot" (Join-Path $FIX "b\expected.txt")
+  if ((@($Out -split "`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1) -ne "capacity: slots 4 (config), agents 2 (default)") { Fail "the capacity line is not the last line" }
+
+  Write-Host "== the capacity line says when live values are in force"
+  $capFile = Join-Path $tmp "wt\.slots\capacity.json"
+  Write-Utf8 $capFile "{`n  `"slots`": 3,`n  `"maxAgents`": 3,`n  `"since`": `"2026-11-05T11:00:00`"`n}`n"
+  Run-S $work "b"
+  if ($Code -ne 0) { Fail "exit code $Code`: $Err" }
+  Expect "live capacity" (Join-Path $FIX "b\expected-live.txt")
+  Remove-Item $capFile
 
   Write-Host "== the same without a worktrees section: no slots part"
   Write-Utf8 $cfgFile $noSlots
   Run-S $work "b"
   Expect "no slots configured" (Join-Path $FIX "b\expected-noslots.txt")
+  if ($Out -match "(?m)^capacity:") { Fail "no capacity line without a worktrees section" }
   Write-Utf8 $cfgFile $withSlots
 
   Write-Host "== busy slots and their flags"
