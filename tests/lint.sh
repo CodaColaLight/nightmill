@@ -575,6 +575,38 @@ for w in 'written first by the' 'seen failing before the code'; do
 done
 grep -qF 'agents/tester.md' README.md || { echo "FAIL: README.md does not mention agents/tester.md"; fail=1; }
 
+echo "== a tester reproduces the bug before /fix"
+# /fix has the same tester write a regression test from the bug report before the fixer (iteration 26): the same test
+# path rule as the agent, the launch, the checks of its files, the stop when it cannot reproduce the bug, the fixer that
+# runs the test and commits it with the fix, and the pull request that shows it. /fix is a conversation, so the lint
+# pins the wording the behaviour depends on (each item on one line); the manual check does the behaviour.
+fx=skills/fix/SKILL.md
+n_tp=$(grep -cE "$tp_re" "$fx" 2>/dev/null || true)
+[ "$n_tp" = 1 ] || { echo "FAIL: $fx has ${n_tp:-no} lines starting with 'Test paths:' (exactly one expected)"; fail=1; }
+tp_fix=$(grep -E "$tp_re" "$fx" 2>/dev/null | head -1 | sed -E 's/^[[:space:]`]+//; s/[[:space:]`]+$//' || true)
+if [ -z "$tp_agent" ] || [ "$tp_agent" != "$tp_fix" ]; then
+  echo "FAIL: the 'Test paths:' line differs between $ta and $fx"; fail=1
+fi
+sed -n 's/^description:[[:space:]]*//p' "$ta" 2>/dev/null | head -1 | grep -qF '/fix' || { echo "FAIL: $ta: the description does not name /fix"; fail=1; }
+for w in 'nightmill:tester' 'roles.tester.model' 'Stopped: the tester role cannot run on' 'Stopped: the tester returned failed' \
+         'Stopped: the tester changed files that are not tests' 'Stopped: the tester could not reproduce bug #' \
+         'The fixer was not started.' 'status --porcelain --untracked-files=all' '<tester files>' \
+         'never writes the test or the code itself' 'verification.benchRule' 'Write the failing regression test for bug #' \
+         'Do not commit: leave the test uncommitted in the slot' '"the implementer" as the fixer' \
+         'The one acceptance criterion: 1. <title> is fixed.' "Run the tester's test and watch it fail" \
+         "into the slot's working tree and has not committed it" 'Commit it together with your fix, once the check is green' \
+         'A fix that does not make this test pass is not a fix' 'In a fix round the test may already be committed with your earlier fix' \
+         'diff --name-only origin/<git.baseBranch>..HEAD' 'Reproduced first by the tester role on' \
+         "The test's diff is longer than 60 lines" 'write-tests' 'One producer at a time' 'Tester files for #<issue>: <title>'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not mention the tester item: $w"; fail=1; }
+done
+for w in 'Write the test that fails for the reason in the issue first' 'One fixer at a time'; do
+  if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still says '$w'"; fail=1; fi
+done
+rsection=$(awk '/^## Agent roles and models$/ { s = 1; next } s && /^## / { exit } s { print }' skills/workflow/SKILL.md)
+printf '%s\n' "$rsection" | grep -E '^\| `tester` \|' | grep -qF 'before the fixer' || { echo "FAIL: skills/workflow/SKILL.md: the tester row of 'Agent roles and models' does not say: before the fixer"; fail=1; }
+grep -qF 'before the fixer' README.md || { echo "FAIL: README.md does not say the tester works before the fixer"; fail=1; }
+
 echo "== a separate spec reviewer reviews the spec"
 # The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of
 # "Findings and fix rounds" (the same format lines as the code reviewer and the workflow skill), and /spec that
