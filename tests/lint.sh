@@ -492,8 +492,27 @@ if [ -f "$sr" ]; then
 else
   echo "FAIL: $sr is missing"; fail=1
 fi
-for w in 'nightmill:spec-reviewer' 'roles.specReviewer.model' 'Findings and fix rounds' 'validate-config' 'Stopped: the specReviewer ranks below' 'Stopped: the spec review could not be had' 'Open review findings' 'Reviewed by the specReviewer role on' 'not a fork'; do
+for w in 'nightmill:spec-reviewer' 'roles.specReviewer.model' 'Findings and fix rounds' 'validate-config' 'Stopped: the specReviewer ranks below' 'Stopped: the spec review could not be had' 'not a fork'; do
   grep -qF -- "$w" skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not mention the spec review item: $w"; fail=1; }
+done
+
+echo "== the spec review is recorded in the spec pull request"
+# The spec pull request has the same "## Review" section as a code pull request (iteration 21), the roles substituted,
+# an open blocking finding keeps auto-merge off with the same sentence and is said on the issue, and the interim text
+# of iteration 20 is replaced, not kept beside the new section.
+sentence='Auto-merge is not enabled: blocking review findings are still open (see Review).'
+swf=skills/workflow/SKILL.md
+swsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' "$swf")
+for w in 'A spec pull request has the same section' 'specReviewer role on <model>' 'specWriter role on <model>'; do
+  printf '%s\n' "$swsection" | grep -qF -- "$w" || { echo "FAIL: $swf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+done
+swci=$(awk '/^## CI and merging$/ { s = 1; next } s && /^## / { exit } s { print }' "$swf")
+printf '%s\n' "$swci" | grep -qF '(a spec PR too)' || { echo "FAIL: $swf: the section 'CI and merging' does not name a spec PR (a spec PR too)"; fail=1; }
+for w in '## Review' 'Findings fixed' 'Findings still open' "$sentence" 'Blocking review findings are still open (' 'Spec: <path> (PR #<pr>). Waiting for approval.'; do
+  grep -qF -- "$w" skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not mention the spec review item: $w"; fail=1; }
+done
+for w in 'Open review findings' 'Review notes' 'Reviewed by the specReviewer role on'; do
+  if grep -qF -- "$w" skills/spec/SKILL.md; then echo "FAIL: skills/spec/SKILL.md still has the interim text '$w' of iteration 20 (it is replaced by the Review section)"; fail=1; fi
 done
 
 echo "== bash files do not use jq"

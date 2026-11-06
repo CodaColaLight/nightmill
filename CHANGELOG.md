@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Iteration 21 (#40): the spec review is recorded in the spec pull request and open blocking findings stop
+  auto-merge. The body of the spec pull request, under `Spec for #<issue>.` and the writer's line, now has the
+  `## Review` section that iteration 19 defined for code pull requests, with `specReviewer` as the reviewer and
+  `specWriter` as the author (one added sentence in "The pull request" of the workflow skill keeps the format defined
+  once). It replaces the interim text of iteration 20 (`Open review findings`, `Review notes` and the `Reviewed by`
+  line). With a blocking finding still open the spec pull request is opened, `gh pr merge` is not run and the body
+  says `Auto-merge is not enabled: blocking review findings are still open (see Review).`; the story still goes to
+  Spec review and the comment on the issue gets the tail `Blocking review findings are still open (<b> blocking, <a>
+  advisory): auto-merge is off, see the Review section of the pull request.` after the unchanged
+  `Spec: <path> (PR #<pr>). Waiting for approval.` that `/next` reads. With only advisory findings, or none,
+  auto-merge is enabled as before. The workflow skill's "CI and merging" says `(a spec PR too)`. The lint pins the
+  wording and checks that the interim text is gone. No config key, script or status change.
+
 - Iteration 20 (#39): a separate spec reviewer reviews the spec before it goes to Spec review. The new agent
   `agents/spec-reviewer.md` (tools `Read, Grep, Glob`, `model:` kept equal to the schema default by the lint) checks
   that every acceptance criterion is covered and testable, that exact rules and numbers are in the spec, that it

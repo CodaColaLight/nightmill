@@ -1,6 +1,6 @@
 # Iteration 21: the spec review is recorded in the spec pull request and open blocking findings stop auto-merge
 
-Status: draft, awaiting approval (#40)
+Status: delivered in iteration 21 (PR #85)
 
 Story: #40, epic #30 (Independent spec review). Replaces the plain interim text that iteration 20 (#39) has `/spec`
 write into the spec pull request with the `## Review` section that iteration 19 (#37) defines for code pull requests,

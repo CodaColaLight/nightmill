@@ -45,14 +45,18 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
 4. Open the spec as its own PR: commit the spec only, push, PR titled `docs: iteration <N> spec (#<issue>)`
    with the body `Spec for #<issue>.` (not `Closes`) and, on its own line,
    `Written by the specWriter role on <model>.` (`<model>` is the exact string passed as `model` in the Agent
-   call), then the review lines of "The spec review" (step 5 there), and `gh pr merge <pr> <git.mergeFlags>`: a
-   spec PR is docs only (not when blocking review findings are left, step 5 there). Switch back to the branch you
-   came from.
+   call), then the `## Review` section of "The spec review" (step 5 there), and `gh pr merge <pr> <git.mergeFlags>`:
+   a spec PR is docs only (not when a blocking review finding is still open, step 5 there). Switch back to the
+   branch you came from.
 5. Set the status to **Spec review** and read it back. Comment on the issue:
-   `Spec: <path> (PR #<pr>). Waiting for approval.`
+   `Spec: <path> (PR #<pr>). Waiting for approval.` When a blocking review finding is still open, the comment ends
+   with a fixed tail after that sentence (the text before it, which `/next` reads, is the same):
+   `Blocking review findings are still open (<b> blocking, <a> advisory): auto-merge is off, see the Review section of the pull request.`
 6. **Stop.** Show the spec to the maintainer with the `Decisions` and `Left` lines of the result block. Only the
    maintainer sets Approved; then `/next` implements it. If the maintainer asks for changes, revise the spec in
-   a follow-up PR and keep the status at Spec review.
+   a follow-up PR and keep the status at Spec review. When a blocking review finding is still open, say that
+   auto-merge is off and that the pull request waits for the maintainer's merge (when the spec is accepted) or
+   revision; `/next` still needs the spec on the base branch.
 
 ## The spec writer
 
@@ -156,10 +160,17 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    and nothing else"), the form check of "Read the result" again (a failure stops the run as there), and a new review
    from step 2 (the pairing is not checked again). No valid block, or an error: stop with
    `Stopped: the spec review could not be had: <the reason>. Nothing was opened.` and do the clean-up.
-5. **After the last review.** Blocking findings that remain are listed in the spec pull request under the heading
-   `Open review findings` (each as in the block) and auto-merge is **not** enabled; the pull request says so.
-   Advisory findings are listed under `Review notes`, one line each. The body keeps `Spec for #<issue>.` and the
-   writer's line and gets, on its own line, `Reviewed by the specReviewer role on <model> after <r> fix round(s).`
+5. **After the last review: the `## Review` section.** Build the section that **Findings and fix rounds** describes
+   (the paragraph "The pull request" of the `workflow` skill, with `specReviewer` as the reviewer and `specWriter`
+   as the author) from what you held during the run: the blocks of all reviews, the fix rounds used and the models
+   you passed to the Agent calls. `Findings still open` are those of the last review, as the reviewer wrote them;
+   `Findings fixed` are the blocking findings sent back in an earlier round and not repeated in the last review
+   with the same file and text. Put the section in the body of the spec pull request under the two lines
+   `Spec for #<issue>.` and `Written by the specWriter role on <model>.`, which stay. When the last review has a
+   blocking finding, do **not** run `gh pr merge` and put, in the body,
+   `Auto-merge is not enabled: blocking review findings are still open (see Review).`; the story still goes to
+   Spec review, with the comment of the numbered step 5 above. With only advisory findings, or none, enable
+   auto-merge as before: the section is there all the same (a missing section would mean no review ran).
 
 The reviewer reads the file in the working tree, so the review runs before the commit; the commit then holds the spec
 as the last round left it. The statuses, the comment on the issue, the stop at Spec review and every hard rule stay with
