@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-11-06)
+
 - Iteration 31 (#68): a page in the browser shows the slots and what waits for the maintainer. `scripts/dashboard.sh` /
   `scripts/dashboard.ps1` write one self-contained HTML page to the temporary folder
   (`nightmill-dashboard-<owner>-<repo>.html`) and rewrite it every `worktrees.dashboardRefreshSeconds` seconds until
