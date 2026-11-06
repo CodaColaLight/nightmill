@@ -190,6 +190,12 @@ code pull request, and a blocking finding that is still open keeps auto-merge of
 `/nightmill:models` prints the table of every
 role, its model, where the model comes from, its rank and whether its pairing holds; it only reads.
 
+Before the implementer starts, `/next` has a `tester` subagent on its configured model (`agents/tester.md`) write at
+least one test for every acceptance criterion from the approved spec into the slot, uncommitted, and run them to see
+them fail for the missing behaviour; it writes only test files and fixtures, and the session stops when it leaves
+anything else. The implementer then makes those tests pass and commits them with the code once the check is green. The
+pull request's How verified names the tester's model and which test covers which criterion.
+
 Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the
 change, as a separate agent that never sees the implementer's own account, and send the blocking findings back to the
 implementer or fixer for at most `review.maxFixRounds` rounds. The findings format and the rounds are in the workflow

@@ -373,8 +373,8 @@ done
 # the worker and the two reviewers (iterations 18 and 20), which need a tool list that keeps them read-only.
 for a in agents/*.md; do
   case "$a" in
-    agents/worker.md|agents/code-reviewer.md|agents/spec-reviewer.md) ;;
-    *) echo "FAIL: $a: only the worker and the two reviewers have an agent file (the producers' prompts are in the skills)"; fail=1 ;;
+    agents/worker.md|agents/code-reviewer.md|agents/spec-reviewer.md|agents/tester.md) ;;
+    *) echo "FAIL: $a: only the worker, the two reviewers and the tester have an agent file (the implementer's and the fixer's prompts are in the skills)"; fail=1 ;;
   esac
 done
 
@@ -518,6 +518,62 @@ done
 for w in 'running' 'stalled' 'unknown'; do
   grep -qF -- "**$w**" README.md || { echo "FAIL: README.md does not say what $w means"; fail=1; }
 done
+
+echo "== a tester writes the failing tests first"
+# /next has a tester subagent write the failing tests for every acceptance criterion before the implementer (iteration
+# 25): an agent file whose tool list has no Agent, the same test path rule in the agent and in the skill, and /next that
+# launches it, checks its files and carries its result into the implementer's prompt and the pull request. /next is a
+# conversation, so the lint pins the wording the behaviour depends on; the manual check does the behaviour.
+ta=agents/tester.md
+nx=skills/next/SKILL.md
+if [ -f "$ta" ]; then
+  grep -qx 'name: tester' "$ta" || { echo "FAIL: $ta has no 'name: tester'"; fail=1; }
+  [ "$(sed -n 's/^tools:[[:space:]]*//p' "$ta" | head -1)" = "Read, Grep, Glob, Write, Edit, Bash" ] || { echo "FAIL: $ta: the tools must be exactly 'Read, Grep, Glob, Write, Edit, Bash' (no Agent)"; fail=1; }
+  json_load schema/nightmill.schema.json
+  ta_default=$(json_get properties.roles.properties.tester.properties.model.default)
+  [ "$(sed -n 's/^model:[[:space:]]*//p' "$ta" | head -1)" = "$ta_default" ] || { echo "FAIL: $ta: model is not the schema default of roles.tester.model ($ta_default)"; fail=1; }
+  for w in 'acceptance criterion' 'not tested' 'named for the behaviour' 'only test files and test fixtures' 'production code' \
+           'fails for another reason' 'passes' 'Do not commit' 'Do not stage, stash or commit anything' 'do not push' \
+           'do not launch other agents' 'Result: complete | partial | failed' 'Criteria:' 'Tests:' 'Failing:' 'Files:' 'Left:'; do
+    grep -qF -- "$w" "$ta" || { echo "FAIL: $ta does not say: $w"; fail=1; }
+  done
+else
+  echo "FAIL: $ta is missing"; fail=1
+fi
+# the test path rule is one line, the same in the agent file and in the skill
+tp_re='^[[:space:]]*`?Test paths:'
+for f in "$ta" "$nx"; do
+  n_tp=$(grep -cE "$tp_re" "$f" 2>/dev/null || true)
+  [ "$n_tp" = 1 ] || { echo "FAIL: $f has ${n_tp:-no} lines starting with 'Test paths:' (exactly one expected)"; fail=1; }
+done
+tp_agent=$(grep -E "$tp_re" "$ta" 2>/dev/null | head -1 | sed -E 's/^[[:space:]`]+//; s/[[:space:]`]+$//' || true)
+tp_next=$(grep -E "$tp_re" "$nx" | head -1 | sed -E 's/^[[:space:]`]+//; s/[[:space:]`]+$//' || true)
+if [ -z "$tp_agent" ] || [ "$tp_agent" != "$tp_next" ]; then
+  echo "FAIL: the 'Test paths:' line differs between $ta and $nx"; fail=1
+fi
+for w in 'nightmill:tester' 'roles.tester.model' 'Stopped: the tester role cannot run on' 'Stopped: the tester returned failed' \
+         'Stopped: the tester changed files that are not tests' 'status --porcelain --untracked-files=all' '<tester files>' \
+         'never writes the tests or the code itself' 'verification.benchRule' 'Do not commit: leave the tests uncommitted in the slot' \
+         "Run the tester's tests" "into the slot's working tree and has not committed them" \
+         'Commit them together with your code, once the check is green' "If you cannot meet a criterion, do not commit the tester's test of it" \
+         'unmet: <path> (criterion <n>)' 'Unmet tests for #' '-m "Unmet tests for #<issue>: <title>"' 'stash list' 'stash pop stash@{<n>}' \
+         'not committed: criterion not met' 'Tests written first by the tester role on' \
+         'never writes the code itself' 'git -C <slot> log origin/<git.baseBranch>..HEAD'; do
+  grep -qF -- "$w" "$nx" || { echo "FAIL: $nx does not mention the tester item: $w"; fail=1; }
+done
+for w in 'Turn each acceptance criterion into a test' '-m "unmet tests"'; do
+  if grep -qF -- "$w" "$nx"; then echo "FAIL: $nx still says '$w'"; fail=1; fi
+done
+# the tests of unmet criteria are set aside first in step 5, before the CHANGELOG entry is committed
+grep -qE '^5\. When the implementer.s result is `partial`' "$nx" || { echo "FAIL: $nx: step 5 does not begin by setting the tests of unmet criteria aside"; fail=1; }
+wfs=skills/workflow/SKILL.md
+vsection=$(awk '/^## Verify before every commit$/ { s = 1; next } s && /^## / { exit } s { print }' "$wfs")
+printf '%s\n' "$vsection" | grep -qF 'Never commit red.' || { echo "FAIL: $wfs: the section 'Verify before every commit' no longer says: Never commit red."; fail=1; }
+dsection=$(awk '/^## Definition of done$/ { s = 1; next } s && /^## / { exit } s { print }' "$wfs")
+for w in 'written first by the' 'seen failing before the code'; do
+  printf '%s\n' "$dsection" | grep -qF -- "$w" || { echo "FAIL: $wfs: the section 'Definition of done' does not say: $w"; fail=1; }
+done
+grep -qF 'agents/tester.md' README.md || { echo "FAIL: README.md does not mention agents/tester.md"; fail=1; }
 
 echo "== a separate spec reviewer reviews the spec"
 # The spec reviewer (iteration 20): an agent file whose tool list keeps it read-only, the findings block of

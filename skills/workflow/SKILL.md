@@ -92,7 +92,8 @@ stories and points to `/spec N`; it never starts a spec itself.
 
 ## Definition of done
 
-Spec approved, every acceptance criterion is a test, the check is green, the manual check
+Spec approved, every acceptance criterion is a test (in `/next` written first by the `tester`
+and seen failing before the code), the check is green, the manual check
 (`verification.manualCheckText`) is done when a change touches `verification.manualCheckPaths`, the
 PR says how it was verified. `verification.benchRule` applies when set. Tests are mandatory.
 
