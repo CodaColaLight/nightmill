@@ -1,6 +1,6 @@
 # Iteration 34: a take claims its slot atomically and a failed take leaves no half-taken slot
 
-Status: draft, awaiting approval (#186)
+Status: delivered in iteration 34 (PR #193)
 
 Story: #186, epic #107 (Hardening from the code review). Supersedes bug #113 (finding HI-5 of the code review of
 0.2.0). A take now claims its slot before it does any work: it writes a complete marker in a new **taking** state and
