@@ -1238,6 +1238,71 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   Claim-Case7
   Claim-Reset
 
+  Write-Host "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"
+  # 13 (iteration 33, /fix all): the skill frees a bug's slot with -Abandon once the bug's branch is on its open pull
+  # request, and holds a slot with uncommitted files. The slot scripts already do both, and this case pins it: takes run
+  # one after the other get different slots; -Abandon frees a clean slot at once, keeps the local branch and the pushed
+  # commits, and asks gh for nothing; a freed slot is reused by the next take; -Abandon refuses a slot with an untracked
+  # file and changes nothing; no gh call but the reap's merged query is made.
+  function Get-RefOf([string]$repo, [string]$ref) { $x = git -C $repo rev-parse --verify -q $ref; if ($LASTEXITCODE -eq 0) { ([string]$x).Trim() } else { "" } }
+  function Drop-P13Branches { foreach ($pb in "feat/p1", "feat/p2", "feat/p3") { Gq -C $work branch -D $pb; Gq -C "$tmp\origin.git" update-ref -d "refs/heads/$pb" } }
+  function Get-GhLog { [System.IO.File]::ReadAllText($ghLog) }
+  Claim-Reset
+  Drop-P13Branches
+  Reset-Gh
+  $d1 = "$tmp\wt\slot-1"
+  # 1 two takes one after the other get slots 1 and 2; a third fails and changes no marker
+  $r = SlotE "-Take feat/p1"
+  if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 1 is yours") { Fail "13.1: take feat/p1 did not get slot 1 (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+  $r = SlotE "-Take feat/p2"
+  if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "13.1: take feat/p2 did not get slot 2 (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+  $m1 = MText 1; $m2 = MText 2
+  $r = SlotE "-Take feat/p3"
+  if ($r.Code -eq 0) { Fail "13.1: a third take with two slots should fail: $($r.Out)" }
+  if ($r.Err -notmatch "all 2 slots are busy") { Fail "13.1: the third take did not say 'all 2 slots are busy': $($r.Err)" }
+  Test-Same $m1 1 "13.1 the third take"
+  Test-Same $m2 2 "13.1 the third take"
+  # 2 slot 1 commits one file and pushes; -Abandon frees it, keeps the branch and the pushed tip, and asks gh for nothing
+  [System.IO.File]::WriteAllText("$d1\p1.txt", "p1`n")
+  Gq -C $d1 add -A
+  Gq -C $d1 -c user.name=t -c user.email=t@example.invalid commit -qm "work on feat/p1"
+  Gq -C $d1 push -q origin feat/p1
+  $p13tip = Get-RefOf $d1 "HEAD"
+  $ghBefore = Get-GhLog
+  $r = SlotE "-Abandon 1"
+  if ($r.Code -ne 0) { Fail "13.2: -Abandon 1 exited $($r.Code): $($r.Out) / $($r.Err)" }
+  if ($r.Out.Trim() -ne "Slot 1 is free (was feat/p1; the local branch is kept, delete it yourself if unwanted).") { Fail "13.2: wrong -Abandon output: $($r.Out)" }
+  if ((Get-GhLog) -cne $ghBefore) { Fail "13.2: -Abandon asked gh: $(Get-GhLog)" }
+  if (Test-Path (Marker 1)) { Fail "13.2: the marker of slot 1 is still there" }
+  if (-not $p13tip -or (Get-RefOf $work "refs/heads/feat/p1") -ne $p13tip) { Fail "13.2: the local branch feat/p1 is not the tip $p13tip" }
+  if ((Get-RefOf "$tmp\origin.git" "refs/heads/feat/p1") -ne $p13tip) { Fail "13.2: the origin branch feat/p1 is not the tip $p13tip" }
+  if (Get-Current 1) { Fail "13.2: slot 1 is not detached: $(Get-Current 1)" }
+  # 3 the freed slot is reused
+  $r = SlotE "-Take feat/p3"
+  if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 1 is yours") { Fail "13.3: take feat/p3 did not reuse slot 1 (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+  # 4 an untracked file holds the slot: -Abandon refuses and changes nothing
+  [System.IO.File]::WriteAllText("$d1\untracked.txt", "x`n")
+  $m1 = MText 1
+  $ghBefore = Get-GhLog
+  $r = SlotE "-Abandon 1"
+  if ($r.Code -eq 0) { Fail "13.4: -Abandon of a slot with an untracked file should fail: $($r.Out)" }
+  if (-not $r.Err.Contains("slot 1 has uncommitted files:")) { Fail "13.4: wrong refusal on standard error: $($r.Err)" }
+  Test-Same $m1 1 "13.4 the refused -Abandon"
+  if (-not (Test-Path "$d1\untracked.txt")) { Fail "13.4: the untracked file is gone" }
+  if ((Get-Current 1) -ne "feat/p3") { Fail "13.4: slot 1 is not on feat/p3 any more: $(Get-Current 1)" }
+  if ((Get-GhLog) -cne $ghBefore) { Fail "13.4: the refused -Abandon asked gh: $(Get-GhLog)" }
+  # 5 no gh call but the reap's merged query (the takes ask it for slots with a clean tree; it finds nothing)
+  $otherCalls = @((Get-GhLog) -split "`r?`n" | Where-Object { $_ -ne "" -and $_ -cnotmatch '^pr list --state merged --head feat/p[0-9] --json number,headRefOid$' })
+  if ($otherCalls.Count -ne 0) { Fail "13.5: gh was asked something but the reap's merged query: $($otherCalls -join ' | ')" }
+  # clean up: every slot free, the local and the remote branches gone, the fake gh as it was
+  Remove-Item "$d1\untracked.txt" -Force
+  $r = SlotE "-Abandon 1"
+  if ($r.Code -ne 0) { Fail "13.5: clean-up: -Abandon 1 failed: $($r.Err)" }
+  $r = SlotE "-Abandon 2"
+  if ($r.Code -ne 0) { Fail "13.5: clean-up: -Abandon 2 failed: $($r.Err)" }
+  Drop-P13Branches
+  Claim-Reset
+
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {
   Set-Location $here

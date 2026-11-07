@@ -1,11 +1,11 @@
 ---
 name: fix
-description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" works through every Ready bug in turn. Use when asked to fix a bug issue.
+description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" fixes every Ready bug, several at once while slots and room allow. Use when asked to fix a bug issue.
 argument-hint: [issue-number | all]
 disable-model-invocation: true
 ---
 
-Fix one bug from GitHub Issues, without an iteration: $ARGUMENTS (`all` = every Ready bug in turn, see "Batch mode")
+Fix one bug from GitHub Issues, without an iteration: $ARGUMENTS (`all` = every Ready bug, in parallel, see "Batch mode")
 
 Project configuration (`.claude/nightmill.json`):
 
@@ -27,7 +27,8 @@ milestone, iteration number or CHANGELOG entry.
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
    `gh project item-edit`). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
    Work in a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
-   (bash: `slot.sh --take ...`); `-Release N` after the merge. In a single checkout without slots,
+   (bash: `slot.sh --take ...`); `-Release N` after the merge (in "Batch mode" the slot is freed once its pull request
+   is open). In a single checkout without slots,
    `git switch -c <git.fixPrefix><number>-<slug>` from up-to-date `origin/<git.baseBranch>`. Right after the take
    report the step `slot-taken` (see "Reporting the steps" below); from here on every step is reported there.
 4. **Have the bug reproduced first, then hand the fix to the fixer.** The session
@@ -599,21 +600,96 @@ A `partial` result is reviewed like a complete one.
 
 ## Batch mode: `/fix all`
 
-Works through every Ready bug, one after another, without asking the maintainer anything. Steps 1 to 6
-are the same for each bug, with these differences:
+Fixes every Ready bug without asking the maintainer anything, several at the same time, one per slot, as far as the
+free slots, the live agent limit and the room on the machine allow, and ends only when every Ready bug has a pull
+request, was skipped with a reason, or is listed as not started. Steps 1 to 6 are the same for each bug, with these
+differences:
 
-- **One producer at a time.** Each bug's tester and fixer launches are counted; the tester has returned before the
-  fixer is launched, and the next bug starts only after the previous bug's fixer has returned or its run stopped. A
-  `failed` fixer, and each `Stopped:` line of "The tester" except a model that cannot be used, is a skip of that bug
-  by the rule below. A model that cannot be used, for the tester or the fixer, is **not** a skip: it ends the whole run with the
-  `Stopped:` line, because every later bug would fail the same way, and the report lists the bugs not started.
-  A wait for room that runs out is not a skip either: it ends the run in the same way.
-- **Order and cap.** All open `labels.bug` items with status Ready, by `board.priorities` (highest first),
-  then by issue number; no ties to ask about. At most 5 per run; the rest go in the report for the next run.
-- **One branch per bug, each from up-to-date `origin/<git.baseBranch>`**, not on top of the previous fix.
-  After a bug's PR is open, switch back to the base branch, `git pull --ff-only`, and start the next.
-  Nothing waits for a merge. If a bug touches a file an earlier PR of this run changed, say so in its PR
-  ("overlaps #N, will conflict until that merges").
+- **In parallel, one slot per bug.** The session holds four lists: **waiting** (in order), **in flight** (bug, slot,
+  next step), **ended** (pull request, skipped, stopped) and **not started**. It runs one pass of the loop below at the
+  start and again after every event: an agent of the run returned, a bug's session step ended, a slot was freed, a
+  take failed. One pass:
+  1. **In flight first.** For each bug in flight whose next step is a launch (tester, fixer, code review, a dispute or
+     fix round), in the order the bugs started, launch it by the bug's own rules: count the agents (the live limit),
+     then the room, then the step report. A launch that the count does not allow waits for the next event.
+  2. **Then new starts**, while all of these hold: the gate allows a start (below); the number of agents running is
+     below the live agent limit; the run limit is not reached; and the last take of this run did not fail with
+     `all <k> slots are busy` since the last event that could free a slot (a slot of this run freed, or a bug of this
+     run ended).
+  3. **A start**, for the first waiting bug that overlaps no bug in flight (see "Overlapping bugs wait"): read it
+     (`gh issue view N --json number,title,labels,body`) and record its named files; step 2 (is it a bug?): a story is
+     skipped as `needs a story`, with no status change and no slot, and the start goes on with the next waiting bug;
+     check the room for the take (the take's warm-up is a slot build), then take (see "One take at a time"). On
+     `Slot <n> is yours`: the claim, once the claim protocol exists, then set In progress and read it back, report
+     `slot-taken`, and go on with "The tester" (count, room, launch). On `all <k> slots are busy`: the bug stays first
+     in waiting, and no start is tried until an event that could free a slot. On any other failure of the take, the
+     run stops (see "The whole run stops"). Then try the next start, from 2.
+  4. **The board again** (see "Order, the run limit and new Ready bugs").
+  5. **Waiting.** When nothing can be launched or started, wait for the next agent of the run to return, and say once
+     what you wait for (for example `waiting for a slot: #118 and #121 are in flight`).
+  6. **The end.** The run ends when waiting is empty after the last board read and nothing is in flight. It also ends
+     when nothing of this run is in flight but bugs are still waiting: then the last take failed, and no slot can free
+     in this run. Those bugs are listed as not started, with
+     `no slot frees in this run: <each busy slot and what holds it, from slot --status>`. A busy slot therefore never
+     ends the run while a bug of this run is still in flight; it ends the run only when nothing this run does can free
+     one.
+
+  Agents go out without waiting on each other. Launch each agent as a background agent where the Agent tool runs
+  agents in the background and says when one ends; otherwise put the launches that are due at the same moment into one
+  message, so they run at the same time. The session's own work for a bug (the board, the slot commands, the tester's
+  files checks, the manual check, the pull request) is done for one bug at a time, between events.
+
+  **The gate.** Every new start passes one gate first (2 above). It holds the run limit, the count and the room. The
+  pause flag and the limits of an unattended run, once they exist, are checked there before each start, by the rules
+  that set them. A pause stops new starts.
+- **One producer at a time per bug.** A bug keeps its own order: its tester has returned before its fixer is launched,
+  and it never runs two of its agents at once. Each launch is counted (the live agent limit), the room is checked and
+  the step is reported, as "The tester", "The fixer" and "The code review" say; bugs in flight run their agents beside
+  each other within the agent limit.
+- **Order, the run limit and new Ready bugs.** Waiting holds all open `labels.bug` items with status Ready, by
+  `board.priorities` (highest first; no priority ranks last), then by issue number, lowest first; no ties to ask about.
+  Before each start, and once more when waiting is empty, list the Ready bugs again (the query of step 1): every open
+  `labels.bug` issue at Ready that this run has not seen yet joins waiting in its place in the order. Each issue is
+  processed at most once per run: a bug skipped as `needs a story` stays Ready and is not taken again. The run limit is
+  `parallel.fixAllMaxBugs`, read from the configuration once at the start of the run: the most bugs one run starts; 0,
+  absent or `null` is no limit. It is used when it is a JSON number written as a whole number from 0 without sign,
+  fraction or exponent; any other value (`-1`, `2.5`, `"3"`, `true`) stops the run before anything is started with
+  `Stopped: parallel.fixAllMaxBugs must be a whole number of at least 0 (0: no limit), got <the value as JSON>. Nothing was started.`
+  A limit that cannot be read is never taken as no limit. A bug counts when its take succeeds (or, without slots, when
+  its step 3 begins); a bug skipped as `needs a story` before a take does not count. With the limit reached no new
+  start happens: bugs in flight finish, and every bug still waiting (also one that became Ready later) is listed as not
+  started with `run limit of <k> reached`.
+- **One take at a time.** The session runs one take at a time: a take (`slot.ps1 -Take` / `slot.sh --take`) only as a
+  foreground shell call, never in the background and never in the same message as another take or an abandon, and the
+  next slot command only after the previous one has exited. So two starts of this run never get the same slot.
+- **Overlapping bugs wait.** Before a bug starts, record its **named files**: each token of the issue's title or body
+  that, with surrounding backticks, quotes, brackets, a trailing `:` `,` `.` `)` and a leading `./` removed, equals a
+  path listed by `git ls-tree -r --name-only origin/<git.baseBranch>`. Two bugs overlap when their named files share a
+  path; when each names a file inside the same entry of `parallel.hotFiles` (an entry is a file or a directory; a path
+  is inside a directory entry when it starts with the entry followed by `/`); or when, by their named files and
+  titles, they are a pair `parallel.doNotPair` describes (a judgement, stated in the final table's reason when it
+  delays a bug). A bug that overlaps a bug started earlier in this run that is still in flight does not start: it waits
+  until that bug has its pull request open or has ended, and bugs after it in the order may start before it. No guess
+  is made about files beyond those the issue names. Each bug has a branch of its own from up-to-date
+  `origin/<git.baseBranch>`, not on top of the previous fix, and nothing waits for a merge. If a bug's PR changes a
+  file an earlier PR of this run changed, say so in its PR ("overlaps #N, will conflict until that merges").
+- **Freeing the slot once the PR is open.** Right after step 6 (PR open, status Review read back, auto-merge decided)
+  and its `done` report, free the bug's slot only when all of these hold, checked in this order:
+  1. no agent of this bug is running (every Agent call of the bug has returned);
+  2. `git -C <slot> status --porcelain --untracked-files=all` prints nothing;
+  3. `git -C <slot> symbolic-ref --short HEAD` prints the bug's branch;
+  4. `git -C <slot> rev-parse HEAD` equals what `gh pr view <pr> --json headRefOid --jq .headRefOid` prints (the
+     branch's last commit is the head of the open PR, so it is pushed).
+
+  Then run `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Abandon <n>` or
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --abandon <n>` and expect exit 0 and the line `Slot <n> is free`; the
+  local branch is kept, and its commits are on the open PR. When any check fails, or the abandon exits non-zero, the
+  slot is **held**: change nothing, the slot keeps its marker and its files, and the final table names the check that
+  failed. A bug that ends without a PR (skipped, or stopped in flight) never has its slot freed, whether its tree is
+  dirty (uncommitted tester files, a round's work) or clean (local commits, not pushed), so `/status` keeps showing it
+  with the step `stopped` for the maintainer. Only a slot this run freed is reused by it, through the next take; a slot
+  held by this run is never reused in this run. Nothing more is reported to a freed slot: its number may already
+  belong to the next bug.
 - **A bug that cannot be done is skipped, not stopped on.** Skip it when step 2 says it is a story (report
   "needs a story", no status change), when the tester cannot reproduce it
   (`Stopped: the tester could not reproduce bug #`), when the check is still red after three honest attempts, or
@@ -627,13 +703,49 @@ are the same for each bug, with these differences:
   bug's slot, so the red disputed test is never committed; in a single checkout without slots set those files aside
   with `git stash push --include-untracked -m "Tester files for #<issue>: <title>" -- <the paths>` before switching
   back to the base branch. Leave the status as it is (never set Ready), and say why in the report.
+  A `failed` fixer, each `Stopped:` line of "The tester" except a model that cannot be used, and a code review that
+  could not be had are skips of that bug too. A skip ends that bug only, and the run goes on: its slot stays held (see
+  "Freeing the slot once the PR is open"), and the session reports `stopped` to it.
 - **The whole run stops** if the working tree is dirty at the start, `git` or `gh` fails on authentication
-  or network, or the check is red on a clean base branch (that is not a bug fix: report it).
+  or network, or the check is red on a clean base branch (that is not a bug fix: report it). It also stops on a model
+  that cannot be used (any role; every later bug would fail the same way), a wait for room that runs out, an unusable
+  `parallel.fixAllMaxBugs`, and a take that fails other than with `all <k> slots are busy`. After a stop no new bug
+  starts and no agent is launched; every agent already running is waited for, and its result is read and checked by
+  that bug's rules; a bug whose next step needs no agent, no manual check and no room (only opening the PR after its
+  last review) opens its PR and is freed as above; every other bug in flight stays where it is (status In progress,
+  slot taken, files as they are) and reports `stopped`. Then print one line, the stop's own text followed by the two
+  lists (`<step>` is the bug's last reported step), and then the final table:
+
+  `<the Stopped: line of the cause> Not started: #<n>, #<n> | none. Stopped in flight: #<n> at <step>, #<n> at <step> | none.`
 - **Never** merge any other way than with `git.mergeFlags` on a complete fix, push to the base branch,
-  close an issue by hand (the PR's `Fixes #N` does), or edit an issue.
-- **End with a table:** issue, PR (or "skipped"), one-line cause (`not reproduced: <the reason>` for a bug skipped
-  at the tester), and what was verified. Name the manual
-  check as not done where it could not be done.
+  close an issue by hand (the PR's `Fixes #N` does), or edit an issue. Never set Ready or Approved.
+- **End with a table:** after the `Stopped:` line when there is one, and after every agent of the run has returned,
+  one table and one count line:
+
+  ```
+  | Bug | Result | PR | Slot | Cause or reason | Verified |
+  |---|---|---|---|---|---|
+  | #<n> <title> | pull request | #<pr>, auto-merge on | <s> freed | <the fixer's Cause line> | check green; manual check done |
+  | #<n> <title> | pull request | #<pr>, auto-merge off: <why> | <s> held: <the check of decision 2 that failed> | <Cause> | <...> |
+  | #<n> <title> | skipped | - | <s> held: uncommitted files | not reproduced: <the reason> | - |
+  | #<n> <title> | skipped | - | <s> held: local commits, not pushed | <why it was skipped> | <...> |
+  | #<n> <title> | skipped | - | - | needs a story | - |
+  | #<n> <title> | stopped | - | <s> held | stopped at <step> | - |
+  | #<n> <title> | not started | - | - | run limit of <k> reached / the run stopped / no slot frees in this run: <...> | - |
+
+  <a> with a pull request, <b> skipped, <c> stopped, <d> not started; local branches kept by freed slots: <branches | none>.
+  ```
+
+  `<title>` is without a leading `[Bug] `. "The check of decision 2" is the check of "Freeing the slot once the PR is
+  open" that failed. The rows are the started bugs in the order they started, then the skipped `needs a story` bugs
+  and the not-started bugs in the order of waiting. Verified is `check <green | red>`, then `manual check done`,
+  `manual check not done: <why>` or `manual check not needed`. A bug delayed by an overlap adds
+  `; waited for #<n> (overlap: <the shared path, the hot file entry, or doNotPair>)` to its Cause or reason.
+
+**Without `worktrees`** (one checkout, no slots) nothing runs in parallel: one bug at a time, as before, each on its
+own branch from up-to-date `origin/<git.baseBranch>`. After a bug's PR is open, switch back to the base branch,
+`git pull --ff-only`, and start the next. The order, the run limit, the board read, the gate, the stops and the table
+are the same.
 
 ## Hard rules
 

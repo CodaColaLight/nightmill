@@ -210,7 +210,8 @@ has no "How verified"); when a blocking finding is still open the comment on the
 ## Parallel work
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
-  script (`-Take <branch>`), free it after the merge (`-Release N`), list them (`-Status`). The
+  script (`-Take <branch>`), free it after the merge (`-Release N`), or, in `/fix all`,
+  once its pull request is open and its branch pushed (`-Abandon N`; see `/fix`), list them (`-Status`). The
   scripts are at `${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1` and `${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh`. A skill
   that works in a slot reports each step with `-Report <step>` / `--report <step>` (the steps are in `/next` and
   `/fix`), and `/status` shows the slot `running` while the last report is at most `worktrees.stalledAfterMinutes`

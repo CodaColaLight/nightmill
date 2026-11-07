@@ -36,7 +36,7 @@ not a conversation.
 |---|---|
 | `/nightmill:spec [N]` | Takes a Ready story and writes its spec as its own PR, sets Spec review and stops. |
 | `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. |
-| `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` works through every Ready bug. |
+| `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` fixes every Ready bug, several at once (one per free slot, within the agent limit and the room), and ends with one table. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. |
 | `/nightmill:models` | One table of each agent role's model, where it comes from (the config or the default), its rank and whether the reviewer pairings hold. Read-only. |
@@ -159,7 +159,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review |
 | `git` | Base branch, branch prefixes, merge flags |
-| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5) |
+| `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5); and for `/fix all` the most bugs one run starts (`fixAllMaxBugs`, default 0: no limit) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser, and `panelRefreshSeconds` (default 15): how often the slots pane beside the chat reads the slots again |
 
 `templates/nightmill.example.json` is a complete example.
@@ -252,8 +252,14 @@ only when its worktree is clean and `gh` lists a merged pull request for its bra
 the local branch, so a reused branch name or work after the merge keeps the slot busy and nothing is deleted. A slot
 that cannot be judged (`gh` missing, logged out or failing, no fetch) stays busy, with a note on standard error, and
 never makes a take fail. A slot whose pull request is open, closed without a merge or moved by "update branch" stays
-busy until `-Release` or `-Abandon`. Each freed slot is reported in one line:
+busy until `-Release` or `-Abandon` (`/fix all` abandons it itself). Each freed slot is reported in one line:
 `Slot 1 is free (was feat/a, PR #12), released automatically.`
+
+`/fix all` runs one bug per slot and frees a bug's slot itself once its branch is on its open pull request
+(`-Abandon`; the local branch is kept, so a few slots serve a long list); a slot whose bug was skipped stays busy with
+its files for the maintainer; overlapping bugs (a file named in both issues, the same `parallel.hotFiles` entry,
+`parallel.doNotPair`) do not run at the same time; the run ends when every Ready bug has a pull request, was skipped,
+or is listed as not started, with one table.
 
 A take claims its slot before it does any work: it writes the slot's marker in the state `taking`, with the take's
 process id, and creates it only if the slot has none, so two takes started together get different slots. A take whose

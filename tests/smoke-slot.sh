@@ -1145,4 +1145,71 @@ claim_case6
 claim_case7
 claim_reset
 
+echo "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"
+# 13 (iteration 33, /fix all): the skill frees a bug's slot with --abandon once the bug's branch is on its open pull
+# request, and holds a slot with uncommitted files. The slot scripts already do both, and this case pins it: takes run
+# one after the other get different slots; --abandon frees a clean slot at once, keeps the local branch and the pushed
+# commits, and asks gh for nothing; a freed slot is reused by the next take; --abandon refuses a slot with an untracked
+# file and changes nothing; no gh call but the reap's merged query is made.
+claim_reset
+for b in feat/p1 feat/p2 feat/p3; do
+  git -C "$tmp/work" branch -D "$b" >/dev/null 2>&1 || true
+  git -C "$tmp/origin.git" update-ref -d "refs/heads/$b" >/dev/null 2>&1 || true
+done
+reset_gh
+d1="$tmp/wt/slot-1"
+# 1 two takes one after the other get slots 1 and 2; a third fails and changes no marker
+rep --take feat/p1
+[ "$rc" = 0 ] && grep -q 'Slot 1 is yours' <<<"$out" || fail "13.1: take feat/p1 did not get slot 1 (exit $rc): $out / $err"
+rep --take feat/p2
+[ "$rc" = 0 ] && grep -q 'Slot 2 is yours' <<<"$out" || fail "13.1: take feat/p2 did not get slot 2 (exit $rc): $out / $err"
+cp "$(marker 1)" "$tmp/p13-m1.txt"; cp "$(marker 2)" "$tmp/p13-m2.txt"
+rep --take feat/p3
+[ "$rc" != 0 ] || fail "13.1: a third take with two slots should fail: $out"
+grep -q 'all 2 slots are busy' <<<"$err" || fail "13.1: the third take did not say 'all 2 slots are busy': $err"
+c_same "$tmp/p13-m1.txt" "$(marker 1)" "13.1 the third take"
+c_same "$tmp/p13-m2.txt" "$(marker 2)" "13.1 the third take"
+# 2 slot 1 commits one file and pushes; --abandon frees it, keeps the branch and the pushed tip, and asks gh for nothing
+echo p1 > "$d1/p1.txt"
+G "$d1" add -A
+G "$d1" commit -qm "work on feat/p1"
+git -C "$d1" push -q origin feat/p1 2>/dev/null
+tip=$(git -C "$d1" rev-parse HEAD)
+glog=$(cat "$tmp/gh.log")
+rep --abandon 1
+[ "$rc" = 0 ] || fail "13.2: --abandon 1 exited $rc: $out / $err"
+[ "$out" = "Slot 1 is free (was feat/p1; the local branch is kept, delete it yourself if unwanted)." ] || fail "13.2: wrong --abandon output: $out"
+[ "$(cat "$tmp/gh.log")" = "$glog" ] || fail "13.2: --abandon asked gh: $(cat "$tmp/gh.log")"
+[ ! -f "$(marker 1)" ] || fail "13.2: the marker of slot 1 is still there"
+[ "$(git -C "$tmp/work" rev-parse --verify -q refs/heads/feat/p1 || true)" = "$tip" ] || fail "13.2: the local branch feat/p1 is not the tip $tip"
+[ "$(git -C "$tmp/origin.git" rev-parse --verify -q refs/heads/feat/p1 || true)" = "$tip" ] || fail "13.2: the origin branch feat/p1 is not the tip $tip"
+[ -z "$(git -C "$d1" branch --show-current)" ] || fail "13.2: slot 1 is not detached: $(git -C "$d1" branch --show-current)"
+# 3 the freed slot is reused
+rep --take feat/p3
+[ "$rc" = 0 ] && grep -q 'Slot 1 is yours' <<<"$out" || fail "13.3: take feat/p3 did not reuse slot 1 (exit $rc): $out / $err"
+# 4 an untracked file holds the slot: --abandon refuses and changes nothing
+echo x > "$d1/untracked.txt"
+cp "$(marker 1)" "$tmp/p13-m1.txt"
+glog=$(cat "$tmp/gh.log")
+rep --abandon 1
+[ "$rc" != 0 ] || fail "13.4: --abandon of a slot with an untracked file should fail: $out"
+grep -qF 'slot 1 has uncommitted files:' <<<"$err" || fail "13.4: wrong refusal on standard error: $err"
+c_same "$tmp/p13-m1.txt" "$(marker 1)" "13.4 the refused --abandon"
+[ -f "$d1/untracked.txt" ] || fail "13.4: the untracked file is gone"
+[ "$(git -C "$d1" branch --show-current)" = feat/p3 ] || fail "13.4: slot 1 is not on feat/p3 any more: $(git -C "$d1" branch --show-current)"
+[ "$(cat "$tmp/gh.log")" = "$glog" ] || fail "13.4: the refused --abandon asked gh: $(cat "$tmp/gh.log")"
+# 5 no gh call but the reap's merged query (the takes ask it for slots with a clean tree; it finds nothing)
+other=$(grep -vxE 'pr list --state merged --head feat/p[0-9] --json number,headRefOid' "$tmp/gh.log" || true)
+[ -z "$other" ] || fail "13.5: gh was asked something but the reap's merged query: $other"
+# clean up: every slot free, the local and the remote branches gone, the fake gh as it was
+rm -f "$d1/untracked.txt"
+bash "$S" --abandon 1 >/dev/null || fail "13.5: clean-up: --abandon 1 failed"
+bash "$S" --abandon 2 >/dev/null || fail "13.5: clean-up: --abandon 2 failed"
+for b in feat/p1 feat/p2 feat/p3; do
+  git -C "$tmp/work" branch -D "$b" >/dev/null 2>&1 || true
+  git -C "$tmp/origin.git" update-ref -d "refs/heads/$b" >/dev/null 2>&1 || true
+done
+rm -f "$tmp/p13-m1.txt" "$tmp/p13-m2.txt"
+claim_reset
+
 echo "SMOKE OK"

@@ -1150,6 +1150,33 @@ else
   echo "FAIL: $dependabot_yml is missing"; fail=1
 fi
 
+echo "== /fix all runs bugs in parallel"
+# /fix all fixes Ready bugs in parallel, one per free slot, and ends only when every Ready bug has a pull request, was
+# skipped with a reason or is listed as not started (iteration 33): the key parallel.fixAllMaxBugs (default 0: no limit,
+# any other value that is not a whole number stops the run), one producer at a time per bug, one take at a time, the slot
+# freed with --abandon once the branch is the head of the open pull request and held when its files are uncommitted,
+# overlapping bugs that wait, the pause flag at each start, the Stopped line with the two lists, and one table at the end.
+# /fix is a conversation, so the lint pins the wording the behaviour depends on (each item on one line); the manual
+# check does the behaviour.
+fx=skills/fix/SKILL.md
+for w in 'parallel.fixAllMaxBugs' 'Stopped: parallel.fixAllMaxBugs must be a whole number of at least 0' \
+         'One producer at a time per bug' 'one take at a time' '--abandon' '-Abandon' '--json headRefOid' \
+         '--untracked-files=all' 'held: uncommitted files' 'Not started:' 'Stopped in flight:' 'run limit of <k> reached' \
+         'no slot frees in this run' 'parallel.hotFiles' 'parallel.doNotPair' 'overlaps #N, will conflict until that merges' \
+         'pause flag' '| Bug | Result | PR | Slot | Cause or reason | Verified |' 'git.mergeFlags'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all item: $w"; fail=1; }
+done
+for w in 'At most 5 per run' 'One fixer at a time'; do
+  if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still says '$w'"; fail=1; fi
+done
+grep -qF 'once its pull request is open and its branch pushed' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md: Parallel work does not say a slot is freed once its pull request is open and its branch pushed"; fail=1; }
+grep -qF '"fixAllMaxBugs": { "type": "integer", "minimum": 0, "default": 0,' schema/nightmill.schema.json || { echo "FAIL: schema: parallel.fixAllMaxBugs is not an integer with minimum 0 and default 0"; fail=1; }
+json_load templates/nightmill.example.json
+[ "$(json_get parallel.fixAllMaxBugs)" = 0 ] || { echo "FAIL: templates/nightmill.example.json: parallel.fixAllMaxBugs is not the schema default 0"; fail=1; }
+for w in 'fixAllMaxBugs' 'abandons it itself'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
