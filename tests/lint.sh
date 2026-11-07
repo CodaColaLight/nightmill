@@ -1169,6 +1169,28 @@ done
 for w in 'At most 5 per run' 'One fixer at a time'; do
   if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still says '$w'"; fail=1; fi
 done
+# criterion 1: the batch runs bugs in parallel, and the sequential sentence of the old text is gone
+for w in '**In parallel, one slot per bug.**' 'several at the same time, one per slot' \
+         'count the agents (the live limit)' 'Agents go out without waiting on each other.' \
+         'bugs in flight run their agents beside'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all parallel item: $w"; fail=1; }
+done
+for w in 'the next bug starts only after the previous bug' 'only after the previous bug'"'"'s fixer has returned'; do
+  if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still runs the batch one bug after another: '$w'"; fail=1; fi
+done
+# criterion 3: bugs start by priority, then by issue number, lowest first
+for w in '`board.priorities` (highest first; no priority ranks last), then by issue number, lowest first'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all order: $w"; fail=1; }
+done
+# criterion 8: the board is read again and a bug that became Ready joins waiting, at most once per run
+for w in 'list the Ready bugs again' 'has not seen yet joins waiting in its place in the order' \
+         'processed at most once per run'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say how /fix all picks up a new Ready bug: $w"; fail=1; }
+done
+# criterion 10: each bug reports to its own slot, and nothing is reported to a slot once it is freed
+for w in 'In batch mode each bug reports to its own slot.' 'Nothing more is reported to a freed slot'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say each /fix all bug reports to its own slot: $w"; fail=1; }
+done
 grep -qF 'once its pull request is open and its branch pushed' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md: Parallel work does not say a slot is freed once its pull request is open and its branch pushed"; fail=1; }
 grep -qF '"fixAllMaxBugs": { "type": "integer", "minimum": 0, "default": 0,' schema/nightmill.schema.json || { echo "FAIL: schema: parallel.fixAllMaxBugs is not an integer with minimum 0 and default 0"; fail=1; }
 json_load templates/nightmill.example.json

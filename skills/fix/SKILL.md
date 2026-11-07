@@ -626,7 +626,7 @@ differences:
      run stops (see "The whole run stops"). Then try the next start, from 2.
   4. **The board again** (see "Order, the run limit and new Ready bugs").
   5. **Waiting.** When nothing can be launched or started, wait for the next agent of the run to return, and say once
-     what you wait for (for example `waiting for a slot: #118 and #121 are in flight`).
+     what you wait for (for example `waiting for a slot: #<n> and #<m> are in flight`).
   6. **The end.** The run ends when waiting is empty after the last board read and nothing is in flight. It also ends
      when nothing of this run is in flight but bugs are still waiting: then the last take failed, and no slot can free
      in this run. Those bugs are listed as not started, with
