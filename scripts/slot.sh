@@ -305,7 +305,7 @@ warmup() {
     c=0; (cd "$where" && bash -c "$cmd") || c=$?
     if [ "$c" != 0 ]; then warm_idx=$i; warm_code=$c; return 1; fi
     if [ -n "$hash" ]; then
-      c=0; echo "$hash" > "$stamp" || c=$?
+      c=0; echo "$hash" > "$stamp" || c=1
       if [ "$c" != 0 ]; then warm_idx=$i; warm_code=$c; return 1; fi
     fi
   done
@@ -429,7 +429,7 @@ if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
       claim_from "${m_state:-}" "${m_pid:-}"
       if [ "$claim" != none ]; then
         m_skill=""; m_role=""; m_reported=""
-        if [ "$claim" = live ]; then m_step=taking; else m_step=take-died; fi
+        if [ "$claim" = live ]; then m_step="taking"; else m_step="take-died"; fi
       fi
       retiring=""; if [ "$i" -gt "$count" ]; then retiring=retiring; fi
       agent=unknown

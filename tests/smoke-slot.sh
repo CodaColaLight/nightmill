@@ -639,7 +639,7 @@ waitfor() { # waitfor <n> <state>: until field 9 of slot n in --status --porcela
 wait_claims() { # wait_claims <n> <count>: until .slots holds that many slot-<n>.claim.*.tmp files (60 s at most)
   local end=$((SECONDS + 60)) c
   while :; do
-    c=$(ls "$S1" 2>/dev/null | grep -c "^slot-$1\.claim\..*\.tmp\$" || true)
+    c=$(n=0; for f in "$S1"/slot-"$1".claim.*.tmp; do if [ -e "$f" ]; then n=$((n + 1)); fi; done; echo "$n")
     if [ "$c" -ge "$2" ]; then return 0; fi
     [ "$SECONDS" -lt "$end" ] || fail "wait_claims: slot $1 has $c claim files, not $2, after 60 s"
     bg_alive || fail "wait_claims: every background take ended with $c claim files of slot $1, not $2: $(cat "$tmp"/*.err 2>/dev/null | tail -n 5)"
@@ -655,7 +655,7 @@ taking_text() { # taking_text <slot> <branch> <since> [pid]: the text of a takin
 }
 c_keys() { grep -o '"[a-z]*":' "$(marker "$1")" | tr -d '\n'; }
 c_finished() { [ "$(c_keys "$1")" = '"slot":"branch":"since":' ]; }
-c_leftovers() { ls "$S1" 2>/dev/null | grep -E "^slot-$1\.(claim\..*\.tmp|left\..*\.tmp|take\.tmp)\$" || true; }
+c_leftovers() { local f; for f in "$S1"/slot-"$1".claim.*.tmp "$S1"/slot-"$1".left.*.tmp "$S1"/slot-"$1".take.tmp; do if [ -e "$f" ]; then printf '%s\n' "${f##*/}"; fi; done | sort; }
 c_head() { git -C "$tmp/wt/slot-$1" rev-parse HEAD; }
 c_branch() { git -C "$tmp/wt/slot-$1" branch --show-current; }
 c_ref() { git -C "$tmp/work" rev-parse --verify -q "refs/heads/$1" || true; }
