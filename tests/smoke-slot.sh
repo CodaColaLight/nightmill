@@ -843,6 +843,19 @@ claim_case3() {
   c_restored 1 2 "git switch failed (exit 128); slot 1 is free again"
   [ -z "$(c_branch 1)" ] && [ "$(c_head 1)" = "$X" ] || fail "claim 3: slot 1 is not detached at $X after the failed switch"
   [ -z "$(c_ref feat/f5)" ] || fail "claim 3: the branch feat/f5 was left behind"
+  # switch, step 5: the branch exists and is checked out in slot 2, so step 4 passes and the real git switch fails
+  [ -d "$tmp/wt/slot-2" ] || fail "claim 3: setup: slot-2 does not exist"
+  c_mkbranch feat/f12 f12.txt
+  Y=$(c_ref feat/f12)
+  git -C "$tmp/wt/slot-2" switch -q feat/f12
+  rep --take feat/f12 --slot 1
+  c_restored 1 2 "git switch failed (exit 128); slot 1 is free again"
+  grep -Eq "already (used by worktree|checked out) at" <<<"$err" || fail "claim 3: the take did not reach the real git switch (no git refusal on standard error): $err"
+  [ -z "$(c_branch 1)" ] && [ "$(c_head 1)" = "$X" ] || fail "claim 3: slot 1 is not detached at $X after the failed git switch (branch '$(c_branch 1)', head $(c_head 1))"
+  [ "$(c_ref feat/f12)" = "$Y" ] || fail "claim 3: feat/f12 is not at $Y any more: $(c_ref feat/f12)"
+  [ "$(c_branch 2)" = feat/f12 ] || fail "claim 3: slot 2 left feat/f12 (branch '$(c_branch 2)')"
+  git -C "$tmp/wt/slot-2" switch -q --detach origin/main
+  git -C "$tmp/work" branch -D feat/f12 >/dev/null
   # fetch
   git -C "$tmp/work" remote set-url origin "$tmp/no-such.git"
   rep --take feat/f6

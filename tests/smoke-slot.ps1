@@ -941,6 +941,19 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
     Test-Restored $r 1 2 "git switch failed (exit 128); slot 1 is free again"
     if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed switch" }
     if (Get-Ref "feat/f5") { Fail "claim 3: the branch feat/f5 was left behind" }
+    # switch, step 5: the branch exists and is checked out in slot 2, so step 4 passes and the real git switch fails
+    if (-not (Test-Path "$tmp\wt\slot-2")) { Fail "claim 3: setup: slot-2 does not exist" }
+    New-Branch "feat/f12" "f12.txt"
+    $Y = Get-Ref "feat/f12"
+    Gq -C "$tmp\wt\slot-2" switch -q feat/f12
+    $r = SlotE "-Take feat/f12 -Slot 1"
+    Test-Restored $r 1 2 "git switch failed (exit 128); slot 1 is free again"
+    if ($r.Err -notmatch "already (used by worktree|checked out) at") { Fail "claim 3: the take did not reach the real git switch (no git refusal on standard error): $($r.Err)" }
+    if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed git switch (branch '$(Get-Current 1)', head $(Get-Head 1))" }
+    if ((Get-Ref "feat/f12") -ne $Y) { Fail "claim 3: feat/f12 is not at $Y any more: $(Get-Ref 'feat/f12')" }
+    if ((Get-Current 2) -ne "feat/f12") { Fail "claim 3: slot 2 left feat/f12 (branch '$(Get-Current 2)')" }
+    Gq -C "$tmp\wt\slot-2" switch -q --detach origin/main
+    Gq -C $work branch -D feat/f12
     # fetch
     Gq -C $work remote set-url origin "$tmp\no-such.git"
     $r = SlotE "-Take feat/f6"
