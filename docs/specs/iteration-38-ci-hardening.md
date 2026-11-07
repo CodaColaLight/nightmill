@@ -1,6 +1,6 @@
 # Iteration 38: CI runs with least privilege, timeouts and a concurrency that does not cancel main
 
-Status: draft, awaiting approval (#154)
+Status: delivered in iteration 38 (PR #201)
 
 Story: #154, epic #107 (Hardening from the code review), finding MD-T3 of the review of 0.2.0. `ci.yml` gets a
 read-only token, a timeout on every job, a concurrency group that cancels only pull request runs, a comment on each

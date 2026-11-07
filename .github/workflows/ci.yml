@@ -5,25 +5,32 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
+    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.
     name: Lint (generic, JSON, skills, shell)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash tests/lint.sh
         env:
           FORBIDDEN_WORDS: ${{ secrets.FORBIDDEN_WORDS }}
 
   smoke-bash:
+    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.
     name: bash scripts smoke tests
     runs-on: ubuntu-latest
+    timeout-minutes: 7
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash tests/smoke-json.sh
       - name: Hide jq (the bash scripts must not need it)
         run: |
@@ -44,10 +51,12 @@ jobs:
       - run: bash tests/smoke-panel.sh
 
   smoke-powershell:
+    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.
     name: PowerShell scripts smoke tests
     runs-on: windows-latest
+    timeout-minutes: 38
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
@@ -66,9 +75,10 @@ jobs:
     name: claude plugin validate (not blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - run: npm install -g @anthropic-ai/claude-code

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Iteration 38 (#154): CI runs with a read-only token, a timeout on every job (5 to 38
+  minutes), cancels superseded runs of a pull request only (every push to main gets its own result), says on each
+  required job name that the ruleset requires it, and pins its actions by commit SHA, kept current by Dependabot.
+
 - Iteration 34 (#186): a take claims its slot atomically and a failed take leaves no half-taken slot. The take now
   claims the slot before it fetches, switches the worktree or warms up: it writes a marker with `"state": "taking"` and
   its process id (`"pid"`) and gives it the marker's name only when no marker exists (`ln` in bash, `File.Move` in
