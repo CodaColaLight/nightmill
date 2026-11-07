@@ -78,8 +78,9 @@ no half-taken slot behind.
   `-Id` is an `Int32`, so a number above 2147483647 makes it throw instead of finding nothing.
 - On Windows, a file that a reader has opened without `FILE_SHARE_DELETE` (PowerShell's `Get-Content` and
   `[System.IO.File]::ReadAllText` open it that way) cannot be replaced or deleted while it is open: `MoveFileEx` with
-  replace (the `mv -f` of Git for Windows), `File.Replace` and `Remove-Item` fail with a sharing violation. A reader
-  holds a marker for milliseconds.
+  replace (the `mv -f` of Git for Windows), `File.Replace`, `Remove-Item` and the `rm` of Git for Windows fail with a
+  sharing violation, also when they act on another hard link of the same file. A reader holds a marker for
+  milliseconds.
 - `git fetch` updates `refs/remotes/origin/<base>` under a lock and checks the old value it read. Two fetches that run
   at the same time after origin has moved both try to update it, and the one that loses fails (`cannot lock ref
   'refs/remotes/origin/<base>': is at <new> but expected <old>`, or `Unable to create '...lock': File exists`), exit
@@ -95,7 +96,7 @@ writes the complete taking marker (decision 2) to a temporary file in `.slots`. 
 `slot-N.json` with an operation that creates the target only when it does not exist:
 
 - bash: `ln "$state/slot-N.claim.<pid>.tmp" "$state/slot-N.json"` (a hard link), then `rm -f` of the temporary file,
-  whether the link succeeded or not;
+  whether the link succeeded or not (the removal after a successful link: below);
 - PowerShell: `[System.IO.File]::Move("<state>\slot-N.claim.<pid>.tmp", "<state>\slot-N.json")`. On failure, the
   temporary file is removed.
 
@@ -105,12 +106,18 @@ exactly one gets it. A reader never sees a half-written claim, because the file 
 The two shells are the same in effect because they act on the same path with the same "create only if absent" rule. A
 bash take and a PowerShell take therefore also exclude each other. That holds for bash on Linux, macOS and Git for
 Windows, and for `slot.ps1` on Windows (the facts above); it is not claimed for `slot.ps1` under PowerShell 7 on a
-Linux or macOS file system without hard links (see Left). `<pid>` in the temporary name (the claim's
-`pid`, decision 2) keeps two takes from sharing a temporary file. The name does not end in `.json`, so `last_slot` /
-`Get-LastSlot` never sees it.
+Linux or macOS file system without hard links (see Left). `<pid>` in the temporary name (the claim's `pid`, decision
+2) keeps two takes from sharing a temporary file. The name does not end in `.json`, so `last_slot` / `Get-LastSlot`
+never sees it. The publish is not retried: a publish that fails because a marker exists means busy. For the tests
+only, an environment variable `NIGHTMILL_CLAIM_GATE` holds the take at the publish (decision 15).
 
-The publish is not retried (decision 14 does not apply to it): a publish that fails because a marker exists means
-busy. For the tests only, an environment variable `NIGHTMILL_CLAIM_GATE` holds the take at the publish (decision 15).
+**After a successful `ln` (bash only; `File.Move` leaves no second name).** The temporary name is a second name of the
+marker, so its `rm -f` can fail on Windows while a reader holds the marker open (the facts). That failure is not an
+error: the take reads `rm`'s exit code explicitly (no `set -e` exit), leaves `rm`'s own message on standard error,
+prints nothing else and goes on with step 2; the leftover name, which no command reads, stays in `.slots`. No write goes
+through it: the take never writes to `slot-N.claim.<pid>.tmp` again (the rewrite of decision 5 uses
+`slot-N.left.<pid>.tmp`), and bash writes the claim's and the rewrite's temporary files with `noclobber` (`set -C`), so
+an existing file of that name makes the write fail (handled below, or as a failed rewrite) instead of writing into it.
 
 When the publish fails and `slot-N.json` exists, another take won the race. The slot is skipped as busy (see the
 take, below). When it fails and `slot-N.json` does not exist (for example, a file system without hard links), the take
@@ -152,22 +159,20 @@ the claim. Its text, LF, 2-space indent, in this order:
   the same kind of id on Windows. In PowerShell it is `$PID`.
 
 bash writes it with a new helper in `scripts/lib/json.sh`, `json_marker_taking SLOT BRANCH SINCE PID`. Without PID it
-writes the same text without the `pid` line, for a claim left behind (decision 5). Its header
-line follows the one for `json_marker`. PowerShell writes the same bytes from explicit lines with `ConvertTo-JsonString`,
-as `-Report` does. The finished marker (decision 3) is unchanged.
+writes the same text without the `pid` line, for a claim left behind (decision 5). Its header line follows the one for
+`json_marker`. PowerShell writes the same bytes from explicit lines with `ConvertTo-JsonString`, as `-Report` does.
+The finished marker (decision 3) is unchanged.
 
 **3. The finished marker is today's, written over the claim in one step.** After the warm-up, the take writes the
 finished marker to `slot-N.take.tmp` in `.slots` and moves it over the claim: bash `mv -f`, PowerShell
 `[System.IO.File]::Replace(<tmp>, <marker>, [NullString]::Value)`, as `--report` does (a literal `$null` would be
-passed as an empty string, which `File.Replace` rejects as a backup path). The move is retried as decision 14 says.
-Its content is exactly what each shell
-writes today: bash `json_marker N <branch> <now>` (keys `slot`, `branch`, `since`, in that order), and PowerShell
-`ConvertTo-Json` of the same three keys, as today. `since` is the time of this write, as today. So the finished marker
-has neither `state` nor `pid`. Then the take prints the hints, starting with `Slot N is yours: <dir>  (branch
-<branch>)`, unchanged.
+passed as an empty string, which `File.Replace` rejects as a backup path). The move is tried once (retries: #189).
+Its content is exactly what each shell writes today: bash `json_marker N <branch> <now>` (keys `slot`, `branch`,
+`since`, in that order), and PowerShell `ConvertTo-Json` of the same three keys, as today. `since` is the time of this
+write, as today. So the finished marker has neither `state` nor `pid`. Then the take prints the hints, starting with
+`Slot N is yours: <dir>  (branch <branch>)`, unchanged.
 
-When writing `slot-N.take.tmp` fails, or the move over the claim fails on its last attempt (decision 14), the take
-does not undo the switch or the
+When writing `slot-N.take.tmp` fails, or the move over the claim fails, the take does not undo the switch or the
 warm-up (they succeeded; the slot is ready, only its marker is not finished). In both shells it then:
 
 1. removes `slot-N.take.tmp` when it exists (`rm -f`, or `Remove-Item -ErrorAction SilentlyContinue`);
@@ -189,7 +194,9 @@ warm-up (they succeeded; the slot is ready, only its marker is not finished). In
 2. **Fetch**: `git fetch origin <git.baseBranch>`, at most 3 attempts, 1 s apart (decision 11).
 3. **Worktree**: when the slot directory does not exist, `git worktree add --detach <dir> <base>`. The take remembers
    that it created it. When the directory exists and `git status --porcelain` is not empty, the take refuses with
-   today's text, `slot N has uncommitted files; deal with them first: <dir>`. It removes its claim and exits 1.
+   today's text, `slot N has uncommitted files; deal with them first: <dir>`. It removes its claim (one attempt) and
+   exits 1. When that removal fails, the removal's own error text comes before the line, and the claim stays,
+   rewritten without its `pid` (decision 5, "A claim left behind"), so `--abandon` frees it.
 4. **Before the switch**, the take records what it must restore, with these commands (all `git -C <dir>`):
    - the slot's `HEAD` commit: `git rev-parse HEAD`;
    - its branch if it is on one: `git symbolic-ref -q --short HEAD` (exit 0 and the name; exit 1 and nothing when
@@ -214,10 +221,14 @@ warm-up (they succeeded; the slot is ready, only its marker is not finished). In
 7. **Finish** (decision 3).
 
 Every step from 2 to 7 runs with the claim in place. A step's exit code is read explicitly, so in bash `set -e` never
-ends the take silently.
+ends the take silently. In PowerShell, every refusal of the take (texts as today, today `throw`s), every line of
+decisions 1, 3 and 5 and the claim lines of decision 7 are one plain line on standard error
+(`[Console]::Error.WriteLine`) and then `exit 1`, never a `throw`, so standard error ends with that line and no error
+record, as in bash. Step 1's refusals come before any claim exists, so nothing is restored for them.
 
 **5. A failed step puts the slot back and frees the claim.** When step 2, 3 (the `git worktree add`), 4, 5 or 6 fails, the
-take restores in this order and stops at the first restore command that fails:
+take restores in this order and stops at the first restore command that fails. Items 2 to 4 apply only once step 4
+has run to its end; after a failure in step 2, 3 or 4 only items 1 and 5 run (decision 4):
 
 1. When the take created the worktree in step 3: `git worktree remove --force <dir>`. It holds nothing but the
    checkout of `<base>` and the output of the failed warm-up, so nothing is lost, and the slot is "not created yet" as
@@ -231,7 +242,7 @@ take restores in this order and stops at the first restore command that fails:
    this point (item 2), so the switch carries nothing into the slot it frees.
 4. When `refs/heads/<branch>` did not exist before and now points at the commit recorded in step 4:
    `git branch -D <branch>`. A branch that existed before is never deleted. Neither is one that has moved.
-5. Remove the claim (`slot-N.json`), retried as decision 14 says.
+5. Remove the claim (`slot-N.json`), one attempt (retries: #189). A failed removal is a failed restore command.
 
 Then one line on standard error, and exit 1 in both shells:
 
@@ -241,12 +252,13 @@ Then one line on standard error, and exit 1 in both shells:
   its `pid` (below).
 
 **A claim left behind is rewritten without `pid`, in both shells.** A take that exits while its claim stays (a restore
-command failed, here or in the trap or `finally`, or the write or the move of decision 3 failed) first rewrites the claim as
+command failed, the removal of step 3 failed, or the write or the move of decision 3 failed) first rewrites the claim as
 decision 2's text without the `pid` line: `slot`, `branch`, `since` as in the claim, then `"state": "taking"` as the
 last key (no comma after it), LF, 2-space indent. bash writes it with `json_marker_taking SLOT BRANCH SINCE` (no
 fourth argument: the helper then omits the `pid` line), PowerShell from the same explicit lines. It is written to
-`slot-N.claim.<pid>.tmp` and moved over the marker (bash `mv -f`, PowerShell `File.Replace` with
-`[NullString]::Value`, as in decision 3), retried as decision 14 says. A taking marker without
+`slot-N.left.<pid>.tmp` (bash with `noclobber`, decision 1) and moved over the marker (bash `mv -f`, PowerShell
+`File.Replace` with `[NullString]::Value`, as in decision 3), one attempt; when the move fails, `slot-N.left.<pid>.tmp`
+is removed (`rm -f`, `Remove-Item -ErrorAction SilentlyContinue`). A taking marker without
 `pid` is dead (decision 6), so the claim is dead at once, whatever process stays running. That matters in PowerShell,
 where `$PID` is the console's process when `slot.ps1` runs in an open session and would keep the claim live; bash
 does the same so that both shells leave the same claim. If this rewrite fails as well, the claim keeps its `pid`, the
@@ -254,34 +266,18 @@ line above is printed unchanged, and the README's way out (remove the marker by 
 
 `<step>` is exactly one of `git fetch`, `git worktree add`, `git switch`, or `warm-up <i>`, with `<i>` the 1-based
 number of the warm-up command, as in the `warm-up <i> in` line. (Step 1 and step 7 have their own lines with the
-step names `claim` and `write marker`: decisions 1 and 3, and "Interruption" below.) `<code>` is the failed command's exit code. In
+step names `claim` and `write marker`: decisions 1 and 3.) `<code>` is the failed command's exit code. In
 PowerShell, a warm-up command is run with `$global:LASTEXITCODE = 0` set first. Its code is `$LASTEXITCODE` after it,
 or 1 when it threw. Examples: `git fetch failed (exit 128); slot 1 is free again`, `warm-up 1 failed (exit 7); slot 2
 is free again`. These lines replace PowerShell's `git fetch failed`, `git worktree add failed`, `git switch failed` and
 `warm-up '<command>' failed`, and bash's silent exit. The take's exit code on a failed step becomes 1 in bash as well
 (today it is the command's code). It is the code of every other failed take, and the step's own code is in the line.
 
-Interruption: bash traps `INT` and `TERM` and runs the same restore (`<step>` is the step running), then exits 130 or
-143. PowerShell runs the restore in the `finally` of the take, which PowerShell runs on Ctrl+C. What is printed and
-cleaned up, by the step that was running:
-
-- **step 1** (`claim`): the temporary file is removed (`rm -f` / `Remove-Item`). When the publish had already
-  succeeded, the claim is removed as well. The line is `claim failed (exit <code>); slot <n> was not claimed`.
-- **steps 2 to 6**: the restore of decision 5, and its two lines, with `<step>` the name of the step running (step 4
-  counts as `git switch`, as in decision 4).
-- **step 7** (`write marker`): the handling of decision 3 for a failed write: `slot-N.take.tmp` is removed, the claim
-  stays rewritten without its `pid`, and the line is `write marker failed (exit <code>); slot <n> stays claimed: free
-  it with --abandon <n>` (PowerShell `-Abandon <n>`). When the move over the claim had already succeeded, the take
-  is finished and nothing is undone or printed.
-- `<code>`: in bash 130 for `INT` and 143 for `TERM`, the code the take then exits with. In PowerShell the `finally`
-  cannot tell Ctrl+C from another terminating error, so `<code>` is 1; the process exit code is PowerShell's own for a
-  stopped script, which the take cannot set (when the `finally` runs on a terminating error the script handles, it
-  exits 1).
-
-The trap and the `finally` act only while the take is between the start of step 1 and the end of step 7, and only
-once (a failure path that already restored and printed its line clears them first). A take killed without
-a chance to run either (a killed process, a closed window, a power cut) leaves its claim, which is then dead
-(decision 6). The smoke tests do not test interruption.
+**An interrupted take is not cleaned up by the scripts** (#190: no trap, no `finally`). A take stopped after its claim
+(Ctrl+C, a signal, a closed window, a killed process) restores nothing and leaves its claim with its `pid`. Once its
+process has ended, that is a dead claim (decision 6), shown as `take-died` and freed by `--abandon N` without losing
+work (criterion 6). A `slot.ps1` take stopped in an open console carries the console's `$PID`, so its claim stays live
+until the console closes (the README's way out applies).
 
 **6. A dead claim: a taking marker whose process has ended.** A taking marker is **live** while a process with its
 `pid` runs on this machine, and **dead** otherwise. The check:
@@ -296,12 +292,12 @@ a chance to run either (a killed process, a closed window, a power cut) leaves i
 A `pid` that is missing, or that is not a whole number from 1 to 2147483647 (decision 13), means dead, and no process
 check runs for it. bash tests the text of `pid` against `^[1-9][0-9]{0,9}$` and then `-le 2147483647`; PowerShell
 reads it with `Get-Text`, tests it against `^[1-9][0-9]{0,9}\z` and `[long]<text> -le 2147483647`, and only then
-calls `Get-Process -Id ([int]<text>)`. Such a claim has no
-process to name, so its texts say `no process recorded` where a dead claim with a `pid` says `process <pid> has
-ended` (decisions 7 and 8 give each text). Every claim left behind is one (decision 5). No age threshold is used, so
-no config key is needed. A take that hangs is ended by the person (its process). Its claim is then dead. A dead claim
-is never freed automatically: the take, the reap, the release and the report leave it alone. Only `--abandon N` frees
-it (decision 7), after the same checks that keep work safe today.
+calls `Get-Process -Id ([int]<text>)`. Such a claim has no process to name, so its texts say `no process recorded`
+where a dead claim with a `pid` says `process <pid> has ended` (decisions 7 and 8 give each text). Every claim left
+behind is one (decision 5). No age threshold is used, so no config key is needed. A take that hangs is ended by the
+person (its process). Its claim is then dead. A dead claim is never freed automatically: the take, the reap, the
+release and the report leave it alone. Only `--abandon N` frees it (decision 7), after the same checks that keep work
+safe today.
 
 **7. What every command does with a taking slot (live or dead).**
 
@@ -323,7 +319,7 @@ The claim lines on standard error (PowerShell writes `-Abandon` for `--abandon`)
   `slot N has a take that did not finish (no process recorded); free it with --abandon N`
 
 A live claim always has a `pid`, so the live line always names one. Every refusal leaves the marker byte for byte as
-it was.
+it was. PowerShell writes them as plain lines (decision 4).
 
 `--abandon N` on a dead claim: when the slot directory does not exist, it removes the marker. Otherwise it checks the
 tree exactly as today (`slot N has uncommitted files: <dir> (commit, stash or discard them first)`, exit 1), runs
@@ -396,7 +392,7 @@ warm-up failed. A dead claim keeps the slot out of use and names the way out: de
 which checks the tree again and keeps the branch.
 
 **11. The take's fetch is tried up to 3 times.** Step 2 runs `git fetch origin <git.baseBranch>`. When it fails, the
-take waits 1 s and runs it again, at most 3 attempts in all. The step fails only when the third attempt fails, with that
+take waits 1 s and runs it again, at most 3 attempts in all, so at most 2 waits, 2 s in all. The step fails only when the third attempt fails, with that
 attempt's exit code in the line. Git's own error text of each failed attempt goes to standard error as it comes, and
 nothing else is printed between attempts. 3 and 1 s are numbers in the scripts, not config keys.
 
@@ -419,16 +415,8 @@ writes (`$$`, a `winpid`, `$PID`) is in that range: Linux's `pid_max` is at most
 far below 2^31. Both shells use the same range, so a marker reads the same in both. A `pid` outside it means dead with
 `no process recorded`.
 
-**14. The take's own changes of its marker are retried.** After the claim, the take changes its marker in three ways:
-it moves the finished marker over the claim (decision 3), it moves the rewritten claim without `pid` over it (decision
-5, "A claim left behind"), and it removes it (decision 5, item 5; the interruption of step 1). Each is tried at most
-20 times, 0.25 s apart (5 s in all), and counts as failed only when the last attempt fails, with that attempt's exit
-code and error text (the errors of the earlier attempts are not shown). 20 and 0.25 s are numbers in the scripts, not
-config keys. Why: on Windows, a reader that has the marker open without delete sharing (any `--status`, the panel,
-`/nightmill:status`, the reap of another take) makes the replace or the removal fail for the milliseconds it reads
-(the facts). Without the retry, a take whose warm-up succeeded would leave a ready slot as a dead claim, or a failed
-take would leave a claim it meant to remove. On Linux and macOS the first attempt succeeds. The claim's publish and
-the writes of the temporary files are not retried: no reader opens a temporary file, and a failed publish means busy.
+**14. The take's own marker changes are tried once** (the finish, decision 3; the rewrite and the removal, decision 5).
+A reader holding the marker on Windows can make one fail; decisions 3 and 5 say what follows. Retries are #189.
 
 **15. A gate for the tests at the publish: `NIGHTMILL_CLAIM_GATE`.** When the environment variable
 `NIGHTMILL_CLAIM_GATE` is set and not empty, every publish of decision 1 waits, after the temporary file is written
@@ -460,15 +448,13 @@ The same in both, with the messages verbatim:
 - `marker_fields` (bash) also returns `state` and `pid`. A helper `claim_of N` / `Get-Claim N` gives `none` (no marker,
   or a finished one), `live` or `dead` (decision 6), and the pid.
 - The take: decisions 1 to 5. The claim and finish helpers are `claim_slot` / `Invoke-Claim` and `finish_take` /
-  `Complete-Take`. The restore is `restore_take` / `Undo-Take`, run from the failure paths and the trap (bash) or the
-  `finally` (PowerShell).
+  `Complete-Take`. The restore is `restore_take` / `Undo-Take`, run from the failure paths.
 - `reap_all` / `Invoke-Reap`: `continue` on any taking marker before the dirty check.
 - `--release`, `--abandon`, `--report`: decision 7, checked right after "slot N is not in use".
 - `--status`, `--status --porcelain`: decision 8. The comment above the porcelain loop names the two step values.
 - `Invoke-Warmup` returns the failing index and code in place of throwing; `warmup` (bash) does the same, with the hash
   and the stamp as part of the command (decision 4, step 6).
-- The fetch of the take: decision 11. The take's marker moves and removal: decision 14, one small retry helper per
-  script. The gate: decision 15. The liveness check: decisions 6, 12 and 13, in `claim_of` / `Get-Claim`.
+- The fetch of the take: decision 11. The gate: decision 15. The liveness check: decisions 6, 12 and 13, in `claim_of` / `Get-Claim`.
 - The header comment of each script gets a paragraph after "Reports":
   `# Claim (iteration 34): a take claims its slot before it fetches, switches or warms up: it writes a marker with`
   `# "state": "taking" and its process id ("pid") and gives it the marker's name only if no marker exists (bash ln,`
@@ -485,12 +471,11 @@ The same in both, with the messages verbatim:
   started together get different slots. A take whose fetch, switch or warm-up fails puts the slot back as it was,
   frees it and says `<step> failed (exit N)`; when the failed warm-up left changed or new files in the slot, the
   slot keeps the claim instead, so that nothing is lost, and `-Abandon N` (`--abandon N`) frees it once the files are
-  dealt with. A
-  take that died without finishing leaves a claim that `slot -Status`
-  shows with `has ended` (or `no process recorded`, for a take that could not put its slot back) and
-  `/nightmill:status` with the step `take-died`. Nothing frees it automatically, and
-  `-Abandon N` (`--abandon N`) frees it once its files are dealt with, keeping the branch. If `-Abandon` says the
-  process is still running but no take is (its number was reused), end that process, or remove the marker
+  dealt with. A take that died or was stopped without finishing leaves a claim that `slot -Status` shows with `has
+  ended` (or `no process recorded`, for a take that could not put its slot back) and `/nightmill:status` with the step
+  `take-died`. Nothing frees it automatically, and `-Abandon N` (`--abandon N`) frees it once its files are dealt
+  with, keeping the branch. If `-Abandon` says the process is still running but no take is (its number was reused, or
+  it is the PowerShell console a stopped take ran in), end or close that process, or remove the marker
   `<worktrees.root>/.slots/slot-N.json` by hand.
 - "What a slot's agent is doing": after the sentence on **unknown**, add: `A slot still being taken shows unknown with
   the step taking; one whose take died shows the step take-died.`
@@ -501,8 +486,8 @@ One bullet under `Unreleased`, in the form of the others: `- Iteration 34 (#186)
 and a failed take leaves no half-taken slot. ...`. It names: the claim before the fetch (a marker with `"state":
 "taking"` and `"pid"`, published only if absent: `ln` in bash, `File.Move` in PowerShell); the finished marker
 unchanged; the fetch tried up to 3 times; `<step> failed (exit N)` and the slot put back in both shells, with exit 1
-in bash too, or kept claimed when the failed warm-up left files in it; a dead claim shown
-as `take-died` and freed only by `--abandon`; the readers unchanged (the porcelain step field); the previous version
+in bash too, or kept claimed when the failed warm-up left files in it; a dead claim shown as `take-died` and freed
+only by `--abandon`; the readers unchanged (the porcelain step field); the previous version
 reads the taking marker as busy; supersedes #113.
 
 ## Tests
@@ -533,7 +518,7 @@ Scripts in `<tmp>/hooks` (cases 1 and 6) are written with LF line ends and paths
 them with its own `sh` in both shells: through `sh '<file>'` in `remote.origin.uploadpack`, or as a hook. A hook file
 starts with `#!/bin/sh`, and the bash test makes it executable with `chmod +x` (git on Linux and macOS ignores a hook
 without the execute bit; Git for Windows runs it because of the `#!`, so the PowerShell test, which runs on Windows,
-needs no `chmod`). The **other shell** (cases 7 and 8): the PowerShell test runs `slot.sh` with the `bash.exe` of Git
+needs no `chmod`). The **other shell** (case 7): the PowerShell test runs `slot.sh` with the `bash.exe` of Git
 for Windows, found as `<three folders above git --exec-path>/bin/bash.exe`; the bash test runs `slot.ps1` with
 `powershell -NoProfile -ExecutionPolicy Bypass -File`, with paths from `cygpath -w`, when `powershell` and `cygpath`
 are on the `PATH` (Git for Windows). Where the other shell is missing (the bash test on Linux and macOS), a case that
@@ -578,8 +563,9 @@ PowerShell job on Windows.
    case 1) with `feat/s2`, and slot 2 is a retiring busy slot (porcelain `2 TAB busy TAB feat/s2`, field 5
    `retiring`). `--capacity --clear`, reset gh, abandon slot 2, remove `<tmp>/go`.
 3. **A failed step puts the slot back and frees the claim.** Each sub-case checks afterwards: exit 1; standard error
-   ends with exactly the line given; `slot-N.json` does not exist; no `slot-N.claim.*.tmp` and no `slot-N.take.tmp` is
-   left in `.slots`; `--status` shows `slot N  ready           free` (or `not created yet free`); porcelain `N TAB free`.
+   ends with exactly the line given, with nothing after it (in PowerShell too: decision 4, no error record);
+   `slot-N.json` does not exist; no `slot-N.claim.*.tmp`, `slot-N.left.*.tmp` or `slot-N.take.tmp` is left in `.slots`
+   (no reader holds the marker in the tests, decision 1); `--status` shows `slot N  ready           free` (or `not created yet free`); porcelain `N TAB free`.
    - **warm-up, existing slot, new branch.** Failing warm-up. Slot 1 exists and is detached at commit X. `--take
      feat/f1`: `warm-up 1 failed (exit 7); slot 1 is free again`. Slot 1 is detached (`branch --show-current` empty)
      at X, and `refs/heads/feat/f1` does not exist.
@@ -608,9 +594,9 @@ PowerShell job on Windows.
      uncommitted files: <slot 1> (commit, stash or discard them first)` and `warm-up 1 failed (exit 7); slot 1 could
      not be put back and stays claimed: free it with --abandon 1` (PowerShell `-Abandon 1`). Slot 1 is still on
      `feat/f8` with the changed `f8.txt`. Slot 1's marker is byte for byte decision 2's text for slot 1, `feat/f8`,
-     its `since`, without the `pid` line. No `slot-1.claim.*.tmp` is left. Porcelain field 9 of slot 1 is `take-died`
-     and `--status` has the line `slot 1  ready           taking: feat/f8 since <since> (no process recorded; free it
-     with --abandon 1)` (PowerShell `-Abandon 1`), although the test's shell is still running (in PowerShell, the process whose
+     its `since`, without the `pid` line. No `slot-1.claim.*.tmp` and no `slot-1.left.*.tmp` is left. Porcelain field
+     9 of slot 1 is `take-died` and `--status` has the line `slot 1  ready           taking: feat/f8 since <since>
+     (no process recorded; free it with --abandon 1)` (PowerShell `-Abandon 1`), although the test's shell is still running (in PowerShell, the process whose
      `$PID` a claim of `slot.ps1` run in this session would carry). `--abandon 1` exits 1 with `slot 1 has uncommitted
      files:`. After `git -C <slot 1> checkout -- f8.txt`, `--abandon 1` exits 0 with `Slot 1 is free (was feat/f8, a
      take that did not finish; the local branch is kept, delete it yourself if unwanted).`. Delete `feat/f8`.
@@ -691,7 +677,8 @@ PowerShell job on Windows.
    - **same shell.** Start `--take feat/x1 --slot 1 --skip-warmup` and `--take feat/x2 --slot 1 --skip-warmup` in the
      background. Poll (0.1 s, at most 60 s, else fail) until `.slots` holds two files `slot-1.claim.*.tmp`: both takes
      have found no marker on slot 1 and wait at the publish. Create `<tmp>/claim-go` and wait for both. Exactly one
-     exits 0 with `Slot 1 is yours`; the other exits 1 with `slot 1 is busy` as the last line of standard error. Slot
+     exits 0 with `Slot 1 is yours`; the other exits 1 with `slot 1 is busy` as the last line of standard error (a
+     plain line in PowerShell too, decision 4). Slot
      1's marker is finished with the winner's branch, slot 1 is on that branch, the loser's branch does not exist (it
      never fetched or switched), and no `slot-1.claim.*.tmp` is left. A take that checks for the marker and then
      writes it, or that publishes by moving over an existing marker, gets both exits 0 and fails here. Abandon slot 1,
@@ -700,17 +687,6 @@ PowerShell job on Windows.
      test's shell and `feat/y2` in the other shell (bash `--take`, PowerShell `-Take ... -Slot 1 -SkipWarmup`), with
      the same checks. The winner's marker has the key order of its own shell. Without the other shell:
      `skipped: no <PowerShell or bash> for the cross-shell claim`.
-8. **The finish waits for a reader of the marker** (decision 14). Windows only: it needs a reader that opens the marker
-   without delete sharing; the PowerShell test always runs it, the bash test runs it when it has the other shell (the
-   setup) and otherwise prints `skipped: no PowerShell to hold the marker open`. Gate warm-up. In the background,
-   `--take feat/h1 --slot 1`; `waitfor 1 taking`. Open slot 1's marker with
-   `[System.IO.File]::Open(<marker>, 'Open', 'Read', 'Read')` and keep it open: the PowerShell test in its own
-   process; the bash test in a background `powershell -NoProfile -Command` that opens it, then creates `<tmp>/held`,
-   sleeps 2 s and closes it, and the bash test goes on only once `<tmp>/held` exists. Create `<tmp>/go`. After 1 s,
-   slot 1's marker still has `"state": "taking"` (the move over it is being refused). The file is closed 2 s after it
-   was opened; wait for the take: it exits 0 with `Slot 1 is yours`, slot 1's marker is finished with `feat/h1`,
-   and no `slot-1.take.tmp` is left. Abandon slot 1, delete `feat/h1`, remove `<tmp>/go`.
-
 The existing cases still pass unchanged. That includes "10 the marker format is unchanged" and "12 nothing else
 changed: the marker keys", because the finished marker is today's, and every refusal and output text of the other
 sections. `bash tests/check.sh` stays green and runs both shells where the machine can.
@@ -722,11 +698,11 @@ sections. `bash tests/check.sh` stays green and runs both shells where the machi
 | 1 two takes at nearly the same time get different slots, both shells | claim 1 (with origin moved and the two fetches held together by the barrier, decision 11), claim 7 (the same slot tried by two takes, in one shell and across the two) |
 | 2 claimed atomically before fetch, switch, warm-up; the same in effect in both shells | claim 7 (atomically: two takes held at the publish, one wins; a check-then-write or a replacing publish fails it, in one shell and across the two; decisions 1 and 15), claim 6 (git's hooks see the claim at the fetch, the worktree add and the switch; a late claim gives `unclaimed`), claim 1 and claim 2 (the claim seen during the warm-up); decision 1 |
 | 3 while working, `--status` shows it taken and a second take does not use it | claim 2 |
-| 4 finished marker as today; the take prints the caller's slot | claim 1, claim 2 (the end), claim 8 (the finish past a reader that holds the marker, decision 14); the existing cases 10 and 12 |
+| 4 finished marker as today; the take prints the caller's slot | claim 1, claim 2 (the end); the existing cases 10 and 12 |
 | 5 a failed fetch, switch or warm-up frees the claim, puts the slot back, names the step and code | claim 3 (with the fetch's three attempts, the stamp write, and a warm-up that leaves files, decision 10) |
-| 6 a dead claim is recognised and can be freed, a live one is not, no work lost | claim 4 (with the pid range, decision 13), claim 3 (a warm-up that leaves files keeps a dead claim) |
+| 6 a dead claim is recognised and can be freed, a live one is not, no work lost | claim 4 (with the pid range, decision 13; a take that died or was interrupted leaves such a claim, decision 5), claim 3 (a warm-up that leaves files keeps a dead claim) |
 | 7 release, abandon, reap, report, capacity treat a taking slot as defined | claim 2 (live; the reap makes no `gh` call), claim 4 (dead; the same) |
-| 8 the previous version reads the new markers, and the new reads the old | claim 5; smoke-json step |
+| 8 the previous version reads the new markers, and the new reads the old | claim 5 (its real run of the previous version only locally: CI clones have no tag, so CI prints the skip); smoke-json step |
 | 9 README and the header comments describe the claim and the state | review of the diff (the header paragraph and README text above) |
 
 ## Verification
@@ -747,8 +723,11 @@ the change is a story trigger (the slot marker format).
 - No change to the finished marker, `--report`'s marker, `capacity.json`, the warm-up stamps or the ports.
 - No change to `status`, the dashboard, the panel, `load`, `control` or `room`, and no new agent state. The claim shows
   through the porcelain step field.
-- No retry for the marker changes of `--report`, `--release`, `--abandon` and the reap: decision 14 covers only the
-  take's own changes of its marker. No retry for the reap's fetch (iteration 17).
+- #189 "A take retries its own marker changes while a reader holds the marker open": the finishing move, the rewrite
+  without `pid` and the removal of the claim are tried once (decision 14). No retry either for the marker changes of
+  `--report`, `--release`, `--abandon` and the reap, or for the reap's fetch (iteration 17).
+- #190 "A take that is interrupted frees its claim and puts its slot back": no trap in bash, no `finally` in
+  PowerShell, no interruption messages or exit codes; the claim is dead once the process ends (decision 5).
 - No new flag, no config key, no change to any skill or agent, to the status flow or to who sets a status. No decision
   record. `NIGHTMILL_CLAIM_GATE` (decision 15) is a test hook, like `NIGHTMILL_NOW`, not a flag or a key.
 
