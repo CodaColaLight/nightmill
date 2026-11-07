@@ -1042,6 +1042,114 @@ for pair in "spec:2" "next:5" "fix:5"; do
   [ "$found" = "$want" ] || { echo "FAIL: $f has $found prompts to subagents, $want expected (the data rule is pinned in each)"; fail=1; }
 done
 
+echo "== CI runs with least privilege"
+# The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level
+# permissions (1), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on
+# the three job names the ruleset on main requires (4), every action pinned by its full commit SHA with the release in a
+# trailing comment (5), and Dependabot's github-actions entry kept (6). It reads the files with grep and awk only and
+# assumes the block style ci.yml uses (jobs at 2 spaces, job keys at 4); anything it cannot match fails. It cannot check
+# that a SHA exists or belongs to the release in its comment, that GitHub accepts the expressions, that the three names
+# still match the ruleset, or that Dependabot runs. The two paths can be overridden (LINT_CI_YML, LINT_DEPENDABOT_YML)
+# so the same code can be run on a copy; the defaults are the repository's files.
+ci_yml=${LINT_CI_YML:-.github/workflows/ci.yml}
+dependabot_yml=${LINT_DEPENDABOT_YML:-.github/dependabot.yml}
+ci_req_comment='    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.'
+ci_conc_group='  group: ci-${{ github.event_name == '\''pull_request'\'' && github.ref || github.run_id }}'
+ci_conc_cancel='  cancel-in-progress: ${{ github.event_name == '\''pull_request'\'' }}'
+ci_pin_re='^[[:space:]]*(- )?uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+if [ -f "$ci_yml" ]; then
+  # 1. permissions: contents: read at column 0 and nothing else; no job-level block; no write scope
+  perm=$(LC_ALL=C awk '
+    { L[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) if (L[i] == "permissions:") { p = i; break }
+      if (!p) { print "missing"; exit }
+      if (L[p + 1] != "  contents: read") { print "contents"; exit }
+      if (L[p + 2] ~ /^[[:space:]]/) { print "scope"; exit }
+      print "ok"
+    }' "$ci_yml")
+  case "$perm" in
+    ok) ;;
+    missing) echo "FAIL: $ci_yml has no 'permissions:' block at the top (column 0)"; fail=1 ;;
+    contents) echo "FAIL: $ci_yml: the line after 'permissions:' is not exactly '  contents: read'"; fail=1 ;;
+    *) echo "FAIL: $ci_yml: 'permissions:' grants a scope besides 'contents: read'"; fail=1 ;;
+  esac
+  if grep -qE '^[[:space:]]+permissions:' "$ci_yml"; then
+    echo "FAIL: $ci_yml has a job-level 'permissions:' block (only the top-level 'contents: read')"; fail=1
+  fi
+  if grep -qF ': write' "$ci_yml"; then
+    echo "FAIL: $ci_yml grants a write permission (': write')"; fail=1
+  fi
+  # 2. every job in the jobs: section has a timeout-minutes from 1 to 360 before the next job
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      nojobs) echo "FAIL: $ci_yml has no job in its 'jobs:' section"; fail=1 ;;
+      missing\ *) echo "FAIL: $ci_yml: job ${line#missing } has no '    timeout-minutes: <number>' line"; fail=1 ;;
+      range\ *) echo "FAIL: $ci_yml: job ${line#range } (timeout-minutes must be from 1 to 360)"; fail=1 ;;
+    esac
+  done < <(LC_ALL=C awk '
+    function flush() {
+      if (job == "") return
+      n++
+      if (t == "") print "missing " job
+      else if (t + 0 < 1 || t + 0 > 360) print "range " job " has timeout-minutes " t
+    }
+    /^jobs:[[:space:]]*$/ { inj = 1; next }
+    inj && /^[^[:space:]#]/ { flush(); job = ""; inj = 0; next }
+    inj && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = $1; sub(/:$/, "", job); t = ""; next }
+    inj && job != "" && t == "" && /^    timeout-minutes: [0-9]+$/ { t = $2; next }
+    END { flush(); if (n == 0) print "nojobs" }' "$ci_yml")
+  # 3. the concurrency block (column 0) holds exactly the two lines of the spec, and nothing cancels a run on main
+  if grep -qxF 'concurrency:' "$ci_yml"; then
+    conc=$(LC_ALL=C awk '$0 == "concurrency:" { s = 1; next } s && /^[[:space:]]/ { print; next } s { exit }' "$ci_yml")
+    n_conc=$(printf '%s\n' "$conc" | grep -c . || true)
+    if [ "$n_conc" != 2 ] || ! printf '%s\n' "$conc" | grep -qxF -- "$ci_conc_group" || ! printf '%s\n' "$conc" | grep -qxF -- "$ci_conc_cancel"; then
+      echo "FAIL: $ci_yml: the 'concurrency:' block is not exactly the two lines '$ci_conc_group' and '$ci_conc_cancel'"; fail=1
+    fi
+  else
+    echo "FAIL: $ci_yml has no 'concurrency:' block at the top (column 0)"; fail=1
+  fi
+  if grep -qE 'cancel-in-progress:[[:space:]]*true' "$ci_yml"; then
+    echo "FAIL: $ci_yml has 'cancel-in-progress: true' (a run on main must never be cancelled)"; fail=1
+  fi
+  # 4. the three names the ruleset requires carry the comment on the line directly above them
+  while IFS= read -r req; do
+    ln_list=$(grep -nxF -- "    name: $req" "$ci_yml" | cut -d: -f1 || true)
+    if [ -z "$ln_list" ]; then
+      echo "FAIL: $ci_yml has no line '    name: $req' (the ruleset on main requires this name)"; fail=1
+      continue
+    fi
+    for ln in $ln_list; do
+      above=
+      [ "$ln" -le 1 ] || above=$(sed -n "$((ln - 1))p" "$ci_yml")
+      [ "$above" = "$ci_req_comment" ] || { echo "FAIL: $ci_yml:$ln: the line above 'name: $req' is not the comment '${ci_req_comment#    }'"; fail=1; }
+    done
+  done <<'EOF'
+Lint (generic, JSON, skills, shell)
+bash scripts smoke tests
+PowerShell scripts smoke tests
+EOF
+  n_cm=$(grep -cF -- "${ci_req_comment#    }" "$ci_yml" || true)
+  [ "$n_cm" = 3 ] || { echo "FAIL: $ci_yml has the 'Required check' comment $n_cm times (exactly 3 expected, one per required job)"; fail=1; }
+  # 5. every uses: line is pinned by a 40-character lower-case SHA with the release in a trailing comment
+  n_uses=0
+  while IFS= read -r sel; do
+    [ -n "$sel" ] || continue
+    n_uses=$((n_uses + 1))
+    printf '%s\n' "${sel#*:}" | grep -qE "$ci_pin_re" || { echo "FAIL: $ci_yml:${sel%%:*}: not pinned as '<owner>/<action>@<40 hex> # vX.Y.Z':${sel#*:}"; fail=1; }
+  done < <(grep -nE '^[[:space:]]*(- )?uses:' "$ci_yml" || true)
+  [ "$n_uses" -ge 1 ] || { echo "FAIL: $ci_yml has no 'uses:' line (the pins cannot be checked)"; fail=1; }
+else
+  echo "FAIL: $ci_yml is missing"; fail=1
+fi
+# 6. Dependabot keeps the actions current
+if [ -f "$dependabot_yml" ]; then
+  grep -qxF '  - package-ecosystem: "github-actions"' "$dependabot_yml" || { echo "FAIL: $dependabot_yml has no '  - package-ecosystem: \"github-actions\"' entry"; fail=1; }
+else
+  echo "FAIL: $dependabot_yml is missing"; fail=1
+fi
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
