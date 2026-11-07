@@ -1,7 +1,10 @@
 # tests/smoke-slot.ps1 - slot.ps1 against a throwaway repository: status, take (with warm-up and
 # port hints), a full board, the lockfile-hash skip, abandon, and the automatic release of a slot whose pull
 # request has merged (-Reap and the first step of every -Take), with -Release, against a fake gh, and the
-# capacity command (-Capacity: the slot count and the agent limit changed during a session).
+# capacity command (-Capacity: the slot count and the agent limit changed during a session), the reports
+# (-Report) and the claim of a take (iteration 34: a take claims its slot with a marker in the state "taking"
+# before it fetches, switches or warms up; two takes get different slots; a failed take puts its slot back; a
+# dead claim is freed only by -Abandon).
 # Runs on Windows PowerShell 5.1 and pwsh.
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
@@ -655,6 +658,572 @@ try {
   $r = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
   if ($r.Code -ne 1 -or $r.Err -cne "slot 1 is not in use`n" -or (Test-Path (Marker 1))) { Fail "a report after the release brought the marker back: $($r.Err)" }
   Reset-Gh
+
+  Write-Host "== claim (iteration 34)"
+  # claim (iteration 34): a take claims its slot, a marker with "state": "taking" and its process id, before it fetches,
+  # switches or warms up. Seven cases: (1) two takes at the same time get different slots, also when origin has moved;
+  # (2) a take still working is shown as taken and kept; (3) a failed fetch, switch or warm-up puts the slot back and
+  # frees the claim; (4) a dead claim is freed only by -Abandon; (5) markers across versions; (6) git itself sees the
+  # claim at the fetch, the worktree add and the switch; (7) the publish is exclusive, in one shell and across the two.
+  # A gate warm-up holds a take at its warm-up until <tmp>\go exists, and NIGHTMILL_CLAIM_GATE holds it at the publish.
+  Reset-Gh
+  $script:bgs = New-Object System.Collections.ArrayList
+  $tf = $tmp -replace '\\', '/'
+  $hereFwd = $here -replace '\\', '/'
+  $origWarm = '"warmup": [ { "dir": "client", "command": "echo warm > warmed.txt", "lockfile": "client/lock.txt" } ],'
+  if (-not $cfgBefore.Contains($origWarm)) { Fail "claim: the config has no warm-up line to replace" }
+  $gateJson = "[ { `"command`": `"`$gi = 0; while (-not (Test-Path '$tf/go')) { `$gi++; if (`$gi -ge 1200) { throw 'no go' }; Start-Sleep -Milliseconds 100 }`" } ]"
+  $exit7Json = '[ { "command": "cmd /c exit 7" } ]'
+  function Stop-Claim { # opens both gates and waits for the background takes, so that none outlives the test
+    [System.IO.File]::WriteAllText("$tmp\go", ""); [System.IO.File]::WriteAllText("$tmp\claim-go", "")
+    foreach ($h in $script:bgs) { if (-not $h.P.WaitForExit(120000)) { try { $h.P.Kill() } catch { } } }
+    $script:bgs.Clear()
+  }
+  function Fail($msg) { Stop-Claim; Write-Host "FAIL: $msg" -ForegroundColor Red; exit 1 }
+  $claimRoot = ((Lines (SlotE "-Status").Out)[0]) -replace '^slots = [0-9]+  root = ', ''
+  if (-not $claimRoot) { Fail "claim: no root in the status header" }
+  function Write-Cfg([string]$warm) { [System.IO.File]::WriteAllText($CFG, $cfgBefore.Replace($origWarm, '"warmup": ' + $warm + ',')) }
+  # Start-Proc <file> <arguments> [environment]: a child process with its output read in the background
+  function Start-Proc([string]$file, [string]$arguments, [hashtable]$extraEnv = @{}) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $file
+    $psi.Arguments = $arguments
+    $psi.WorkingDirectory = "$tmp\work"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    foreach ($k in $extraEnv.Keys) { $psi.EnvironmentVariables[$k] = [string]$extraEnv[$k] }
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $h = [pscustomobject]@{ P = $p; OutTask = $p.StandardOutput.ReadToEndAsync(); ErrTask = $p.StandardError.ReadToEndAsync() }
+    [void]$script:bgs.Add($h)
+    $h
+  }
+  function Start-Take([string]$arguments, [hashtable]$extraEnv = @{}) { Start-Proc $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$S`" $arguments" $extraEnv }
+  function Wait-Take($h) {
+    $h.P.WaitForExit()
+    [pscustomobject]@{ Out = ($h.OutTask.Result -replace "`r`n", "`n"); Err = ($h.ErrTask.Result -replace "`r`n", "`n"); Code = $h.P.ExitCode }
+  }
+  function Test-BgAlive { foreach ($h in $script:bgs) { if (-not $h.P.HasExited) { return $true } }; return $false }
+  function Get-Porc9([int]$n, [hashtable]$e = @{}) {
+    foreach ($l in (Lines (SlotE "-Status -Porcelain" $e).Out)) { $f = $l -split $T; if ($f[0] -eq "$n") { return $f[8] } }
+    return "<none>"
+  }
+  function Wait-For([int]$n, [string]$state) { # until field 9 of slot n in -Status -Porcelain is <state> (60 s at most)
+    $end = (Get-Date).AddSeconds(60)
+    while ($true) {
+      $got = Get-Porc9 $n
+      if ($got -eq $state) { return }
+      if ((Get-Date) -gt $end) { Fail "Wait-For: slot $n did not show the step '$state' within 60 s (field 9: '$got'): $((SlotE '-Status -Porcelain').Out)" }
+      if (-not (Test-BgAlive)) { Fail "Wait-For: every background take ended and slot $n never showed the step '$state' (field 9: '$got')" }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  function Get-ClaimFiles([int]$n) { @(Get-ChildItem -LiteralPath $S1 -Filter "slot-$n.claim.*.tmp" -File -ErrorAction SilentlyContinue) }
+  function Wait-Claims([int]$n, [int]$count) { # until .slots holds that many slot-<n>.claim.*.tmp files (60 s at most)
+    $end = (Get-Date).AddSeconds(60)
+    while ($true) {
+      $c = (Get-ClaimFiles $n).Count
+      if ($c -ge $count) { return }
+      if ((Get-Date) -gt $end) { Fail "Wait-Claims: slot $n has $c claim files, not $count, after 60 s" }
+      if (-not (Test-BgAlive)) { Fail "Wait-Claims: every background take ended with $c claim files of slot $n, not $count" }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  # Taking-Text <slot> <branch> <since> [pid]: the text of a taking marker (without the pid line when no pid is given)
+  function Taking-Text([int]$n, [string]$branch, [string]$since, [string]$procId = "") {
+    if ($procId) { return "{`n  `"slot`": $n,`n  `"branch`": `"$branch`",`n  `"since`": `"$since`",`n  `"state`": `"taking`",`n  `"pid`": $procId`n}`n" }
+    return "{`n  `"slot`": $n,`n  `"branch`": `"$branch`",`n  `"since`": `"$since`",`n  `"state`": `"taking`"`n}`n"
+  }
+  function Write-Text([string]$path, [string]$text) { [System.IO.File]::WriteAllText($path, $text) }
+  function Get-Keys([int]$n) { ([regex]::Matches((MText $n), '"([a-z]+)":') | ForEach-Object { $_.Groups[1].Value }) -join "," }
+  function Test-Finished([int]$n) {
+    $t = MText $n
+    return ((((($t | ConvertFrom-Json).PSObject.Properties.Name) | Sort-Object) -join ",") -ceq "branch,since,slot") -and -not $t.Contains('"state"') -and -not $t.Contains('"pid"')
+  }
+  function Get-Leftovers([int]$n) { @(Get-ChildItem -LiteralPath $S1 -Name -ErrorAction SilentlyContinue | Where-Object { $_ -match "^slot-$n\.(claim\..*\.tmp|left\..*\.tmp|take\.tmp)$" }) }
+  function Get-Head([int]$n) { ([string](git -C "$tmp\wt\slot-$n" rev-parse HEAD)).Trim() }
+  function Get-Current([int]$n) { $x = git -C "$tmp\wt\slot-$n" branch --show-current; if ($null -eq $x) { "" } else { ([string]$x).Trim() } }
+  function Get-Ref([string]$b) { $x = git -C $work rev-parse --verify -q "refs/heads/$b"; if ($LASTEXITCODE -eq 0) { ([string]$x).Trim() } else { "" } }
+  function Gq { $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"; try { & git @args 2>&1 | Out-Null } finally { $ErrorActionPreference = $ea } }
+  function Ensure-Other { if (-not (Test-Path "$tmp\other\.git")) { Gq clone -q -b main "$tmp\origin.git" "$tmp\other" } }
+  function New-Branch([string]$b, [string]$file) { # a branch with one commit that adds the file, checked out nowhere
+    Ensure-Other
+    Gq -C "$tmp\other" fetch -q origin
+    Gq -C "$tmp\other" switch -q -C $b origin/main
+    [System.IO.File]::WriteAllText("$tmp\other\$file", "$b`n")
+    Gq -C "$tmp\other" add -A
+    Gq -C "$tmp\other" -c user.name=t -c user.email=t@example.invalid commit -qm $b
+    Gq -C "$tmp\other" push -q -f origin $b
+    Gq -C $work fetch -q origin "+${b}:refs/heads/$b"
+  }
+  function Test-EndsWithLine([string]$err, [string]$line) {
+    $parts = $err -split "`n"
+    return ($parts.Count -ge 2 -and $parts[-1] -eq "" -and $parts[-2] -ceq $line)
+  }
+  function Test-EndsWithLines([string]$err, [string[]]$lines) {
+    $parts = $err -split "`n"
+    if ($parts.Count -lt $lines.Count + 1 -or $parts[-1] -ne "") { return $false }
+    for ($k = 0; $k -lt $lines.Count; $k++) { if ($parts[$parts.Count - 1 - $lines.Count + $k] -cne $lines[$k]) { return $false } }
+    return $true
+  }
+  function Claim-Reset { # every slot free and detached at origin/main, the original config, both gates open, nothing left over
+    Stop-Claim
+    Remove-Item "$tmp\go", "$tmp\claim-go", "$tmp\barrier", "$S1\capacity.json" -Force -ErrorAction SilentlyContinue
+    [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+    Gq -C $work config --unset remote.origin.uploadpack
+    Gq -C $work config --unset core.hooksPath
+    Gq -C $work remote set-url origin "$tmp\origin.git"
+    foreach ($n in 1, 2, 3, 4) {
+      $d = "$tmp\wt\slot-$n"
+      if ($n -eq 4 -and (Test-Path $d)) {
+        Gq -C $work worktree remove --force $d
+        if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue; Gq -C $work worktree prune }
+      } elseif (Test-Path $d) {
+        Gq -C $d switch -q -f --detach origin/main
+        Gq -C $d clean -fdq
+      }
+      Remove-Item (Marker $n) -Force -ErrorAction SilentlyContinue
+      foreach ($f in @(Get-Leftovers $n)) { Remove-Item "$S1\$f" -Force -ErrorAction SilentlyContinue }
+      if (Test-Path -LiteralPath "$S1\slot-$n.warmup-1" -PathType Container) { Remove-Item -Recurse -Force "$S1\slot-$n.warmup-1" }
+    }
+    Reset-Gh
+  }
+  function Test-Same([string]$want, [int]$n, [string]$what) { if ((MText $n) -cne $want) { Fail "$what`: the marker changed: $(MText $n)" } }
+  # Test-RefusedClaim <n> <expected marker text> <expected standard error line> <arguments>: exit 1, that line only, marker unchanged
+  function Test-RefusedClaim([int]$n, [string]$want, [string]$line, [string]$arguments) {
+    $r = SlotE $arguments
+    if ($r.Code -ne 1) { Fail "claim refusal ($arguments): exit $($r.Code), wanted 1: $($r.Out) / $($r.Err)" }
+    if ($r.Err -cne "$line`n") { Fail "claim refusal ($arguments): standard error [$($r.Err)], wanted [$line]" }
+    if ($r.Out) { Fail "claim refusal ($arguments): printed $($r.Out)" }
+    Test-Same $want $n "claim refusal ($arguments)"
+  }
+
+  # 1 two takes at the same time get different slots, also when origin has moved
+  function Claim-Case1 {
+    Claim-Reset
+    Write-Cfg $gateJson
+    Ensure-Other
+    [System.IO.File]::WriteAllText("$tmp\other\moved.txt", "moved $(Get-Random)`n")
+    Gq -C "$tmp\other" add -A
+    Gq -C "$tmp\other" -c user.name=t -c user.email=t@example.invalid commit -qm "origin moves"
+    Gq -C "$tmp\other" push -q origin main
+    $movedCommit = ([string](git -C "$tmp\other" rev-parse HEAD)).Trim()
+    if (([string](git -C $work rev-parse origin/main)).Trim() -eq $movedCommit) { Fail "claim 1: setup: origin/main of the main checkout is already at the moved commit" }
+    New-Item -ItemType Directory -Force "$tmp\hooks" | Out-Null
+    $barrierText = @'
+echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do i=$((i+1)); [ $i -lt 300 ] || break; sleep 0.1; done; exec git upload-pack "$@"
+'@
+    [System.IO.File]::WriteAllText("$tmp\hooks\upload-pack-barrier", $barrierText.Replace('@TMP@', $tf) + "`n")
+    git -C $work config remote.origin.uploadpack "sh '$tf/hooks/upload-pack-barrier'"
+    $h1 = Start-Take "-Take feat/p1"
+    $h2 = Start-Take "-Take feat/p2"
+    Wait-For 1 "taking"
+    Wait-For 2 "taking"
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    $r1 = Wait-Take $h1; $r2 = Wait-Take $h2
+    $script:bgs.Clear()
+    if (-not (Test-Path "$tmp\barrier") -or @(Get-Content "$tmp\barrier").Count -lt 2) { Fail "claim 1: the two fetches did not overlap" }
+    if ($r1.Code -ne 0) { Fail "claim 1: take feat/p1 exited $($r1.Code): $($r1.Out) / $($r1.Err)" }
+    if ($r2.Code -ne 0) { Fail "claim 1: take feat/p2 exited $($r2.Code): $($r2.Out) / $($r2.Err)" }
+    $n1 = [regex]::Match($r1.Out, '(?m)^Slot ([0-9]+) is yours').Groups[1].Value
+    $n2 = [regex]::Match($r2.Out, '(?m)^Slot ([0-9]+) is yours').Groups[1].Value
+    if (("$n1,$n2" -ne "1,2") -and ("$n1,$n2" -ne "2,1")) { Fail "claim 1: the takes were given slots '$n1' and '$n2', not one each of 1 and 2: $($r1.Out) / $($r2.Out)" }
+    foreach ($pair in @(@($n1, "feat/p1"), @($n2, "feat/p2"))) {
+      $n = [int]$pair[0]; $b = $pair[1]
+      if ((Get-Current $n) -ne $b) { Fail "claim 1: slot $n is on '$(Get-Current $n)', not on $b" }
+      if ((MGet $n "branch") -ne $b) { Fail "claim 1: the marker of slot $n names '$(MGet $n 'branch')', not $b" }
+      git -C $work merge-base --is-ancestor $movedCommit $b
+      if ($LASTEXITCODE -ne 0) { Fail "claim 1: $b does not start at the moved origin commit $movedCommit" }
+      $keys = ((((MText $n) | ConvertFrom-Json).PSObject.Properties.Name) | Sort-Object) -join ","
+      if ($keys -ne "branch,since,slot") { Fail "claim 1: the marker of slot $n is not a finished marker: $(MText $n)" }
+    }
+    Gq -C $work config --unset remote.origin.uploadpack
+    Remove-Item "$tmp\go", "$tmp\barrier" -Force -ErrorAction SilentlyContinue
+    $null = Slot -Abandon 1; $null = Slot -Abandon 2
+  }
+
+  # 2 a take still working is shown as taken and kept
+  function Claim-Case2 {
+    Claim-Reset
+    Write-Cfg $gateJson
+    $h = Start-Take "-Take feat/s2 -Slot 2"
+    Wait-For 2 "taking"
+    $procId = $h.P.Id
+    $since = MGet 2 "since"
+    $want = Taking-Text 2 "feat/s2" $since "$procId"
+    Test-Same $want 2 "claim 2: the marker of a take that is working"
+    $takingCopy = MText 2
+    $st = (SlotE "-Status").Out
+    if (-not (@(Lines $st) -ccontains "slot 2  ready           taking: feat/s2 since $since (process $procId)")) { Fail "claim 2: status does not show slot 2 as taking: $st" }
+    if ($st -match "(?m)^slot 2 .*free") { Fail "claim 2: status shows slot 2 free: $st" }
+    $p = Porc
+    if ($p[1] -cne "2${T}busy${T}feat/s2${T}${since}${T}${T}unknown${T}${T}${T}taking${T}") { Fail "claim 2: porcelain line of slot 2: $($p -join ' | ')" }
+    Test-Same $want 2 "claim 2 after the status"
+    $r = SlotE "-Take feat/s1 -SkipWarmup"
+    if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 1 is yours") { Fail "claim 2: a second take did not get slot 1 (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    $null = Slot -Abandon 1
+    Test-Same $want 2 "claim 2 after a second take"
+    $r = SlotE "-Take feat/s9 -Slot 2 -SkipWarmup"
+    if ($r.Code -ne 1 -or -not (Test-EndsWithLine $r.Err "slot 2 is busy")) { Fail "claim 2: a take on slot 2 was not refused as busy (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Test-Same $want 2 "claim 2 after -Take -Slot 2"
+    $live = "slot 2 is being taken (process $procId is still running); wait for the take to end"
+    Reset-Gh
+    Test-RefusedClaim 2 $want $live "-Release 2"
+    if ([System.IO.File]::ReadAllText($ghLog).Length -ne 0) { Fail "claim 2: -Release asked gh about a slot that is being taken: $([System.IO.File]::ReadAllText($ghLog))" }
+    Test-RefusedClaim 2 $want $live "-Abandon 2"
+    Test-RefusedClaim 2 $want $live "-Report check -Slot 2 -Skill next -Role implementer"
+    Reset-Gh; Merged feat/s2 41 (([string](git -C $work rev-parse origin/main)).Trim())
+    $r = SlotE "-Reap"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -ne "No slot freed.") { Fail "claim 2: -Reap of a slot that is being taken (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if ([System.IO.File]::ReadAllText($ghLog).Length -ne 0) { Fail "claim 2: -Reap asked gh about a slot that is being taken: $([System.IO.File]::ReadAllText($ghLog))" }
+    Test-Same $want 2 "claim 2 after -Reap"
+    Reset-Gh
+    $null = SlotE "-Capacity -SlotCount 1"
+    $st = (SlotE "-Status").Out
+    if ($st -notmatch ("(?m)^slot 2  ready           taking: feat/s2 since " + [regex]::Escape($since) + " \(process $procId\) \(retiring\)")) { Fail "claim 2: a retiring slot that is being taken: $st" }
+    if ((((Porc)[1]) -split $T)[4] -ne "retiring") { Fail "claim 2: porcelain field 5 of the retiring slot: $((Porc) -join ' | ')" }
+    Test-Same $want 2 "claim 2 after -Capacity"
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    $r = Wait-Take $h
+    $script:bgs.Clear()
+    if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "claim 2: the take did not finish (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if (((((MText 2) | ConvertFrom-Json).PSObject.Properties.Name | Sort-Object) -join ",") -ne "branch,since,slot" -or (MText 2).Contains('"state"') -or (MText 2).Contains('"pid"')) { Fail "claim 2: the finished marker has other keys: $(MText 2)" }
+    if ((MGet 2 "branch") -ne "feat/s2") { Fail "claim 2: the finished marker names '$(MGet 2 'branch')'" }
+    $f = ((Porc)[1] -split $T)
+    if ((@($f[0], $f[1], $f[2], $f[4]) -join "|") -ne "2|busy|feat/s2|retiring") { Fail "claim 2: slot 2 after the take is not a retiring busy slot: $((Porc) -join ' | ')" }
+    $null = SlotE "-Capacity -Clear"
+    Reset-Gh
+    $null = Slot -Abandon 2
+    Remove-Item "$tmp\go" -Force -ErrorAction SilentlyContinue
+  }
+
+  # 3 a failed step puts the slot back and frees the claim
+  function Test-Restored($r, [int]$n, [int]$cnt, [string]$want, [string]$where = "ready") {
+    if ($r.Code -ne 1) { Fail "claim 3 ($want): exit $($r.Code), wanted 1: $($r.Out) / $($r.Err)" }
+    if (-not (Test-EndsWithLine $r.Err $want)) { Fail "claim 3: standard error does not end with [$want]: $($r.Err)" }
+    if (Test-Path (Marker $n)) { Fail "claim 3 ($want): the marker of slot $n is still there: $(MText $n)" }
+    if ((Get-Leftovers $n).Count -ne 0) { Fail "claim 3 ($want): temporary files are left: $((Get-Leftovers $n) -join ', ')" }
+    $e = @{ WORKER_SLOTS = "$cnt" }
+    $st = (SlotE "-Status" $e).Out
+    if (-not (@(Lines $st) -ccontains ("slot {0}  {1,-15} free" -f $n, $where))) { Fail "claim 3 ($want): status does not show slot $n free: $st" }
+    $line = @(Lines (SlotE "-Status -Porcelain" $e).Out | Where-Object { ($_ -split $T)[0] -eq "$n" })
+    if ($line.Count -ne 1 -or $line[0] -cne "$n${T}free") { Fail "claim 3 ($want): porcelain does not show slot $n free: $($line -join ' | ')" }
+  }
+  function Claim-Case3 {
+    Claim-Reset
+    $dir = "$claimRoot\slot-1"
+    $X = Get-Head 1
+    if (Get-Current 1) { Fail "claim 3: setup: slot 1 is not detached" }
+    $left2 = "slot 1 has uncommitted files: $dir (commit, stash or discard them first)"
+    # warm-up, existing slot, new branch
+    Write-Cfg $exit7Json
+    $r = SlotE "-Take feat/f1"
+    Test-Restored $r 1 2 "warm-up 1 failed (exit 7); slot 1 is free again"
+    if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed warm-up (branch '$(Get-Current 1)', head $(Get-Head 1))" }
+    if (Get-Ref "feat/f1") { Fail "claim 3: the new branch feat/f1 was left behind" }
+    # warm-up, existing branch
+    New-Branch "feat/f2" "f2.txt"
+    $Y = Get-Ref "feat/f2"
+    $r = SlotE "-Take feat/f2 -Slot 1"
+    Test-Restored $r 1 2 "warm-up 1 failed (exit 7); slot 1 is free again"
+    if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed warm-up on an existing branch" }
+    if ((Get-Ref "feat/f2") -ne $Y) { Fail "claim 3: feat/f2 is not at $Y any more: $(Get-Ref 'feat/f2')" }
+    # warm-up, slot not created yet
+    if (Test-Path "$tmp\wt\slot-4") { Fail "claim 3: setup: slot-4 exists" }
+    $r = SlotE "-Take feat/f4 -Slot 4" @{ WORKER_SLOTS = "4" }
+    Test-Restored $r 4 4 "warm-up 1 failed (exit 7); slot 4 is free again" "not created yet"
+    if (Test-Path "$tmp\wt\slot-4") { Fail "claim 3: the directory slot-4 is left" }
+    if ((git -C $work worktree list) -match "slot-4") { Fail "claim 3: git still lists the worktree slot-4" }
+    if (Get-Ref "feat/f4") { Fail "claim 3: the branch feat/f4 was left behind" }
+    # switch
+    [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+    $r = SlotE "-Take feat/f5 -Slot 1 -Base origin/nope"
+    Test-Restored $r 1 2 "git switch failed (exit 128); slot 1 is free again"
+    if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed switch" }
+    if (Get-Ref "feat/f5") { Fail "claim 3: the branch feat/f5 was left behind" }
+    # fetch
+    Gq -C $work remote set-url origin "$tmp\no-such.git"
+    $r = SlotE "-Take feat/f6"
+    Test-Restored $r 1 2 "git fetch failed (exit 128); slot 1 is free again"
+    if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed fetch" }
+    if ([regex]::Matches($r.Err, "Could not read from remote repository").Count -ne 3) { Fail "claim 3: git's fetch error is not on standard error three times (three attempts): $($r.Err)" }
+    Gq -C $work remote set-url origin "$tmp\origin.git"
+    # the stamp cannot be written
+    Remove-Item -Recurse -Force "$S1\slot-1.warmup-1" -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory "$S1\slot-1.warmup-1" | Out-Null
+    $r = SlotE "-Take feat/f11 -Slot 1"
+    Test-Restored $r 1 2 "warm-up 1 failed (exit 1); slot 1 is free again"
+    if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed stamp write" }
+    if (Get-Ref "feat/f11") { Fail "claim 3: the branch feat/f11 was left behind" }
+    Remove-Item -Recurse -Force "$S1\slot-1.warmup-1"
+    # uncommitted files
+    [System.IO.File]::WriteAllText("$tmp\wt\slot-1\untracked.txt", "x`n")
+    $r = SlotE "-Take feat/f7 -Slot 1"
+    if ($r.Code -ne 1 -or -not (Test-EndsWithLine $r.Err "slot 1 has uncommitted files; deal with them first: $dir")) { Fail "claim 3: a take on a slot with uncommitted files (exit $($r.Code)): $($r.Err)" }
+    if (Test-Path (Marker 1)) { Fail "claim 3: a take refused for uncommitted files left a marker: $(MText 1)" }
+    if ((Get-Leftovers 1).Count -ne 0) { Fail "claim 3: a refused take left temporary files: $((Get-Leftovers 1) -join ', ')" }
+    Remove-Item "$tmp\wt\slot-1\untracked.txt"
+    # a changed file keeps a dead claim
+    New-Branch "feat/f8" "f8.txt"
+    Write-Cfg '[ { "command": "Set-Content f8.txt changed; cmd /c exit 7" } ]'
+    $r = SlotE "-Take feat/f8 -Slot 1"
+    if ($r.Code -ne 1) { Fail "claim 3: a failed warm-up that changed a file exited $($r.Code): $($r.Out) / $($r.Err)" }
+    if (-not (Test-EndsWithLines $r.Err @($left2, "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with -Abandon 1"))) { Fail "claim 3: the last two lines of standard error: $($r.Err)" }
+    if ((Get-Current 1) -ne "feat/f8" -or ((Get-Content "$tmp\wt\slot-1\f8.txt") -join "") -ne "changed") { Fail "claim 3: slot 1 was switched back or lost the changed file (branch '$(Get-Current 1)')" }
+    $since = MGet 1 "since"
+    $want = Taking-Text 1 "feat/f8" $since
+    Test-Same $want 1 "claim 3: the claim left behind"
+    if ((Get-Leftovers 1).Count -ne 0) { Fail "claim 3: temporary files are left: $((Get-Leftovers 1) -join ', ')" }
+    if ((Get-Porc9 1) -ne "take-died") { Fail "claim 3: porcelain field 9 of the claim left behind is '$(Get-Porc9 1)'" }
+    $st = (SlotE "-Status").Out
+    if (-not $st.Contains("slot 1  ready           taking: feat/f8 since $since (no process recorded; free it with -Abandon 1)")) { Fail "claim 3: status of the claim left behind: $st" }
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 1 -or $r.Err -notmatch "slot 1 has uncommitted files:") { Fail "claim 3: -Abandon on a changed file (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Test-Same $want 1 "claim 3: -Abandon on a changed file"
+    git -C "$tmp\wt\slot-1" checkout -q -- f8.txt
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/f8, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 3: -Abandon after the file was restored (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Gq -C $work branch -D feat/f8
+    # an untracked file keeps a dead claim
+    Write-Cfg '[ { "command": "Set-Content junk.txt x; cmd /c exit 7" } ]'
+    $r = SlotE "-Take feat/f9 -Slot 1"
+    if ($r.Code -ne 1) { Fail "claim 3: a failed warm-up that created a file exited $($r.Code): $($r.Out) / $($r.Err)" }
+    if (-not (Test-EndsWithLines $r.Err @($left2, "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with -Abandon 1"))) { Fail "claim 3: the last two lines of standard error (untracked file): $($r.Err)" }
+    if ((Get-Current 1) -ne "feat/f9" -or -not (Test-Path "$tmp\wt\slot-1\junk.txt")) { Fail "claim 3: slot 1 was switched back or lost junk.txt (branch '$(Get-Current 1)')" }
+    $since = MGet 1 "since"
+    Test-Same (Taking-Text 1 "feat/f9" $since) 1 "claim 3: the claim left behind (untracked file)"
+    if ((Get-Porc9 1) -ne "take-died") { Fail "claim 3: porcelain field 9 of the claim left behind (untracked file) is '$(Get-Porc9 1)'" }
+    $r = SlotE "-Take feat/f10 -Slot 1 -SkipWarmup"
+    if ($r.Code -ne 1 -or -not (Test-EndsWithLine $r.Err "slot 1 is busy")) { Fail "claim 3: a take on the claim left behind (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 1 -or $r.Err -notmatch "slot 1 has uncommitted files:") { Fail "claim 3: -Abandon with junk.txt (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Remove-Item "$tmp\wt\slot-1\junk.txt"
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/f9, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 3: -Abandon after junk.txt was removed (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if ((Get-Current 1) -or (git -C "$tmp\wt\slot-1" status --porcelain)) { Fail "claim 3: slot 1 is not detached and clean after -Abandon" }
+    Gq -C $work branch -D feat/f9
+    [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+  }
+
+  # 4 a dead claim is recognised and freed only by -Abandon, without losing work
+  function Claim-Case4 {
+    Claim-Reset
+    $dp = Start-Process -FilePath $psExe -ArgumentList "-NoProfile", "-Command", "exit" -PassThru -WindowStyle Hidden
+    $dp.WaitForExit()
+    $dead = $dp.Id
+    $live = $PID
+    $r = SlotE "-Take feat/d1 -Slot 1 -SkipWarmup"
+    if ($r.Code -ne 0) { Fail "claim 4: setup: take feat/d1 failed: $($r.Out) / $($r.Err)" }
+    $since = MGet 1 "since"
+    $want = Taking-Text 1 "feat/d1" $since "$dead"
+    Write-Text (Marker 1) $want
+    $st = (SlotE "-Status").Out
+    if (-not $st.Contains("taking: feat/d1 since $since (process $dead has ended; free it with -Abandon 1)")) { Fail "claim 4: status of a dead claim: $st" }
+    if ((Get-Porc9 1) -ne "take-died") { Fail "claim 4: porcelain field 9 of a dead claim is '$(Get-Porc9 1)'" }
+    if ((((Porc)[0]) -split $T)[5] -ne "unknown") { Fail "claim 4: porcelain field 6 of a dead claim: $((Porc) -join ' | ')" }
+    $r = SlotE "-Take feat/d2 -SkipWarmup"
+    if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "claim 4: a take did not get slot 2 beside a dead claim (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    $null = Slot -Abandon 2
+    $dline = "slot 1 has a take that did not finish (process $dead has ended); free it with -Abandon 1"
+    Test-RefusedClaim 1 $want $dline "-Release 1"
+    Test-RefusedClaim 1 $want $dline "-Report check -Slot 1 -Skill next -Role implementer"
+    $tip = Get-Ref "feat/d1"
+    Reset-Gh; Merged feat/d1 42 $tip
+    $r = SlotE "-Reap"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -ne "No slot freed.") { Fail "claim 4: -Reap of a dead claim (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if ([System.IO.File]::ReadAllText($ghLog).Length -ne 0) { Fail "claim 4: -Reap asked gh about a dead claim: $([System.IO.File]::ReadAllText($ghLog))" }
+    Test-Same $want 1 "claim 4 after -Reap"
+    Reset-Gh
+    [System.IO.File]::WriteAllText("$tmp\wt\slot-1\untracked.txt", "x`n")
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 1 -or $r.Err -notmatch "slot 1 has uncommitted files:") { Fail "claim 4: -Abandon with an untracked file (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Test-Same $want 1 "claim 4: -Abandon with an untracked file"
+    if (-not (Test-Path "$tmp\wt\slot-1\untracked.txt")) { Fail "claim 4: -Abandon removed the untracked file" }
+    Remove-Item "$tmp\wt\slot-1\untracked.txt"
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/d1, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 4: -Abandon of a dead claim (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if (Test-Path (Marker 1)) { Fail "claim 4: the marker of the dead claim is still there" }
+    if ((Get-Head 1) -ne ([string](git -C $work rev-parse origin/main)).Trim() -or (Get-Current 1)) { Fail "claim 4: slot 1 is not detached at origin/main after -Abandon" }
+    if ((Get-Ref "feat/d1") -ne $tip) { Fail "claim 4: feat/d1 is not at its tip any more: $(Get-Ref 'feat/d1')" }
+    # a live pid, then no pid, then a pid out of range
+    $want = Taking-Text 1 "feat/d1" $since "$live"
+    Write-Text (Marker 1) $want
+    Test-RefusedClaim 1 $want "slot 1 is being taken (process $live is still running); wait for the take to end" "-Abandon 1"
+    $nline = "slot 1 has a take that did not finish (no process recorded); free it with -Abandon 1"
+    foreach ($v in "", "2147483648", "0") {
+      $want = Taking-Text 1 "feat/d1" $since $v
+      Write-Text (Marker 1) $want
+      if ((Get-Porc9 1) -ne "take-died") { Fail "claim 4: porcelain field 9 of a claim with pid '$v' is '$(Get-Porc9 1)'" }
+      if (-not (SlotE "-Status").Out.Contains("taking: feat/d1 since $since (no process recorded; free it with -Abandon 1)")) { Fail "claim 4: status of a claim with pid '$v'" }
+      Test-RefusedClaim 1 $want $nline "-Release 1"
+    }
+    Remove-Item (Marker 1)
+    # a dead claim on a slot that was never created
+    if (Test-Path "$tmp\wt\slot-4") { Fail "claim 4: setup: slot-4 exists" }
+    Write-Text (Marker 4) (Taking-Text 4 "feat/d4" $since "$dead")
+    $r = SlotE "-Abandon 4" @{ WORKER_SLOTS = "4" }
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 4 is free (was feat/d4, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 4: -Abandon of a dead claim without a directory (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if (Test-Path (Marker 4)) { Fail "claim 4: the marker of slot 4 is still there" }
+  }
+
+  # 5 markers across versions
+  function Claim-Case5 {
+    Claim-Reset
+    # the taking marker of a take that works, read the way the previous version reads it
+    Write-Cfg $gateJson
+    $h = Start-Take "-Take feat/s2 -Slot 2"
+    Wait-For 2 "taking"
+    $m = (MText 2) | ConvertFrom-Json
+    if ([string]$m.slot -ne "2" -or [string]$m.branch -ne "feat/s2" -or -not (MGet 2 "since")) { Fail "claim 5: the taking marker is not read by key as slot 2, feat/s2 and a since: $(MText 2)" }
+    if ((((Porc)[1]) -split $T)[1] -ne "busy") { Fail "claim 5: the taking marker is not a busy line: $((Porc) -join ' | ')" }
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    $r = Wait-Take $h; $script:bgs.Clear()
+    if ($r.Code -ne 0) { Fail "claim 5: the take did not finish (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Claim-Reset
+    # markers of the previous version are not claims (their branches exist, so that the reap can look at them)
+    Gq -C $work branch -f feat/v1 origin/main
+    Gq -C $work branch -f feat/r1 origin/main
+    $abandoned = "Slot 1 is free (was feat/v1; the local branch is kept, delete it yourself if unwanted)."
+    [System.IO.File]::WriteAllText((Marker 1), "{`n  `"slot`": 1,`n  `"branch`": `"feat/v1`",`n  `"since`": `"2026-11-05T09:00:00`"`n}`n")
+    if ((Get-Porc9 1) -ne "") { Fail "claim 5: a three-key marker has the step '$(Get-Porc9 1)'" }
+    $r = SlotE "-Take feat/v3 -SkipWarmup"
+    if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "claim 5: a take did not skip a three-key marker (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    $null = Slot -Abandon 2
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne $abandoned) { Fail "claim 5: -Abandon of a three-key marker (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Hand 1 "check" "2026-11-05T11:30:00"
+    if ((Get-Porc9 1) -ne "check") { Fail "claim 5: a seven-key marker has the step '$(Get-Porc9 1)'" }
+    $r = SlotE "-Take feat/v3 -SkipWarmup"
+    if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "claim 5: a take did not skip a seven-key marker (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    $null = Slot -Abandon 2
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/r1; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 5: -Abandon of a seven-key marker (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    [System.IO.File]::WriteAllText((Marker 1), "{`n  `"slot`": 1,`n  `"branch`": `"feat/v1`",`n  `"since`": `"2026-11-05T09:00:00`",`n  `"state`": `"done`"`n}`n")
+    if ((Get-Porc9 1) -ne "") { Fail "claim 5: a marker with the state done has the step '$(Get-Porc9 1)'" }
+    if ((SlotE "-Status").Out -notmatch "(?m)^slot 1  ready           busy: feat/v1 since 2026-11-05T09:00:00") { Fail "claim 5: a marker with the state done is not a finished busy slot: $((SlotE '-Status').Out)" }
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne $abandoned) { Fail "claim 5: -Abandon of a marker with the state done (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    # the previous version against a take that is working
+    $tag = @(git -C $here tag --list 'v*' --sort=-v:refname | Select-Object -First 1)[0]
+    if (-not $tag) {
+      Write-Host "skipped: no release tag to run the previous version"
+    } else {
+      New-Item -ItemType Directory -Force "$tmp\prev" | Out-Null
+      $psi = New-Object System.Diagnostics.ProcessStartInfo
+      $psi.FileName = "git"
+      $psi.Arguments = "-C `"$here`" show ${tag}:scripts/slot.ps1"
+      $psi.UseShellExecute = $false
+      $psi.RedirectStandardOutput = $true
+      $gp = [System.Diagnostics.Process]::Start($psi)
+      $fs = [System.IO.File]::Create("$tmp\prev\slot.ps1")
+      $gp.StandardOutput.BaseStream.CopyTo($fs)
+      $fs.Close(); $gp.WaitForExit()
+      Write-Cfg $gateJson
+      $h = Start-Take "-Take feat/v1 -Slot 1"
+      Wait-For 1 "taking"
+      $r = Wait-Take (Start-Proc $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$tmp\prev\slot.ps1`" -Status")
+      if ($r.Code -ne 0 -or $r.Out -notmatch "busy: feat/v1 since") { Fail "claim 5: the previous version ($tag) does not show the taking slot as busy (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+      $r = Wait-Take (Start-Proc $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$tmp\prev\slot.ps1`" -Take feat/v2 -SkipWarmup")
+      if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "claim 5: the previous version ($tag) did not skip the taking slot (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+      $null = Slot -Abandon 2
+      [System.IO.File]::WriteAllText("$tmp\go", "")
+      $r = Wait-Take $h; $script:bgs.Clear()
+      if ($r.Code -ne 0) { Fail "claim 5: the take did not finish (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    }
+    Claim-Reset
+  }
+
+  # 6 the claim exists before the fetch, the worktree add and the switch
+  function Claim-Case6 {
+    Claim-Reset
+    if (Test-Path "$tmp\wt\slot-4") { Fail "claim 6: setup: slot-4 exists" }
+    New-Item -ItemType Directory -Force "$tmp\hooks" | Out-Null
+    $recText = @'
+m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; else c=unclaimed; fi; echo "$1 $c" >> '@TMP@/spy.log'
+'@
+    $rootFwd = $claimRoot -replace '\\', '/'
+    [System.IO.File]::WriteAllText("$tmp\hooks\record", $recText.Replace('@M@', "$rootFwd/.slots/slot-4.json").Replace('@TMP@', $tf) + "`n")
+    [System.IO.File]::WriteAllText("$tmp\hooks\post-checkout", "#!/bin/sh`nsh '$tf/hooks/record' checkout`n")
+    [System.IO.File]::WriteAllText("$tmp\hooks\upload-pack", "#!/bin/sh`nsh '$tf/hooks/record' fetch`nexec git upload-pack `"`$@`"`n")
+    git -C $work config core.hooksPath "$tf/hooks"
+    git -C $work config remote.origin.uploadpack "sh '$tf/hooks/upload-pack'"
+    [System.IO.File]::WriteAllText("$tmp\spy.log", "")
+    $r = SlotE "-Take feat/c6 -Slot 4 -SkipWarmup" @{ WORKER_SLOTS = "4" }
+    if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 4 is yours") { Fail "claim 6: the take failed (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    $spy = [System.IO.File]::ReadAllText("$tmp\spy.log") -replace "`r`n", "`n"
+    if ($spy -cne "fetch claimed`ncheckout claimed`ncheckout claimed`n") { Fail "claim 6: git did not see the claim at the fetch, the worktree add and the switch; the log is: $($spy -replace "`n", '|')" }
+    # control: with a finished marker the same probe says unclaimed
+    if (-not (Test-Finished 4)) { Fail "claim 6: the marker of slot 4 is not finished: $(MText 4)" }
+    Gq -C $work fetch -q origin
+    Gq -C "$tmp\wt\slot-4" switch -q -c feat/c6b
+    $spy = [System.IO.File]::ReadAllText("$tmp\spy.log") -replace "`r`n", "`n"
+    if ($spy -cne "fetch claimed`ncheckout claimed`ncheckout claimed`nfetch unclaimed`ncheckout unclaimed`n") { Fail "claim 6: the probe cannot tell a claim from a finished marker; the log is: $($spy -replace "`n", '|')" }
+    Gq -C $work config --unset core.hooksPath
+    Gq -C $work config --unset remote.origin.uploadpack
+    $null = SlotE "-Abandon 4" @{ WORKER_SLOTS = "4" }
+    Gq -C $work branch -D feat/c6 feat/c6b
+  }
+
+  # 7 the publish is exclusive, in one shell and across the two
+  function Test-Race($r1, $r2, [string]$b1, [string]$b2) { # checks the results of the two takes; the winner's branch is left in $script:winner
+    if (-not (($r1.Code -eq 0 -and $r2.Code -eq 1) -or ($r1.Code -eq 1 -and $r2.Code -eq 0))) { Fail "claim 7: the exits of the two takes are $($r1.Code) and $($r2.Code), not one 0 and one 1: $($r1.Out) / $($r1.Err) / $($r2.Out) / $($r2.Err)" }
+    if ($r1.Code -eq 0) { $w = $r1; $l = $r2; $wb = $b1; $lb = $b2 } else { $w = $r2; $l = $r1; $wb = $b2; $lb = $b1 }
+    if ($w.Out -notmatch "Slot 1 is yours") { Fail "claim 7: the winner did not print Slot 1 is yours: $($w.Out)" }
+    if (-not (Test-EndsWithLine $l.Err "slot 1 is busy")) { Fail "claim 7: the loser's standard error does not end with 'slot 1 is busy': $($l.Err)" }
+    if ((MGet 1 "branch") -ne $wb) { Fail "claim 7: the marker of slot 1 names '$(MGet 1 'branch')', not the winner $wb" }
+    if ((MText 1).Contains('"state"') -or (MText 1).Contains('"pid"')) { Fail "claim 7: the marker of slot 1 is not finished: $(MText 1)" }
+    if ((Get-Current 1) -ne $wb) { Fail "claim 7: slot 1 is on '$(Get-Current 1)', not on the winner $wb" }
+    if (Get-Ref $lb) { Fail "claim 7: the loser's branch $lb exists (it fetched or switched)" }
+    if ((Get-Leftovers 1).Count -ne 0) { Fail "claim 7: temporary files are left: $((Get-Leftovers 1) -join ', ')" }
+    $script:winner = $wb
+  }
+  function Claim-Case7 {
+    Claim-Reset
+    $gate = @{ NIGHTMILL_CLAIM_GATE = "$tf/claim-go" }
+    # same shell
+    $h1 = Start-Take "-Take feat/x1 -Slot 1 -SkipWarmup" $gate
+    $h2 = Start-Take "-Take feat/x2 -Slot 1 -SkipWarmup" $gate
+    Wait-Claims 1 2
+    [System.IO.File]::WriteAllText("$tmp\claim-go", "")
+    $r1 = Wait-Take $h1; $r2 = Wait-Take $h2
+    $script:bgs.Clear()
+    Test-Race $r1 $r2 "feat/x1" "feat/x2"
+    if (((((MText 1) | ConvertFrom-Json).PSObject.Properties.Name | Sort-Object) -join ",") -ne "branch,since,slot") { Fail "claim 7: the winner's marker has other keys than branch, since, slot: $(MText 1)" }
+    Claim-Reset
+    Gq -C $work branch -D $script:winner
+    # across the shells
+    $execPath = (([string](git --exec-path)) -replace '/', '\').Trim()
+    $gitRoot = Split-Path (Split-Path (Split-Path $execPath -Parent) -Parent) -Parent
+    $bashExe = Join-Path $gitRoot "bin\bash.exe"
+    if (-not (Test-Path $bashExe)) {
+      Write-Host "skipped: no bash for the cross-shell claim"
+    } else {
+      Remove-Item "$tmp\claim-go" -Force -ErrorAction SilentlyContinue
+      $h1 = Start-Proc $bashExe "`"$hereFwd/scripts/slot.sh`" --take feat/y1 --slot 1 --skip-warmup" $gate
+      $h2 = Start-Take "-Take feat/y2 -Slot 1 -SkipWarmup" $gate
+      Wait-Claims 1 2
+      [System.IO.File]::WriteAllText("$tmp\claim-go", "")
+      $r1 = Wait-Take $h1; $r2 = Wait-Take $h2
+      $script:bgs.Clear()
+      Test-Race $r1 $r2 "feat/y1" "feat/y2"
+      if ($script:winner -eq "feat/y1") {
+        if ((Get-Keys 1) -cne "slot,branch,since") { Fail "claim 7: the bash winner's marker has other keys than slot, branch, since in that order: $(MText 1)" }
+      } elseif (((((MText 1) | ConvertFrom-Json).PSObject.Properties.Name | Sort-Object) -join ",") -ne "branch,since,slot") {
+        Fail "claim 7: the PowerShell winner's marker has other keys than branch, since, slot: $(MText 1)"
+      }
+      Claim-Reset
+      Gq -C $work branch -D $script:winner
+    }
+  }
+
+  Claim-Case1
+  Claim-Case2
+  Claim-Case3
+  Claim-Case4
+  Claim-Case5
+  Claim-Case6
+  Claim-Case7
+  Claim-Reset
 
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {

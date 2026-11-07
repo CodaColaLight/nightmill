@@ -255,6 +255,17 @@ never makes a take fail. A slot whose pull request is open, closed without a mer
 busy until `-Release` or `-Abandon`. Each freed slot is reported in one line:
 `Slot 1 is free (was feat/a, PR #12), released automatically.`
 
+A take claims its slot before it does any work: it writes the slot's marker in the state `taking`, with the take's
+process id, and creates it only if the slot has none, so two takes started together get different slots. A take whose
+fetch, switch or warm-up fails puts the slot back as it was, frees it and says `<step> failed (exit N)`; when the
+failed warm-up left changed or new files in the slot, the slot keeps the claim instead, so that nothing is lost, and
+`-Abandon N` (`--abandon N`) frees it once the files are dealt with. A take that died or was stopped without finishing
+leaves a claim that `slot -Status` shows with `has ended` (or `no process recorded`, for a take that could not put its
+slot back) and `/nightmill:status` with the step `take-died`. Nothing frees it automatically, and `-Abandon N`
+(`--abandon N`) frees it once its files are dealt with, keeping the branch. If `-Abandon` says the process is still
+running but no take is (its number was reused, or it is the PowerShell console a stopped take ran in), end or close
+that process, or remove the marker `<worktrees.root>/.slots/slot-N.json` by hand.
+
 ### What a slot's agent is doing
 
 `/next` and `/fix`, and the implementer and fixer they launch, record their skill, role and current step in the
@@ -262,6 +273,7 @@ slot's marker at each step (`-Report <step>` / `--report <step>`). `/nightmill:s
 state: **running** while the last report is at most `worktrees.stalledAfterMinutes` minutes old (default 30),
 **stalled** when it is older (the session may have ended, crashed or been abandoned; look at it, and free the slot with
 `-Abandon` if it was dropped), **unknown** when the slot has no report (taken by hand or by an older version). A slot
+still being taken shows unknown with the step taking; one whose take died shows the step take-died. A slot
 whose run is over (step `done`) and that waits for its merge also shows stalled once the threshold has passed;
 `-Release`, `-Reap` or the next take frees it. Nothing is stopped or freed because a slot is stalled, and a step longer
 than the threshold (a long code review or check) shows stalled while it runs; `/spec` takes no slot and is not shown.
