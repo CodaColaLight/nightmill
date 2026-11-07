@@ -15,6 +15,8 @@
 #   json_quote STRING         STRING as a JSON string literal, like jq's tojson
 #   json_marker SLOT BRANCH SINCE   the slot marker text, byte for byte what jq -n printed before
 #   json_marker_report SLOT BRANCH SINCE SKILL ROLE STEP REPORTED   the marker after a report (iteration 23)
+#   json_marker_taking SLOT BRANCH SINCE [PID]   the marker of a take's claim, "state": "taking" (iteration 34);
+#                             without PID the same text without the pid line (a claim left behind)
 
 JSON_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 JSON_FLAT=""
@@ -76,4 +78,12 @@ json_marker() {
 json_marker_report() {
   printf '{\n  "slot": %s,\n  "branch": %s,\n  "since": %s,\n  "skill": %s,\n  "role": %s,\n  "step": %s,\n  "reported": %s\n}\n' \
     "$1" "$(json_quote "$2")" "$(json_quote "$3")" "$(json_quote "$4")" "$(json_quote "$5")" "$(json_quote "$6")" "$(json_quote "$7")"
+}
+
+json_marker_taking() {
+  if [ $# -ge 4 ]; then
+    printf '{\n  "slot": %s,\n  "branch": %s,\n  "since": %s,\n  "state": "taking",\n  "pid": %s\n}\n' "$1" "$(json_quote "$2")" "$(json_quote "$3")" "$4"
+  else
+    printf '{\n  "slot": %s,\n  "branch": %s,\n  "since": %s,\n  "state": "taking"\n}\n' "$1" "$(json_quote "$2")" "$(json_quote "$3")"
+  fi
 }

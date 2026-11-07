@@ -13,7 +13,7 @@
 # (see schema/nightmill.schema.json); WORKER_SLOTS overrides worktrees.slots. A slot is never removed:
 # a new task only switches it to a new branch from the base branch, so build output stays warm.
 # A slot is busy from --take to --release, --abandon or an automatic release (a marker file in
-# <root>/.slots). Slot N gets port base + N.
+# <root>/.slots) (a take's claim counts as busy). Slot N gets port base + N.
 # Automatic release (--reap, and the first step of every --take; iteration 17): a busy slot is freed when its
 # worktree is clean and gh lists a merged PR for its branch whose last commit is the tip of the local branch
 # (so a reused branch name or work after the merge keeps the slot busy and nothing is deleted). A slot that
@@ -30,6 +30,12 @@
 # --status --porcelain prints them with the agent state: running while the last report is at most
 # worktrees.stalledAfterMinutes (default 30) old, stalled after that, unknown without a report. The take does not
 # report. Same behaviour as slot.ps1 (-Report).
+# Claim (iteration 34): a take claims its slot before it fetches, switches or warms up: it writes a marker with
+# "state": "taking" and its process id ("pid") and gives it the marker's name only if no marker exists (bash ln,
+# PowerShell File.Move), so two takes never get the same slot; the finished take replaces it with the marker above.
+# A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
+# claim whose process has ended is dead: --status shows take-died, and only --abandon frees it. Same behaviour as
+# slot.ps1.
 set -euo pipefail
 
 usage() {
@@ -153,11 +159,44 @@ slot_dir() { echo "$root/slot-$1"; }
 marker() { echo "$state/slot-$1.json"; }
 has_marker() { [ -f "$(marker "$1")" ]; }
 marker_field() { ( json_load "$(marker "$1")" && json_get "$2" ); }
-# marker_fields N: branch, since, skill, role, step and reported of the marker, separated by the unit separator
-# (\037, not whitespace, so that empty fields stay); empty when absent
+# marker_fields N: branch, since, skill, role, step, reported, state and pid of the marker, separated by the unit
+# separator (\037, not whitespace, so that empty fields stay); empty when absent
 marker_fields() {
   ( json_load "$(marker "$1")" || exit 0
-    printf '%s\037%s\037%s\037%s\037%s\037%s' "$(json_get branch)" "$(json_get since)" "$(json_get skill)" "$(json_get role)" "$(json_get step)" "$(json_get reported)" )
+    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s' "$(json_get branch)" "$(json_get since)" "$(json_get skill)" "$(json_get role)" \
+      "$(json_get step)" "$(json_get reported)" "$(json_get state)" "$(json_get pid)" )
+}
+# my_pid: the process id a claim records: the Windows id where there is one (Git for Windows, MSYS2, Cygwin), else $$
+my_pid() { if [ -r "/proc/$$/winpid" ]; then cat "/proc/$$/winpid"; else echo "$$"; fi; }
+# pid_alive PID: exit 0 while a process with that id runs on this machine; live when nothing can tell
+pid_alive() {
+  if [ -r "/proc/$$/winpid" ]; then /usr/bin/kill -0 -W "$1" >/dev/null 2>&1; return; fi
+  if [ -d /proc/self ]; then [ -d "/proc/$1" ]; return; fi
+  if command -v ps >/dev/null 2>&1; then ps -p "$1" >/dev/null 2>&1; return; fi
+  return 0
+}
+# claim_from STATE PID: sets claim (none for a finished marker, live or dead for a taking one) and claim_pid (the
+# usable pid, 1 to 2147483647, or empty)
+claim_from() {
+  claim=none; claim_pid=""
+  [ "$1" = taking ] || return 0
+  if [[ "$2" =~ ^[1-9][0-9]{0,9}$ ]] && [ "$2" -le 2147483647 ]; then claim_pid=$2; fi
+  if [ -n "$claim_pid" ] && pid_alive "$claim_pid"; then claim=live; else claim=dead; fi
+}
+# claim_of N: claim and claim_pid of slot N's marker (none without a marker)
+claim_of() {
+  local f st="" p=""
+  claim=none; claim_pid=""
+  has_marker "$1" || return 0
+  f=$(marker_fields "$1" 2>/dev/null)
+  IFS=$'\037' read -r _ _ _ _ _ _ st p <<<"$f" || true
+  claim_from "$st" "$p"
+}
+# claim_line N: the refusal of a command on a taking slot (decision 7 of iteration 34)
+claim_line() {
+  if [ "$claim" = live ]; then echo "slot $1 is being taken (process $claim_pid is still running); wait for the take to end"
+  elif [ -n "$claim_pid" ]; then echo "slot $1 has a take that did not finish (process $claim_pid has ended); free it with --abandon $1"
+  else echo "slot $1 has a take that did not finish (no process recorded); free it with --abandon $1"; fi
 }
 is_stamp() { [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$ ]]; }
 # epoch_of YYYY-MM-DDTHH:MM:SS: seconds since 1970 with the time read as UTC, the arithmetic of stamp in lib/status.awk
@@ -194,6 +233,8 @@ reap_all() {
   top=$(last_slot)
   for ((n = 1; n <= top; n++)); do
     has_marker "$n" || continue
+    # a take's claim (live or dead) is never judged, freed or switched
+    if [ "$(marker_field "$n" state 2>/dev/null)" = taking ]; then continue; fi
     dir=$(slot_dir "$n")
     [ -d "$dir" ] || continue
     [ "$(dirty_count "$dir")" -eq 0 ] || continue
@@ -233,8 +274,12 @@ reap_all() {
   done
 }
 
-warmup() { # slot dir
-  local n=$1 dir=$2 i=0 idx count where d cmd lf stamp hash have
+# warmup <slot> <dir>: runs the warm-up commands; on a failure returns 1 with the failing command's number in
+# warm_idx and its exit code in warm_code (the hash of the lockfile, the read and the write of the stamp belong to
+# the command)
+warmup() {
+  local n=$1 dir=$2 i=0 idx count where d cmd lf stamp hash have c
+  warm_idx=0; warm_code=0
   [ "$skip" = 1 ] && return 0
   count=$(json_len worktrees.warmup)
   for ((idx = 0; idx < count; idx++)); do
@@ -247,14 +292,22 @@ warmup() { # slot dir
     stamp="$state/slot-$n.warmup-$i"
     hash=""
     if [ -n "$lf" ] && [ -f "$dir/$lf" ]; then
-      hash=$(sha256 "$dir/$lf")
+      c=0; hash=$(sha256 "$dir/$lf") || c=$?
+      if [ "$c" != 0 ]; then warm_idx=$i; warm_code=$c; return 1; fi
       have=""
-      if [ -f "$stamp" ]; then have=$(cat "$stamp"); fi
+      if [ -f "$stamp" ]; then
+        c=0; have=$(cat "$stamp") || c=$?
+        if [ "$c" != 0 ]; then warm_idx=$i; warm_code=$c; return 1; fi
+      fi
       if [ "$have" = "$hash" ]; then continue; fi
     fi
     echo "warm-up $i in $where: $cmd"
-    (cd "$where" && bash -c "$cmd")
-    if [ -n "$hash" ]; then echo "$hash" > "$stamp"; fi
+    c=0; (cd "$where" && bash -c "$cmd") || c=$?
+    if [ "$c" != 0 ]; then warm_idx=$i; warm_code=$c; return 1; fi
+    if [ -n "$hash" ]; then
+      c=0; echo "$hash" > "$stamp" || c=1
+      if [ "$c" != 0 ]; then warm_idx=$i; warm_code=$c; return 1; fi
+    fi
   done
 }
 
@@ -345,6 +398,8 @@ if [ "$has_report" = 1 ]; then
   if ! [[ "$slot" =~ ^[0-9]+$ ]] || [ $((10#$slot)) = 0 ]; then echo "report needs a slot number" >&2; exit 1; fi
   n=$((10#$slot))
   has_marker "$n" || { echo "slot $n is not in use" >&2; exit 1; }
+  claim_of "$n"
+  if [ "$claim" != none ]; then claim_line "$n" >&2; exit 1; fi
   name_ok() { [[ "$1" =~ ^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789][ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-]{0,39}$ ]]; }
   for what in step skill role; do
     case "$what" in step) v=$report ;; skill) v=$skill ;; role) v=$role ;; esac
@@ -362,14 +417,20 @@ fi
 if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
   # A free slot: <n> TAB free. A busy slot, ten fields: <n> TAB busy TAB <branch> TAB <since> TAB <retiring> TAB
   # <agent> TAB <skill> TAB <role> TAB <step> TAB <reported>; retiring for a busy slot above the count, else empty;
-  # agent: running, stalled or unknown (see the header)
+  # agent: running, stalled or unknown (see the header). A take's claim (iteration 34) is a busy line with the agent
+  # unknown, empty skill, role and reported, and the step taking while its take runs or take-died once it has ended
   threshold=$(( $(stalled_after) * 60 ))
   if [ -n "${NIGHTMILL_NOW:-}" ]; then now=$NIGHTMILL_NOW; else now=$(epoch_of "$(date +%Y-%m-%dT%H:%M:%S)"); fi
   top=$(last_slot)
   for ((i = 1; i <= top; i++)); do
     if has_marker "$i"; then
-      m_branch=""; m_since=""; m_skill=""; m_role=""; m_step=""; m_reported=""
-      IFS=$'\037' read -r m_branch m_since m_skill m_role m_step m_reported <<<"$(marker_fields "$i")" || true
+      m_branch=""; m_since=""; m_skill=""; m_role=""; m_step=""; m_reported=""; m_state=""; m_pid=""
+      IFS=$'\037' read -r m_branch m_since m_skill m_role m_step m_reported m_state m_pid <<<"$(marker_fields "$i")" || true
+      claim_from "${m_state:-}" "${m_pid:-}"
+      if [ "$claim" != none ]; then
+        m_skill=""; m_role=""; m_reported=""
+        if [ "$claim" = live ]; then m_step="taking"; else m_step="take-died"; fi
+      fi
       retiring=""; if [ "$i" -gt "$count" ]; then retiring=retiring; fi
       agent=unknown
       if is_stamp "${m_reported:-}"; then
@@ -394,7 +455,15 @@ if [ "$status" = 1 ]; then
     dir=$(slot_dir "$i")
     where="not created yet"; [ -d "$dir" ] && where="ready"
     busy="free"
-    if has_marker "$i"; then busy="busy: $(marker_field "$i" branch) since $(marker_field "$i" since)"; fi
+    if has_marker "$i"; then
+      claim_of "$i"
+      case "$claim" in
+        none) busy="busy: $(marker_field "$i" branch) since $(marker_field "$i" since)" ;;
+        live) busy="taking: $(marker_field "$i" branch) since $(marker_field "$i" since) (process $claim_pid)" ;;
+        *) if [ -n "$claim_pid" ]; then what="process $claim_pid has ended"; else what="no process recorded"; fi
+           busy="taking: $(marker_field "$i" branch) since $(marker_field "$i" since) ($what; free it with --abandon $i)" ;;
+      esac
+    fi
     if [ "$i" -gt "$count" ]; then busy="$busy (retiring)"; fi
     dirty=""
     if [ -d "$dir" ]; then
@@ -413,43 +482,154 @@ if [ "$reap" = 1 ]; then
   exit 0
 fi
 
+# claim_slot N: claims slot N for the take (see Claim in the header): the complete taking marker is written to a
+# temporary file and given the marker's name only if no marker exists. Returns 1 when another take has the slot;
+# exits 1 when the claim cannot be written or published.
+claim_slot() {
+  local n=$1 tmpc mk c=0 lerr g=0
+  tmpc="$state/slot-$n.claim.$me.tmp"; mk=$(marker "$n")
+  claim_since=$(date +%Y-%m-%dT%H:%M:%S)
+  ( set -C; json_marker_taking "$n" "$take" "$claim_since" "$me" > "$tmpc" ) || c=$?
+  if [ "$c" != 0 ]; then
+    rm -f "$tmpc"
+    echo "claim failed (exit $c); slot $n was not claimed" >&2; exit 1
+  fi
+  # for the tests only: hold every take here until the file exists (60 s at most)
+  if [ -n "${NIGHTMILL_CLAIM_GATE:-}" ]; then
+    while [ ! -e "$NIGHTMILL_CLAIM_GATE" ] && [ "$g" -lt 600 ]; do g=$((g + 1)); sleep 0.1; done
+  fi
+  if lerr=$(ln "$tmpc" "$mk" 2>&1); then
+    # the second name may stay while a reader holds the marker open on Windows; no command reads it
+    rm -f "$tmpc" || true
+    return 0
+  fi
+  rm -f "$tmpc"
+  if [ -e "$mk" ]; then return 1; fi
+  echo "slot $n: could not claim ($(printf '%s\n' "$lerr" | head -n 1))" >&2; exit 1
+}
+# leave_claim: the claim stays, rewritten without its pid, so that it is dead at once and --abandon frees it
+leave_claim() {
+  local tmpl="$state/slot-$n.left.$me.tmp"
+  if ( set -C; json_marker_taking "$n" "$take" "$claim_since" > "$tmpl" ); then
+    mv -f "$tmpl" "$mk" || rm -f "$tmpl"
+  else
+    rm -f "$tmpl"
+  fi
+}
+# restore_take <step> <code>: after a failed step, put the slot back as it was and remove the claim; exits 1
+restore_take() {
+  local step=$1 code=$2 ok=1 cur_head cur_branch tip
+  if [ "$created" = 1 ]; then
+    git worktree remove --force "$dir" || ok=0
+  elif [ "$recorded" = 1 ]; then
+    if [ "$(dirty_count "$dir")" -gt 0 ]; then
+      echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; ok=0
+    else
+      cur_head=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || cur_head=""
+      cur_branch=$(git -C "$dir" symbolic-ref -q --short HEAD 2>/dev/null) || cur_branch=""
+      if [ "$cur_head" != "$old_head" ] || [ "$cur_branch" != "$old_branch" ]; then
+        if [ -n "$old_branch" ]; then git -C "$dir" switch "$old_branch" || ok=0
+        else git -C "$dir" switch --detach "$old_head" || ok=0; fi
+      fi
+    fi
+  fi
+  if [ "$ok" = 1 ] && [ "$recorded" = 1 ] && [ "$had_branch" = 0 ]; then
+    tip=$(git -C "$main" rev-parse --verify -q "refs/heads/$take" 2>/dev/null) || tip=""
+    if [ -n "$tip" ] && [ "$tip" = "$base_commit" ]; then git -C "$main" branch -D "$take" || ok=0; fi
+  fi
+  if [ "$ok" = 1 ]; then rm -f "$mk" || ok=0; fi
+  if [ "$ok" = 1 ]; then echo "$step failed (exit $code); slot $n is free again" >&2; exit 1; fi
+  leave_claim
+  echo "$step failed (exit $code); slot $n could not be put back and stays claimed: free it with --abandon $n" >&2
+  exit 1
+}
+# finish_take: the finished marker over the claim, then the hints
+finish_take() {
+  local tmpt="$state/slot-$n.take.tmp" c=0
+  json_marker "$n" "$take" "$(date +%Y-%m-%dT%H:%M:%S)" > "$tmpt" || c=$?
+  if [ "$c" = 0 ]; then mv -f "$tmpt" "$mk" || c=$?; fi
+  if [ "$c" != 0 ]; then
+    rm -f "$tmpt"
+    leave_claim
+    echo "write marker failed (exit $c); slot $n stays claimed: free it with --abandon $n" >&2; exit 1
+  fi
+  hints "$n" "$dir" "$take"
+}
+
 if [ -n "$take" ]; then
   mkdir -p "$state"
   reap_all
+  me=$(my_pid)
+  claim_since=""
   n=$slot
+  # 1 pick and claim
   if [ "$n" = 0 ]; then
     for ((i = 1; i <= count; i++)); do
-      if ! has_marker "$i"; then n=$i; break; fi
+      has_marker "$i" && continue
+      if claim_slot "$i"; then n=$i; break; fi
     done
     [ "$n" != 0 ] || { echo "all $count slots are busy; see slot.sh --status" >&2; exit 1; }
+  else
+    { [ "$n" -ge 1 ] && [ "$n" -le "$count" ]; } || { echo "slot must be 1..$count" >&2; exit 1; }
+    if has_marker "$n"; then echo "slot $n is busy" >&2; exit 1; fi
+    claim_slot "$n" || { echo "slot $n is busy" >&2; exit 1; }
   fi
-  { [ "$n" -ge 1 ] && [ "$n" -le "$count" ]; } || { echo "slot must be 1..$count" >&2; exit 1; }
-  if has_marker "$n"; then echo "slot $n is busy" >&2; exit 1; fi
+  mk=$(marker "$n"); dir=$(slot_dir "$n")
+  created=0; recorded=0; old_head=""; old_branch=""; had_branch=1; base_commit=""
 
-  git fetch origin "$base_branch"
-  dir=$(slot_dir "$n")
+  # 2 fetch, at most 3 attempts, 1 s apart
+  for attempt in 1 2 3; do
+    c=0; git fetch origin "$base_branch" || c=$?
+    if [ "$c" = 0 ]; then break; fi
+    if [ "$attempt" -lt 3 ]; then sleep 1; fi
+  done
+  [ "$c" = 0 ] || restore_take "git fetch" "$c"
+
+  # 3 the worktree
   if [ ! -d "$dir" ]; then
-    git worktree add --detach "$dir" "$base"
+    c=0; git worktree add --detach "$dir" "$base" || c=$?
+    [ "$c" = 0 ] || restore_take "git worktree add" "$c"
+    created=1
   elif [ "$(dirty_count "$dir")" -gt 0 ]; then
+    rm -f "$mk" || leave_claim
     echo "slot $n has uncommitted files; deal with them first: $dir" >&2; exit 1
   fi
 
-  if git -C "$dir" show-ref --verify --quiet "refs/heads/$take"; then
-    git -C "$dir" switch "$take"
-  else
-    git -C "$dir" switch -c "$take" --no-track "$base"
+  # 4 what the restore puts back
+  c=0; old_head=$(git -C "$dir" rev-parse HEAD) || c=$?
+  [ "$c" = 0 ] || restore_take "git switch" "$c"
+  c=0; old_branch=$(git -C "$dir" symbolic-ref -q --short HEAD) || c=$?
+  case "$c" in 0) ;; 1) old_branch="" ;; *) restore_take "git switch" "$c" ;; esac
+  c=0; git -C "$dir" show-ref --verify --quiet "refs/heads/$take" || c=$?
+  case "$c" in 0) had_branch=1 ;; 1) had_branch=0 ;; *) restore_take "git switch" "$c" ;; esac
+  if [ "$had_branch" = 0 ]; then
+    c=0; base_commit=$(git -C "$dir" rev-parse "$base^{commit}") || c=$?
+    [ "$c" = 0 ] || restore_take "git switch" "$c"
   fi
+  recorded=1
 
-  warmup "$n" "$dir"
+  # 5 switch
+  c=0
+  if [ "$had_branch" = 1 ]; then
+    git -C "$dir" switch "$take" || c=$?
+  else
+    git -C "$dir" switch -c "$take" --no-track "$base" || c=$?
+  fi
+  [ "$c" = 0 ] || restore_take "git switch" "$c"
 
-  json_marker "$n" "$take" "$(date +%Y-%m-%dT%H:%M:%S)" > "$(marker "$n")"
-  hints "$n" "$dir" "$take"
+  # 6 warm-up
+  warmup "$n" "$dir" || restore_take "warm-up $warm_idx" "$warm_code"
+
+  # 7 finish
+  finish_take
   exit 0
 fi
 
 if [ "$release" != 0 ]; then
   n=$release
   has_marker "$n" || { echo "slot $n is not in use" >&2; exit 1; }
+  claim_of "$n"
+  if [ "$claim" != none ]; then claim_line "$n" >&2; exit 1; fi
   dir=$(slot_dir "$n")
   branch=$(marker_field "$n" branch)
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir" >&2; exit 1; }
@@ -466,8 +646,20 @@ fi
 if [ "$abandon" != 0 ]; then
   n=$abandon
   has_marker "$n" || { echo "slot $n is not in use" >&2; exit 1; }
+  claim_of "$n"
+  if [ "$claim" = live ]; then claim_line "$n" >&2; exit 1; fi
   dir=$(slot_dir "$n")
   branch=$(marker_field "$n" branch)
+  if [ "$claim" = dead ]; then
+    # a take that did not finish: freed after the same checks, the local branch is kept
+    if [ -d "$dir" ]; then
+      [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
+      git -C "$dir" switch --detach "$base"
+    fi
+    rm -f "$(marker "$n")"
+    echo "Slot $n is free (was $branch, a take that did not finish; the local branch is kept, delete it yourself if unwanted)."
+    exit 0
+  fi
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
   git -C "$dir" switch --detach "$base"
   rm -f "$(marker "$n")"

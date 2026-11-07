@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Iteration 34 (#186): a take claims its slot atomically and a failed take leaves no half-taken slot. The take now
+  claims the slot before it fetches, switches the worktree or warms up: it writes a marker with `"state": "taking"` and
+  its process id (`"pid"`) and gives it the marker's name only when no marker exists (`ln` in bash, `File.Move` in
+  PowerShell), so two takes, in either shell, never get the same slot. The finished marker is unchanged (the same keys
+  as before). The fetch is tried up to 3 times, 1 s apart, so two takes that fetch at the same moment both succeed.
+  A failed fetch, switch or warm-up puts the slot back as it was, frees the claim and prints `<step> failed (exit N);
+  slot N is free again`, in both shells (bash now exits 1 as well, where it used to exit with the command's code
+  silently, and PowerShell no longer throws); when the failed warm-up left changed or new files in the slot, the slot
+  keeps its claim instead, so nothing is lost, and `--abandon` frees it. A claim whose process has ended is dead:
+  `--status` shows it as `taking: ... (process N has ended; free it with --abandon N)` and the porcelain step field as
+  `take-died`; only `--abandon` frees it, and it keeps the branch. A live claim shows as `taking` and is skipped by
+  the take, refused by `--release`, `--abandon` and `--report` and skipped by the reap, which makes no `gh` call for it.
+  The porcelain keeps its ten fields, so `status`, the dashboard, the panel, `load` and `control` need no change; the
+  previous version reads a taking marker as a busy slot. New helper `json_marker_taking` in `scripts/lib/json.sh`. The
+  test hook `NIGHTMILL_CLAIM_GATE` (tests only, not a config key) holds a take at the publish. Supersedes bug #113.
+  Retries of the take's own marker changes and the cleanup of an interrupted take are #189 and #190.
+
 - Iteration 32 (#69): a pane beside the Claude chat shows the slots and the agents in them. The plugin ships a Claude
   Code mod, `hooks/panel.tsx`, named under `modules` in `hooks/hooks.json` next to the `SessionStart` hook. It is off
   until asked: `/nightmill-slots` opens the pane, `/nightmill-slots off` (or the pane's close mark) closes it, and
