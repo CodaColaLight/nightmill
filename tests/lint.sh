@@ -1179,9 +1179,8 @@ for w in 'the next bug starts only after the previous bug' 'only after the previ
   if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still runs the batch one bug after another: '$w'"; fail=1; fi
 done
 # criterion 3: bugs start by priority, then by issue number, lowest first
-for w in '`board.priorities` (highest first; no priority ranks last), then by issue number, lowest first'; do
-  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all order: $w"; fail=1; }
-done
+w='`board.priorities` (highest first; no priority ranks last), then by issue number, lowest first'
+grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all order: $w"; fail=1; }
 # criterion 2: a bug for which nothing is free waits and starts as soon as something frees; a busy slot keeps the bug
 # first in waiting and never ends the run while a bug of the run is in flight
 for w in 'On `all <k> slots are busy`: the bug stays first' \
