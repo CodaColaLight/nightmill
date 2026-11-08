@@ -1,0 +1,290 @@
+# tests/smoke-check.ps1 - the parallel check and its quick mode (iteration 42), through tests/check.ps1 (which runs
+# tests/check.sh with bash): fixture steps (NIGHTMILL_CHECK_STEPS, lines <name> TAB <command> [TAB <kind> [TAB
+# <reason>]]), the order and the verdict, the limit of 1, the quick mode, -Only and the usage errors, the limit from
+# the config, two checks at once, and the lint section that keeps the check's step list and CI in step.
+# NIGHTMILL_CLOCK_FILE holds one fixed time, so every duration is 0s. Same cases and same expected text as
+# tests/smoke-check.sh (-Jobs 3 for --jobs 3, -Quick, -Only). Runs on Windows PowerShell 5.1 and pwsh.
+$ErrorActionPreference = "Stop"
+$here = Split-Path $PSScriptRoot -Parent
+$psExe = (Get-Command powershell -ErrorAction SilentlyContinue).Source
+if (-not $psExe) { $psExe = (Get-Command pwsh).Source }
+$bashExe = (Get-Command bash).Source
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("nm-chk-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory $tmp | Out-Null
+$tf = $tmp -replace '\\', '/'
+$clockF = "$tf/clock"
+$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh]'
+$env:NIGHTMILL_CLOCK_FILE = $clockF
+foreach ($v in "UPDATE_STATUS_FIXTURES", "UPDATE_DASHBOARD_FIXTURES", "UPDATE_PANEL_FIXTURES", "NIGHTMILL_CHECK_STEPS") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
+
+function Fail($msg) { Write-Host "FAIL: $msg" -ForegroundColor Red; exit 1 }
+function Write-Lf([string]$path, [string]$text) { [System.IO.File]::WriteAllText($path, ($text -replace "`r`n", "`n")) }
+function Read-Lf([string]$path) { ([System.IO.File]::ReadAllText($path)) -replace "`r`n", "`n" }
+function Has-Line([string]$text, [string]$line) { @($text -split "`n") -ccontains $line }
+function Head-Line([string]$text) { @($text -split "`n")[0] }
+function Last-Line([string]$text) { $l = @(($text -split "`n") | Where-Object { $_ -ne "" }); $l[$l.Count - 1] }
+# Barrier [bash test]: a loop of at most 300 tries, 0.1 s apart, then exit 9
+function Barrier([string]$test) { "i=0; until $test; do i=`$((i+1)); [ `$i -gt 300 ] && exit 9; sleep 0.1; done" }
+# Start-Child <file> <arguments> <workdir> [environment]: a started process; read it with Wait-Child
+function Start-Child([string]$file, [string]$arguments, [string]$dir, [hashtable]$extraEnv = @{}) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $file
+  $psi.Arguments = $arguments
+  $psi.WorkingDirectory = $dir
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  foreach ($k in $extraEnv.Keys) { $psi.EnvironmentVariables[$k] = [string]$extraEnv[$k] }
+  $p = [System.Diagnostics.Process]::Start($psi)
+  [pscustomobject]@{ P = $p; ErrTask = $p.StandardError.ReadToEndAsync(); OutTask = $p.StandardOutput.ReadToEndAsync() }
+}
+function Wait-Child($c) {
+  $c.P.WaitForExit()
+  [pscustomobject]@{ Out = ($c.OutTask.Result -replace "`r`n", "`n"); Err = ($c.ErrTask.Result -replace "`r`n", "`n"); Code = $c.P.ExitCode }
+}
+# Check <steps-file> <check.ps1 arguments> [dir of the checkout] [environment]: tests/check.ps1 with fixture steps
+function Check([string]$steps, [string]$cargs, [string]$root = $here, [hashtable]$extraEnv = @{}) {
+  $e = @{ NIGHTMILL_CHECK_STEPS = $steps; NIGHTMILL_CLOCK_FILE = $clockF }
+  foreach ($k in $extraEnv.Keys) { $e[$k] = $extraEnv[$k] }
+  Wait-Child (Start-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$root\tests\check.ps1`" $cargs" $root $e)
+}
+$procs = $null
+try {
+  $n = [int](& $bashExe -c 'nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null' 2>$null)
+  if ($n -ge 1) { $procs = $n }
+} catch { $procs = $null }
+function Expect-Header([int]$l, [string]$why) {
+  if ($procs -and $l -gt $procs) { $l = $procs; $why = "$why, capped at $procs processors" }
+  "check: full, $l at a time ($why)"
+}
+
+try {
+  [System.IO.File]::WriteAllText("$tmp\clock", "1794038400`n")
+
+  Write-Host "== order and verdict"
+  $steps = "$tf/steps1.txt"
+  Write-Lf "$tmp\steps1.txt" ("one`t" + (Barrier "[ -f '$tf/two.done' ]") + "; echo `"out of one`"`n" +
+    "two`techo `"out of two`"; touch `"$tf/two.done`"`n" +
+    "three`techo `"out of three`"; exit 1`n" +
+    "four`ttrue`tbash`tfour cannot run here`n")
+  $r = Check $steps "-Jobs 3"
+  $o = $r.Out
+  if ($r.Code -ne 1) { Fail "order: exit $($r.Code): $o" }
+  if ((Head-Line $o) -cne "check: full, 3 at a time (--jobs 3)") { Fail "order: the header: $o" }
+  $want = "== one", "out of one", "-- one: ok (0s)", "== two", "out of two", "-- two: ok (0s)", "== three", "out of three", "-- three: FAILED (0s)"
+  $got = @(); $on = $false
+  foreach ($l in ($o -split "`n")) {
+    if ($l -ceq "== one") { $on = $true }
+    if ($on -and $l -ne "") { $got += $l }
+    if ($l -clike "-- three:*") { $on = $false }
+  }
+  if (($got -join "`n") -cne ($want -join "`n")) { Fail "order: the sections are not whole and in list order; got: [$($got -join '|')]" }
+  $names = @(); $on = $false
+  foreach ($l in ($o -split "`n")) {
+    if ($l -ceq "Times:") { $on = $true }
+    if ($on -and $l -ne "") { $w = @($l.Trim() -split '\s+')[0]; if ("Times:", "one", "two", "three", "total" -ccontains $w) { $names += $w } }
+    if ($l -match '^  total ') { $on = $false }
+  }
+  if (($names -join " ") -cne "Times: one two three total") { Fail "order: the Times block: [$($names -join ' ')] in: $o" }
+  if (-not (Has-Line $o "SKIPPED: four cannot run here")) { Fail "order: no SKIPPED line for four: $o" }
+  if (-not (Has-Line $o "CHECK FAILED: three")) { Fail "order: no CHECK FAILED: three: $o" }
+  if ($o.Contains("ALL CHECKS PASSED")) { Fail "order: a failing check passed: $o" }
+
+  Write-Host "== the limit of 1"
+  $log = "$tf/limit.log"
+  function Write-Abc([string]$wait) {
+    Write-Lf "$tmp\abc.txt" ("a`techo `"start a`" >> `"$log`"; echo `"out of a`"; $wait echo `"end a`" >> `"$log`"`n" +
+      "b`techo `"start b`" >> `"$log`"; echo `"b line 1`"; echo `"b line 2`"; echo `"end b`" >> `"$log`"`n" +
+      "c`techo `"start c`" >> `"$log`"; echo `"out of c`"; echo `"end c`" >> `"$log`"`n")
+  }
+  function Log-Lines { if (Test-Path "$tmp\limit.log") { @((Read-Lf "$tmp\limit.log") -split "`n" | Where-Object { $_ -ne "" }) } else { @() } }
+  Write-Abc ""
+  Write-Lf "$tmp\limit.log" ""
+  $r = Check "$tf/abc.txt" "-Jobs 1"
+  if ($r.Code -ne 0) { Fail "limit 1: exit $($r.Code): $($r.Out)" }
+  if ((Log-Lines) -join "," -cne "start a,end a,start b,end b,start c,end c") { Fail "limit 1: the steps did not run one after another: $((Log-Lines) -join ',')" }
+  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "limit 1: the last line: $($r.Out)" }
+  $out1 = $r.Out
+  Write-Abc ((Barrier "grep -q 'start c' '$log'") + ";")
+  Write-Lf "$tmp\limit.log" ""
+  $r = Check "$tf/abc.txt" "-Jobs 3"
+  if ($r.Code -ne 0) { Fail "limit 3: exit $($r.Code): $($r.Out)" }
+  $ll = Log-Lines
+  $ic = [array]::IndexOf($ll, "start c"); $ia = [array]::IndexOf($ll, "end a")
+  if (-not ($ic -ge 0 -and $ia -ge 0 -and $ic -lt $ia)) { Fail "limit 3: c did not start before a ended: $($ll -join ',')" }
+  $rest3 = ($r.Out -split "`n" | Select-Object -Skip 1) -join "`n"
+  $rest1 = ($out1 -split "`n" | Select-Object -Skip 1) -join "`n"
+  if ($rest3 -cne $rest1) { Fail "limit 3: the output differs from -Jobs 1 beyond the header: [$($r.Out)] vs [$out1]" }
+
+  Write-Host "== quick"
+  $qlog = "$tf/quick.log"
+  function Write-Quick([string]$bcmd) {
+    Write-Lf "$tmp\quick.txt" ("l`techo l >> `"$qlog`"`tlint`n" +
+      "b`techo b >> `"$qlog`"; $bcmd`tbash`n" +
+      "p`techo p >> `"$qlog`"`tps`n" +
+      "c`techo c >> `"$qlog`"`tclaude`n")
+  }
+  function Qlog-Lines { if (Test-Path "$tmp\quick.log") { @((Read-Lf "$tmp\quick.log") -split "`n" | Where-Object { $_ -ne "" }) } else { @() } }
+  Write-Quick "true"
+  Write-Lf "$tmp\quick.log" ""
+  $r = Check "$tf/quick.txt" "-Quick"
+  $o = $r.Out
+  if ($r.Code -ne 0) { Fail "quick: exit $($r.Code): $o" }
+  if ((@(Qlog-Lines) | Sort-Object) -join "," -cne "b,l") { Fail "quick: the steps that ran: $((Qlog-Lines) -join ',')" }
+  if ((Head-Line $o) -cnotmatch '^check: QUICK, [0-9]+ at a time \(.+\): the lint and the bash smoke tests only; the full check does not run$') { Fail "quick: the first line: $o" }
+  if ((Last-Line $o) -cne "QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)") { Fail "quick: the last line: $o" }
+  if ($o.Contains("ALL CHECKS PASSED")) { Fail "quick: printed ALL CHECKS PASSED: $o" }
+  if ($o -cmatch '(?m)^SKIPPED:') { Fail "quick: printed a SKIPPED line: $o" }
+  Write-Quick "exit 1"
+  Write-Lf "$tmp\quick.log" ""
+  $r = Check "$tf/quick.txt" "-Quick"
+  $o = $r.Out
+  if ($r.Code -ne 1) { Fail "quick failing: exit $($r.Code): $o" }
+  if ((Last-Line $o) -cne "QUICK CHECK FAILED: b (the full check has not run)") { Fail "quick failing: the last line: $o" }
+  if ($o -cmatch '(?m)^CHECK FAILED: ') { Fail "quick failing: a line starts with CHECK FAILED: $o" }
+  if ($o.Contains("ALL CHECKS PASSED")) { Fail "quick failing: printed ALL CHECKS PASSED: $o" }
+
+  Write-Host "== only and usage"
+  Write-Quick "true"
+  Write-Lf "$tmp\quick.log" ""
+  $r = Check "$tf/quick.txt" "-Only b,l -Jobs 1"
+  $o = $r.Out
+  if ($r.Code -ne 0) { Fail "only: exit $($r.Code): $o" }
+  if ((Qlog-Lines) -join "," -cne "l,b") { Fail "only: the steps did not run in list order: $((Qlog-Lines) -join ',')" }
+  if (-not (Head-Line $o).StartsWith("check: only l,b,")) { Fail "only: the header: $o" }
+  if ((Last-Line $o) -cne "SELECTED CHECKS PASSED (2 of 4 steps; the full check has not run)") { Fail "only: the last line: $o" }
+  function Usage-Case([string]$cargs) {
+    Write-Lf "$tmp\quick.log" ""
+    $r = Check "$tf/quick.txt" $cargs
+    if ($r.Code -ne 2) { Fail "usage ($cargs): exit $($r.Code): $($r.Out)" }
+    if (-not (Has-Line $r.Err $USAGE)) { Fail "usage ($cargs): no usage line on standard error: $($r.Err)" }
+    if ((Qlog-Lines).Count -ne 0) { Fail "usage ($cargs): a step ran" }
+    $r
+  }
+  $r = Usage-Case "-Only nope"
+  if (-not (Has-Line $r.Err "check: no step named nope")) { Fail "usage: no 'no step named nope' line: $($r.Err)" }
+  foreach ($a in "-Quick -Only b", "-Jobs 0", "-Jobs 17", "-Jobs x", "-PowerShell cmd") { $null = Usage-Case $a }
+  # a bare '-Jobs' and an extra argument are given to the shell script as they are: PowerShell binds the first
+  # to the parameter and the second to nothing, and a repeated -Quick fails in PowerShell's own binding, so they are run through bash with the same arguments
+  foreach ($a in @("--jobs"), @("extra"), @("--quick", "--quick")) {
+    Write-Lf "$tmp\quick.log" ""
+    $c = Start-Child $bashExe ("tests/check.sh " + ($a -join " ")) $here @{ NIGHTMILL_CHECK_STEPS = "$tf/quick.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
+    $r = Wait-Child $c
+    if ($r.Code -ne 2) { Fail "usage ($a): exit $($r.Code): $($r.Out)" }
+    if (-not (Has-Line $r.Err $USAGE)) { Fail "usage ($a): no usage line on standard error: $($r.Err)" }
+    if ((Qlog-Lines).Count -ne 0) { Fail "usage ($a): a step ran" }
+  }
+
+  Write-Host "== the limit from the config"
+  $repo = "$tmp\repo"
+  New-Item -ItemType Directory "$repo\tests", "$repo\scripts", "$repo\.claude" | Out-Null
+  Copy-Item "$here\tests\check.sh", "$here\tests\check.ps1" "$repo\tests\"
+  Copy-Item "$here\scripts\lib" "$repo\scripts\lib" -Recurse
+  Write-Lf "$tmp\one-step.txt" "only`ttrue`n"
+  function Cfg([string]$extra, [hashtable]$extraEnv = @{}, [string]$cargs = "") {
+    Write-Lf "$repo\.claude\nightmill.json" "{ `"verification`": { `"check`": `"true`"$extra } }`n"
+    $r = Check "$tf/one-step.txt" $cargs $repo $extraEnv
+    if ($r.Code -ne 0) { Fail "config ($extra): exit $($r.Code): $($r.Out) $($r.Err)" }
+    $r
+  }
+  $NOTE = "check: verification.checkJobs must be a whole number from 1 to 16; using 4"
+  $r = Cfg ', "checkJobs": 2'
+  if ((Head-Line $r.Out) -cne (Expect-Header 2 "verification.checkJobs 2")) { Fail "config 2: the header: $($r.Out)" }
+  $r = Cfg ', "checkJobs": 99'
+  if ((Head-Line $r.Out) -cne (Expect-Header 4 "default 4")) { Fail "config 99: the header: $($r.Out)" }
+  if (-not (Has-Line $r.Err $NOTE)) { Fail "config 99: no note: $($r.Err)" }
+  $r = Cfg ', "checkJobs": "x"'
+  if ((Head-Line $r.Out) -cne (Expect-Header 4 "default 4")) { Fail "config x: the header: $($r.Out)" }
+  if (-not (Has-Line $r.Err $NOTE)) { Fail "config x: no note: $($r.Err)" }
+  $r = Cfg ''
+  if ((Head-Line $r.Out) -cne (Expect-Header 4 "default 4")) { Fail "config none: the header: $($r.Out)" }
+  if ($r.Err.Contains($NOTE)) { Fail "config none: a note for a missing key: $($r.Err)" }
+  $r = Cfg ', "checkJobs": 2' @{ UPDATE_PANEL_FIXTURES = "1" } "-Jobs 3"
+  if ((Head-Line $r.Out) -cne "check: full, 1 at a time (UPDATE_PANEL_FIXTURES is set)") { Fail "config UPDATE: the header: $($r.Out)" }
+
+  Write-Host "== two checks at once"
+  New-Item -ItemType Directory "$tmp\tmpA", "$tmp\tmpB" | Out-Null
+  $psSh = $psExe -replace '\\', '/'   # the steps run under bash -c, which would strip backslashes
+  foreach ($x in "A", "B") {
+    $o2 = if ($x -eq "A") { "B" } else { "A" }
+    Write-Lf "$tmp\two$x.txt" ("run`techo `"run $x`"; touch `"$tf/started$x`"; " + (Barrier "[ -f '$tf/started$o2' ]") + "`n" +
+      "render`t'$psSh' -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1`n" +
+      "hook`t'$psSh' -NoProfile -ExecutionPolicy Bypass -File tests/smoke-hook.ps1`n")
+  }
+  $cs = @{}
+  foreach ($x in "A", "B") {
+    $cs[$x] = Start-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$here\tests\check.ps1`" -Jobs 2" $here @{ TMPDIR = "$tf/tmp$x"; TEMP = "$tmp\tmp$x"; TMP = "$tmp\tmp$x"; NIGHTMILL_CHECK_STEPS = "$tf/two$x.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
+  }
+  foreach ($x in "A", "B") {
+    $o2 = if ($x -eq "A") { "B" } else { "A" }
+    $r = Wait-Child $cs[$x]
+    if ($r.Code -ne 0) { Fail "two checks: run $x exit $($r.Code): $($r.Out)" }
+    if (-not (Has-Line $r.Out "ALL CHECKS PASSED")) { Fail "two checks: run $x did not pass: $($r.Out)" }
+    if (-not (Has-Line $r.Out "run $x")) { Fail "two checks: run $x lacks its own line: $($r.Out)" }
+    if (Has-Line $r.Out "run $o2") { Fail "two checks: run $x holds the line of run $o2`: $($r.Out)" }
+    $secs = (@($r.Out -split "`n" | Where-Object { $_ -cmatch "^-- (run|render|hook): " } | ForEach-Object { ($_ -split ":")[0].Substring(3) }) -join " ")
+    if ($secs -cne "run render hook") { Fail "two checks: run $x sections not in list order: $($r.Out)" }
+    if (@(Get-ChildItem -Force "$tmp\tmp$x").Count -ne 0) { Fail "two checks: run $x left files in its temp folder: $((Get-ChildItem -Force "$tmp\tmp$x" | ForEach-Object Name) -join ' ')" }
+  }
+
+  Write-Host "== the lint: the check runs every smoke script"
+  # The section of tests/lint.sh is run alone (through bash) on scratch copies of the files it reads, each broken once.
+  $lintText = Read-Lf (Join-Path $here "tests\lint.sh")
+  $sec = New-Object System.Collections.ArrayList
+  $on = $false
+  foreach ($l in ($lintText -split "`n")) {
+    if ($l -ceq 'echo "== the check runs every smoke script"') { $on = $true }
+    if ($l -ceq 'echo "== text from issues is data"') { $on = $false }
+    if ($on) { [void]$sec.Add($l) }
+  }
+  if ($sec.Count -eq 0) { Fail "lint: tests/lint.sh has no section '== the check runs every smoke script'" }
+  $secText = $sec -join "`n"
+  function Make-Copy([string]$d) {
+    foreach ($s in "tests", ".github\workflows", "schema", "templates", "scripts") { New-Item -ItemType Directory "$d\$s" -Force | Out-Null }
+    Copy-Item "$here\tests\check.sh", "$here\tests\check.ps1" "$d\tests\"
+    Get-ChildItem "$here\tests" -Filter "smoke-*" -File | ForEach-Object { Copy-Item $_.FullName "$d\tests\" }
+    Copy-Item "$here\.github\workflows\ci.yml" "$d\.github\workflows\"
+    Copy-Item "$here\schema\nightmill.schema.json" "$d\schema\"
+    Copy-Item "$here\templates\nightmill.example.json" "$d\templates\"
+    Copy-Item "$here\scripts\lib" "$d\scripts\lib" -Recurse
+    Copy-Item "$here\README.md", "$here\CONTRIBUTING.md" $d
+    Copy-Item "$here\skills" "$d\skills" -Recurse
+  }
+  function Lint-In([string]$d) {
+    $df = $d -replace '\\', '/'
+    Write-Lf "$tmp\run-section.sh" ("set -euo pipefail`ncd `"$df`"`nfail=0`n. scripts/lib/json.sh`n" + $secText + "`nexit `$fail`n")
+    Wait-Child (Start-Child $bashExe "`"$tf/run-section.sh`"" $d @{})
+  }
+  # Lint-Break <name> <file> <line transform: a scriptblock from the lines to the new lines> <expected text>
+  function Lint-Break([string]$name, [string]$file, [scriptblock]$edit, [string]$expected) {
+    $d = "$tmp\lint-$name"
+    Make-Copy $d
+    $lines = @((Read-Lf "$d\$file") -split "`n")
+    $new = & $edit $lines
+    Write-Lf "$d\$file" ((@($new) -join "`n") + "`n")
+    $r = Lint-In $d
+    $all = $r.Out + $r.Err
+    if ($r.Code -eq 0) { Fail "lint ${name}: passed on a broken copy: $all" }
+    if (-not $all.Contains($expected)) { Fail "lint ${name}: no '$expected' in: $all" }
+    Remove-Item $d -Recurse -Force
+  }
+  Make-Copy "$tmp\lint-ok"
+  $r = Lint-In "$tmp\lint-ok"
+  if ($r.Code -ne 0 -or ($r.Out + $r.Err).Contains("FAIL")) { Fail "lint: the section fails on the repository as it is: $($r.Out) $($r.Err)" }
+  Remove-Item "$tmp\lint-ok" -Recurse -Force
+  $CI = ".github\workflows\ci.yml"
+  Lint-Break "missing" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -notmatch '^add bash smoke-hook\.sh' } } "FAIL: tests/check.sh does not run tests/smoke-hook.sh"
+  Lint-Break "twice" "tests\check.sh" { param($ls) foreach ($l in $ls) { $l; if ($l -match '^add bash smoke-hook\.sh') { $l } } } "FAIL: tests/check.sh runs tests/smoke-hook.sh more than once"
+  Lint-Break "nofile" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# steps: end") { "add bash smoke-nope.sh" }; $l } } "FAIL: tests/check.sh runs tests/smoke-nope.sh, which does not exist"
+  Lint-Break "twopassed" "tests\check.sh" { param($ls) $ls; 'echo "ALL CHECKS PASSED"' } "FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place"
+  Lint-Break "cibash" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --only*') { $l.Replace("smoke-hook.sh,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh"
+  Lint-Break "cips" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*--powershell powershell --only*') { $l.Replace("smoke-hook.ps1,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.ps1"
+  Lint-Break "cijson" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --only*') { $l.Replace("--only ", "--only smoke-json.sh,") } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice"
+  Lint-Break "ciswap" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --only*') { $l.Replace("smoke-hook.sh,smoke-release.sh", "smoke-release.sh,smoke-hook.sh") } else { $l } } } "FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list"
+  Lint-Break "cidirect" $CI { param($ls) $ls; "      - run: bash tests/smoke-render.sh" } "FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh"
+  Lint-Break "cirename" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: bash scripts smoke tests", "name: bash scripts smoke") } } "the required job bash scripts smoke tests is missing"
+
+  Write-Host "smoke-check: ok"
+} finally {
+  Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}

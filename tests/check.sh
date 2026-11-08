@@ -81,6 +81,7 @@ add bash smoke-control.sh
 add bash smoke-dashboard.sh
 add bash smoke-panel.sh
 add bash smoke-stages.sh
+add bash smoke-check.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
@@ -95,6 +96,7 @@ add ps smoke-control.ps1
 add ps smoke-dashboard.ps1
 add ps smoke-panel.ps1
 add ps smoke-stages.ps1
+add ps smoke-check.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then
