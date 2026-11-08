@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 41 (#199): the time a story spends in each stage is recorded and shown. The take, every report and every
+  freeing append one line to `<worktrees.root>/.slots/ledger.tsv`, which survives the release and the branch;
+  `scripts/stages.sh` (`stages.ps1`) prints per issue or for the last N takes the time and share of each stage, with
+  the wait for CI and the merge as its own stage (`ci-and-merge`) and unreported time as `not-reported` or `unknown`,
+  never 0. `tests/check.sh` prints the time of each step and the total. The marker and the config do not change.
+
 - Iteration 38 (#154): CI runs with a read-only token, a timeout on every job (5 to 38
   minutes), cancels superseded runs of a pull request only (every push to main gets its own result), says on each
   required job name that the ruleset requires it, and pins its actions by commit SHA, kept current by Dependabot.
