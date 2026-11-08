@@ -3,6 +3,7 @@ name: fix
 description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" fixes every Ready bug, several at once while slots and room allow. Use when asked to fix a bug issue.
 argument-hint: [issue-number | all]
 disable-model-invocation: true
+allowed-tools: Bash(cat .claude/nightmill.json *)
 ---
 
 Fix one bug from GitHub Issues, without an iteration: $ARGUMENTS (`all` = every Ready bug, in parallel, see "Batch mode")
@@ -26,10 +27,12 @@ milestone, iteration number or CHANGELOG entry.
    stop: say so and suggest the maintainer files it as a story (`/story`).
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
    `gh project item-edit`). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
-   Work in a slot: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
-   (bash: `slot.sh --take ...`); `-Release N` after the merge (in "Batch mode" the slot is freed once its pull request
-   is open). In a single checkout without slots,
-   `git switch -c <git.fixPrefix><number>-<slug>` from up-to-date `origin/<git.baseBranch>`. Right after the take
+   Work in a slot: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
+   (bash: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.fixPrefix><number>-<slug>`); `-Release N` after the
+   merge (in "Batch mode" the slot is freed once its pull request is open). In a single checkout without slots,
+   `git fetch origin`, then `git switch -c <git.fixPrefix><number>-<slug> origin/<git.baseBranch>`. In a slot every git
+   command, the session's own included, is `git -C <slot path> ...` with the absolute slot path, never
+   `cd <slot> && git ...`. Right after the take
    report the step `slot-taken` (see "Reporting the steps" below); from here on every step is reported there.
 4. **Have the bug reproduced first, then hand the fix to the fixer.** The session
    never writes the test or the code itself. A subagent in the role `tester` writes a regression test that fails for
@@ -41,7 +44,12 @@ milestone, iteration number or CHANGELOG entry.
    the fixer fixes what is blocking in the code and the tester what is blocking in its regression test (see "The code review" below). A change under any of
    `verification.manualCheckPaths` also gets `verification.manualCheckText`, done by the session (the fixer runs the
    check, not this). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
-6. **Open a PR** titled `fix: <what> (#N)` with `Fixes #N`, directly under it the line
+6. **Push, then open a PR.** Rebase on `origin/<git.baseBranch>`: `git fetch origin` in the main checkout, then
+   `git -C <slot path> rebase origin/<git.baseBranch>` (after a conflict, `git -C <slot path> add <the files>` and
+   `git -C <slot path> rebase --continue`), and push with `git -C <slot path> push -u origin <branch>`. Without slots
+   the same commands run in the checkout without `-C <slot path>` (`git rebase origin/<git.baseBranch>`,
+   `git push -u origin <branch>`). Every commit message is passed with `-m "<message>"`, never through a command
+   substitution or a heredoc. Open the PR titled `fix: <what> (#N)` with `Fixes #N`, directly under it the line
    `Fixed by the fixer role on <model>.` (`<model>` is the exact string passed as `model` in the fixer's Agent call),
    and the sections Cause, Fix and How verified, and the `## Review` section of "The code review" (step 5 there).
    How verified is written from the tester's and the fixer's result blocks (the test, the check) and the manual
@@ -91,7 +99,7 @@ milestone, iteration number or CHANGELOG entry.
 
 A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call of the
 shell in use, with N the slot number the take printed (`Slot N is yours`):
-`"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill fix -Role <role>` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill fix -Role <role>` or
 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --report <step> --slot <n> --skill fix --role <role>`. A report that
 fails never stops the run: go on, and name a failed report you made yourself once, in your final message. A report
 is not a board status. A run without slots (no `worktrees`, `git switch -c` in a single checkout) took no slot and
@@ -188,7 +196,7 @@ instructions say. A bug you cannot reproduce with a test is reported, never forc
 it fail.
 
 The project's testing rules:
-- the check: <verification.check>
+- the check: `cd <absolute slot path> && <verification.check>` (the quick check: `cd <absolute slot path> && <verification.check> --quick`)
 - the bench rule: <verification.benchRule, or "none">
 - the invariants: <config invariants, one per line>
 
@@ -267,12 +275,13 @@ entry without looking. Report `partial`. The session passes the dispute to the t
 
 Do this:
 1. Run the tester's test and watch it fail for the reason in the issue.
-2. Fix the cause, not the symptom, with the smallest diff that does it. While you work you may run the quick check, <verification.check> --quick (only when its first line starts with
+2. Fix the cause, not the symptom, with the smallest diff that does it. While you work you may run the quick check, `cd <absolute slot path> && <verification.check> --quick` (only when its first line starts with
    "check: QUICK"; else run the check), to see where you stand; it is not the check of step 4 and you do not report it as
    `check`. <verification.benchRule, when set>
 3. If the fix changes a rule or number that a spec states, correct that spec's text. Do not add a CHANGELOG entry.
-4. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
-   names the bug. Never commit red.
+4. Run the check: `cd <absolute slot path> && <verification.check>`. When it is green, commit the work on the branch
+   with `git -C <slot path> add ...` and `git -C <slot path> commit -m "<message>"`, a message that names the bug.
+   Never commit red.
 
 Report your progress with `<the report command of the shell in use, with --slot <n> --skill fix --role fixer
 (PowerShell: -Slot, -Skill, -Role) and the step as the value of --report / -Report>`: before step 1 (`test`), before
@@ -437,7 +446,7 @@ Your tests are at: <tester files, one per line>. Change only the files named abo
 test paths.
 
 The project's testing rules:
-- the check: <verification.check>
+- the check: `cd <absolute slot path> && <verification.check>` (the quick check: `cd <absolute slot path> && <verification.check> --quick`)
 - the bench rule: <verification.benchRule, or "none">
 - the invariants: <config invariants, one per line>
 
@@ -455,7 +464,7 @@ After the fixer's result (not `failed`) and before the manual check, a different
 format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
 
 1. **The pairing.** Run `validate-config` of the shell in use on the project's config
-   (`"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
+   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
    on `roles.codeReviewer.model` with the text `ranks below`, stop with
    `Stopped: the codeReviewer ranks below the fixer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
@@ -567,7 +576,7 @@ format, the rounds and the pairing rule are in **Findings and fix rounds** in th
    <path>: this file is not yours: leave it unchanged; write the missing test in a new file on a test path, or say why none is needed.
 
    The project's testing rules:
-   - the check: <verification.check>
+   - the check: `cd <absolute slot path> && <verification.check>` (the quick check: `cd <absolute slot path> && <verification.check> --quick`)
    - the bench rule: <verification.benchRule, or "none">
    - the invariants: <config invariants, one per line>
 
@@ -683,7 +692,7 @@ differences:
   4. `git -C <slot> rev-parse HEAD` equals what `gh pr view <pr> --json headRefOid --jq .headRefOid` prints (the
      branch's last commit is the head of the open PR, so it is pushed).
 
-  Then run `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Abandon <n>` or
+  Then run `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Abandon <n>` or
   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --abandon <n>` and expect exit 0 and the line `Slot <n> is free`; the
   local branch is kept, and its commits are on the open PR. When any check fails, or the abandon exits non-zero, the
   slot is **held**: change nothing, the slot keeps its marker and its files, and the final table names the check that

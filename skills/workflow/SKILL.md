@@ -1,6 +1,7 @@
 ---
 name: workflow
 description: The development process of this project under nightmill - the issue board and its status flow, stories versus bugs, specs, the spec gate, worker slots and parallel work, PRs and auto-merge, verification. Load this before touching an issue, a board status, a spec, a worktree slot or a pull request.
+allowed-tools: Bash(cat .claude/nightmill.json *)
 ---
 
 # The nightmill workflow
@@ -224,9 +225,11 @@ has no "How verified"); when a blocking finding is still open the comment on the
   `/fix`), and `/status` shows the slot `running` while the last report is at most `worktrees.stalledAfterMinutes`
   old, `stalled` after that (also a slot that waits for its merge after its last step, `done`), `unknown` without a
   report.
+- In a slot every git command is `git -C <absolute slot path> ...`; `/init`'s **Run permissions** covers exactly the
+  forms the skills write.
 - At most the agent limit agents (subagents, slot builds, your own builds) at the same time. The limit is the live
   value set during the session, else `parallel.maxAgents`. Read it at every decision to start an agent, never once per
-  session: `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Capacity -Porcelain` or
+  session: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Capacity -Porcelain` or
   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --capacity --porcelain` (the line `agents`, second field). When the
   command fails, use `parallel.maxAgents` of the configuration and say so. Before launching one, count the running
   ones; queue or do the work inline otherwise. A lowered limit stops no running agent: wait until fewer run than it
@@ -235,7 +238,7 @@ has no "How verified"); when a blocking finding is still open the comment on the
 - **Room on the machine.** When the count allows a start (a subagent, a slot build such as a take's warm-up, your own
   build), check right before it that the machine has room, after the count and before the step report of that launch
   (only a `dispute-<k>` step is reported before its count):
-  `"${CLAUDE_PLUGIN_ROOT}/scripts/room.ps1"` or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/room.sh"`. Exit 0: start; say a
+  `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/room.ps1"` or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/room.sh"`. Exit 0: start; say a
   `not checked: unavailable` line once per run. Exit 1: say its `room: waiting` line, then run it again at once with
   the value of its `room: call again with` line (`-Since <n>`, `--since <n>`; the script has paused), until another
   exit code; then count again before the start. Exit 3: start nothing and print

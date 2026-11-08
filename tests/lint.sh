@@ -345,6 +345,95 @@ for w in 'Edit(**)' '.claude/settings.local.json' '### The edit permission'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the edit permission item: $w"; fail=1; }
 done
 
+echo "== init installs the run permissions"
+# /init adds the Run permissions line (iteration 43): git commands, scripts, the slot root and an edit rule for the
+# slots, in .claude/settings.local.json. /init is a conversation, so the lint pins the wording; the manual check does the behaviour.
+ini=skills/init/SKILL.md
+for w in '**Run permissions**' '.claude/settings.local.json' 'additionalDirectories' 'Edit(//' '/slot-*/**' \
+         'git rev-parse --path-format=absolute --git-common-dir' '24 + 21' \
+         "declined (the skills' git commands, scripts and slot edits will prompt)" \
+         'kept: <k> script rules for another plugin folder' \
+         'Bash(git fetch origin)' 'Bash(git switch *)' 'Bash(git add *)' 'Bash(git commit *)' \
+         'Bash(git push -u origin <Sp>*)' 'Bash(git push -u origin <Fe>*)' 'Bash(git push -u origin <Fx>*)' \
+         'Bash(git pull --ff-only)' 'Bash(git rebase origin/<B>)' 'Bash(git rebase --continue)' \
+         'Bash(git stash push *)' 'Bash(git stash list)' 'Bash(git ls-tree *)' 'Bash(git rev-parse *)' 'Bash(<C> --quick)' \
+         'Bash(git -C <S> status *)' 'Bash(git -C <S> diff *)' 'Bash(git -C <S> log *)' 'Bash(git -C <S> add *)' \
+         'Bash(git -C <S> commit *)' 'Bash(git -C <S> stash push *)' 'Bash(git -C <S> stash list)' \
+         'Bash(git -C <S> stash pop *)' 'Bash(git -C <S> hash-object *)' 'Bash(git -C <S> rev-parse *)' \
+         'Bash(git -C <S> ls-tree *)' 'Bash(git -C <S> merge-base *)' 'Bash(git -C <S> reset --mixed -q *)' \
+         'Bash(git -C <S> reset -q -- *)' 'Bash(git -C <S> update-index *)' 'Bash(git -C <S> checkout-index *)' \
+         'Bash(git -C <S> symbolic-ref *)' 'Bash(git -C <S> rebase origin/<B>)' 'Bash(git -C <S> rebase --continue)' \
+         'Bash(git -C <S> push -u origin <Fe>*)' 'Bash(git -C <S> push -u origin <Fx>*)' \
+         'Bash(bash "<P>/scripts/<name>.sh" *)' \
+         'Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)'; do
+  grep -qF -- "$w" "$ini" || { echo "FAIL: $ini does not mention the run permissions item: $w"; fail=1; }
+done
+if ! sed -n '/^- \*\*Run permissions\*\*/,/^- \*\*/p' "$ini" | grep -qF 'without removing or reordering an entry'; then
+  echo "FAIL: $ini: the Run permissions line does not say no entry is removed or reordered"; fail=1
+fi
+if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' "$ini" | grep -qF 'Run permissions'; then
+  echo "FAIL: $ini: the Confirm once step does not name Run permissions"; fail=1
+fi
+# no broad rule: no bare git push, no git wildcard, no git -C wildcard, no hard reset
+for w in 'Bash(git push *)' 'Bash(git push:*)' 'Bash(git *)' 'Bash(git:*)' 'Bash(git -C *' 'Bash(git -C:*)' 'reset --hard'; do
+  if grep -qF -- "$w" "$ini"; then echo "FAIL: $ini contains the too broad rule text: $w"; fail=1; fi
+done
+if grep -qE 'Bash\([^)]*slot-\* ' "$ini"; then echo "FAIL: $ini has a slot-* wildcard inside a Bash( rule"; fail=1; fi
+# the skills' slot git commands each have a B rule
+for f in skills/next/SKILL.md skills/fix/SKILL.md agents/tester.md; do
+  while IFS= read -r c; do
+    sub=${c##* }
+    case "$c" in
+      *stash*) sub="stash ${c##* }" ;;
+    esac
+    rest=$(printf '%s' "$c" | sed -E 's/^git -C <slot( path)?> //')
+    case "$rest" in
+      stash\ *) sub=$(printf '%s' "$rest" | awk '{print $1" "$2}') ;;
+      reset\ --mixed*) sub='reset --mixed' ;;
+      reset\ -q*) sub='reset -q' ;;
+      *) sub=${rest%% *} ;;
+    esac
+    grep -qF -- "git -C <S> $sub" "$ini" || { echo "FAIL: $f runs git -C <slot> $sub, which no Run permissions rule covers"; fail=1; }
+  done < <(grep -oE 'git -C <slot( path)?> (stash [a-z]+|reset (--mixed|-q)|[a-z-]+)' "$f" | sort -u)
+done
+# every script call is one of the two forms the rules match
+for f in skills/*/SKILL.md; do
+  while IFS= read -r m; do
+    case "$m" in
+      bash\ \"*.sh\") ;;
+      'powershell -NoProfile -ExecutionPolicy Bypass -File "'*.ps1\") ;;
+      *) echo "FAIL: $f: $m is not the one script form"; fail=1 ;;
+    esac
+  done < <(grep -oE '(bash |powershell -NoProfile -ExecutionPolicy Bypass -File )?"\$\{CLAUDE_PLUGIN_ROOT\}/scripts/[a-z-]+\.(sh|ps1)"' "$f")
+done
+for w in 'git fetch origin' 'git switch -c' 'git push -u origin'; do
+  grep -qF -- "$w" skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not write the command in one form: $w"; fail=1; }
+done
+for f in skills/next/SKILL.md skills/fix/SKILL.md; do
+  for w in 'git fetch origin' 'git -C <slot path> rebase origin/' 'git -C <slot path> push -u origin' \
+           'cd <absolute slot path> && <verification.check>' '-m "<message>"'; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not write the command in one form: $w"; fail=1; }
+  done
+done
+# each skill that injects the config declares allowed-tools for the injection
+for f in skills/*/SKILL.md; do
+  grep -q '^!`' "$f" || continue
+  fm=$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")
+  if ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -qF 'Bash(cat .claude/nightmill.json *)'; then
+    echo "FAIL: $f: the injection has no matching allowed-tools"; fail=1
+  fi
+  if grep '^!`' "$f" | grep -qv '^!`cat \.claude/nightmill\.json'; then
+    echo "FAIL: $f: the injection has no matching allowed-tools (an injection line does not start !\`cat .claude/nightmill.json)"; fail=1
+  fi
+done
+# README
+for w in '### The run permissions' 'additionalDirectories' 'Run permissions' '#110' '#160'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the run permissions item: $w"; fail=1; }
+done
+if tr '\n' ' ' < README.md | tr -s ' ' | grep -qF 'the edits `/next` and `/fix` make in a slot still prompt'; then
+  echo "FAIL: README.md still says the edits /next and /fix make in a slot still prompt"; fail=1
+fi
+
 echo "== /next and /fix hand the coding to a subagent"
 # /next launches an implementer subagent and /fix a fixer subagent on the configured model (iteration 13). Both
 # are conversations, so the lint pins the wording the behaviour depends on; the manual check does the behaviour.

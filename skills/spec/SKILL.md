@@ -3,6 +3,7 @@ name: spec
 description: Write the spec for a Ready story as its own PR and stop at Spec review. Use when asked to spec a story, write the spec for an issue, or start the next Ready story. Implementing an Approved story is /next.
 argument-hint: [issue-number]
 disable-model-invocation: true
+allowed-tools: Bash(cat .claude/nightmill.json *)
 ---
 
 Write the spec for a Ready story: $ARGUMENTS
@@ -45,12 +46,13 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
    `<iterations.specDir>/<iterations.specPattern>` is written by a subagent in the role `specWriter` (see "The
    spec writer" below): branch, count the agents, launch it, read its result. Then have it reviewed by a
    different agent, the `specReviewer`, and let the writer fix what is blocking (see "The spec review" below).
-4. Open the spec as its own PR: commit the spec only, push, PR titled `docs: iteration <N> spec (#<issue>)`
+4. Open the spec as its own PR: commit the spec only (`git add <spec file>`, then
+   `git commit -m "docs: iteration <N> spec (#<issue>)"`), push (`git push -u origin <branch>`), PR titled `docs: iteration <N> spec (#<issue>)`
    with the body `Spec for #<issue>.` (not `Closes`) and, on its own line,
    `Written by the specWriter role on <model>.` (`<model>` is the exact string passed as `model` in the Agent
    call), then the `## Review` section of "The spec review" (step 5 there), and `gh pr merge <pr> <git.mergeFlags>`:
    a spec PR is docs only (not when a blocking review finding is still open, step 5 there). Switch back to the
-   branch you came from.
+   branch you came from (`git switch <branch>`).
 5. Set the status to **Spec review** and read it back. Comment on the issue:
    `Spec: <path> (PR #<pr>). Waiting for approval.` When a blocking review finding is still open, the comment ends
    with a fixed tail after that sentence (the text before it, which `/next` reads, is the same):
@@ -67,7 +69,8 @@ The session keeps the picking line, the board statuses, the branch, the commit, 
 rule. The spec file is the writer's.
 
 1. **Branch.** The working tree must be clean; if it is not, say so and stop (the status is already Spec).
-   `git fetch`, then create `<git.specPrefix><N>-<slug>` from `origin/<git.baseBranch>` and switch to it.
+   `git fetch origin`, then create `<git.specPrefix><N>-<slug>` from `origin/<git.baseBranch>` and switch to it:
+   `git switch -c <git.specPrefix><N>-<slug> origin/<git.baseBranch>`.
    Remember the branch you came from. You choose `<slug>`; the file path is known before the launch.
 2. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
    builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
@@ -89,8 +92,8 @@ rule. The spec file is the writer's.
      to Spec review. Print `Stopped: the specWriter returned <partial|failed>: <Left>` (a wrong form is
      `partial`, and the line names what is wrong), say that the story stays at Spec, and do the clean-up.
 5. **Clean-up after a stop.** When the spec file exists and is the only change, commit it to the local branch
-   with `docs: iteration <N> spec (#<issue>), unfinished` and do not push. Switch back to the branch you came
-   from. When nothing was committed, delete the branch you created (it is empty and you made it; this is not
+   with `-m "docs: iteration <N> spec (#<issue>), unfinished"` and do not push. Switch back to the branch you came
+   from (`git switch <branch>`). When nothing was committed, delete the branch you created (it is empty and you made it; this is not
    the deletion of a file). Never set Ready; a story left at Spec goes back to Ready only by the maintainer.
 
 The prompt, with the placeholders filled in (the story and the epic verbatim):
@@ -136,7 +139,7 @@ different agent reviews the spec file as it is in the working tree. The findings
 rule are in **Findings and fix rounds** in the `workflow` skill.
 
 1. **The pairing.** Run `validate-config` of the shell in use on the project's config
-   (`"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
+   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
    on `roles.specReviewer.model` with the text `ranks below`, stop with
    `Stopped: the specReviewer ranks below the specWriter: <the text of that line>. Nothing was reviewed; the status of #<issue> is Spec.`

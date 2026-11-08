@@ -3,6 +3,7 @@ name: next
 description: Implement the next Approved story from the board - slot, tests, code, check, PR, auto-merge. Use when asked to pick up the next story, implement an approved spec, or start an approved story. Writing the spec for a Ready story is /spec.
 argument-hint: [issue-number]
 disable-model-invocation: true
+allowed-tools: Bash(cat .claude/nightmill.json *)
 ---
 
 Implement the next Approved story from the board: $ARGUMENTS
@@ -48,9 +49,11 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    `iterations.specDir`. Read it completely; the spec is the contract. The iteration number N is the one
    in the spec's file name.
 2. Before it, check the room on the machine (**Parallel work** in the `workflow` skill). Take a slot:
-   `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
-   or `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
-   worktree; `-Release N` after the merge. Without slots, `git switch -c` from up-to-date `origin/<git.baseBranch>`.
+   `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
+   or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
+   worktree; `-Release N` after the merge. Without slots, `git fetch origin`, then
+   `git switch -c <git.featurePrefix><slug> origin/<git.baseBranch>`. In a slot every git command, the session's own
+   included, is `git -C <slot path> ...` with the absolute slot path, never `cd <slot> && git ...`.
    Respect the agent limit and `parallel.hotFiles`. Right after the take report the step `slot-taken` (see
    "Reporting the steps" below); from here on every step is reported there.
 3. **Have the tests written first, then hand the coding to the implementer.**
@@ -66,8 +69,14 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    (`git -C <slot> diff -- <path>` for a changed file, the file for a new one) for step 8, then set them aside with
    `git -C <slot> stash push --include-untracked -m "Unmet tests for #<issue>: <title>" -- <the paths>`, so the tree is
    clean for the rebase and for the release of the slot. Add the CHANGELOG entry for iteration N and change the spec's
-   status line to `Status: delivered in iteration <N> (PR #<pr>)`. Rebase on `origin/<git.baseBranch>`; on a CHANGELOG
-   conflict keep both entries in iteration order.
+   status line to `Status: delivered in iteration <N> (PR #<pr>)`, and commit both:
+   `git -C <slot path> add <iterations.changelog> <the spec>`, `git -C <slot path> commit -m "<message>"`. Rebase on
+   `origin/<git.baseBranch>`: `git fetch origin` in the main checkout, then `git -C <slot path> rebase origin/<git.baseBranch>`;
+   on a CHANGELOG conflict keep both entries in iteration order, `git -C <slot path> add <iterations.changelog>`, then
+   `git -C <slot path> rebase --continue`. Push with `git -C <slot path> push -u origin <branch>`. Without slots the
+   same commands run in the checkout without `-C <slot path>` (`git rebase origin/<git.baseBranch>`,
+   `git push -u origin <branch>`). Every commit message is passed with `-m "<message>"`, never through a command
+   substitution or a heredoc.
    Before you run the check for that commit, check the room on the machine (**Parallel work** in the `workflow` skill).
 6. Open a PR titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
    `Written by the implementer role on <model>.` (`<model>` is the exact string passed as `model` in the
@@ -119,7 +128,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 
 A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call of the
 shell in use, with N the slot number the take printed (`Slot N is yours`):
-`"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill next -Role <role>` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill next -Role <role>` or
 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --report <step> --slot <n> --skill next --role <role>`. A report that
 fails never stops the run: go on, and name a failed report you made yourself once, in your final message. A report
 is not a board status. A run without slots (no `worktrees`, `git switch -c` in a single checkout) took no slot and
@@ -201,7 +210,7 @@ The acceptance criteria of the issue, in order: <the criteria, verbatim>.
 The issue body, in full: <body>.
 
 The project's testing rules:
-- the check: <verification.check>
+- the check: `cd <absolute slot path> && <verification.check>` (the quick check: `cd <absolute slot path> && <verification.check> --quick`)
 - the bench rule: <verification.benchRule, or "none">
 - the invariants: <config invariants, one per line>
 
@@ -284,11 +293,12 @@ passes the dispute to the tester.
 Do this:
 1. Run the tester's tests and watch them fail. For each criterion the tester marked `not tested`, write a test named
    for the behaviour it protects and watch it fail.
-2. Implement until the tests pass. While you work you may run the quick check, <verification.check> --quick (only when its first line starts with
+2. Implement until the tests pass. While you work you may run the quick check, `cd <absolute slot path> && <verification.check> --quick` (only when its first line starts with
    "check: QUICK"; else run the check), to see where you stand; it is not the check of step 3 and you do not report it as
    `check`. <verification.benchRule, when set>
-3. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
-   names the story. Never commit red.
+3. Run the check: `cd <absolute slot path> && <verification.check>`. When it is green, commit the work on the branch
+   with `git -C <slot path> add ...` and `git -C <slot path> commit -m "<message>"`, a message that names the story.
+   Never commit red.
 
 Report your progress with `<the report command of the shell in use, with --slot <n> --skill next --role implementer
 (PowerShell: -Slot, -Skill, -Role) and the step as the value of --report / -Report>`: before step 1 (`tests`), before
@@ -449,7 +459,7 @@ Your tests are at: <tester files, one per line>. Change only the files named abo
 test paths.
 
 The project's testing rules:
-- the check: <verification.check>
+- the check: `cd <absolute slot path> && <verification.check>` (the quick check: `cd <absolute slot path> && <verification.check> --quick`)
 - the bench rule: <verification.benchRule, or "none">
 - the invariants: <config invariants, one per line>
 
@@ -468,7 +478,7 @@ After the implementer's result (not `failed`) and before the manual check, a dif
 findings format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
 
 1. **The pairing.** Run `validate-config` of the shell in use on the project's config
-   (`"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
+   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
    on `roles.codeReviewer.model` with the text `ranks below`, stop with
    `Stopped: the codeReviewer ranks below the implementer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
@@ -574,7 +584,7 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    <path>: this file is not yours: leave it unchanged; write the missing test in a new file on a test path, or say why none is needed.
 
    The project's testing rules:
-   - the check: <verification.check>
+   - the check: `cd <absolute slot path> && <verification.check>` (the quick check: `cd <absolute slot path> && <verification.check> --quick`)
    - the bench rule: <verification.benchRule, or "none">
    - the invariants: <config invariants, one per line>
 

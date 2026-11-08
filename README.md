@@ -90,7 +90,8 @@ existing board, the check command, areas), asks one question at a time for the r
 default, shows one plan table and, after one confirmation, creates or completes the board (the eight
 Status options, Priority and Area, four saved views with filters, the repository link), the
 labels, `.claude/nightmill.json`, `.github/ISSUE_TEMPLATE/`, the CLAUDE.md snippet, the permission
-rules in `.claude/settings.json` and the edit permission in `.claude/settings.local.json`. Re-running it on a
+rules in `.claude/settings.json`, and the edit permission and the run permissions in `.claude/settings.local.json`.
+Re-running it on a
 configured project changes nothing. The board's
 workflows (ten, among them item added > Backlog, item closed and pull request merged > Done, pull request
 linked > Review, item reopened > In progress, auto-archive of closed items) are the one thing the API cannot
@@ -116,9 +117,44 @@ confirmation.
   the project already covers it with `permissions.defaultMode` set to `acceptEdits` or `bypassPermissions`.
   No entry already in the file is removed or reordered.
 - **Taking it back:** delete the `Edit(**)` line from `.claude/settings.local.json`.
-- **Limits:** the slots under `worktrees.root` are outside the project directory and are not covered, so the
-  edits `/next` and `/fix` make in a slot still prompt. A project's allow rules apply only after the
+- **Limits:** the rule is relative to the session's directory; the slots under `worktrees.root` are covered by
+  the run permissions (next section), not by this rule. A project's allow rules apply only after the
   workspace is trusted, so a headless run (`claude -p`) needs one interactive session in the project first.
+
+### The run permissions
+
+`/spec`, `/next` and `/fix` also run git commands, nightmill's scripts and the quick check, and they edit files in
+slot worktrees outside the project directory. Without rules for those, a run stops at a prompt on its way to the
+pull request. So `/init` has a second plan line, **Run permissions**, that adds to the personal
+`.claude/settings.local.json`, again after showing the exact text before the one confirmation:
+
+- **The slot root** (`worktrees.root`, resolved to an absolute path) once in `permissions.additionalDirectories`,
+  so files in the slots are read without a prompt.
+- **One edit rule for the slots**, `Edit(//<slot root>/slot-*/**)`. The slot root's own `.slots/` folder (markers,
+  ledger, capacity) is not covered.
+- **The git commands in the main checkout**: `git fetch origin`, `git switch`, `git add`, `git commit`,
+  `git push -u origin` with the spec, feature or fix prefix, `git pull --ff-only`, `git rebase origin/<base>` and
+  `--continue`, `git stash push` and `list`, `git ls-tree`, `git rev-parse`.
+- **The git commands in each slot**, written `git -C <slot> ...` for every slot from 1 to `worktrees.slots`: the
+  subcommands `/next`, `/fix` and their agents run there (status, diff, log, add, commit, stash, the plumbing for
+  the tester's files, the two `reset` forms, the rebase and a push with the feature or fix prefix).
+- **Four scripts** at the plugin's folder, `slot`, `room`, `validate-config` and `status`, in the bash and the
+  PowerShell form, and the quick check (`<verification.check> --quick`).
+
+That makes `24 + 21 × worktrees.slots` rules (66 for 2 slots) and one directory. The skills write each of those
+commands in exactly one form, because a rule matches only the text that is typed: in a slot always
+`git -C <absolute slot path> ...`, the check as `cd <absolute slot path> && <verification.check>`.
+
+- **Why the personal file:** the paths are absolute and differ per machine, and letting an unattended run commit and
+  push is the choice of whoever runs it.
+- **What it leaves out:** every other git command, every push that is not `-u origin <prefix>...` (so a push to the
+  base branch still prompts), a hard reset, other directories and the other scripts. Refusing the forbidden actions
+  outright (deny rules) is #110, not this line.
+- **Re-running:** the rules follow `worktrees.slots`, `worktrees.root`, the branch prefixes and the plugin's folder,
+  which holds its version. Run `/init` again after an upgrade or after any of those changes; it adds the missing
+  rules and keeps the old ones. A second run with nothing changed reports the line as exists.
+- **Taking it back:** delete the entries from `.claude/settings.local.json`.
+- **Headless runs:** how to start a run without a terminal is described in "Running unattended" (#160), not here.
 
 ### The template board
 
