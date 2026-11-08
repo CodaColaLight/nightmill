@@ -98,6 +98,7 @@ add ps smoke-dashboard.ps1
 add ps smoke-panel.ps1
 add ps smoke-stages.ps1
 add ps smoke-check.ps1
+add ps test-lintcopy-output.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then
