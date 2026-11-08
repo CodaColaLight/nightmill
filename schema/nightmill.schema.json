@@ -90,7 +90,8 @@
         "check": { "type": "string", "description": "The local equivalent of CI: one command run from the repository root, non-zero exit on failure." },
         "manualCheckPaths": { "type": "array", "items": { "type": "string" }, "description": "A change under one of these paths also needs the manual check." },
         "manualCheckText": { "type": "string", "description": "What the manual check is, in one sentence." },
-        "benchRule": { "type": "string", "description": "Optional extra testing rule, for example which code needs a benchmark." }
+        "benchRule": { "type": "string", "description": "Optional extra testing rule, for example which code needs a benchmark." },
+        "checkJobs": { "type": "integer", "minimum": 1, "default": 4, "description": "How many independent steps the check command runs at the same time (1 to 16), for a check command that reads it; nightmill's own tests/check.sh does, and runs no more steps at once than the machine has processors. 1 runs them one after another." }
       }
     },
     "escalation": {

@@ -160,8 +160,9 @@ steps="$tmp/steps.txt"
   printf 'three\t%s\n' "$(clock_step 3700)"
 } > "$steps"
 echo "$T0" > "$CLOCK"
-set +e; out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$here/tests/check.sh" 2>"$tmp/err.txt"); rc=$?; set -e
+set +e; out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$here/tests/check.sh" --jobs 1 2>"$tmp/err.txt"); rc=$?; set -e
 [ "$rc" = 1 ] || fail "check with a failing step: exit $rc: $out"
+[ "$(head -n 1 <<<"$out")" = "check: full, 1 at a time (--jobs 1)" ] || fail "check: the header with --jobs 1: $out"
 grep -qxF -- '-- one: ok (12s)' <<<"$out" || fail "check: the result line of step one: $out"
 grep -qxF -- '-- two: FAILED (1m15s)' <<<"$out" || fail "check: the result line of step two: $out"
 grep -qxF -- '-- three: ok (1h01m)' <<<"$out" || fail "check: the result line of step three: $out"
@@ -182,7 +183,7 @@ got=$(printf '%s\n' "$out" | awk '/^Times:$/ { p = 1 } p { print } /^  total / {
   printf 'three\t%s\n' "$(clock_step 3700)"
 } > "$steps"
 echo "$T0" > "$CLOCK"
-set +e; out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$here/tests/check.sh" 2>"$tmp/err.txt"); rc=$?; set -e
+set +e; out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$here/tests/check.sh" --jobs 1 2>"$tmp/err.txt"); rc=$?; set -e
 [ "$rc" = 0 ] || fail "check with passing steps: exit $rc: $out"
 grep -qxF -- '-- two: ok (1m15s)' <<<"$out" || fail "check: the result line of a passing step two: $out"
 grep -qxF 'ALL CHECKS PASSED' <<<"$out" || fail "check: no ALL CHECKS PASSED: $out"

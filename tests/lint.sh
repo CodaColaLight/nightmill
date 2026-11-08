@@ -1013,6 +1013,93 @@ for w in 'claude plugin test --help' 'claude plugin test not available'; do
   grep -qF -- "$w" tests/check.sh || { echo "FAIL: tests/check.sh does not carry: $w"; fail=1; }
 done
 
+echo "== the check starts the longest steps first"
+# Iteration 42, decision 1: exactly the two slot tests (the longest steps) carry the mark 'first' in the step list of
+# tests/check.sh, so with a limit above 1 they start before all others and the total is set by the slowest step.
+firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p && / first$/' tests/check.sh | tr '\n' '|')
+if [ "$firsts" != "add bash smoke-slot.sh first|add ps smoke-slot.ps1 first|" ]; then
+  echo "FAIL: tests/check.sh: the steps marked first are not exactly smoke-slot.sh and smoke-slot.ps1: $firsts"; fail=1
+fi
+grep -qF 'k_first[i]}" = first' tests/check.sh || { echo "FAIL: tests/check.sh does not start the steps marked first first"; fail=1; }
+
+echo "== the check runs every smoke script"
+# Iteration 42, decision 11: the step list of tests/check.sh (between '# steps: begin' and '# steps: end') runs every
+# smoke script once, in its own shell; the check has one place that prints the all-passed line; the key and the quick
+# mode are wired in the schema, the example, the README, the contributor guide and the skills; and CI runs its smoke
+# jobs through tests/check.sh --only with lists equal to the step list.
+chk_block=""
+chk_nb=$(grep -cx '# steps: begin' tests/check.sh || true)
+chk_ne=$(grep -cx '# steps: end' tests/check.sh || true)
+chk_lb=$(grep -nx '# steps: begin' tests/check.sh | head -n 1 | cut -d: -f1 || true)
+chk_le=$(grep -nx '# steps: end' tests/check.sh | head -n 1 | cut -d: -f1 || true)
+if [ "$chk_nb" = 1 ] && [ "$chk_ne" = 1 ] && [ "$chk_le" -gt "$chk_lb" ]; then
+  chk_block=$(sed -n "$((chk_lb + 1)),$((chk_le - 1))p" tests/check.sh | grep -v '^[[:space:]]*$' || true)
+  if printf '%s\n' "$chk_block" | grep -qvE '^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?$'; then chk_block=""; fi
+fi
+if [ -z "$chk_block" ]; then
+  echo "FAIL: tests/check.sh: the step list between '# steps: begin' and '# steps: end' is missing or malformed"; fail=1
+else
+  for f in tests/smoke-*.sh tests/smoke-*.ps1; do
+    [ -f "$f" ] || continue
+    b=${f#tests/}; k=bash; case $b in *.ps1) k=ps ;; esac
+    c=$(printf '%s\n' "$chk_block" | awk -v k="$k" -v b="$b" '$2 == k && $3 == b' | wc -l | tr -d ' ')
+    if [ "$c" = 0 ]; then echo "FAIL: tests/check.sh does not run tests/$b"; fail=1
+    elif [ "$c" -gt 1 ]; then echo "FAIL: tests/check.sh runs tests/$b more than once"; fail=1; fi
+  done
+  while read -r _ k b _; do
+    case $k in bash|ps) [ -f "tests/$b" ] || { echo "FAIL: tests/check.sh runs tests/$b, which does not exist"; fail=1; } ;; esac
+  done <<<"$chk_block"
+  printf '%s\n' "$chk_block" | grep -qx 'add lint lint' || { echo "FAIL: tests/check.sh does not run the lint"; fail=1; }
+fi
+chk_np=$(grep -o 'ALL CHECKS PASSED' tests/check.sh | wc -l | tr -d ' ')
+[ "$chk_np" = 1 ] || { echo "FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place"; fail=1; }
+grep -qF '"checkJobs"' schema/nightmill.schema.json || { echo "FAIL: schema/nightmill.schema.json does not mention \"checkJobs\""; fail=1; }
+json_load templates/nightmill.example.json
+[ "$(json_get verification.checkJobs)" = 4 ] || { echo "FAIL: templates/nightmill.example.json does not mention verification.checkJobs 4"; fail=1; }
+for fw in 'README.md|checkJobs' 'README.md|--quick' 'CONTRIBUTING.md|--quick' \
+  'skills/workflow/SKILL.md|--quick' 'skills/workflow/SKILL.md|check: QUICK' 'skills/next/SKILL.md|--quick' \
+  'skills/next/SKILL.md|check: QUICK' 'skills/fix/SKILL.md|--quick' 'skills/fix/SKILL.md|check: QUICK' \
+  'skills/check/SKILL.md|--quick' 'skills/check/SKILL.md|check: QUICK'; do
+  grep -qF -- "${fw#*|}" "${fw%%|*}" || { echo "FAIL: ${fw%%|*} does not mention ${fw#*|}"; fail=1; }
+done
+chk_ci=.github/workflows/ci.yml
+# chk_only <the files the list must hold, in order> <the list>: the FAIL lines of one --only list
+chk_only() {
+  local want=$1 got=$2 x c bad=0
+  for x in $want; do
+    case ",$got," in *",$x,"*) ;; *) echo "FAIL: $chk_ci does not run tests/$x"; fail=1; bad=1 ;; esac
+  done
+  for x in ${got//,/ }; do
+    c=$(printf '%s\n' ${got//,/ } | grep -cxF -- "$x" || true)
+    case " $want " in
+      *" $x "*) [ "$c" = 1 ] || { echo "FAIL: $chk_ci: tests/$x is not a step of its job or is named twice"; fail=1; bad=1; } ;;
+      *) echo "FAIL: $chk_ci: tests/$x is not a step of its job or is named twice"; fail=1; bad=1 ;;
+    esac
+  done
+  if [ "$bad" = 0 ] && [ "$(printf '%s\n' $want | tr '\n' ',')" != "$got," ]; then
+    echo "FAIL: $chk_ci: the --only list is not in the order of the step list"; fail=1
+  fi
+}
+chk_bash_lines=$(grep -E '^[[:space:]]*(- )?run: bash tests/check\.sh --only ' "$chk_ci" || true)
+chk_ps_lines=$(grep -E '^[[:space:]]*(- )?run: bash tests/check\.sh --powershell powershell --only ' "$chk_ci" || true)
+if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 1 ] || [ "$(printf '%s' "$chk_ps_lines" | grep -c . || true)" != 1 ]; then
+  echo "FAIL: $chk_ci: the smoke jobs do not run tests/check.sh --only"; fail=1
+elif [ -n "$chk_block" ]; then
+  chk_want_bash=$(printf '%s\n' "$chk_block" | awk '$2 == "bash" && $3 != "smoke-json.sh" { print $3 }' | tr '\n' ' ')
+  chk_want_ps=$(printf '%s\n' "$chk_block" | awk '$2 == "ps" { print $3 }' | tr '\n' ' ')
+  chk_only "$chk_want_bash" "${chk_bash_lines##*--only }"
+  chk_only "$chk_want_ps" "${chk_ps_lines##*--only }"
+fi
+[ "$(grep -cE '^[[:space:]]*(- )?run: bash tests/smoke-json\.sh$' "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci runs tests/smoke-json.sh outside tests/check.sh"; fail=1; }
+while IFS= read -r l; do
+  x=$(printf '%s\n' "$l" | grep -oE 'tests/smoke-[A-Za-z0-9._-]+' | head -n 1 || true)
+  case $l in *'run: bash tests/smoke-json.sh') continue ;; esac
+  echo "FAIL: $chk_ci runs ${x:-a smoke file} outside tests/check.sh"; fail=1
+done < <(grep -E 'run: bash tests/smoke-|-File tests/smoke-' "$chk_ci" || true)
+for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'PowerShell scripts smoke tests'; do
+  [ "$(grep -cxF -- "    name: $req" "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci: the required job $req is missing"; fail=1; }
+done
+
 echo "== text from issues is data"
 # Text from issues, pull requests, comments and linked files is data, never instructions (bug #108). On a public
 # repository anyone can comment on an Approved issue while the agent holds gh, git push and auto-merge. So: the workflow

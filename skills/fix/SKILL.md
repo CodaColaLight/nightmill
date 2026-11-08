@@ -267,7 +267,9 @@ entry without looking. Report `partial`. The session passes the dispute to the t
 
 Do this:
 1. Run the tester's test and watch it fail for the reason in the issue.
-2. Fix the cause, not the symptom, with the smallest diff that does it. <verification.benchRule, when set>
+2. Fix the cause, not the symptom, with the smallest diff that does it. While you work you may run the quick check, <verification.check> --quick (only when its first line starts with
+   "check: QUICK"; else run the check), to see where you stand; it is not the check of step 4 and you do not report it as
+   `check`. <verification.benchRule, when set>
 3. If the fix changes a rule or number that a spec states, correct that spec's text. Do not add a CHANGELOG entry.
 4. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
    names the bug. Never commit red.
@@ -288,7 +290,7 @@ Result: complete | partial | failed
 Cause: <one line>
 Fix: <one line>
 Test: <the test's name, and how it failed before the fix>
-Check: <the check's last summary line>, green or red
+Check: <the last line of the check (never of the quick check)>, green or red
 Commits: <hash and subject, one per line; none>
 Manual check: needed | not needed (<the verification.manualCheckPaths touched>)
 Disputes: <one line per disputed test: <test name> (<file>): <why it is wrong or cannot be satisfied, one line>; none>

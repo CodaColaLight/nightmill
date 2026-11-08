@@ -35,7 +35,8 @@
     "check": "bash scripts/check.sh",
     "manualCheckPaths": ["src/ui"],
     "manualCheckText": "Open the app, exercise the feature, no console errors.",
-    "benchRule": ""
+    "benchRule": "",
+    "checkJobs": 4
   },
   "escalation": {
     "storyTriggers": ["a new rule or behaviour", "a public API change", "a design choice"]

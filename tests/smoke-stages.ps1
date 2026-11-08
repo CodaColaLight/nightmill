@@ -168,12 +168,13 @@ try {
     [System.IO.File]::WriteAllText($steps, ("one`t" + (Clock-Step 12) + "`ntwo`t" + (Clock-Step 75) + $two + "`nthree`t" + (Clock-Step 3700) + "`n"))
   }
   $checkPs = Join-Path $here "tests\check.ps1"
-  function Run-Check { Run-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$checkPs`"" @{ NIGHTMILL_CHECK_STEPS = "$tf/steps.txt"; NIGHTMILL_CLOCK_FILE = $clockF } }
+  function Run-Check { Run-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$checkPs`" -Jobs 1" @{ NIGHTMILL_CHECK_STEPS = "$tf/steps.txt"; NIGHTMILL_CLOCK_FILE = $clockF } }
   Write-Steps "; exit 1"
   Set-Clock $T0
   $r = Run-Check
   $o = $r.Out -replace "`r`n", "`n"
   if ($r.Code -ne 1) { Fail "check with a failing step: exit $($r.Code): $o" }
+  if (-not (Has-Line $o '^check: full, 1 at a time \(--jobs 1\)$')) { Fail "check: the header with -Jobs 1: $o" }
   foreach ($ln in "-- one: ok (12s)", "-- two: FAILED (1m15s)", "-- three: ok (1h01m)", "== one", "CHECK FAILED: two") {
     if (-not (Has-Line $o ("^" + [regex]::Escape($ln) + "$"))) { Fail "check: the line '$ln' is missing: $o" }
   }
