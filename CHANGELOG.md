@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Iteration 42 (#200): the check runs its independent steps in parallel and has a quick mode. `tests/check.sh` runs
+  up to `verification.checkJobs` steps at once (new key, default 4, capped at the processors; `--jobs N` for one run;
+  1 runs them one after another), prints each step whole in a fixed order with its time, and keeps its verdict;
+  `--quick` runs the lint and the bash smoke tests only and never prints `ALL CHECKS PASSED`. `/next` and `/fix` may
+  run the check with `--quick` while code is written and run the full check before every commit and pull request. CI
+  runs its smoke jobs through `tests/check.sh --only`. A lint rule fails when a smoke script is not in the check or the
+  CI lists differ from the check's.
+
 - Iteration 41 (#199): the time a story spends in each stage is recorded and shown. The take, every report and every
   freeing append one line to `<worktrees.root>/.slots/ledger.tsv`, which survives the release and the branch;
   `scripts/stages.sh` (`stages.ps1`) prints per issue or for the last N takes the time and share of each stage, with

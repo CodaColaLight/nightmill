@@ -1,6 +1,6 @@
 # Iteration 42: the check runs its independent steps in parallel and has a quick mode for the inner loop
 
-Status: draft, awaiting approval (#200)
+Status: delivered in iteration 42 (PR #208)
 
 Story: #200, epic #47 (Unattended runs). `tests/check.sh` starts its steps as background jobs, up to a limit
 (`verification.checkJobs`, default 4, never more than the machine's processors), writes each step's output to a file
