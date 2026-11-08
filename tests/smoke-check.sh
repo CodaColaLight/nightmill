@@ -96,7 +96,7 @@ mk_quick "true"
 run_check "$tmp/quick.txt" --quick
 [ "$rc" = 0 ] || fail "quick: exit $rc: $out"
 [ "$(sort "$qlog" | tr '\n' ',')" = "b,l," ] || fail "quick: the steps that ran: $(sort "$qlog" | tr '\n' ',')"
-head -n 1 <<<"$out" | grep -qE '^check: QUICK, [0-9]+ at a time \(.+\): the lint and the bash smoke tests only; the full check does not run$' || fail "quick: the first line: $out"
+head -n 1 <<<"$out" | grep -E '^check: QUICK, [0-9]+ at a time \(.+\): the lint and the bash smoke tests only; the full check does not run$' >/dev/null || fail "quick: the first line: $out"
 [ "$(tail -n 1 <<<"$out")" = "QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)" ] || fail "quick: the last line: $out"
 if grep -q 'ALL CHECKS PASSED' <<<"$out"; then fail "quick: printed ALL CHECKS PASSED: $out"; fi
 if grep -q '^SKIPPED:' <<<"$out"; then fail "quick: printed a SKIPPED line: $out"; fi

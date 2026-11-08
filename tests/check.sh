@@ -83,6 +83,7 @@ add bash smoke-panel.sh
 add bash smoke-stages.sh
 add bash smoke-check.sh
 add bash test-lintcopy-output.sh
+add bash test-lint-pipefail.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1

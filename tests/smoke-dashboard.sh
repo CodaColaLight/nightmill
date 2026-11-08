@@ -94,7 +94,7 @@ run_d "$tmp/work" "$FIX" "$pages" --once
 [ ! -s "$tmp/err.txt" ] || fail "something on standard error: $(cat "$tmp/err.txt")"
 [ -f "$page" ] || fail "no page at $page"
 [ "$(sed -n 1p "$tmp/out.txt")" = "dashboard: wrote $page" ] || fail "the first line: $(sed -n 1p "$tmp/out.txt")"
-sed -n 2p "$tmp/out.txt" | grep -qx 'dashboard: open file:///.*/nightmill-dashboard-acme-widgets\.html in a browser' || fail "the second line: $(sed -n 2p "$tmp/out.txt")"
+sed -n 2p "$tmp/out.txt" | grep -x 'dashboard: open file:///.*/nightmill-dashboard-acme-widgets\.html in a browser' >/dev/null || fail "the second line: $(sed -n 2p "$tmp/out.txt")"
 [ "$(wc -l < "$tmp/out.txt" | tr -d ' ')" = 2 ] || fail "standard output is not two lines: $(cat "$tmp/out.txt")"
 if [ "${UPDATE_DASHBOARD_FIXTURES:-}" = 1 ]; then cp "$page" "$FIX/expected.html"; fi
 if ! cmp -s "$FIX/expected.html" "$page"; then
@@ -119,8 +119,8 @@ l6=$(grep -nF '<tr><td class="num">6</td><td>Path' "$page" | cut -d: -f1)
 { [ -n "$l2" ] && [ -n "$l3" ] && [ -n "$l6" ] && [ "$l2" -lt "$l3" ] && [ "$l3" -lt "$l6" ]; } || fail "the items are not 2, 3, 6 in that order: $l2 $l3 $l6"
 hasnot 'Busy one' "what waits"
 hasnot 'At review' "what waits"
-grep -F '<tr><td class="num">2</td>' "$page" | grep -qF '<td>#31 open, ci pass</td><td class="num">5h</td>' || fail "item 2: the PR and age cells"
-grep -F '<tr><td class="num">3</td><td>Approved' "$page" | grep -qF '<td>Approved</td><td>-</td><td class="num">2d</td>' || fail "item 3: the PR and age cells"
+grep -F '<tr><td class="num">2</td>' "$page" | grep -F '<td>#31 open, ci pass</td><td class="num">5h</td>' >/dev/null || fail "item 2: the PR and age cells"
+grep -F '<tr><td class="num">3</td><td>Approved' "$page" | grep -F '<td>Approved</td><td>-</td><td class="num">2d</td>' >/dev/null || fail "item 3: the PR and age cells"
 has '<p>capacity: slots 4 (config), agents 2 (default)</p>' "what waits"
 
 echo "== hostile text is escaped"
@@ -154,7 +154,7 @@ done
 for c in 'project item-list' 'project view' 'pr list' 'api graphql'; do
   grep -q "^$c" "$tmp/gh.log" || fail "gh $c was never called"
 done
-if grep -vE '^(project item-list|project view|pr list|api graphql) ' "$tmp/gh.log" | grep -q .; then fail "another gh call: $(cat "$tmp/gh.log")"; fi
+if grep -vE '^(project item-list|project view|pr list|api graphql) ' "$tmp/gh.log" | grep . >/dev/null; then fail "another gh call: $(cat "$tmp/gh.log")"; fi
 if grep -E 'item-edit|item-add|item-archive|pr merge|issue edit|issue comment|issue close|mutation' "$tmp/gh.log"; then fail "the dashboard changed something"; fi
 
 echo "== gh cannot be read"
@@ -168,8 +168,8 @@ for w in '<td class="running">running</td>' '<td class="stalled">stalled</td>' '
   has "$w" "gh fails"
 done
 for n in 1 2 3; do
-  grep -F "<tr><td class=\"num\">$n</td>" "$page" | grep -qF '<td class="unknown">unknown</td><td class="unknown">unknown</td></tr>' || fail "gh fails: slot $n has no unknown PR and Flag"
-  if grep -F "<tr><td class=\"num\">$n</td>" "$page" | grep -qF '<td class="free">'; then fail "gh fails: slot $n is shown free"; fi
+  grep -F "<tr><td class=\"num\">$n</td>" "$page" | grep -F '<td class="unknown">unknown</td><td class="unknown">unknown</td></tr>' >/dev/null || fail "gh fails: slot $n has no unknown PR and Flag"
+  if grep -F "<tr><td class=\"num\">$n</td>" "$page" | grep -F '<td class="free">' >/dev/null; then fail "gh fails: slot $n is shown free"; fi
 done
 hasnot 'Nothing waits' "gh fails"
 
@@ -261,7 +261,7 @@ echo "== the address is percent-encoded"
 spaced="$tmp/my pages"; mkdir -p "$spaced"
 run_d "$tmp/work" "$FIX" "$spaced" --once
 [ "$code" = 0 ] || fail "a temporary folder with a space: exit code $code"
-sed -n 2p "$tmp/out.txt" | grep -qF 'my%20pages/nightmill-dashboard-acme-widgets.html in a browser' || fail "the space is not %20: $(sed -n 2p "$tmp/out.txt")"
+sed -n 2p "$tmp/out.txt" | grep -F 'my%20pages/nightmill-dashboard-acme-widgets.html in a browser' >/dev/null || fail "the space is not %20: $(sed -n 2p "$tmp/out.txt")"
 rm -rf "$spaced"
 
 echo "== nothing is written in the project or the slots"

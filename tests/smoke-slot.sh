@@ -854,7 +854,7 @@ claim_case3() {
   WORKER_SLOTS=4 rep --take feat/f4 --slot 4
   c_restored 4 4 "warm-up 1 failed (exit 7); slot 4 is free again" "not created yet"
   [ ! -d "$tmp/wt/slot-4" ] || fail "claim 3: the directory slot-4 is left"
-  if git -C "$tmp/work" worktree list | grep -q 'slot-4'; then fail "claim 3: git still lists the worktree slot-4"; fi
+  if git -C "$tmp/work" worktree list | grep 'slot-4' >/dev/null; then fail "claim 3: git still lists the worktree slot-4"; fi
   [ -z "$(c_ref feat/f4)" ] || fail "claim 3: the branch feat/f4 was left behind"
   # switch
   cp "$tmp/cfg-claim.json" "$CFG"
