@@ -196,8 +196,13 @@ try {
     Push-Location $copy
     $ErrorActionPreference = "Continue"
     try {
-      & $bash tests/lint.sh *> $null
-      if ($LASTEXITCODE -ne 0) { Fail "the lint fails on an unchanged copy of the repository" }
+      # On a failure the lint's FAIL: lines (else its whole output) follow, so a CI log names the rule (#217).
+      $out = (& $bash tests/lint.sh 2>&1 | Out-String)
+      if ($LASTEXITCODE -ne 0) {
+        $lintFails = @(($out -split "`r?`n") | Where-Object { $_ -like "*FAIL:*" })
+        if ($lintFails.Count -eq 0) { $lintFails = @($out) }
+        Fail ("the lint fails on an unchanged copy of the repository`n" + ($lintFails -join "`n"))
+      }
       $t = [IO.File]::ReadAllText($pjPath) -replace '(?m)^(\s*"version":\s*")[0-9.]+"', '${1}9.9.9"'
       Write-Utf8 $pjPath $t
       $out = (& $bash tests/lint.sh 2>&1 | Out-String)

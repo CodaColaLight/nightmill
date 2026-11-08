@@ -4,7 +4,7 @@
 # The steps are the lines of the step list below (between '# steps: begin' and '# steps: end'; tests/lint.sh reads it
 # and fails on a smoke script that is not in it), then the two claude steps:
 #   lint                      tests/lint.sh
-#   bash <file>               the bash smoke tests (they need git and the tools every POSIX shell has, no jq)
+#   bash <file>               the bash smoke tests and regression tests (they need git and the tools every POSIX shell has, no jq)
 #   ps <file>                 the PowerShell smoke tests (when powershell or pwsh is on the PATH)
 #   claude plugin validate    claude plugin validate --strict (when claude is on the PATH)
 #   claude plugin test        claude plugin test . (the module test hooks/panel.test.tsx; when claude has it)
@@ -82,6 +82,7 @@ add bash smoke-dashboard.sh
 add bash smoke-panel.sh
 add bash smoke-stages.sh
 add bash smoke-check.sh
+add bash test-lintcopy-output.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
