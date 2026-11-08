@@ -2,6 +2,7 @@
 name: init
 description: Set a project up for nightmill in one conversation - detect what gh and the repository can tell, ask the rest one question at a time, show one plan, then create the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. Use when installing nightmill in a repository, when the config is missing, or to complete a half-done setup.
 disable-model-invocation: true
+allowed-tools: Bash(cat .claude/nightmill.json *)
 ---
 
 Set this repository up for the nightmill workflow.
@@ -64,7 +65,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   views (filters, grouping, sorting, columns) and workflows are already configured, and `gh project copy`
   carries all of them across. Build the candidate config first (the **Config** line below), write it to a
   temporary file outside the project and run the check on it:
-  `"${CLAUDE_PLUGIN_ROOT}/scripts/template-board.ps1" -Config <file>` (PowerShell) or
+  `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/template-board.ps1" -Config <file>` (PowerShell) or
   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/template-board.sh" --config <file>`. It only reads and prints one line:
   `template: usable (<owner>/<number>)` or `template: not usable: <reason>` (an exit code 2 is an error to
   report, not a reason; fall back as below and say what failed). The plan's **Board** line is then one of:
@@ -146,12 +147,12 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
 
 - **Config**: `.claude/nightmill.json` with LF line endings, from the example with every detected and
   answered value, keys the user left empty deleted. Write the candidate to a temporary file outside the
-  project and validate it before the plan is shown: `"${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <file>`
+  project and validate it before the plan is shown: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <file>`
   (PowerShell) or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <file>`. An error (a wrong
   type, a missing required key) is fixed and the validator run again; a warning (an unknown key, with a hint
   when it looks like a typo) is listed in the plan. After the real file is written, run the validator on it
   and put its summary line, for example `0 errors, 0 warnings`, in the report's **Config** row.
-- **Issue forms**: `"${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.ps1"` (PowerShell) or
+- **Issue forms**: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.ps1"` (PowerShell) or
   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.sh"` from the repository root, writing
   `.github/ISSUE_TEMPLATE/{epic,story,bug,config}.yml` from `areas` and `invariants`. An existing form
   that differs is shown as a diff in the plan and overwritten only when the user keeps that line
@@ -188,9 +189,77 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   - **Declined.** A line the user skips is **declined**: neither settings file is touched, and the report says
     `Edit permission: declined (edits will prompt)`. It is not asked again in this run.
   - **Report row**, one of: `added to .claude/settings.local.json`, `exists (<file or defaultMode>)`, `declined`,
-    `failed: <reason>`. After an add the report also says that the slots under `worktrees.root` are outside the
-    project directory and still prompt, and that a headless run (`claude -p`) ignores a project's allow rules
+    `failed: <reason>`. After an add the report also says that the slots under `worktrees.root` are covered by
+    **Run permissions**, not by this rule, and that a headless run (`claude -p`) ignores a project's allow rules
     until the workspace is trusted once in an interactive session.
+- **Run permissions**: so that `/spec`, `/next` and `/fix` take an item to an open pull request, and `/check` and
+  `/status` run, without a prompt, add to the personal `.claude/settings.local.json` (never to `settings.json`: the
+  paths are absolute and differ per machine, and letting an unattended run commit and push is the choice of whoever
+  runs it) the git commands the skills run, the slot root, one edit rule for the slots, the scripts at the plugin's
+  folder and the quick check. Merge into the existing arrays without removing or reordering an entry; the rules of
+  **Permissions** and **Edit permission** stay as they are.
+  - **Values.** `<C>` is `verification.check`, `<B>` `git.baseBranch`, `<Sp>`, `<Fe>`, `<Fx>` `git.specPrefix`,
+    `git.featurePrefix`, `git.fixPrefix` (defaults `main`, `spec/`, `feat/`, `fix/`). `<R>` is the slot root,
+    resolved the way the slot script of the shell in use does it, without creating it: the main checkout is the
+    parent of `git rev-parse --path-format=absolute --git-common-dir`; `<R>` is `<main>/<worktrees.root>` (default
+    `../<main folder name>-wt`) with `.` and `..` resolved as text, in the form the script prints (bash: `/c/...`
+    under Git Bash, `/...` elsewhere; PowerShell: `C:\...`). `<S>` is one slot, `<R>/slot-<n>` with the separator
+    of that form. `<P>` is `${CLAUDE_PLUGIN_ROOT}` exactly as it expands in this text, the same string every skill
+    of this installed version expands to, so a rule and the command the model copies from a skill are the same text.
+  - **A. The main checkout**, 15 rules: `Bash(git fetch origin)`, `Bash(git switch *)`, `Bash(git add *)`,
+    `Bash(git commit *)`, `Bash(git push -u origin <Sp>*)`, `Bash(git push -u origin <Fe>*)`,
+    `Bash(git push -u origin <Fx>*)`, `Bash(git pull --ff-only)`, `Bash(git rebase origin/<B>)`,
+    `Bash(git rebase --continue)`, `Bash(git stash push *)`, `Bash(git stash list)`, `Bash(git ls-tree *)`,
+    `Bash(git rev-parse *)`, `Bash(<C> --quick)`.
+  - **B. Each slot**, 21 rules per slot `<S>`, for n from 1 to `worktrees.slots`, in this order:
+    `Bash(git -C <S> status *)`, `Bash(git -C <S> diff *)`, `Bash(git -C <S> log *)`, `Bash(git -C <S> add *)`,
+    `Bash(git -C <S> commit *)`, `Bash(git -C <S> stash push *)`, `Bash(git -C <S> stash list)`,
+    `Bash(git -C <S> stash pop *)`, `Bash(git -C <S> hash-object *)`, `Bash(git -C <S> rev-parse *)`,
+    `Bash(git -C <S> ls-tree *)`, `Bash(git -C <S> merge-base *)`, `Bash(git -C <S> reset --mixed -q *)`,
+    `Bash(git -C <S> reset -q -- *)`, `Bash(git -C <S> update-index *)`, `Bash(git -C <S> checkout-index *)`,
+    `Bash(git -C <S> symbolic-ref *)`, `Bash(git -C <S> rebase origin/<B>)`, `Bash(git -C <S> rebase --continue)`,
+    `Bash(git -C <S> push -u origin <Fe>*)`, `Bash(git -C <S> push -u origin <Fx>*)`. A slot added later (a higher
+    `worktrees.slots`, `--capacity --slot-count`) has no rules until `/init` runs again.
+  - **C. Edits in the slots**, one rule: `Edit(//<R as POSIX path, without its leading slash>/slot-*/**)`, for
+    example `Edit(//Users/a/work/app-wt/slot-*/**)` or, on Windows, `Edit(//c/Users/a/work/app-wt/slot-*/**)`.
+    `slot-*` is one path segment, so `<R>/.slots/` (markers, ledger, capacity) is not covered and still prompts.
+  - **D. The scripts**, 8 rules, for `<name>` in `slot`, `room`, `validate-config`, `status`:
+    `Bash(bash "<P>/scripts/<name>.sh" *)` and
+    `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)`. Other scripts get no
+    rule. The folder holds the version, so after an upgrade the next run finds these missing and adds the new ones;
+    rules of another plugin folder already in the file are kept, and the plan says
+    `kept: <k> script rules for another plugin folder`.
+  - **E. The directory**: `<R>` once in `permissions.additionalDirectories` (the array is created when missing),
+    so files in the slots are read without a prompt and a `cd` into a slot is read-only.
+  - **Count.** `24 + 21 × worktrees.slots` rules and one directory: 66 rules for 2 slots, 108 for 4.
+  - **Never broader.** Each rule names its subcommand before the first `*`. No bare `git push` rule, no wildcard
+    for git as a whole or for `git -C` in any directory, no hard reset, no `git stash drop`, `git branch -D`,
+    `git clean` or `git checkout`. Refusing the forbidden actions is the deny rules' job (#110), not this line's.
+  - **Unmatchable root.** When `<R>` contains a space, a quote or (in the bash form) a backslash, the line is
+    **failed**: `worktrees.root resolves to <R>, which a rule cannot match unquoted; slot commands will prompt`;
+    A and D are still written.
+  - **Detect.** A rule is present when it is in `permissions.allow` of `.claude/settings.local.json` or of
+    `.claude/settings.json` (string equality), `<R>` when it is in `permissions.additionalDirectories` of either.
+    The line is **exists** when all are present, or when `permissions.defaultMode` is `bypassPermissions` in either
+    file (`exists (defaultMode bypassPermissions)`); `acceptEdits` covers only C and does not make it **exists**.
+    Otherwise it is **create** (no local file) or **change**.
+  - **Show the exact text** in the plan message, next to the CLAUDE.md, `settings.json` and edit-permission texts:
+    for a missing file the whole file (2-space indentation, LF, `permissions.allow` in the order A, B by slot then
+    by rule, C, D, then `permissions.additionalDirectories`); for a present file the diff (the missing rules
+    appended at the end of `permissions.allow` in that order, `<R>` appended to `additionalDirectories`, every other
+    byte unchanged). Above it one sentence: it grants the skills' git commands in the main checkout and in the
+    slots, edits in the slots, the four scripts of nightmill `<version>` and the quick check; it does not grant
+    other git commands, other directories or other scripts; the plugin's scripts change folder with each version.
+  - **Git.** The `git check-ignore` line of **Edit permission** covers this file too; it is said once.
+  - **Apply** with the other settings changes, after **Edit permission**, merging without removing or reordering
+    an entry. Read the file back; a line whose read-back lacks a rule or `<R>` is **failed**, naming the first
+    missing one.
+  - **Declined.** Neither settings file gets any of these entries; the report says
+    `Run permissions: declined (the skills' git commands, scripts and slot edits will prompt)`.
+  - **Report row**, one of: `added to .claude/settings.local.json (<k> rules, <d> directory)`,
+    `exists (<file or defaultMode>)`, `declined (...)`, `failed: <reason>`. After an add the report says that the
+    rules follow `worktrees.slots`, `worktrees.root`, the branch prefixes and the plugin version, and that `/init`
+    is run again after any of them changes.
 - **Board workflows** (read-only, never applied): the API can list a board's workflows and whether each is
   enabled, but it has **no mutation to create, enable or configure one** (only `deleteProjectV2Workflow`
   exists), and it does not expose which status a workflow sets. So this line only reads
@@ -205,9 +274,9 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
 ## 4. Confirm once
 
 Print the plan as one table (line, action) and ask a single question: apply all, or name the lines to
-skip. The CLAUDE.md edit, the `settings.json` edit and the `.claude/settings.local.json` edit (the edit
-permission) are shown in the same message as the exact text or diff that will be written, so that the one
-answer covers them. A skipped line is **declined** and is
+skip. The CLAUDE.md edit, the `settings.json` edit and the `.claude/settings.local.json` edits (the edit
+permission and the **Run permissions**) are shown in the same message as the exact text or diff that will be
+written, so that the one answer covers them. A skipped line is **declined** and is
 not asked about again in this run.
 
 When the plan holds only **exists** lines, ask nothing: say "already set up, nothing to change" and go
@@ -216,7 +285,7 @@ to the report.
 ## 5. Apply
 
 Apply the kept lines in this order: board and fields, view, link, labels, config, forms, CLAUDE.md,
-settings; then read the board workflows (read-only, see the plan). After each GitHub change read it back (`gh project field-list`, `gh label list`,
+settings (the permissions, the edit permission, then the run permissions); then read the board workflows (read-only, see the plan). After each GitHub change read it back (`gh project field-list`, `gh label list`,
 the `repositories` and `views` queries); a line whose read-back does not show the change is **failed**, with
 the command's error, and the run goes on with the lines that do not depend on it (the view, the field options and the link depend on the board, the forms on the config; nothing else does).
 
