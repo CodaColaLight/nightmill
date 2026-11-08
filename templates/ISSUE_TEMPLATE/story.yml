@@ -1,7 +1,7 @@
 name: Story
 description: One shippable slice of a feature (one spec, one PR)
 title: "[Story] "
-labels: ["{{LABEL_STORY}}", "{{LABEL_NEEDS_SPEC}}"]
+labels: [{{LABEL_STORY}}, {{LABEL_NEEDS_SPEC}}]
 body:
   - type: dropdown
     id: area

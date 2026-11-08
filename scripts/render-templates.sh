@@ -28,13 +28,14 @@ mkdir -p "$dst"
 
 areas_count=$(json_len areas)
 [ "$areas_count" -gt 0 ] || { echo "nightmill.json needs at least one entry in areas" >&2; exit 1; }
+# json_quote gives a double-quoted JSON string, which is a valid double-quoted YAML scalar: areas, labels and
+# invariants all go through it, so `,` `:` `#` and `"` in them keep the forms valid YAML.
 export AREAS; AREAS="["
 for ((i = 0; i < areas_count; i++)); do
   if [ "$i" -gt 0 ]; then AREAS+=", "; fi
-  AREAS+=$(json_get "areas[$i]")
+  AREAS+=$(json_quote "$(json_get "areas[$i]")")
 done
 AREAS+="]"
-# json_quote gives a double-quoted JSON string, which is a valid double-quoted YAML scalar.
 inv_count=$(json_len invariants)
 export INVARIANTS; INVARIANTS=""
 for ((i = 0; i < inv_count; i++)); do
@@ -43,10 +44,10 @@ for ((i = 0; i < inv_count; i++)); do
 done
 export CHECK_COMMAND; CHECK_COMMAND=$(json_get verification.check "")
 export MANUAL_CHECK; MANUAL_CHECK=$(json_get verification.manualCheckText "Manual check as the story describes")
-export LABEL_EPIC; LABEL_EPIC=$(json_get labels.epic "epic")
-export LABEL_STORY; LABEL_STORY=$(json_get labels.story "story")
-export LABEL_BUG; LABEL_BUG=$(json_get labels.bug "bug")
-export LABEL_NEEDS_SPEC; LABEL_NEEDS_SPEC=$(json_get labels.needsSpec "needs-spec")
+export LABEL_EPIC; LABEL_EPIC=$(json_quote "$(json_get labels.epic "epic")")
+export LABEL_STORY; LABEL_STORY=$(json_quote "$(json_get labels.story "story")")
+export LABEL_BUG; LABEL_BUG=$(json_quote "$(json_get labels.bug "bug")")
+export LABEL_NEEDS_SPEC; LABEL_NEEDS_SPEC=$(json_quote "$(json_get labels.needsSpec "needs-spec")")
 export INV_COUNT=$inv_count
 
 render() { # file

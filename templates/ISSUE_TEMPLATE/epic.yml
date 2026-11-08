@@ -1,7 +1,7 @@
 name: Epic
 description: A capability area that groups stories
 title: "[Epic] "
-labels: ["{{LABEL_EPIC}}"]
+labels: [{{LABEL_EPIC}}]
 body:
   - type: textarea
     id: intent

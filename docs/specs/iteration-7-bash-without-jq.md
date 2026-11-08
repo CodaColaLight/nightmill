@@ -75,9 +75,10 @@ in nightmill's schema has such a key.
   `json_len worktrees.warmup` items. The ports come from `json_keys worktrees.ports`, printed as `key=value`
   in file order. The run hints come from `worktrees.runHints[i]`. The marker is written with `json_marker`
   and read with `json_load` and `json_get`.
-- `render-templates.sh`: `areas` becomes `[a, b]` with `, ` between items; each invariant becomes
-  `        - label: <json_quote>` and `          required: false`, joined by newlines; the other values use
-  `json_get` with today's defaults. An empty `areas` still stops the script with today's message.
+- `render-templates.sh`: `areas` becomes `["a", "b"]`, each item a `json_quote`, with `, ` between items (bug
+  #135); each invariant becomes `        - label: <json_quote>` and `          required: false`, joined by
+  newlines; each label is a `json_quote` of its value or today's default; the other values use `json_get` with
+  today's defaults. An empty `areas` still stops the script with today's message.
 - `validate-config.sh`: the jq program is replaced by `scripts/lib/validate.awk`, which includes `json.awk`,
   parses the config and the schema and walks the schema exactly as the PowerShell and the old jq version did,
   printing the same records (`path`, rank, line) that the script sorts with `LC_ALL=C sort`. Findings,

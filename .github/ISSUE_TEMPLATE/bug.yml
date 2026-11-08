@@ -8,7 +8,7 @@ body:
     attributes:
       label: Area
       multiple: true
-      options: [skills, scripts, templates, schema, docs, ci]
+      options: ["skills", "scripts", "templates", "schema", "docs", "ci"]
     validations:
       required: true
   - type: textarea
