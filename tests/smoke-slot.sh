@@ -1042,15 +1042,17 @@ claim_case5() {
   if [ -z "$tag" ]; then
     echo "skipped: no release tag to run the previous version"
   else
-    mkdir -p "$tmp/prev/lib"
-    for f in slot.sh lib/json.sh lib/json.awk; do git -C "$here" show "$tag:scripts/$f" > "$tmp/prev/$f"; done
+    # a release that knows the taking state shows it as taking, an older one as busy; both are not free
+    # a complete copy of the scripts/ folder at the tag, whatever library files it sources
+    mkdir -p "$tmp/prev"
+    git -C "$here" archive --format=tar "$tag" scripts | tar -x -C "$tmp/prev" --strip-components=1
     write_cfg "$gate_json"
     rm -f "$tmp/go"
     bg_pids=()
     bg_take c5b --take feat/v1 --slot 1; p=$bg_pid
     waitfor 1 taking
     set +e; out=$(bash "$tmp/prev/slot.sh" --status 2>&1); rc=$?; set -e
-    [ "$rc" = 0 ] && grep -q 'busy: feat/v1 since' <<<"$out" || fail "claim 5: the previous version ($tag) does not show the taking slot as busy (exit $rc): $out"
+    [ "$rc" = 0 ] && grep -Eq '(busy|taking): feat/v1 since' <<<"$out" || fail "claim 5: the previous version ($tag) does not show the taking slot as busy (exit $rc): $out"
     set +e; out=$(bash "$tmp/prev/slot.sh" --take feat/v2 --skip-warmup 2>&1); rc=$?; set -e
     [ "$rc" = 0 ] && grep -q 'Slot 2 is yours' <<<"$out" || fail "claim 5: the previous version ($tag) did not skip the taking slot (exit $rc): $out"
     bash "$S" --abandon 2 >/dev/null

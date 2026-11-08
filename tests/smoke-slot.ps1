@@ -1142,20 +1142,14 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
       Write-Host "skipped: no release tag to run the previous version"
     } else {
       New-Item -ItemType Directory -Force "$tmp\prev" | Out-Null
-      $psi = New-Object System.Diagnostics.ProcessStartInfo
-      $psi.FileName = "git"
-      $psi.Arguments = "-C `"$here`" show ${tag}:scripts/slot.ps1"
-      $psi.UseShellExecute = $false
-      $psi.RedirectStandardOutput = $true
-      $gp = [System.Diagnostics.Process]::Start($psi)
-      $fs = [System.IO.File]::Create("$tmp\prev\slot.ps1")
-      $gp.StandardOutput.BaseStream.CopyTo($fs)
-      $fs.Close(); $gp.WaitForExit()
+      # a complete copy of the scripts\ folder at the tag, whatever library files it sources
+      git -C $here archive --format=tar -o "$tmp\prev.tar" $tag scripts
+      tar -xf "$tmp\prev.tar" -C "$tmp\prev" --strip-components=1
       Write-Cfg $gateJson
       $h = Start-Take "-Take feat/v1 -Slot 1"
       Wait-For 1 "taking"
       $r = Wait-Take (Start-Proc $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$tmp\prev\slot.ps1`" -Status")
-      if ($r.Code -ne 0 -or $r.Out -notmatch "busy: feat/v1 since") { Fail "claim 5: the previous version ($tag) does not show the taking slot as busy (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+      if ($r.Code -ne 0 -or $r.Out -notmatch "(busy|taking): feat/v1 since") { Fail "claim 5: the previous version ($tag) does not show the taking slot as busy (exit $($r.Code)): $($r.Out) / $($r.Err)" }
       $r = Wait-Take (Start-Proc $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$tmp\prev\slot.ps1`" -Take feat/v2 -SkipWarmup")
       if ($r.Code -ne 0 -or $r.Out -notmatch "Slot 2 is yours") { Fail "claim 5: the previous version ($tag) did not skip the taking slot (exit $($r.Code)): $($r.Out) / $($r.Err)" }
       $null = Slot -Abandon 2
