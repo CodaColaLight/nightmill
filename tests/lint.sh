@@ -1182,6 +1182,25 @@ done
 for w in '`board.priorities` (highest first; no priority ranks last), then by issue number, lowest first'; do
   grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all order: $w"; fail=1; }
 done
+# criterion 2: a bug for which nothing is free waits and starts as soon as something frees; a busy slot keeps the bug
+# first in waiting and never ends the run while a bug of the run is in flight
+for w in 'On `all <k> slots are busy`: the bug stays first' \
+         'in waiting, and no start is tried until an event that could free a slot' \
+         'A launch that the count does not allow waits for the next event.' \
+         'the number of agents running is' 'below the live agent limit' \
+         'wait for the next agent of the run to return' \
+         'A busy slot therefore never' 'ends the run while a bug of this run is still in flight' \
+         'it ends the run only when nothing this run does can free'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say a bug that finds nothing free waits and the run goes on: $w"; fail=1; }
+done
+# criterion 5: an overlapping bug waits until the earlier bug's PR is open (not until a merge), and later bugs may pass it
+for w in 'overlaps no bug in flight' \
+         'overlaps a bug started earlier in this run that is still in flight does not start' \
+         'until that bug has its pull request open or has ended' \
+         'bugs after it in the order may start before it' \
+         'and nothing waits for a merge'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say an overlapping bug waits for the earlier pull request to open: $w"; fail=1; }
+done
 # criterion 8: the board is read again and a bug that became Ready joins waiting, at most once per run
 for w in 'list the Ready bugs again' 'has not seen yet joins waiting in its place in the order' \
          'processed at most once per run'; do
