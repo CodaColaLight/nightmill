@@ -112,6 +112,20 @@ try {
   if ($r.Err -notlike "*refused: *v0.2.0*") { Fail "wrong refusal: $($r.Err)" }
   if (@(& git -C $script:O tag --list).Count -ne 0) { Fail "the wrong tag was pushed" }
 
+  Write-Host "== a tag on origin at a different commit, no local tag: refused, no Release"
+  Setup
+  $null = G $script:W @("commit", "-q", "--allow-empty", "-m", "other")
+  $null = G $script:W @("tag", "-a", "v0.2.0", "-m", "x", "HEAD")
+  $null = G $script:W @("push", "-q", "origin", "v0.2.0")
+  $null = G $script:W @("tag", "-d", "v0.2.0")
+  $null = G $script:W @("reset", "-q", "--hard", $script:cand)
+  $r = Publish @()
+  if ($r.Code -ne 1) { Fail "expected exit code 1, got $($r.Code): $($r.Err)" }
+  if ($r.Err -notlike "*refused: *v0.2.0*") { Fail "wrong refusal: $($r.Err)" }
+  if (Test-Path $GhState) { Fail "a GitHub Release was created for a tag at a different commit" }
+  if ((Test-Path $GhLog) -and ((Get-Content $GhLog -Raw) -match "(?m)^release create")) { Fail "gh release create ran for a tag at a different commit" }
+  if ((Origin-Tag) -eq $script:cand) { Fail "the origin tag was moved to the candidate" }
+
   Write-Host "RELEASE RESUME OK"
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

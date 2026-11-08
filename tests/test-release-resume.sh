@@ -93,4 +93,16 @@ publish_rc --no-release
 case "$out" in *"refused: "*"v0.2.0"*) ;; *) fail "wrong refusal: $out" ;; esac
 [ -z "$(git -C "$O" tag --list)" ] || fail "the wrong tag was pushed"
 
+echo "== a tag on origin at a different commit, no local tag: refused, no Release"
+setup
+git -C "$W" commit -q --allow-empty -m other
+git -C "$W" tag -a v0.2.0 -m x HEAD; git -C "$W" push -q origin v0.2.0; git -C "$W" tag -d v0.2.0 >/dev/null
+git -C "$W" reset -q --hard "$cand"
+publish_rc
+[ "$rc" = 1 ] || fail "expected exit code 1, got $rc: $out"
+case "$out" in *"refused: "*"v0.2.0"*) ;; *) fail "wrong refusal: $out" ;; esac
+[ ! -f "$GH_STATE" ] || fail "a GitHub Release was created for a tag at a different commit"
+! grep -q '^release create' "$GH_LOG" 2>/dev/null || fail "gh release create ran for a tag at a different commit"
+[ "$(git -C "$O" rev-parse 'v0.2.0^{commit}')" != "$cand" ] || fail "the origin tag was moved to the candidate"
+
 echo "RELEASE RESUME OK"
