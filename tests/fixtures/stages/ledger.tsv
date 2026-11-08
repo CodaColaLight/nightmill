@@ -1,0 +1,24 @@
+take	2026-11-07T08:00:40Z	1	feat/stage-times	take				2026-11-07T08:00:00Z	2026-11-07T08:00:40Z	
+step	2026-11-07T08:00:45Z	1	feat/stage-times	slot-taken	next	session				
+step	2026-11-07T08:01:00Z	1	feat/stage-times	write-tests	next	tester				
+step	2026-11-07T08:11:00Z	1	feat/stage-times	implement	next	implementer				
+step	2026-11-07T08:50:00Z	1	feat/stage-times	check	next	implementer				
+step	2026-11-07T09:00:00Z	1	feat/stage-times	check	next	implementer				
+step	2026-11-07T09:10:00Z	1	feat/stage-times	commit	next	implementer				
+step	2026-11-07T09:11:00Z	1	feat/stage-times	code-review	next	session				
+step	2026-11-07T09:20:00Z	1	feat/stage-times	pull-request	next	session				
+step	2026-11-07T09:21:40Z	1	feat/stage-times	done	next	session				
+free	2026-11-07T10:30:00Z	1	feat/stage-times	released			7	2026-11-07T09:20:30Z	2026-11-07T09:40:00Z	12
+run	2026-11-07T10:31:40Z	1	feat/stage-times	some-run						
+step	2026-11-07T08:01:40Z	2	feat/old	slot-taken	next	session				
+step	2026-11-07T08:02:40Z	2	feat/old	implement	next	implementer				
+step	2026-11-07T08:16:40Z	2	feat/old	check	next	implementer				
+step	2026-11-07T08:23:20Z	2	feat/old	pull-request	next	session				
+free	2026-11-07T08:50:00Z	2	feat/old	reaped			8	2026-11-07T08:24:10Z	2026-11-07T08:36:40Z	13
+take	2026-11-07T11:20:30Z	1	feat/c	take				2026-11-07T11:20:00Z	2026-11-07T11:20:30Z	
+free	2026-11-07T11:21:40Z	1	feat/c	abandoned						
+step	2026-11-07T11:36:50Z	2	feat/d	slot-taken	next	session			
+step	not-a-stamp	2	feat/d	check	next	implementer				
+take	2026-11-07T11:37:00Z	2	feat/d	take				2026-11-07T11:36:40Z	2026-11-07T11:37:00Z	
+step	2026-11-07T11:37:05Z	2	feat/d	slot-taken	next	session				
+step	2026-11-07T11:38:20Z	2	feat/d	implement	next	implementer				

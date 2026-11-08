@@ -36,6 +36,8 @@
 # A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
 # claim whose process has ended is dead: --status shows take-died, and only --abandon frees it. Same behaviour as
 # slot.ps1.
+# Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
+# scripts/stages.sh); a failed append prints one note and changes nothing else. Same behaviour as slot.ps1.
 set -euo pipefail
 
 usage() {
@@ -75,6 +77,7 @@ elif [ "$has_skill" = 1 ] || [ "$has_role" = 1 ]; then
 fi
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/lib/ledger.sh"
 
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "run slot.sh from inside a git checkout of the project" >&2; exit 1; }
 main=$(dirname "$gitdir")
@@ -90,6 +93,24 @@ root_rel=$(q worktrees.root); root_rel=${root_rel:-"../$(basename "$main")-wt"}
 mkdir -p "$main/$root_rel"
 root=$(cd "$main/$root_rel" && pwd)
 state="$root/.slots"
+ledger="$state/ledger.tsv"
+# record <kind> <slot> <branch> <name> <skill> <role> <pr> <from> <to> <issues>: one line of the record, stamped now
+record() {
+  ledger_clock
+  ledger_append "$ledger" "$1" "$(ledger_stamp "$ledger_s")" "${@:2}"
+}
+# pr_times FLAT PREFIX: the createdAt, mergedAt and closing issue numbers (joined by ,) of the PR at PREFIX ([0]) of
+# gh's flat JSON, separated by the unit separator (\037, so that empty fields stay); empty fields when absent
+pr_times() {
+  printf '%s\n' "$1" | LC_ALL=C awk -F '\t' -v p="$2" '
+    $1 == p ".createdAt" && $2 == "string" { c = $3 }
+    $1 == p ".mergedAt" && $2 == "string" { m = $3 }
+    index($1, p ".closingIssuesReferences[") == 1 && $1 ~ /\]\.number$/ && $2 == "number" {
+      rest = substr($1, length(p ".closingIssuesReferences[") + 1)
+      if (rest ~ /^[0-9]+\]\.number$/) i = i (i == "" ? "" : ",") $3
+    }
+    END { printf "%s\037%s\037%s", c, m, i }'
+}
 
 if [ -n "${WORKER_SLOTS:-}" ]; then
   [[ "$WORKER_SLOTS" =~ ^[1-9][0-9]?$ ]] || { echo "WORKER_SLOTS must be a number from 1 to 99" >&2; exit 1; }
@@ -229,7 +250,7 @@ sha256() {
 freed=0
 # reap_all: free every busy slot whose PR has merged (see the header); prints one line per freed slot
 reap_all() {
-  local n dir branch tip tmpf errf flat pr fetched=0 freason ferr top
+  local n dir branch tip tmpf errf flat pr prkey pr_from pr_to pr_issues fetched=0 freason ferr top
   top=$(last_slot)
   for ((n = 1; n <= top; n++)); do
     has_marker "$n" || continue
@@ -245,7 +266,7 @@ reap_all() {
       echo "slot $n: not checked for a merged PR (gh is not on the PATH)" >&2; continue
     fi
     tmpf=$(mktemp); errf=$(mktemp)
-    if ! gh pr list --state merged --head "$branch" --json number,headRefOid > "$tmpf" 2> "$errf"; then
+    if ! gh pr list --state merged --head "$branch" --json number,headRefOid,createdAt,mergedAt,closingIssuesReferences > "$tmpf" 2> "$errf"; then
       echo "slot $n: not checked for a merged PR ($(head -n 1 "$errf"))" >&2
       rm -f "$tmpf" "$errf"; continue
     fi
@@ -258,8 +279,9 @@ reap_all() {
     pr=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' -v tip="$tip" '
       $1 ~ /^\[[0-9]+\]\.number$/ { k = $1; sub(/\]\.number$/, "", k); num[k] = $3 }
       $1 ~ /^\[[0-9]+\]\.headRefOid$/ { k = $1; sub(/\]\.headRefOid$/, "", k); oid[k] = $3; order[++cnt] = k }
-      END { for (i = 1; i <= cnt; i++) if (oid[order[i]] == tip) { print num[order[i]]; exit } }')
+      END { for (i = 1; i <= cnt; i++) if (oid[order[i]] == tip) { print order[i] "]\t" num[order[i]]; exit } }')
     [ -n "$pr" ] || continue
+    prkey=${pr%%$'\t'*}; pr=${pr#*$'\t'}
     if [ "$fetched" = 0 ]; then
       if ferr=$(git fetch origin "$base_branch" 2>&1); then fetched=1; else fetched=-1; freason=$(printf '%s\n' "$ferr" | head -n 1); fi
     fi
@@ -269,6 +291,8 @@ reap_all() {
     git -C "$dir" switch --detach "origin/$base_branch" >/dev/null 2>&1 || continue
     git branch -D "$branch" >/dev/null 2>&1 || true
     rm -f "$(marker "$n")"
+    IFS=$'\037' read -r pr_from pr_to pr_issues <<<"$(pr_times "$flat" "$prkey")" || true
+    record free "$n" "$branch" reaped "" "" "$pr" "$pr_from" "$pr_to" "$pr_issues"
     echo "Slot $n is free (was $branch, PR #$pr), released automatically."
     freed=$((freed + 1))
   done
@@ -410,7 +434,12 @@ if [ "$has_report" = 1 ]; then
   tmpr="$state/slot-$n.report.tmp"
   json_marker_report "$n" "$(json_get branch)" "$(json_get since)" "$skill" "$role" "$report" "$(date +%Y-%m-%dT%H:%M:%S)" > "$tmpr"
   # moved over the marker only while it still exists: a report never brings back a released slot
-  if [ -f "$mk" ]; then mv -f "$tmpr" "$mk"; else rm -f "$tmpr"; fi
+  if [ -f "$mk" ]; then
+    mv -f "$tmpr" "$mk"
+    record step "$n" "$(json_get branch)" "$report" "$skill" "$role" "" "" "" ""
+  else
+    rm -f "$tmpr"
+  fi
   exit 0
 fi
 
@@ -489,6 +518,7 @@ claim_slot() {
   local n=$1 tmpc mk c=0 lerr g=0
   tmpc="$state/slot-$n.claim.$me.tmp"; mk=$(marker "$n")
   claim_since=$(date +%Y-%m-%dT%H:%M:%S)
+  ledger_clock; claim_at=$ledger_s
   ( set -C; json_marker_taking "$n" "$take" "$claim_since" "$me" > "$tmpc" ) || c=$?
   if [ "$c" != 0 ]; then
     rm -f "$tmpc"
@@ -553,6 +583,8 @@ finish_take() {
     leave_claim
     echo "write marker failed (exit $c); slot $n stays claimed: free it with --abandon $n" >&2; exit 1
   fi
+  ledger_clock
+  ledger_append "$ledger" take "$(ledger_stamp "$ledger_s")" "$n" "$take" take "" "" "" "$(ledger_stamp "$claim_at")" "$(ledger_stamp "$ledger_s")" ""
   hints "$n" "$dir" "$take"
 }
 
@@ -634,11 +666,17 @@ if [ "$release" != 0 ]; then
   branch=$(marker_field "$n" branch)
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir" >&2; exit 1; }
   git fetch origin "$base_branch"
-  merged=$(gh pr list --state merged --head "$branch" --json number -q '.[0].number')
+  prjson=$(gh pr list --state merged --head "$branch" --json number,createdAt,mergedAt,closingIssuesReferences)
+  tmpf=$(mktemp); printf '%s\n' "$prjson" > "$tmpf"
+  flat=$(JSON_MODE=flat JSON_FILE="$tmpf" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" 2>/dev/null) || flat=""
+  rm -f "$tmpf"
+  merged=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' '$1 == "[0].number" && $2 == "number" { print $3 }')
   [ -n "$merged" ] || { echo "no merged PR for $branch. Merge it first, or free the slot with --abandon $n." >&2; exit 1; }
   git -C "$dir" switch --detach "origin/$base_branch"
   git branch -D "$branch"
   rm -f "$(marker "$n")"
+  IFS=$'\037' read -r pr_from pr_to pr_issues <<<"$(pr_times "$flat" "[0]")" || true
+  record free "$n" "$branch" released "" "" "$merged" "$pr_from" "$pr_to" "$pr_issues"
   echo "Slot $n is free (was $branch, PR #$merged)."
   exit 0
 fi
@@ -663,6 +701,7 @@ if [ "$abandon" != 0 ]; then
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
   git -C "$dir" switch --detach "$base"
   rm -f "$(marker "$n")"
+  record free "$n" "$branch" abandoned "" "" "" "" "" ""
   echo "Slot $n is free (was $branch; the local branch is kept, delete it yourself if unwanted)."
   exit 0
 fi

@@ -1,0 +1,9 @@
+take	2026-11-07T08:00:00Z	1	feat/dur	take				2026-11-07T08:00:00Z	2026-11-07T08:00:00Z	
+step	2026-11-07T08:00:00Z	1	feat/dur	d0	next	implementer				
+step	2026-11-07T08:00:00Z	1	feat/dur	d59	next	implementer				
+step	2026-11-07T08:00:59Z	1	feat/dur	d60	next	implementer				
+step	2026-11-07T08:01:59Z	1	feat/dur	d3599	next	implementer				
+step	2026-11-07T09:01:58Z	1	feat/dur	d3600	next	implementer				
+step	2026-11-07T10:01:58Z	1	feat/dur	d3659	next	implementer				
+step	2026-11-07T11:02:57Z	1	feat/dur	d93780	next	implementer				
+free	2026-11-08T13:05:57Z	1	feat/dur	abandoned						

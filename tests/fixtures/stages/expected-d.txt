@@ -1,0 +1,7 @@
+-  feat/d  slot 2  running
+  stage                runs     time  share
+  take                    1      20s     3%
+  not-reported            1       5s     1%
+  slot-taken              1    1m15s    11%
+  implement               1   10m00s    86%
+  total                       11m40s   100%

@@ -519,6 +519,29 @@ for w in 'running' 'stalled' 'unknown'; do
   grep -qF -- "**$w**" README.md || { echo "FAIL: README.md does not say what $w means"; fail=1; }
 done
 
+echo "== the stage record is wired"
+# The time a story spends in each stage is recorded and shown (iteration 41): both slot scripts append one line per
+# take, report and freeing to <worktrees.root>/.slots/ledger.tsv; scripts/stages.sh and scripts/stages.ps1 print the
+# table; tests/check.sh and CI run the smoke tests of both shells; the README says where the record lives and how to
+# read the table; no skill writes or mentions the record (the scripts that already run write it).
+for f in scripts/slot.sh scripts/slot.ps1; do
+  grep -qF 'ledger.tsv' "$f" || { echo "FAIL: $f does not carry the record file: ledger.tsv"; fail=1; }
+done
+for f in scripts/stages.sh scripts/stages.ps1; do
+  [ -f "$f" ] || { echo "FAIL: $f does not exist"; fail=1; }
+done
+for w in 'smoke-stages.sh' 'smoke-stages.ps1'; do
+  for f in tests/check.sh .github/workflows/ci.yml; do
+    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not run $w"; fail=1; }
+  done
+done
+for w in 'ledger.tsv' 'ci-and-merge' 'not-reported' 'stages.sh'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the stage record item: $w"; fail=1; }
+done
+if grep -rqF 'ledger.tsv' skills; then
+  echo "FAIL: a file in skills/ mentions ledger.tsv (no skill gets longer for the record): $(grep -rlF 'ledger.tsv' skills | tr '\n' ' ')"; fail=1
+fi
+
 echo "== a tester writes the failing tests first"
 # /next has a tester subagent write the failing tests for every acceptance criterion before the implementer (iteration
 # 25): an agent file whose tool list has no Agent, the same test path rule in the agent and in the skill, and /next that

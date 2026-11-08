@@ -1,0 +1,5 @@
+-  feat/c  slot 1  abandoned 2026-11-07T11:21:40Z
+  stage                runs     time  share
+  take                    1      30s    30%
+  not-reported            1    1m10s    70%
+  total                        1m40s   100%
