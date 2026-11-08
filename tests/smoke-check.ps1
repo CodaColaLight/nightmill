@@ -241,8 +241,8 @@ try {
   $secText = $sec -join "`n"
   function Make-Copy([string]$d) {
     foreach ($s in "tests", ".github\workflows", "schema", "templates", "scripts") { New-Item -ItemType Directory "$d\$s" -Force | Out-Null }
-    Copy-Item "$here\tests\check.sh", "$here\tests\check.ps1" "$d\tests\"
-    Get-ChildItem "$here\tests" -Filter "smoke-*" -File | ForEach-Object { Copy-Item $_.FullName "$d\tests\" }
+    # every script in tests\, so a step that is not a smoke-* file exists
+    Get-ChildItem "$here\tests" -File | Where-Object { $_.Extension -in ".sh", ".ps1" } | ForEach-Object { Copy-Item $_.FullName "$d\tests\" }
     Copy-Item "$here\.github\workflows\ci.yml" "$d\.github\workflows\"
     Copy-Item "$here\schema\nightmill.schema.json" "$d\schema\"
     Copy-Item "$here\templates\nightmill.example.json" "$d\templates\"

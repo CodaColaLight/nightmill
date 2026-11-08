@@ -244,7 +244,11 @@ set -e
 echo "== the lint notices a status script that changes the board"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
 ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir" && tar -xf - )
-( cd "$cp_dir" && bash tests/lint.sh >/dev/null 2>&1 ) || fail "the lint fails on an unchanged copy of the repository"
+# On a failure the lint's FAIL: lines (else its whole output) follow, so a CI log names the rule (#217).
+if ! out=$(cd "$cp_dir" && bash tests/lint.sh 2>&1); then
+  fail "the lint fails on an unchanged copy of the repository
+$(printf '%s\n' "$out" | grep 'FAIL:' || printf '%s\n' "$out")"
+fi
 printf '
 gh project item-edit --id x
 ' >> "$cp_dir/scripts/status.sh"

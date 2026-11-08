@@ -370,11 +370,11 @@ steps of the two smoke jobs change:
 
 - `smoke-bash`: `run: bash tests/smoke-json.sh` and "Hide jq" stay first, as today; the 13 `run: bash
   tests/smoke-<x>.sh` steps become one step
-  `run: bash tests/check.sh --only <every bash smoke file but smoke-json.sh, comma-separated, in list order>`. So
+  `run: bash tests/check.sh --only <every bash file of the step list but smoke-json.sh, comma-separated, in list order>`. So
   `smoke-json.sh` still runs once, with `jq`, and the rest without it, as today.
 - `smoke-powershell`: the 13 `run: powershell ...` steps become one step with `shell: bash` (Git's bash on the Windows
-  runner) and `run: bash tests/check.sh --powershell powershell --only <every ps smoke file, comma-separated, in list
-  order>`.
+  runner) and `run: bash tests/check.sh --powershell powershell --only <every ps file of the step list, comma-separated,
+  in list order>`.
 
 Each job then runs its tests with the limit of decision 2 (this repository's `verification.checkJobs` 4, capped at
 the runner's processors) and prints the header, the sections in order, the `Times:` block and its verdict; the job

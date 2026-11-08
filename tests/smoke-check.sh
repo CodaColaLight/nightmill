@@ -194,10 +194,10 @@ echo "== the lint: the check runs every smoke script"
 sec="$tmp/lint-section.sh"
 awk '/^echo "== the check runs every smoke script"/ { p = 1 } /^echo "== text from issues is data"/ { p = 0 } p' "$here/tests/lint.sh" > "$sec"
 [ -s "$sec" ] || fail "lint: tests/lint.sh has no section '== the check runs every smoke script'"
-mkcopy() { # mkcopy <dir>: the files the section reads
+mkcopy() { # mkcopy <dir>: the files the section reads (every script in tests/, so a step that is not a smoke-* file exists)
   local d=$1
   mkdir -p "$d/tests" "$d/.github/workflows" "$d/schema" "$d/templates" "$d/scripts"
-  cp "$here"/tests/check.sh "$here"/tests/check.ps1 "$here"/tests/smoke-* "$d/tests/"
+  cp "$here"/tests/*.sh "$here"/tests/*.ps1 "$d/tests/"
   cp "$here/.github/workflows/ci.yml" "$d/.github/workflows/"
   cp "$here/schema/nightmill.schema.json" "$d/schema/"
   cp "$here/templates/nightmill.example.json" "$d/templates/"

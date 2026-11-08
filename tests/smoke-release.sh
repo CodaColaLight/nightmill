@@ -151,7 +151,11 @@ refuses "publish twice" "tag v0.2.0 already exists" --version 0.2.0 --publish --
 echo "== the lint notices versions that disagree"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
 ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir" && tar -xf - )
-( cd "$cp_dir" && bash tests/lint.sh >/dev/null 2>&1 ) || fail "the lint fails on an unchanged copy of the repository"
+# On a failure the lint's FAIL: lines (else its whole output) follow, so a CI log names the rule (#217).
+if ! out=$(cd "$cp_dir" && bash tests/lint.sh 2>&1); then
+  fail "the lint fails on an unchanged copy of the repository
+$(printf '%s\n' "$out" | grep 'FAIL:' || printf '%s\n' "$out")"
+fi
 sed 's/^\(  "version": "\)[0-9.]*"/\19.9.9"/' "$cp_dir/.claude-plugin/plugin.json" > "$cp_dir/pj.tmp" && mv "$cp_dir/pj.tmp" "$cp_dir/.claude-plugin/plugin.json"
 if out=$(cd "$cp_dir" && bash tests/lint.sh 2>&1); then fail "the lint accepted a plugin.json version that disagrees"; fi
 case "$out" in *"FAIL: versions disagree"*"9.9.9"*) ;; *) fail "the lint did not report the disagreement: $out" ;; esac
