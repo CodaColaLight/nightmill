@@ -33,7 +33,7 @@ done < <(find . -path ./.git -prune -o -name '*.json' -print)
 
 echo "== skills"
 for s in skills/*/SKILL.md; do
-  head -1 "$s" | grep -qx -- '---' || { echo "FAIL: $s has no frontmatter"; fail=1; }
+  head -1 "$s" | grep -x -- '---' >/dev/null || { echo "FAIL: $s has no frontmatter"; fail=1; }
   grep -q '^name: ' "$s" || { echo "FAIL: $s has no name"; fail=1; }
   grep -q '^description: ' "$s" || { echo "FAIL: $s has no description"; fail=1; }
   if grep -q 'nightmill.json' "$s" && ! grep -q '^!`' "$s"; then
@@ -110,7 +110,7 @@ fi
 for f in nightmill-bug nightmill-idea; do
   p=.github/ISSUE_TEMPLATE/$f.yml
   if [ -f "$p" ]; then
-    head -1 "$p" | grep -q '^name: ' || { echo "FAIL: $p does not start with name:"; fail=1; }
+    head -1 "$p" | grep '^name: ' >/dev/null || { echo "FAIL: $p does not start with name:"; fail=1; }
     grep -q '^body:' "$p" || { echo "FAIL: $p has no body:"; fail=1; }
   else
     echo "FAIL: $p is missing"; fail=1
@@ -151,7 +151,7 @@ pair_cfg=$(mktemp)
 sed 's/"specReviewer": { "model": "opus" }/"specReviewer": { "model": "haiku" }/' templates/nightmill.example.json > "$pair_cfg"
 if out=$(bash scripts/validate-config.sh "$pair_cfg" 2>&1); then
   echo "FAIL: scripts/validate-config.sh accepted a spec reviewer on a model ranked below the spec writer's"; fail=1
-elif ! printf '%s\n' "$out" | grep -qF 'ranks below'; then
+elif ! printf '%s\n' "$out" | grep -F 'ranks below' >/dev/null; then
   echo "FAIL: scripts/validate-config.sh did not say 'ranks below' for a spec reviewer ranked below the spec writer"; fail=1
 fi
 rm -f "$pair_cfg"
@@ -242,10 +242,10 @@ if grep -qxF '## Agent roles and models' "$wf"; then
   json_load schema/nightmill.schema.json
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    printf '%s\n' "$section" | grep -qF -- "\`$r\`" || { echo "FAIL: $wf: the section 'Agent roles and models' does not name the role $r"; fail=1; }
+    printf '%s\n' "$section" | grep -F -- "\`$r\`" >/dev/null || { echo "FAIL: $wf: the section 'Agent roles and models' does not name the role $r"; fail=1; }
   done < <(json_keys properties.roles.properties)
   for w in 'roles.<role>.model' 'properties.roles.properties.R.properties.model' 'schema/nightmill.schema.json' 'explicitly' 'never inherited from the session' 'never launched as a fork' 'Stopped: the <role> role cannot run on <model>' 'never falls back' 'Reviewed by'; do
-    printf '%s\n' "$section" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Agent roles and models' does not say: $w"; fail=1; }
+    printf '%s\n' "$section" | grep -F -- "$w" >/dev/null || { echo "FAIL: $wf: the section 'Agent roles and models' does not say: $w"; fail=1; }
   done
   worker_default=$(json_get properties.roles.properties.worker.properties.model.default)
   worker_model=$(sed -n 's/^model:[[:space:]]*//p' agents/worker.md | head -1)
@@ -265,7 +265,7 @@ for f in skills/status/SKILL.md scripts/status.sh scripts/status.ps1 scripts/lib
 done
 grep -qF '/nightmill:status' README.md || { echo "FAIL: README.md does not mention /nightmill:status"; fail=1; }
 for f in scripts/status.sh scripts/status.ps1 scripts/lib/status.awk; do
-  if [ -f "$f" ] && grep -nE 'item-edit|item-add|item-archive|item-delete|pr merge|issue edit|issue comment|issue close|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if [ -f "$f" ] && grep -nE 'item-edit|item-add|item-archive|item-delete|pr merge|issue edit|issue comment|issue close|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f changes something; /status only reads"; fail=1
   fi
 done
@@ -286,7 +286,7 @@ for f in scripts/template-board.sh scripts/template-board.ps1 tests/smoke-templa
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
 for f in scripts/template-board.sh scripts/template-board.ps1; do
-  if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f changes something; the template check only reads"; fail=1
   fi
 done
@@ -304,7 +304,7 @@ for f in skills/models/SKILL.md scripts/models.sh scripts/models.ps1 scripts/lib
 done
 grep -qF '/nightmill:models' README.md || { echo "FAIL: README.md does not mention /nightmill:models"; fail=1; }
 for f in scripts/models.sh scripts/models.ps1 scripts/lib/models.awk; do
-  if [ -f "$f" ] && grep -nE '(^|[^a-z])gh +[a-z]|curl|Set-Content|Out-File|Add-Content|Remove-Item|New-Item|git +(add|commit|push|switch|checkout|fetch|worktree|config|branch|reset|rm|mv|clean|stash|init|merge|rebase|pull)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if [ -f "$f" ] && grep -nE '(^|[^a-z])gh +[a-z]|curl|Set-Content|Out-File|Add-Content|Remove-Item|New-Item|git +(add|commit|push|switch|checkout|fetch|worktree|config|branch|reset|rm|mv|clean|stash|init|merge|rebase|pull)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes or calls out; /models only reads"; fail=1
   fi
 done
@@ -328,11 +328,11 @@ for w in '**Edit permission**' 'Edit(**)' '.claude/settings.local.json' 'git che
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention the edit permission item: $w"; fail=1; }
 done
 # the Confirm once step shows the local file's text next to the CLAUDE.md and settings.json edits
-if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' skills/init/SKILL.md | grep -qF '.claude/settings.local.json'; then
+if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' skills/init/SKILL.md | grep -F '.claude/settings.local.json' >/dev/null; then
   echo "FAIL: skills/init/SKILL.md: the Confirm once step does not show .claude/settings.local.json"; fail=1
 fi
 # the edit-permission line itself says that no entry of an existing file is removed or reordered
-if ! sed -n '/^- \*\*Edit permission\*\*/,/^- \*\*Board workflows\*\*/p' skills/init/SKILL.md | grep -qF 'without removing or reordering an entry'; then
+if ! sed -n '/^- \*\*Edit permission\*\*/,/^- \*\*Board workflows\*\*/p' skills/init/SKILL.md | grep -F 'without removing or reordering an entry' >/dev/null; then
   echo "FAIL: skills/init/SKILL.md: the Edit permission line does not say no entry is removed or reordered"; fail=1
 fi
 # Edit(/**) is not scoped to the project on every platform; only Edit(**) is written
@@ -368,10 +368,10 @@ for w in '**Run permissions**' '.claude/settings.local.json' 'additionalDirector
          'Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)'; do
   grep -qF -- "$w" "$ini" || { echo "FAIL: $ini does not mention the run permissions item: $w"; fail=1; }
 done
-if ! sed -n '/^- \*\*Run permissions\*\*/,/^- \*\*/p' "$ini" | grep -qF 'without removing or reordering an entry'; then
+if ! sed -n '/^- \*\*Run permissions\*\*/,/^- \*\*/p' "$ini" | grep -F 'without removing or reordering an entry' >/dev/null; then
   echo "FAIL: $ini: the Run permissions line does not say no entry is removed or reordered"; fail=1
 fi
-if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' "$ini" | grep -qF 'Run permissions'; then
+if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' "$ini" | grep -F 'Run permissions' >/dev/null; then
   echo "FAIL: $ini: the Confirm once step does not name Run permissions"; fail=1
 fi
 # a second run changes nothing: the Detect bullet and the exact text of the Run permissions line
@@ -380,7 +380,7 @@ for w in '  - **Detect.**' 'string equality' '.claude/settings.json' 'permission
          '**exists** when all are present' 'exists (defaultMode bypassPermissions)' \
          '  - **Show the exact text**' 'the whole file' 'the diff' 'appended at the end of `permissions.allow`' \
          'every other' 'byte unchanged' '2-space indentation, LF'; do
-  printf '%s\n' "$rp" | grep -qF -- "$w" || { echo "FAIL: $ini: the Run permissions line does not say (detect or exact text): $w"; fail=1; }
+  printf '%s\n' "$rp" | grep -F -- "$w" >/dev/null || { echo "FAIL: $ini: the Run permissions line does not say (detect or exact text): $w"; fail=1; }
 done
 # no broad rule: no bare git push, no git wildcard, no git -C wildcard, no hard reset
 for w in 'Bash(git push *)' 'Bash(git push:*)' 'Bash(git *)' 'Bash(git:*)' 'Bash(git -C *' 'Bash(git -C:*)' 'reset --hard'; do
@@ -427,10 +427,10 @@ done
 for f in skills/*/SKILL.md; do
   grep -q '^!`' "$f" || continue
   fm=$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")
-  if ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -qF 'Bash(cat .claude/nightmill.json *)'; then
+  if ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -F 'Bash(cat .claude/nightmill.json *)' >/dev/null; then
     echo "FAIL: $f: the injection has no matching allowed-tools"; fail=1
   fi
-  if grep '^!`' "$f" | grep -qv '^!`cat \.claude/nightmill\.json'; then
+  if grep '^!`' "$f" | grep -v '^!`cat \.claude/nightmill\.json' >/dev/null; then
     echo "FAIL: $f: the injection has no matching allowed-tools (an injection line does not start !\`cat .claude/nightmill.json)"; fail=1
   fi
 done
@@ -438,7 +438,7 @@ done
 for w in '### The run permissions' 'additionalDirectories' 'Run permissions' '#110' '#160'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the run permissions item: $w"; fail=1; }
 done
-if tr '\n' ' ' < README.md | tr -s ' ' | grep -qF 'the edits `/next` and `/fix` make in a slot still prompt'; then
+if tr '\n' ' ' < README.md | tr -s ' ' | grep -F 'the edits `/next` and `/fix` make in a slot still prompt' >/dev/null; then
   echo "FAIL: README.md still says the edits /next and /fix make in a slot still prompt"; fail=1
 fi
 
@@ -516,7 +516,7 @@ if grep -qxF '## Findings and fix rounds' "$wf"; then
   # the section ends at the next "## " heading that is not inside a code fence (the Review template has one)
   fsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' "$wf")
   for w in 'Review: findings | no findings' '- blocking <file>:<line>' '- advisory <file>:<line>' 'review.maxFixRounds' '1 + review.maxFixRounds' 'validate-config' 'ranks below' "never sees the producer's own account" 'is never read as'; do
-    printf '%s\n' "$fsection" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+    printf '%s\n' "$fsection" | grep -F -- "$w" >/dev/null || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
   done
   # the format of the block is the same in the agent file and in the workflow skill
   fmt='^(Review: findings \| no findings|Blocking: <n>|Advisory: <n>|- blocking <file>:<line> .*|- advisory <file>:<line> .*)$'
@@ -538,10 +538,10 @@ echo "== the review is recorded in the pull request"
 # and /fix say so in one fixed sentence. The interim text of iteration 18 is replaced, not kept beside the new one.
 sentence='Auto-merge is not enabled: blocking review findings are still open (see Review).'
 for w in '## Review' '- Reviewer: codeReviewer role on <model>' '- Author: <producer> role on <model>' '- Fix rounds used: <r> of <review.maxFixRounds>' '- Findings fixed: <n>' '- Findings still open: <b> blocking, <a> advisory' 'fixed in round <k>:' "$sentence"; do
-  printf '%s\n' "$fsection" | grep -qF -- "$w" || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+  printf '%s\n' "$fsection" | grep -F -- "$w" >/dev/null || { echo "FAIL: $wf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
 done
 cisection=$(awk '/^## CI and merging$/ { s = 1; next } s && /^## / { exit } s { print }' "$wf")
-printf '%s\n' "$cisection" | grep -qF 'blocking review finding' || { echo "FAIL: $wf: the section 'CI and merging' does not name an open blocking review finding"; fail=1; }
+printf '%s\n' "$cisection" | grep -F 'blocking review finding' >/dev/null || { echo "FAIL: $wf: the section 'CI and merging' does not name an open blocking review finding"; fail=1; }
 for f in skills/next/SKILL.md skills/fix/SKILL.md; do
   for w in '## Review' 'Findings fixed' 'Findings still open' "$sentence"; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the review item: $w"; fail=1; }
@@ -688,10 +688,10 @@ done
 grep -qE '^5\. When the implementer.s result is `partial`' "$nx" || { echo "FAIL: $nx: step 5 does not begin by setting the tests of unmet criteria aside"; fail=1; }
 wfs=skills/workflow/SKILL.md
 vsection=$(awk '/^## Verify before every commit$/ { s = 1; next } s && /^## / { exit } s { print }' "$wfs")
-printf '%s\n' "$vsection" | grep -qF 'Never commit red.' || { echo "FAIL: $wfs: the section 'Verify before every commit' no longer says: Never commit red."; fail=1; }
+printf '%s\n' "$vsection" | grep -F 'Never commit red.' >/dev/null || { echo "FAIL: $wfs: the section 'Verify before every commit' no longer says: Never commit red."; fail=1; }
 dsection=$(awk '/^## Definition of done$/ { s = 1; next } s && /^## / { exit } s { print }' "$wfs")
 for w in 'written first by the' 'seen failing before the code'; do
-  printf '%s\n' "$dsection" | grep -qF -- "$w" || { echo "FAIL: $wfs: the section 'Definition of done' does not say: $w"; fail=1; }
+  printf '%s\n' "$dsection" | grep -F -- "$w" >/dev/null || { echo "FAIL: $wfs: the section 'Definition of done' does not say: $w"; fail=1; }
 done
 grep -qF 'agents/tester.md' README.md || { echo "FAIL: README.md does not mention agents/tester.md"; fail=1; }
 
@@ -707,7 +707,7 @@ tp_fix=$(grep -E "$tp_re" "$fx" 2>/dev/null | head -1 | sed -E 's/^[[:space:]`]+
 if [ -z "$tp_agent" ] || [ "$tp_agent" != "$tp_fix" ]; then
   echo "FAIL: the 'Test paths:' line differs between $ta and $fx"; fail=1
 fi
-sed -n 's/^description:[[:space:]]*//p' "$ta" 2>/dev/null | head -1 | grep -qF '/fix' || { echo "FAIL: $ta: the description does not name /fix"; fail=1; }
+sed -n 's/^description:[[:space:]]*//p' "$ta" 2>/dev/null | head -1 | grep -F '/fix' >/dev/null || { echo "FAIL: $ta: the description does not name /fix"; fail=1; }
 for w in 'nightmill:tester' 'roles.tester.model' 'Stopped: the tester role cannot run on' 'Stopped: the tester returned failed' \
          'Stopped: the tester changed files that are not tests' 'Stopped: the tester could not reproduce bug #' \
          'The fixer was not started.' 'status --porcelain --untracked-files=all' '<tester files>' \
@@ -724,7 +724,7 @@ for w in 'Write the test that fails for the reason in the issue first' 'One fixe
   if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still says '$w'"; fail=1; fi
 done
 rsection=$(awk '/^## Agent roles and models$/ { s = 1; next } s && /^## / { exit } s { print }' skills/workflow/SKILL.md)
-printf '%s\n' "$rsection" | grep -E '^\| `tester` \|' | grep -qF 'before the fixer' || { echo "FAIL: skills/workflow/SKILL.md: the tester row of 'Agent roles and models' does not say: before the fixer"; fail=1; }
+printf '%s\n' "$rsection" | grep -E '^\| `tester` \|' | grep -F 'before the fixer' >/dev/null || { echo "FAIL: skills/workflow/SKILL.md: the tester row of 'Agent roles and models' does not say: before the fixer"; fail=1; }
 grep -qF 'before the fixer' README.md || { echo "FAIL: README.md does not say the tester works before the fixer"; fail=1; }
 
 echo "== the tester's tests are guarded"
@@ -736,7 +736,7 @@ echo "== the tester's tests are guarded"
 for w in 'A dispute' 'revised:' 'stands:' 'never weaken a test to let the code pass' 'Change only the files named in the dispute' 'Answers:'; do
   grep -qF -- "$w" "$ta" || { echo "FAIL: $ta does not say the dispute item: $w"; fail=1; }
 done
-sed -n 's/^description:[[:space:]]*//p' "$ta" 2>/dev/null | head -1 | grep -qF 'disputes' || { echo "FAIL: $ta: the description does not say the tester answers when its tests are disputed"; fail=1; }
+sed -n 's/^description:[[:space:]]*//p' "$ta" 2>/dev/null | head -1 | grep -F 'disputes' >/dev/null || { echo "FAIL: $ta: the description does not say the tester answers when its tests are disputed"; fail=1; }
 for f in "$nx" "$fx"; do
   for w in '<tester blobs>' '<round base>' '<dispute base>' 'is still <dispute base>' \
            'replaces the old line of <tester blobs> for that path' 'keeps its old line' \
@@ -760,7 +760,7 @@ for w in "Stopped: the fixer changed the tester's tests" '-m "Disputed test for 
   grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not mention the guard item: $w"; fail=1; }
 done
 gsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' skills/workflow/SKILL.md)
-printf '%s\n' "$gsection" | grep -qF "a dispute over a tester's test" || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: a dispute over a tester's test"; fail=1; }
+printf '%s\n' "$gsection" | grep -F "a dispute over a tester's test" >/dev/null || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: a dispute over a tester's test"; fail=1; }
 grep -qF 'Disputed tests' README.md || { echo "FAIL: README.md does not mention Disputed tests"; fail=1; }
 
 echo "== the code reviewer reviews the tests"
@@ -791,9 +791,9 @@ done
 n_crit=$(grep -cF 'The one acceptance criterion: 1. <title> is fixed.' "$fx" || true)
 [ "${n_crit:-0}" -ge 2 ] || { echo "FAIL: $fx says 'The one acceptance criterion: 1. <title> is fixed.' on ${n_crit:-0} lines (at least 2 expected)"; fail=1; }
 crsection=$(awk '/^## The code review$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' "$fx")
-printf '%s\n' "$crsection" | grep -qF 'The one acceptance criterion: 1. <title> is fixed.' || { echo "FAIL: $fx: the reviewer's prompt does not carry the one acceptance criterion"; fail=1; }
+printf '%s\n' "$crsection" | grep -F 'The one acceptance criterion: 1. <title> is fixed.' >/dev/null || { echo "FAIL: $fx: the reviewer's prompt does not carry the one acceptance criterion"; fail=1; }
 for w in 'loosened or made conditional' 'is a test finding'; do
-  printf '%s\n' "$gsection" | grep -qF -- "$w" || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+  printf '%s\n' "$gsection" | grep -F -- "$w" >/dev/null || { echo "FAIL: skills/workflow/SKILL.md: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
 done
 grep -qF 'test finding' README.md || { echo "FAIL: README.md does not mention a test finding"; fail=1; }
 
@@ -835,10 +835,10 @@ sentence='Auto-merge is not enabled: blocking review findings are still open (se
 swf=skills/workflow/SKILL.md
 swsection=$(awk '/^## Findings and fix rounds$/ { s = 1; next } s && /^```/ { f = !f } s && !f && /^## / { exit } s { print }' "$swf")
 for w in 'A spec pull request has the same section' 'specReviewer role on <model>' 'specWriter role on <model>'; do
-  printf '%s\n' "$swsection" | grep -qF -- "$w" || { echo "FAIL: $swf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
+  printf '%s\n' "$swsection" | grep -F -- "$w" >/dev/null || { echo "FAIL: $swf: the section 'Findings and fix rounds' does not say: $w"; fail=1; }
 done
 swci=$(awk '/^## CI and merging$/ { s = 1; next } s && /^## / { exit } s { print }' "$swf")
-printf '%s\n' "$swci" | grep -qF '(a spec PR too)' || { echo "FAIL: $swf: the section 'CI and merging' does not name a spec PR (a spec PR too)"; fail=1; }
+printf '%s\n' "$swci" | grep -F '(a spec PR too)' >/dev/null || { echo "FAIL: $swf: the section 'CI and merging' does not name a spec PR (a spec PR too)"; fail=1; }
 for w in '## Review' 'Findings fixed' 'Findings still open' "$sentence" 'Blocking review findings are still open (' 'Spec: <path> (PR #<pr>). Waiting for approval.'; do
   grep -qF -- "$w" skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not mention the spec review item: $w"; fail=1; }
 done
@@ -854,7 +854,7 @@ for f in scripts/load.sh scripts/load.ps1 scripts/lib/load.sh scripts/lib/load.p
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
 for f in scripts/load.sh scripts/load.ps1 scripts/lib/load.sh scripts/lib/load.ps1; do
-  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes or changes something; load only reads"; fail=1
   fi
 done
@@ -903,7 +903,7 @@ for f in scripts/room.sh scripts/room.ps1 tests/smoke-room.sh tests/smoke-room.p
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
 for f in scripts/room.sh scripts/room.ps1; do
-  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|slot\.ps1|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|slot\.ps1|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes, changes or stops something, or calls a slot script; room only reads and holds back"; fail=1
   fi
 done
@@ -960,11 +960,11 @@ for f in scripts/control.sh scripts/control.ps1 skills/control/SKILL.md tests/sm
 done
 for f in scripts/control.sh scripts/control.ps1; do
   [ -f "$f" ] || continue
-  if grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|Copy-Item|WriteAll|IO\.File\]::|json_marker|--clear|--take|--release|--abandon|--reap|--report|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])gh +[a-z]|(^|[^A-Za-z0-9_-])kill( |$)|(^|[^A-Za-z0-9_-])(mv|cp|tee|mkdir) ' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|Copy-Item|WriteAll|IO\.File\]::|json_marker|--clear|--take|--release|--abandon|--reap|--report|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])gh +[a-z]|(^|[^A-Za-z0-9_-])kill( |$)|(^|[^A-Za-z0-9_-])(mv|cp|tee|mkdir) ' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes, removes or stops something; control changes the numbers only through the slot script"; fail=1
   fi
 done
-if [ -f scripts/control.ps1 ] && grep -nwE 'Clear|Take|Release|Abandon|Reap|Report' scripts/control.ps1 | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+if [ -f scripts/control.ps1 ] && grep -nwE 'Clear|Take|Release|Abandon|Reap|Report' scripts/control.ps1 | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
   echo "FAIL: scripts/control.ps1 names a slot action other than Capacity, Status, AgentLimit, SlotCount or Porcelain"; fail=1
 fi
 for w in '--capacity' '--agent-limit' '--slot-count' 'load_measure' 'load_suggest' 'control_settings' 'NIGHTMILL_NOW'; do
@@ -1031,7 +1031,7 @@ for f in scripts/dashboard.sh scripts/dashboard.ps1 scripts/lib/dashboard.awk te
 done
 for f in scripts/dashboard.sh scripts/dashboard.ps1 scripts/lib/dashboard.awk; do
   [ -f "$f" ] || continue
-  if grep -nE -- '--take|--release|--abandon|--reap|--report|--capacity|-Take|-Release|-Abandon|-Reap|-Report|-Capacity|item-edit|pr merge|issue edit|issue comment|mutation|(^|[^A-Za-z0-9_-])gh +[a-z]|HttpListener|TcpListener|socat|nc -l|http\.server|Start-Process|xdg-open|open http|cmd /c start|<form|<button|<input|<a |href|src=|<link|@import|url\(|fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if grep -nE -- '--take|--release|--abandon|--reap|--report|--capacity|-Take|-Release|-Abandon|-Reap|-Report|-Capacity|item-edit|pr merge|issue edit|issue comment|mutation|(^|[^A-Za-z0-9_-])gh +[a-z]|HttpListener|TcpListener|socat|nc -l|http\.server|Start-Process|xdg-open|open http|cmd /c start|<form|<button|<input|<a |href|src=|<link|@import|url\(|fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f changes, serves, opens or links something; the dashboard only reads and shows"; fail=1
   fi
 done
@@ -1078,7 +1078,7 @@ done
 if [ -f hooks/panel.tsx ]; then
   panel_code=$(grep -vE '^[[:space:]]*(//|/\*|\*)' hooks/panel.tsx || true)
   for w in Button Input Select Link onPress '$.fs.' '$.store.' '$.state.' '$.prompt.' '$.tool.' '$.agent.' '$.http.' '$.model.' '$.command.run' '$.session.append' 'slot.sh' 'slot.ps1' '.slots'; do
-    if printf '%s\n' "$panel_code" | grep -qF -- "$w"; then echo "FAIL: hooks/panel.tsx uses $w outside a comment; the pane is read-only and runs only the panel script"; fail=1; fi
+    if printf '%s\n' "$panel_code" | grep -F -- "$w" >/dev/null; then echo "FAIL: hooks/panel.tsx uses $w outside a comment; the pane is read-only and runs only the panel script"; fail=1; fi
   done
 fi
 grep -qF -- 'slot.sh" --status --porcelain' scripts/panel.sh 2>/dev/null || { echo "FAIL: scripts/panel.sh does not call slot.sh --status --porcelain"; fail=1; }
@@ -1090,9 +1090,9 @@ for f in scripts/panel.sh scripts/panel.ps1; do
   if [ -f "$f" ]; then
     panel_script=$(grep -vE '^[[:space:]]*#' "$f" || true)
     for w in '.slots' '--take' '--release' '--abandon' '--reap' '--report' '--capacity' '-Take' '-Release' '-Abandon' '-Reap' '-Report' '-Capacity'; do
-      if printf '%s\n' "$panel_script" | grep -qF -- "$w"; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
+      if printf '%s\n' "$panel_script" | grep -F -- "$w" >/dev/null; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
     done
-    if printf '%s\n' "$panel_script" | grep -qE '(^|[^A-Za-z0-9_-])gh +[a-z]'; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
+    if printf '%s\n' "$panel_script" | grep -E '(^|[^A-Za-z0-9_-])gh +[a-z]' >/dev/null; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
   fi
 done
 grep -qF '"panelRefreshSeconds": { "type": "integer", "minimum": 5, "default": 15,' schema/nightmill.schema.json || { echo "FAIL: schema: worktrees.panelRefreshSeconds is not an integer of at least 5, default 15"; fail=1; }
@@ -1131,7 +1131,7 @@ chk_lb=$(grep -nx '# steps: begin' tests/check.sh | head -n 1 | cut -d: -f1 || t
 chk_le=$(grep -nx '# steps: end' tests/check.sh | head -n 1 | cut -d: -f1 || true)
 if [ "$chk_nb" = 1 ] && [ "$chk_ne" = 1 ] && [ "$chk_le" -gt "$chk_lb" ]; then
   chk_block=$(sed -n "$((chk_lb + 1)),$((chk_le - 1))p" tests/check.sh | grep -v '^[[:space:]]*$' || true)
-  if printf '%s\n' "$chk_block" | grep -qvE '^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?$'; then chk_block=""; fi
+  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?$' >/dev/null; then chk_block=""; fi
 fi
 if [ -z "$chk_block" ]; then
   echo "FAIL: tests/check.sh: the step list between '# steps: begin' and '# steps: end' is missing or malformed"; fail=1
@@ -1146,7 +1146,7 @@ else
   while read -r _ k b _; do
     case $k in bash|ps) [ -f "tests/$b" ] || { echo "FAIL: tests/check.sh runs tests/$b, which does not exist"; fail=1; } ;; esac
   done <<<"$chk_block"
-  printf '%s\n' "$chk_block" | grep -qx 'add lint lint' || { echo "FAIL: tests/check.sh does not run the lint"; fail=1; }
+  printf '%s\n' "$chk_block" | grep -x 'add lint lint' >/dev/null || { echo "FAIL: tests/check.sh does not run the lint"; fail=1; }
 fi
 chk_np=$(grep -o 'ALL CHECKS PASSED' tests/check.sh | wc -l | tr -d ' ')
 [ "$chk_np" = 1 ] || { echo "FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place"; fail=1; }
@@ -1217,7 +1217,7 @@ for f in skills/spec/SKILL.md skills/next/SKILL.md skills/fix/SKILL.md; do
     *'gh issue view'*'--json'*) ;;
     *) echo "FAIL: $f has no 'gh issue view ... --json' read step"; fail=1 ;;
   esac
-  if printf '%s\n' "$flat" | grep -qE 'gh issue view [^`]*--json[^`]*comments'; then
+  if printf '%s\n' "$flat" | grep -E 'gh issue view [^`]*--json[^`]*comments' >/dev/null; then
     echo "FAIL: $f reads the issue with the unfiltered comments field (every author's comment reaches the agent)"; fail=1
   fi
 done
@@ -1311,7 +1311,7 @@ if [ -f "$ci_yml" ]; then
   if grep -qxF 'concurrency:' "$ci_yml"; then
     conc=$(LC_ALL=C awk '$0 == "concurrency:" { s = 1; next } s && /^[[:space:]]/ { print; next } s { exit }' "$ci_yml")
     n_conc=$(printf '%s\n' "$conc" | grep -c . || true)
-    if [ "$n_conc" != 2 ] || ! printf '%s\n' "$conc" | grep -qxF -- "$ci_conc_group" || ! printf '%s\n' "$conc" | grep -qxF -- "$ci_conc_cancel"; then
+    if [ "$n_conc" != 2 ] || ! printf '%s\n' "$conc" | grep -xF -- "$ci_conc_group" >/dev/null || ! printf '%s\n' "$conc" | grep -xF -- "$ci_conc_cancel" >/dev/null; then
       echo "FAIL: $ci_yml: the 'concurrency:' block is not exactly the two lines '$ci_conc_group' and '$ci_conc_cancel'"; fail=1
     fi
   else
@@ -1344,7 +1344,7 @@ EOF
   while IFS= read -r sel; do
     [ -n "$sel" ] || continue
     n_uses=$((n_uses + 1))
-    printf '%s\n' "${sel#*:}" | grep -qE "$ci_pin_re" || { echo "FAIL: $ci_yml:${sel%%:*}: not pinned as '<owner>/<action>@<40 hex> # vX.Y.Z':${sel#*:}"; fail=1; }
+    printf '%s\n' "${sel#*:}" | grep -E "$ci_pin_re" >/dev/null || { echo "FAIL: $ci_yml:${sel%%:*}: not pinned as '<owner>/<action>@<40 hex> # vX.Y.Z':${sel#*:}"; fail=1; }
   done < <(grep -nE '^[[:space:]]*(- )?uses:' "$ci_yml" || true)
   [ "$n_uses" -ge 1 ] || { echo "FAIL: $ci_yml has no 'uses:' line (the pins cannot be checked)"; fail=1; }
 else
@@ -1430,7 +1430,7 @@ echo "== bash files do not use jq"
 # this file names it in its own checks. A mention in a comment line is fine.
 for f in scripts/*.sh scripts/lib/* tests/*.sh; do
   case "$f" in tests/smoke-json.sh|tests/lint.sh) continue ;; esac
-  if grep -nw jq "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -q .; then
+  if grep -nw jq "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f uses jq outside a comment; read JSON with scripts/lib/json.sh"; fail=1
   fi
 done
