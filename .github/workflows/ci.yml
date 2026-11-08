@@ -49,6 +49,7 @@ jobs:
       - run: bash tests/smoke-control.sh
       - run: bash tests/smoke-dashboard.sh
       - run: bash tests/smoke-panel.sh
+      - run: bash tests/smoke-stages.sh
 
   smoke-powershell:
     # Required check: the ruleset on main requires this name; renaming it blocks every pull request.
@@ -70,6 +71,7 @@ jobs:
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-control.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/smoke-stages.ps1
 
   validate:
     name: claude plugin validate (not blocking)

@@ -1,0 +1,13 @@
+#12  feat/stage-times  slot 1  merged 2026-11-07T09:40:00Z
+  stage                runs     time  share
+  take                    1      40s     1%
+  not-reported            1       5s     0%
+  slot-taken              1      15s     0%
+  write-tests             1   10m00s    10%
+  implement               1   39m00s    39%
+  check                   2   20m00s    20%
+  commit                  1    1m00s     1%
+  code-review             1    9m00s     9%
+  pull-request            1      30s     1%
+  ci-and-merge            1   19m30s    20%
+  total                        1h40m   100%

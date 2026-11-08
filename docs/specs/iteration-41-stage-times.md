@@ -1,6 +1,6 @@
 # Iteration 41: the time a story spends in each stage is recorded and shown
 
-Status: draft, awaiting approval (#199)
+Status: delivered in iteration 41 (PR #206)
 
 Story: #199, epic #47 (Unattended runs). The slot scripts that already run append one line per event (a take, every
 report, every freeing) to a record file beside the slot markers, `<worktrees.root>/.slots/ledger.tsv`. A new

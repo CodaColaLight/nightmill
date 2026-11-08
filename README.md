@@ -47,6 +47,7 @@ not a conversation.
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
+| `scripts/stages.ps1`, `scripts/stages.sh` | Read-only: the time a story spent in each stage, from the slots' record `ledger.tsv`, for one issue (`-Issue N`) or the last N takes (`-Last N`). |
 | `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
 | `scripts/panel.ps1`, `scripts/panel.sh` | Read-only: the slot lines the pane draws, from `slot --status --porcelain`. |
 | `scripts/dashboard.ps1`, `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
@@ -283,6 +284,35 @@ still being taken shows unknown with the step taking; one whose take died shows 
 whose run is over (step `done`) and that waits for its merge also shows stalled once the threshold has passed;
 `-Release`, `-Reap` or the next take frees it. Nothing is stopped or freed because a slot is stalled, and a step longer
 than the threshold (a long code review or check) shows stalled while it runs; `/spec` takes no slot and is not shown.
+
+### Where a story's time went
+
+The slot scripts keep a record of every take: `<worktrees.root>/.slots/ledger.tsv`, beside the slot markers. It is
+untracked and append-only, shared by every worktree, and kept after a release, an abandon, an automatic release and
+the deletion of the branch (delete it by hand to start over). Only `slot.ps1` and `slot.sh` write it, in the commands
+that already run, so no skill or agent does anything extra: the take appends a `take` line (the claim and the end of
+the take), every report a `step` line (the step name and when it was reported), every freeing a `free` line
+(`released`, `reaped` or `abandoned`, with the merged pull request's number, open and merge time and closing issues).
+One line per event, eleven tab-separated fields, times in UTC; readers skip a line kind they do not know.
+
+`scripts/stages.sh --issue N` (`stages.ps1 -Issue N`) prints the takes that ended in a merged pull request closing
+issue N; `--last N` (`-Last N`, default 5) the last N takes. Read-only, no network. Per take, a header
+(`#<issue>  <branch>  slot <n>  <state>`, the state `merged <time>`, `released`/`reaped`/`abandoned <time>`, `running`
+or `not freed`) and one row per stage:
+
+- `take`: from the claim to the end of the take (fetch, worktree, warm-up);
+- `not-reported`: from the end of the take to the first report;
+- each reported step name, exactly as the slots reported it (`write-tests`, `implement`, `check`, `code-review`,
+  `pull-request`, ...): from its report to the next one; a step reported after the pull request opened is not counted;
+- `ci-and-merge`: from the pull request's open to its merge, the wait for CI and the merge (and for the maintainer when
+  the auto-merge waits), never added to an agent's step.
+
+`runs` is how many reports (or stretches) gave time to the row, so two runs of `check` or three fix rounds show there;
+`time` is the summed duration; `share` the row's part of the total. The total runs from the claim to the merge. A time
+that cannot be known is **unknown**, never `0s`, and its share `-`: a take by an older version (no take line) has an
+unknown `not-reported` row and an unknown total. An issue no slot took, or that an older version freed, prints
+`#N: no record`. `/spec` takes no slot and is not recorded. `tests/check.sh` prints the time of each of its steps and
+a `Times:` block with the total.
 
 ### Watching the run in a browser
 

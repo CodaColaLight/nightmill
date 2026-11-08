@@ -1,0 +1,9 @@
+#13  feat/old  slot 2  merged 2026-11-07T08:36:40Z
+  stage                runs     time  share
+  not-reported            1  unknown      -
+  slot-taken              1    1m00s      -
+  implement               1   14m00s      -
+  check                   1    6m40s      -
+  pull-request            1      50s      -
+  ci-and-merge            1   12m30s      -
+  total                      unknown      -

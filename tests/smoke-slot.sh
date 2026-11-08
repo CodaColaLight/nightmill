@@ -15,8 +15,10 @@ S="$here/scripts/slot.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # A fake gh, first on the PATH for the whole test: it answers "pr list" from $GH_FIX/merged.txt (rows of
-# branch TAB number TAB head commit; --state merged only, an open query gives an empty list), logs every call to
-# $GH_LOG and fails when GH_FAIL is set. With -q it prints the first number, as gh does for '.[0].number'.
+# branch TAB number TAB head commit, then (iteration 41) TAB createdAt TAB mergedAt TAB the closing issue numbers
+# joined by commas, all three optional; --state merged only, an open query gives an empty list), logs every call to
+# $GH_LOG and fails when GH_FAIL is set. With -q it prints the first number, as gh does for '.[0].number'. With
+# --json it prints the requested fields among number, headRefOid, createdAt, mergedAt and closingIssuesReferences.
 mkdir -p "$tmp/bin" "$tmp/fix"
 : > "$tmp/fix/merged.txt"
 : > "$tmp/gh.log"
@@ -25,18 +27,35 @@ cat > "$tmp/bin/gh" <<'EOF'
 echo "$*" >> "$GH_LOG"
 if [ -n "${GH_FAIL:-}" ]; then echo "HTTP 401: bad credentials" >&2; exit 1; fi
 [ "$1 $2" = "pr list" ] || { echo "unexpected gh call: $*" >&2; exit 1; }
-state=""; head=""; expr=""
+state=""; head=""; expr=""; fields="number,headRefOid"
 while [ $# -gt 0 ]; do
-  case "$1" in --state) state=$2; shift ;; --head) head=$2; shift ;; -q) expr=$2; shift ;; esac
+  case "$1" in --state) state=$2; shift ;; --head) head=$2; shift ;; -q) expr=$2; shift ;; --json) fields=$2; shift ;; esac
   shift
 done
 if [ "$state" != merged ]; then echo "[]"; exit 0; fi
 rows=$(awk -F'\t' -v h="$head" '$1 == h' "$GH_FIX/merged.txt")
 if [ -n "$expr" ]; then printf '%s\n' "$rows" | head -1 | cut -f2; exit 0; fi
 out="["; sep=""
-while IFS=$'\t' read -r b n o; do
+while IFS=$'\t' read -r b n o c m i; do
   [ -n "$b" ] || continue
-  out="$out$sep{\"number\":$n,\"headRefOid\":\"$o\"}"; sep=","
+  obj=""; osep=""
+  for fld in $(printf '%s\n' "$fields" | tr ',' ' '); do
+    case "$fld" in
+      number) val="$n" ;;
+      headRefOid) val="\"$o\"" ;;
+      createdAt) val="\"${c:-}\"" ;;
+      mergedAt) val="\"${m:-}\"" ;;
+      closingIssuesReferences)
+        val="["; isep=""
+        for k in $(printf '%s\n' "${i:-}" | tr ',' ' '); do
+          val="$val$isep{\"id\":\"I_$k\",\"number\":$k,\"repository\":{\"name\":\"widgets\",\"owner\":{\"login\":\"acme\"}},\"url\":\"https://example.invalid/issues/$k\"}"; isep=","
+        done
+        val="$val]" ;;
+      *) continue ;;
+    esac
+    obj="$obj$osep\"$fld\":$val"; osep=","
+  done
+  out="$out$sep{$obj}"; sep=","
 done <<<"$rows"
 echo "$out]"
 EOF
@@ -1199,7 +1218,7 @@ c_same "$tmp/p13-m1.txt" "$(marker 1)" "13.4 the refused --abandon"
 [ "$(git -C "$d1" branch --show-current)" = feat/p3 ] || fail "13.4: slot 1 is not on feat/p3 any more: $(git -C "$d1" branch --show-current)"
 [ "$(cat "$tmp/gh.log")" = "$glog" ] || fail "13.4: the refused --abandon asked gh: $(cat "$tmp/gh.log")"
 # 5 no gh call but the reap's merged query (the takes ask it for slots with a clean tree; it finds nothing)
-other=$(grep -vxE 'pr list --state merged --head feat/p[0-9] --json number,headRefOid' "$tmp/gh.log" || true)
+other=$(grep -vxE 'pr list --state merged --head feat/p[0-9] --json number,headRefOid,createdAt,mergedAt,closingIssuesReferences' "$tmp/gh.log" || true)
 [ -z "$other" ] || fail "13.5: gh was asked something but the reap's merged query: $other"
 # clean up: every slot free, the local and the remote branches gone, the fake gh as it was
 rm -f "$d1/untracked.txt"
@@ -1210,6 +1229,148 @@ for b in feat/p1 feat/p2 feat/p3; do
   git -C "$tmp/origin.git" update-ref -d "refs/heads/$b" >/dev/null 2>&1 || true
 done
 rm -f "$tmp/p13-m1.txt" "$tmp/p13-m2.txt"
+claim_reset
+
+echo "== the record (iteration 41)"
+# The take, every report and every freeing append one line to <root>/.slots/ledger.tsv (eleven tab-separated fields:
+# kind, UTC stamp, slot, branch, name, skill, role, pr, from, to, issues); scripts/stages.sh prints the table from it.
+# The clock is the file NIGHTMILL_CLOCK_FILE (test only): seconds since 1970, UTC; T0 = 2026-11-07T08:00:00Z = 1794038400.
+# The warm-up of the test config copies <tmp>/warm-clock over the clock, so that a take lasts as long as the test says.
+reset_gh; claim_reset
+RL="$S1/ledger.tsv"
+RT0=1794038400
+RC="$tmp/clock"; RW="$tmp/warm-clock"
+export NIGHTMILL_CLOCK_FILE="$RC"
+rm -f "$RL"
+write_cfg "[ { \"command\": \"cat '$RW' > '$RC'\" } ]"
+rclock() { echo $((RT0 + $1)) > "$RC"; } # rclock <seconds after T0>
+rtake() { # rtake <start> <finish> <take arguments...>: a take that starts at T0+start and ends at T0+finish
+  local s=$1 f=$2; shift 2
+  rclock "$s"; echo $((RT0 + f)) > "$RW"
+  bash "$S" "$@" >"$tmp/rtake.out" 2>"$tmp/rtake.err" || fail "record: the take '$*' failed: $(cat "$tmp/rtake.out" "$tmp/rtake.err")"
+}
+rlines() { if [ -f "$RL" ]; then wc -l < "$RL" | tr -d ' '; else echo 0; fi; }
+rline() { sed -n "$1p" "$RL"; } # rline <n>: line n of the record
+rmerged() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" >> "$tmp/fix/merged.txt"; } # branch number commit createdAt mergedAt issues
+rstages() { ( cd "$tmp/work" && bash "$here/scripts/stages.sh" "$@" 2>&1 ); }
+rrow() { printf '  %-20s %4s %8s %6s\n' "$@"; }
+
+# 1 a take appends one take line: from the claim to the finish of the take (the warm-up moved the clock by 30 s)
+rtake 0 30 --take feat/st1 --slot 1
+[ "$(rlines)" = 1 ] || fail "record: a take wrote $(rlines) lines: $(cat "$RL")"
+[ "$(rline 1)" = "take${T}2026-11-07T08:00:30Z${T}1${T}feat/st1${T}take${T}${T}${T}${T}2026-11-07T08:00:00Z${T}2026-11-07T08:00:30Z${T}" ] || fail "record: the take line: $(rline 1)"
+
+# 2 every report appends one step line with its stamp; the marker keeps the seven keys of iteration 23
+rclock 35; rep --report slot-taken --slot 1 --skill next --role session
+[ "$rc" = 0 ] && [ -z "$out$err" ] || fail "record: report 1: exit $rc: $out / $err"
+rclock 100; rep --report implement --slot 1 --skill next --role implementer
+[ "$rc" = 0 ] && [ -z "$out$err" ] || fail "record: report 2: exit $rc: $out / $err"
+[ "$(rlines)" = 3 ] || fail "record: two reports gave $(rlines) lines in all: $(cat "$RL")"
+[ "$(rline 2)" = "step${T}2026-11-07T08:00:35Z${T}1${T}feat/st1${T}slot-taken${T}next${T}session${T}${T}${T}${T}" ] || fail "record: the step line of the first report: $(rline 2)"
+[ "$(rline 3)" = "step${T}2026-11-07T08:01:40Z${T}1${T}feat/st1${T}implement${T}next${T}implementer${T}${T}${T}${T}" ] || fail "record: the step line of the second report: $(rline 3)"
+[ "$(grep -o '"[a-z]*":' "$(marker 1)" | tr -d '\n')" = '"slot":"branch":"since":"skill":"role":"step":"reported":' ] || fail "record: marker keys: $(mtext 1)"
+[ "$(mget 1 step)/$(mget 1 skill)/$(mget 1 role)/$(mget 1 branch)" = "implement/next/implementer/feat/st1" ] || fail "record: the marker is read by key: $(mtext 1)"
+
+# 3 a refused report appends nothing
+rep --report check --slot 2 --skill next --role implementer
+[ "$rc" = 1 ] && [ "$err" = "slot 2 is not in use" ] || fail "record: the refused report: exit $rc: $err"
+rep --report "bad name" --slot 1 --skill next --role implementer
+[ "$rc" = 1 ] || fail "record: a report with a bad step name: exit $rc"
+[ "$(rlines)" = 3 ] || fail "record: a refused report appended a line: $(cat "$RL")"
+
+# 4 --release with a merged PR appends the free line with the PR's times and issue; the branch is gone, the table is not
+reset_gh; rmerged feat/st1 7 "$(git -C "$tmp/wt/slot-1" rev-parse HEAD)" 2026-11-07T08:02:40Z 2026-11-07T08:06:40Z 41
+rclock 500
+out=$(bash "$S" --release 1 2>/dev/null | tail -n 1)
+[ "$out" = "Slot 1 is free (was feat/st1, PR #7)." ] || fail "record: release: wrong output: $out"
+[ ! -f "$(marker 1)" ] || fail "record: release left the marker"
+if git -C "$tmp/work" show-ref --verify --quiet refs/heads/feat/st1; then fail "record: release left the branch"; fi
+[ "$(rlines)" = 4 ] || fail "record: the release wrote $(rlines) lines in all: $(cat "$RL")"
+[ "$(rline 4)" = "free${T}2026-11-07T08:08:20Z${T}1${T}feat/st1${T}released${T}${T}${T}7${T}2026-11-07T08:02:40Z${T}2026-11-07T08:06:40Z${T}41" ] || fail "record: the free line of the release: $(rline 4)"
+want=$(
+  echo "#41  feat/st1  slot 1  merged 2026-11-07T08:06:40Z"
+  rrow stage runs time share
+  rrow take 1 30s 8%
+  rrow not-reported 1 5s 1%
+  rrow slot-taken 1 1m05s 16%
+  rrow implement 1 1m00s 15%
+  rrow ci-and-merge 1 4m00s 60%
+  rrow total "" 6m40s 100%
+)
+got=$(rstages --issue 41)
+[ "$got" = "$want" ] || fail "record: stages --issue 41 after the release; got: [$got] wanted: [$want]"
+# a report after the slot is freed appends nothing and does not bring the marker back
+rep --report check --slot 1 --skill next --role implementer
+[ "$rc" = 1 ] && [ "$err" = "slot 1 is not in use" ] && [ ! -e "$(marker 1)" ] || fail "record: a report after the release: exit $rc: $err"
+[ "$(rlines)" = 4 ] || fail "record: a report after the release appended a line: $(cat "$RL")"
+
+# 5 --abandon of a finished take appends a take line and a free line with empty PR fields
+reset_gh
+rtake 1000 1020 --take feat/st2 --slot 1
+rclock 1100
+bash "$S" --abandon 1 >/dev/null 2>&1 || fail "record: --abandon failed"
+[ "$(rlines)" = 6 ] || fail "record: a take and an abandon gave $(rlines) lines in all: $(cat "$RL")"
+[ "$(rline 5)" = "take${T}2026-11-07T08:17:00Z${T}1${T}feat/st2${T}take${T}${T}${T}${T}2026-11-07T08:16:40Z${T}2026-11-07T08:17:00Z${T}" ] || fail "record: the take line before the abandon: $(rline 5)"
+[ "$(rline 6)" = "free${T}2026-11-07T08:18:20Z${T}1${T}feat/st2${T}abandoned${T}${T}${T}${T}${T}${T}" ] || fail "record: the free line of the abandon: $(rline 6)"
+git -C "$tmp/work" branch -D feat/st2 >/dev/null
+
+# 6 a take, a merged PR and a second take: the reap appends a free line with the name reaped
+rtake 2000 2020 --take feat/st3 --slot 1
+rmerged feat/st3 9 "$(git -C "$tmp/wt/slot-1" rev-parse refs/heads/feat/st3)" 2026-11-07T08:35:00Z 2026-11-07T08:40:00Z 55
+rtake 3000 3030 --take feat/st4
+[ "$(rlines)" = 9 ] || fail "record: take, reap and take gave $(rlines) lines in all: $(cat "$RL")"
+[ "$(rline 8)" = "free${T}2026-11-07T08:50:00Z${T}1${T}feat/st3${T}reaped${T}${T}${T}9${T}2026-11-07T08:35:00Z${T}2026-11-07T08:40:00Z${T}55" ] || fail "record: the free line of the reap: $(rline 8)"
+[ "$(rline 9)" = "take${T}2026-11-07T08:50:30Z${T}1${T}feat/st4${T}take${T}${T}${T}${T}2026-11-07T08:50:00Z${T}2026-11-07T08:50:30Z${T}" ] || fail "record: the take line after the reap: $(rline 9)"
+reset_gh
+rclock 3100
+bash "$S" --abandon 1 >/dev/null 2>&1 || fail "record: --abandon of the second take failed"
+git -C "$tmp/work" branch -D feat/st3 feat/st4 >/dev/null 2>&1 || true
+[ "$(rlines)" = 10 ] || fail "record: the abandon of the second take gave $(rlines) lines in all"
+
+# 7 a dead claim freed with --abandon appends nothing, because that take wrote no line
+dead=$(dead_pid)
+taking_text 1 feat/st6 2026-11-05T09:00:00 "$dead" > "$(marker 1)"
+rep --abandon 1
+[ "$rc" = 0 ] && grep -q 'a take that did not finish' <<<"$out" || fail "record: --abandon of a dead claim: exit $rc: $out / $err"
+[ "$(rlines)" = 10 ] || fail "record: the abandon of a dead claim appended a line: $(tail -n 1 "$RL")"
+
+# 8 a record that cannot be written changes nothing else: one note on standard error, after the retries
+cp "$RL" "$tmp/ledger.saved"
+rm -f "$RL"; mkdir "$RL"
+json_marker 1 feat/st5 2026-11-05T09:00:00 > "$(marker 1)"
+rep --report check --slot 1 --skill next --role implementer
+[ "$rc" = 0 ] || fail "record: a report with an unwritable record exited $rc: $err"
+[ "$(mget 1 step)/$(mget 1 skill)/$(mget 1 role)" = "check/next/implementer" ] || fail "record: the marker was not updated: $(mtext 1)"
+[ -z "$out" ] || fail "record: a report with an unwritable record printed $out"
+[ "$(printf '%s\n' "$err" | wc -l | tr -d ' ')" = 1 ] && [[ "$err" == "slot: the record was not written ("*")" ]] || fail "record: the note about the unwritable record: [$err]"
+rmdir "$RL"; cp "$tmp/ledger.saved" "$RL"
+rm -f "$(marker 1)"
+
+# 9 an unusable clock file gives one note and a stamp from the system clock
+json_marker 1 feat/st7 2026-11-05T09:00:00 > "$(marker 1)"
+note='ledger: NIGHTMILL_CLOCK_FILE is not usable; using the system clock'
+for bad in missing text; do
+  if [ "$bad" = text ]; then echo "later" > "$tmp/badclock"; else rm -f "$tmp/badclock"; fi
+  n0=$(rlines)
+  NIGHTMILL_CLOCK_FILE="$tmp/badclock" rep --report check --slot 1 --skill next --role implementer
+  [ "$rc" = 0 ] || fail "record: unusable clock ($bad): exit $rc: $err"
+  grep -qxF "$note" <<<"$err" || fail "record: unusable clock ($bad): no note: [$err]"
+  [ "$(rlines)" = $((n0 + 1)) ] || fail "record: unusable clock ($bad): the report wrote $(( $(rlines) - n0 )) lines"
+  stamp=$(tail -n 1 "$RL" | cut -f2)
+  [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "record: unusable clock ($bad): the stamp is not UTC YYYY-MM-DDTHH:MM:SSZ: $stamp"
+  d=$(( $(date -u +%s) - $(date -u -d "$stamp" +%s) )); if [ "$d" -lt 0 ]; then d=$((-d)); fi
+  [ "$d" -le 300 ] || fail "record: unusable clock ($bad): the stamp $stamp is $d s from the system clock"
+done
+rm -f "$(marker 1)"
+
+# 10 every line has exactly eleven tab-separated fields
+bad=$(awk -F '\t' 'NF != 11 { print NR ": " $0 }' "$RL")
+[ -z "$bad" ] || fail "record: lines without eleven fields: $bad"
+[ -s "$RL" ] || fail "record: the record is empty"
+if grep -q $'\r' "$RL"; then fail "record: the record has carriage returns"; fi
+# the record is no marker: the slot status does not see it
+[ "$(bash "$S" --status --porcelain)" = "$(printf '1\tfree\n2\tfree')" ] || fail "record: the status changed with a record: $(bash "$S" --status --porcelain)"
+unset NIGHTMILL_CLOCK_FILE
 claim_reset
 
 echo "SMOKE OK"

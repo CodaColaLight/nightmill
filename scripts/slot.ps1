@@ -36,6 +36,8 @@
 # A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
 # claim whose process has ended is dead: --status shows take-died, and only -Abandon frees it. Same behaviour as
 # slot.sh.
+# Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
+# scripts/stages.ps1); a failed append prints one note and changes nothing else. Same behaviour as slot.sh.
 param(
   [string]$Take,
   [int]$Release = 0,
@@ -82,6 +84,28 @@ $rootRel = "../" + (Split-Path $main -Leaf) + "-wt"
 if ($wt -and $wt.root) { $rootRel = $wt.root }
 $root = [System.IO.Path]::GetFullPath((Join-Path $main $rootRel))
 $state = Join-Path $root ".slots"
+. (Join-Path $PSScriptRoot "lib\ledger.ps1")
+$ledger = Join-Path $state "ledger.tsv"
+# Write-Record <kind> <slot> <branch> <name> [skill role pr from to issues]: one line of the record, stamped now
+function Write-Record([string]$kind, $n, [string]$branch, [string]$name, [string]$sk = "", [string]$ro = "", [string]$pr = "", [string]$from = "", [string]$to = "", [string]$issues = "") {
+  Add-LedgerLine $ledger @($kind, (Get-LedgerStamp (Get-LedgerClock)), "$n", $branch, $name, $sk, $ro, $pr, $from, $to, $issues)
+}
+# Get-PrTimes <pr>: the createdAt, mergedAt and closing issue numbers (joined by ,) of a PR object of gh's JSON;
+# PowerShell 7 reads a date-like string as a date, which is written back as gh gives it (UTC, Z)
+function Get-PrTimes($p) {
+  $vals = @()
+  foreach ($k in "createdAt", "mergedAt") {
+    $v = $null
+    if ($null -ne $p -and $p.PSObject.Properties[$k]) { $v = $p.PSObject.Properties[$k].Value }
+    if ($v -is [datetime]) { $v = $v.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture) + "Z" }
+    $vals += $(if ($null -eq $v) { "" } else { [string]$v })
+  }
+  $nums = @()
+  if ($null -ne $p -and $p.PSObject.Properties["closingIssuesReferences"]) {
+    foreach ($ref in @($p.closingIssuesReferences)) { if ($null -ne $ref -and $null -ne $ref.number) { $nums += "$($ref.number)" } }
+  }
+  return [pscustomobject]@{ From = $vals[0]; To = $vals[1]; Issues = ($nums -join ",") }
+}
 
 if ($env:WORKER_SLOTS) {
   if ($env:WORKER_SLOTS -notmatch '^[1-9][0-9]?$') { throw "WORKER_SLOTS must be a number from 1 to 99" }
@@ -277,7 +301,7 @@ function Invoke-Reap {
       [Console]::Error.WriteLine("slot ${n}: not checked for a merged PR (gh is not on the PATH)")
       continue
     }
-    $r = Invoke-Native $gc.Source @("pr", "list", "--state", "merged", "--head", $branch, "--json", "number,headRefOid")
+    $r = Invoke-Native $gc.Source @("pr", "list", "--state", "merged", "--head", $branch, "--json", "number,headRefOid,createdAt,mergedAt,closingIssuesReferences")
     if ($r.Code -ne 0) {
       [Console]::Error.WriteLine("slot ${n}: not checked for a merged PR ($(Get-FirstLine $r.Err))")
       continue
@@ -289,8 +313,9 @@ function Invoke-Reap {
       continue
     }
     # the first merged PR, in the order gh printed them, whose head commit is the tip of the local branch
-    $pr = $null
-    foreach ($p in $prs) { if ([string]$p.headRefOid -ceq $tip) { $pr = $p.number; break } }
+    $pr = $null; $prObj = $null
+    # Windows PowerShell passes a JSON array on as one item; the pipe unrolls it to one object per PR
+    foreach ($p in @($prs | ForEach-Object { $_ })) { if ([string]$p.headRefOid -ceq $tip) { $pr = $p.number; $prObj = $p; break } }
     if ($null -eq $pr) { continue }
     if ($fetched -eq 0) {
       $f = Invoke-Native "git" @("fetch", "origin", $baseBranch)
@@ -304,6 +329,8 @@ function Invoke-Reap {
     if ($s.Code -ne 0) { continue }
     $null = Invoke-Native "git" @("branch", "-D", $branch)
     Remove-Item (Get-Marker $n)
+    $pt = Get-PrTimes $prObj
+    Write-Record "free" $n $branch "reaped" "" "" "$pr" $pt.From $pt.To $pt.Issues
     Write-Host "Slot $n is free (was $branch, PR #$pr), released automatically." -ForegroundColor Green
     $script:freed++
   }
@@ -456,7 +483,10 @@ if ($hasReport) {
   $tmpReport = Join-Path $state "slot-$Slot.report.tmp"
   Write-Lf $tmpReport (($lines -join "`n") + "`n")
   # moved over the marker only while it still exists: a report never brings back a released slot
-  if (Test-Path -LiteralPath $mp) { [System.IO.File]::Replace($tmpReport, $mp, [NullString]::Value) }
+  if (Test-Path -LiteralPath $mp) {
+    [System.IO.File]::Replace($tmpReport, $mp, [NullString]::Value)
+    Write-Record "step" $Slot (Get-Text $m 'branch') $Report $Skill $Role
+  }
   else { Remove-Item -LiteralPath $tmpReport }
   exit 0
 }
@@ -537,6 +567,7 @@ function Invoke-Claim([int]$n) {
   $tmpc = Join-Path $state "slot-$n.claim.$PID.tmp"
   $mk = Get-Marker $n
   $script:claimSince = (Get-Date).ToString("s")
+  $script:claimAt = Get-LedgerClock
   try { Write-Lf $tmpc (Get-TakingText $n $Take $script:claimSince "$PID") }
   catch {
     [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message))
@@ -613,6 +644,8 @@ function Complete-Take {
     Set-LeftClaim
     Exit-Line "write marker failed (exit 1); slot $n stays claimed: free it with -Abandon $n"
   }
+  $doneAt = Get-LedgerStamp (Get-LedgerClock)
+  Add-LedgerLine $ledger @("take", $doneAt, "$n", $Take, "take", "", "", "", (Get-LedgerStamp $script:claimAt), $doneAt, "")
   Show-Hints $n $dir $Take
 }
 
@@ -697,7 +730,11 @@ if ($Release -gt 0) {
   if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir" }
   git fetch origin $baseBranch
   if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-  $merged = gh pr list --state merged --head $m.branch --json number -q '.[0].number'
+  $prOut = gh pr list --state merged --head $m.branch --json number,createdAt,mergedAt,closingIssuesReferences
+  $pr0 = $null
+  try { $pr0 = ConvertFrom-Json -InputObject ((@($prOut) -join "`n")) | ForEach-Object { $_ } | Select-Object -First 1 } catch { $pr0 = $null }
+  $merged = ""
+  if ($null -ne $pr0 -and $null -ne $pr0.PSObject.Properties["number"]) { $merged = "$($pr0.number)" }
   if (-not $merged) {
     throw "no merged PR for $($m.branch). Merge it first, or free the slot with -Abandon $n."
   }
@@ -705,6 +742,8 @@ if ($Release -gt 0) {
   if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
   git branch -D $m.branch
   Remove-Item (Get-Marker $n)
+  $pt = Get-PrTimes $pr0
+  Write-Record "free" $n ([string]$m.branch) "released" "" "" $merged $pt.From $pt.To $pt.Issues
   Write-Host "Slot $n is free (was $($m.branch), PR #$merged)." -ForegroundColor Green
   exit 0
 }
@@ -732,6 +771,7 @@ if ($Abandon -gt 0) {
   git -C $dir switch --detach $Base
   if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
   Remove-Item (Get-Marker $n)
+  Write-Record "free" $n ([string]$m.branch) "abandoned"
   Write-Host "Slot $n is free (was $($m.branch); the local branch is kept, delete it yourself if unwanted)." -ForegroundColor Yellow
   exit 0
 }

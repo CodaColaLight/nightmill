@@ -39,8 +39,10 @@ function SlotE([string]$arguments, [hashtable]$extraEnv = @{}) {
 }
 
 # A fake gh (a gh.cmd first on the PATH for the whole test): it answers "pr list" from $env:GH_FIX\merged.txt (rows
-# of branch TAB number TAB head commit; --state merged only, an open query gives an empty list), logs every call to
-# $env:GH_LOG and fails when GH_FAIL is set. With -q it prints the first number, as gh does for '.[0].number'.
+# of branch TAB number TAB head commit, then (iteration 41) TAB createdAt TAB mergedAt TAB the closing issue numbers
+# joined by commas, all three optional; --state merged only, an open query gives an empty list), logs every call to
+# $env:GH_LOG and fails when GH_FAIL is set. With -q it prints the first number, as gh does for '.[0].number'. With
+# --json it prints the requested fields among number, headRefOid, createdAt, mergedAt and closingIssuesReferences.
 $bin = Join-Path $tmp "bin"; $fix = Join-Path $tmp "fix"
 New-Item -ItemType Directory $bin, $fix | Out-Null
 $ghLog = Join-Path $tmp "gh.log"
@@ -50,11 +52,12 @@ $ghLog = Join-Path $tmp "gh.log"
 Add-Content -Path $env:GH_LOG -Value ($args -join " ")
 if ($env:GH_FAIL) { [Console]::Error.WriteLine("HTTP 401: bad credentials"); exit 1 }
 if ("$($args[0]) $($args[1])" -ne "pr list") { [Console]::Error.WriteLine("unexpected gh call: $($args -join ' ')"); exit 1 }
-$state = ""; $head = ""; $jq = ""
+$state = ""; $head = ""; $jq = ""; $fields = "number,headRefOid"
 for ($i = 2; $i -lt $args.Count; $i++) {
   switch ($args[$i]) {
     "--state" { $state = $args[$i + 1]; $i++ }
     "--head" { $head = $args[$i + 1]; $i++ }
+    "--json" { $fields = $args[$i + 1]; $i++ }
     { $_ -eq "-q" -or $_ -eq "--jq" } { $jq = $args[$i + 1]; $i++ }
   }
 }
@@ -65,7 +68,24 @@ foreach ($line in [System.IO.File]::ReadAllLines((Join-Path $env:GH_FIX "merged.
   if ($f.Count -ge 3 -and $f[0] -ceq $head) { $rows += , $f }
 }
 if ($jq) { if ($rows.Count -gt 0) { [Console]::Out.Write($rows[0][1]) }; exit 0 }
-$items = @($rows | ForEach-Object { '{"number":' + $_[1] + ',"headRefOid":"' + $_[2] + '"}' })
+$items = @($rows | ForEach-Object {
+  $f = $_
+  $parts = @()
+  foreach ($fld in ($fields -split ",")) {
+    switch ($fld) {
+      "number" { $parts += '"number":' + $f[1] }
+      "headRefOid" { $parts += '"headRefOid":"' + $f[2] + '"' }
+      "createdAt" { $parts += '"createdAt":"' + $(if ($f.Count -gt 3) { $f[3] } else { "" }) + '"' }
+      "mergedAt" { $parts += '"mergedAt":"' + $(if ($f.Count -gt 4) { $f[4] } else { "" }) + '"' }
+      "closingIssuesReferences" {
+        $refs = @()
+        if ($f.Count -gt 5 -and $f[5]) { foreach ($k in ($f[5] -split ",")) { $refs += '{"id":"I_' + $k + '","number":' + $k + ',"repository":{"name":"widgets","owner":{"login":"acme"}},"url":"https://example.invalid/issues/' + $k + '"}' } }
+        $parts += '"closingIssuesReferences":[' + ($refs -join ",") + ']'
+      }
+    }
+  }
+  '{' + ($parts -join ",") + '}'
+})
 [Console]::Out.Write("[" + ($items -join ",") + "]")
 exit 0
 '@)
@@ -1292,7 +1312,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   if ((Get-Current 1) -ne "feat/p3") { Fail "13.4: slot 1 is not on feat/p3 any more: $(Get-Current 1)" }
   if ((Get-GhLog) -cne $ghBefore) { Fail "13.4: the refused -Abandon asked gh: $(Get-GhLog)" }
   # 5 no gh call but the reap's merged query (the takes ask it for slots with a clean tree; it finds nothing)
-  $otherCalls = @((Get-GhLog) -split "`r?`n" | Where-Object { $_ -ne "" -and $_ -cnotmatch '^pr list --state merged --head feat/p[0-9] --json number,headRefOid$' })
+  $otherCalls = @((Get-GhLog) -split "`r?`n" | Where-Object { $_ -ne "" -and $_ -cnotmatch '^pr list --state merged --head feat/p[0-9] --json number,headRefOid,createdAt,mergedAt,closingIssuesReferences$' })
   if ($otherCalls.Count -ne 0) { Fail "13.5: gh was asked something but the reap's merged query: $($otherCalls -join ' | ')" }
   # clean up: every slot free, the local and the remote branches gone, the fake gh as it was
   Remove-Item "$d1\untracked.txt" -Force
@@ -1301,6 +1321,168 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   $r = SlotE "-Abandon 2"
   if ($r.Code -ne 0) { Fail "13.5: clean-up: -Abandon 2 failed: $($r.Err)" }
   Drop-P13Branches
+  Claim-Reset
+
+  Write-Host "== the record (iteration 41)"
+  # The take, every report and every freeing append one line to <root>\.slots\ledger.tsv (eleven tab-separated fields:
+  # kind, UTC stamp, slot, branch, name, skill, role, pr, from, to, issues); scripts\stages.ps1 prints the table from it.
+  # The clock is the file NIGHTMILL_CLOCK_FILE (test only): seconds since 1970, UTC; T0 = 2026-11-07T08:00:00Z = 1794038400.
+  # The warm-up of the test config copies <tmp>\warm-clock over the clock, so that a take lasts as long as the test says.
+  Reset-Gh; Claim-Reset
+  $RL = "$S1\ledger.tsv"
+  $RT0 = [long]1794038400
+  $RC = "$tmp\clock"; $RW = "$tmp\warm-clock"
+  $env:NIGHTMILL_CLOCK_FILE = $RC
+  Remove-Item $RL -Force -ErrorAction SilentlyContinue
+  Write-Cfg "[ { `"command`": `"[System.IO.File]::WriteAllText('$tf/clock', [System.IO.File]::ReadAllText('$tf/warm-clock'))`" } ]"
+  function RClock([long]$secs) { [System.IO.File]::WriteAllText($RC, "$($RT0 + $secs)`n") }
+  function RTake([long]$start, [long]$finish, [string]$arguments) { # a take that starts at T0+s and ends at T0+f
+    RClock $start; [System.IO.File]::WriteAllText($RW, "$($RT0 + $finish)`n")
+    $r = SlotE $arguments
+    if ($r.Code -ne 0) { Fail "record: the take '$arguments' failed: $($r.Out) / $($r.Err)" }
+  }
+  function RLines { if (Test-Path -LiteralPath $RL -PathType Leaf) { @([System.IO.File]::ReadAllLines($RL)).Count } else { 0 } }
+  function RText { if (Test-Path -LiteralPath $RL -PathType Leaf) { [System.IO.File]::ReadAllText($RL) } else { "<no record>" } }
+  function RLine([int]$n) { if (Test-Path -LiteralPath $RL -PathType Leaf) { @([System.IO.File]::ReadAllLines($RL))[$n - 1] } else { "<no record>" } }
+  function RMerged([string]$b, [int]$n, [string]$oid, [string]$created, [string]$mergedAt, [string]$issues) { [System.IO.File]::AppendAllText("$fix\merged.txt", "$b`t$n`t$oid`t$created`t$mergedAt`t$issues`n") }
+  function RStages([string]$arguments) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $psExe
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$here\scripts\stages.ps1`" $arguments"
+    $psi.WorkingDirectory = "$tmp\work"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $errTask = $p.StandardError.ReadToEndAsync()
+    $o = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit()
+    ($o -replace "`r`n", "`n").TrimEnd("`n") + ($errTask.Result -replace "`r`n", "`n").TrimEnd("`n")
+  }
+  function RRow([string]$a, [string]$b, [string]$c, [string]$d) { "  {0,-20} {1,4} {2,8} {3,6}" -f $a, $b, $c, $d }
+
+  # 1 a take appends one take line: from the claim to the finish of the take (the warm-up moved the clock by 30 s)
+  RTake 0 30 "-Take feat/st1 -Slot 1"
+  if ((RLines) -ne 1) { Fail "record: a take wrote $(RLines) lines: $(RText)" }
+  if ((RLine 1) -cne "take${T}2026-11-07T08:00:30Z${T}1${T}feat/st1${T}take${T}${T}${T}${T}2026-11-07T08:00:00Z${T}2026-11-07T08:00:30Z${T}") { Fail "record: the take line: $(RLine 1)" }
+
+  # 2 every report appends one step line with its stamp; the marker keeps the seven keys of iteration 23
+  RClock 35; $r = SlotE "-Report slot-taken -Slot 1 -Skill next -Role session"
+  if ($r.Code -ne 0 -or $r.Out -or $r.Err) { Fail "record: report 1: exit $($r.Code): $($r.Out) / $($r.Err)" }
+  RClock 100; $r = SlotE "-Report implement -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 0 -or $r.Out -or $r.Err) { Fail "record: report 2: exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if ((RLines) -ne 3) { Fail "record: two reports gave $(RLines) lines in all: $(RText)" }
+  if ((RLine 2) -cne "step${T}2026-11-07T08:00:35Z${T}1${T}feat/st1${T}slot-taken${T}next${T}session${T}${T}${T}${T}") { Fail "record: the step line of the first report: $(RLine 2)" }
+  if ((RLine 3) -cne "step${T}2026-11-07T08:01:40Z${T}1${T}feat/st1${T}implement${T}next${T}implementer${T}${T}${T}${T}") { Fail "record: the step line of the second report: $(RLine 3)" }
+  if ((Get-Keys 1) -cne "slot,branch,since,skill,role,step,reported") { Fail "record: marker keys: $(MText 1)" }
+  if ("$(MGet 1 'step')/$(MGet 1 'skill')/$(MGet 1 'role')/$(MGet 1 'branch')" -cne "implement/next/implementer/feat/st1") { Fail "record: the marker is read by key: $(MText 1)" }
+
+  # 3 a refused report appends nothing
+  $r = SlotE "-Report check -Slot 2 -Skill next -Role implementer"
+  if ($r.Code -ne 1 -or $r.Err -cne "slot 2 is not in use`n") { Fail "record: the refused report: exit $($r.Code): $($r.Err)" }
+  $r = SlotE "-Report `"bad name`" -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 1) { Fail "record: a report with a bad step name: exit $($r.Code)" }
+  if ((RLines) -ne 3) { Fail "record: a refused report appended a line: $(RText)" }
+
+  # 4 -Release with a merged PR appends the free line with the PR's times and issue; the branch is gone, the table is not
+  Reset-Gh; RMerged feat/st1 7 (Get-Head 1) "2026-11-07T08:02:40Z" "2026-11-07T08:06:40Z" "41"
+  RClock 500
+  $r = SlotE "-Release 1"
+  if ($r.Code -ne 0 -or (($r.Out.Trim() -split "`n")[-1]).Trim() -cne "Slot 1 is free (was feat/st1, PR #7).") { Fail "record: release: wrong output: $($r.Out) / $($r.Err)" }
+  if (Test-Path (Marker 1)) { Fail "record: release left the marker" }
+  if (Test-Branch $work "feat/st1") { Fail "record: release left the branch" }
+  if ((RLines) -ne 4) { Fail "record: the release wrote $(RLines) lines in all: $(RText)" }
+  if ((RLine 4) -cne "free${T}2026-11-07T08:08:20Z${T}1${T}feat/st1${T}released${T}${T}${T}7${T}2026-11-07T08:02:40Z${T}2026-11-07T08:06:40Z${T}41") { Fail "record: the free line of the release: $(RLine 4)" }
+  $want = (@(
+      "#41  feat/st1  slot 1  merged 2026-11-07T08:06:40Z",
+      (RRow "stage" "runs" "time" "share"),
+      (RRow "take" "1" "30s" "8%"),
+      (RRow "not-reported" "1" "5s" "1%"),
+      (RRow "slot-taken" "1" "1m05s" "16%"),
+      (RRow "implement" "1" "1m00s" "15%"),
+      (RRow "ci-and-merge" "1" "4m00s" "60%"),
+      (RRow "total" "" "6m40s" "100%")
+    ) -join "`n")
+  $got = RStages "-Issue 41"
+  if ($got -cne $want) { Fail "record: stages -Issue 41 after the release; got: [$got] wanted: [$want]" }
+  # a report after the slot is freed appends nothing and does not bring the marker back
+  $r = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 1 -or $r.Err -cne "slot 1 is not in use`n" -or (Test-Path (Marker 1))) { Fail "record: a report after the release: exit $($r.Code): $($r.Err)" }
+  if ((RLines) -ne 4) { Fail "record: a report after the release appended a line: $(RText)" }
+
+  # 5 -Abandon of a finished take appends a take line and a free line with empty PR fields
+  Reset-Gh
+  RTake 1000 1020 "-Take feat/st2 -Slot 1"
+  RClock 1100
+  $r = SlotE "-Abandon 1"
+  if ($r.Code -ne 0) { Fail "record: -Abandon failed: $($r.Out) / $($r.Err)" }
+  if ((RLines) -ne 6) { Fail "record: a take and an abandon gave $(RLines) lines in all: $(RText)" }
+  if ((RLine 5) -cne "take${T}2026-11-07T08:17:00Z${T}1${T}feat/st2${T}take${T}${T}${T}${T}2026-11-07T08:16:40Z${T}2026-11-07T08:17:00Z${T}") { Fail "record: the take line before the abandon: $(RLine 5)" }
+  if ((RLine 6) -cne "free${T}2026-11-07T08:18:20Z${T}1${T}feat/st2${T}abandoned${T}${T}${T}${T}${T}${T}") { Fail "record: the free line of the abandon: $(RLine 6)" }
+  Gq -C $work branch -D feat/st2
+
+  # 6 a take, a merged PR and a second take: the reap appends a free line with the name reaped
+  RTake 2000 2020 "-Take feat/st3 -Slot 1"
+  RMerged feat/st3 9 (Get-Ref "feat/st3") "2026-11-07T08:35:00Z" "2026-11-07T08:40:00Z" "55"
+  RTake 3000 3030 "-Take feat/st4"
+  if ((RLines) -ne 9) { Fail "record: take, reap and take gave $(RLines) lines in all: $(RText)" }
+  if ((RLine 8) -cne "free${T}2026-11-07T08:50:00Z${T}1${T}feat/st3${T}reaped${T}${T}${T}9${T}2026-11-07T08:35:00Z${T}2026-11-07T08:40:00Z${T}55") { Fail "record: the free line of the reap: $(RLine 8)" }
+  if ((RLine 9) -cne "take${T}2026-11-07T08:50:30Z${T}1${T}feat/st4${T}take${T}${T}${T}${T}2026-11-07T08:50:00Z${T}2026-11-07T08:50:30Z${T}") { Fail "record: the take line after the reap: $(RLine 9)" }
+  Reset-Gh
+  RClock 3100
+  $r = SlotE "-Abandon 1"
+  if ($r.Code -ne 0) { Fail "record: -Abandon of the second take failed: $($r.Out) / $($r.Err)" }
+  Gq -C $work branch -D feat/st3 feat/st4
+  if ((RLines) -ne 10) { Fail "record: the abandon of the second take gave $(RLines) lines in all" }
+
+  # 7 a dead claim freed with -Abandon appends nothing, because that take wrote no line
+  $dp = Start-Process -FilePath $psExe -ArgumentList "-NoProfile", "-Command", "exit" -PassThru -WindowStyle Hidden
+  $dp.WaitForExit()
+  Write-Text (Marker 1) (Taking-Text 1 "feat/st6" "2026-11-05T09:00:00" "$($dp.Id)")
+  $r = SlotE "-Abandon 1"
+  if ($r.Code -ne 0 -or -not $r.Out.Contains("a take that did not finish")) { Fail "record: -Abandon of a dead claim: exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if ((RLines) -ne 10) { Fail "record: the abandon of a dead claim appended a line: $(RLine (RLines))" }
+
+  # 8 a record that cannot be written changes nothing else: one note on standard error, after the retries
+  $saved = [System.IO.File]::ReadAllText($RL)
+  Remove-Item $RL -Force; New-Item -ItemType Directory $RL | Out-Null
+  Write-Text (Marker 1) "{`n  `"slot`": 1,`n  `"branch`": `"feat/st5`",`n  `"since`": `"2026-11-05T09:00:00`"`n}`n"
+  $r = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
+  if ($r.Code -ne 0) { Fail "record: a report with an unwritable record exited $($r.Code): $($r.Err)" }
+  if ("$(MGet 1 'step')/$(MGet 1 'skill')/$(MGet 1 'role')" -cne "check/next/implementer") { Fail "record: the marker was not updated: $(MText 1)" }
+  if ($r.Out) { Fail "record: a report with an unwritable record printed $($r.Out)" }
+  $errLines = @($r.Err -split "`n" | Where-Object { $_ -ne "" })
+  if ($errLines.Count -ne 1 -or -not ($errLines[0].StartsWith("slot: the record was not written (") -and $errLines[0].EndsWith(")"))) { Fail "record: the note about the unwritable record: [$($r.Err)]" }
+  Remove-Item $RL -Recurse -Force; [System.IO.File]::WriteAllText($RL, $saved)
+  Remove-Item (Marker 1) -Force
+
+  # 9 an unusable clock file gives one note and a stamp from the system clock
+  Write-Text (Marker 1) "{`n  `"slot`": 1,`n  `"branch`": `"feat/st7`",`n  `"since`": `"2026-11-05T09:00:00`"`n}`n"
+  $note = "ledger: NIGHTMILL_CLOCK_FILE is not usable; using the system clock"
+  foreach ($bad in "missing", "text") {
+    if ($bad -eq "text") { [System.IO.File]::WriteAllText("$tmp\badclock", "later`n") } else { Remove-Item "$tmp\badclock" -Force -ErrorAction SilentlyContinue }
+    $n0 = RLines
+    $r = SlotE "-Report check -Slot 1 -Skill next -Role implementer" @{ NIGHTMILL_CLOCK_FILE = "$tmp\badclock" }
+    if ($r.Code -ne 0) { Fail "record: unusable clock ($bad): exit $($r.Code): $($r.Err)" }
+    if (-not (@($r.Err -split "`n") -ccontains $note)) { Fail "record: unusable clock ($bad): no note: [$($r.Err)]" }
+    if ((RLines) -ne $n0 + 1) { Fail "record: unusable clock ($bad): the report wrote $((RLines) - $n0) lines" }
+    $stamp = ((RLine (RLines)) -split $T)[1]
+    if ($stamp -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { Fail "record: unusable clock ($bad): the stamp is not UTC YYYY-MM-DDTHH:MM:SSZ: $stamp" }
+    $at = [DateTimeOffset]::Parse($stamp, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal)
+    $d = [Math]::Abs(([DateTimeOffset]::UtcNow - $at).TotalSeconds)
+    if ($d -gt 300) { Fail "record: unusable clock ($bad): the stamp $stamp is $d s from the system clock" }
+  }
+  Remove-Item (Marker 1) -Force
+
+  # 10 every line has exactly eleven tab-separated fields
+  $badLines = @([System.IO.File]::ReadAllLines($RL) | Where-Object { ($_ -split "`t", -1).Count -ne 11 })
+  if ($badLines.Count -gt 0) { Fail "record: lines without eleven fields: $($badLines -join ' | ')" }
+  if ((RLines) -eq 0) { Fail "record: the record is empty" }
+  if ([System.IO.File]::ReadAllText($RL).Contains("`r")) { Fail "record: the record has carriage returns" }
+  # the record is no marker: the slot status does not see it
+  $p = Porc
+  if (($p -join "|") -cne "1${T}free|2${T}free") { Fail "record: the status changed with a record: $($p -join ' | ')" }
+  Remove-Item Env:NIGHTMILL_CLOCK_FILE
   Claim-Reset
 
   Write-Host "SMOKE OK" -ForegroundColor Green
