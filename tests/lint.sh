@@ -374,6 +374,14 @@ fi
 if ! sed -n '/^## 4\. Confirm once/,/^## 5\. Apply/p' "$ini" | grep -qF 'Run permissions'; then
   echo "FAIL: $ini: the Confirm once step does not name Run permissions"; fail=1
 fi
+# a second run changes nothing: the Detect bullet and the exact text of the Run permissions line
+rp=$(awk '/^- \*\*Run permissions\*\*/ { s = 1; print; next } s && /^- \*\*/ { exit } s { print }' "$ini")
+for w in '  - **Detect.**' 'string equality' '.claude/settings.json' 'permissions.additionalDirectories' \
+         '**exists** when all are present' 'exists (defaultMode bypassPermissions)' \
+         '  - **Show the exact text**' 'the whole file' 'the diff' 'appended at the end of `permissions.allow`' \
+         'every other' 'byte unchanged' '2-space indentation, LF'; do
+  printf '%s\n' "$rp" | grep -qF -- "$w" || { echo "FAIL: $ini: the Run permissions line does not say (detect or exact text): $w"; fail=1; }
+done
 # no broad rule: no bare git push, no git wildcard, no git -C wildcard, no hard reset
 for w in 'Bash(git push *)' 'Bash(git push:*)' 'Bash(git *)' 'Bash(git:*)' 'Bash(git -C *' 'Bash(git -C:*)' 'reset --hard'; do
   if grep -qF -- "$w" "$ini"; then echo "FAIL: $ini contains the too broad rule text: $w"; fail=1; fi
