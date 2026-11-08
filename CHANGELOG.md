@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-11-08)
+
 - Iteration 42 (#200): the check runs its independent steps in parallel and has a quick mode. `tests/check.sh` runs
   up to `verification.checkJobs` steps at once (new key, default 4, capped at the processors; `--jobs N` for one run;
   1 runs them one after another), prints each step whole in a fixed order with its time, and keeps its verdict;
