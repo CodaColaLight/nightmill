@@ -133,7 +133,8 @@ foreach ($t in $sel) {
   Emit "$who  $($t.Branch)  slot $($t.Slot)  $st"
 
   $rows = New-Object System.Collections.ArrayList
-  $byName = @{}
+  # case-sensitive, like the awk twin: step names that differ only in case stay separate rows
+  $byName = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
   $add = {
     param([string]$name, $secs)
     if (-not $byName.ContainsKey($name)) {

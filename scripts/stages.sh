@@ -40,5 +40,7 @@ if [ ! -e "$record" ]; then echo "no record yet: $record"; exit 0; fi
 if [ ! -f "$record" ] || [ ! -r "$record" ]; then echo "stages: cannot read $record" >&2; exit 1; fi
 
 ledger_clock
+# ledger_s is set by ledger_clock (lib/ledger.sh)
+# shellcheck disable=SC2154
 LC_ALL=C awk -v NOW="$ledger_s" -v MODE="$mode" -v N="$n" -v PATHNAME="$record" -f "$here/lib/stages.awk" "$record" \
   || { echo "stages: cannot read $record" >&2; exit 1; }

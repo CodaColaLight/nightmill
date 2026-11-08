@@ -17,6 +17,8 @@
 
 LEDGER_NOTED=0
 
+# ledger_s is the output of ledger_clock: a global its callers (slot.sh, stages.sh, check.sh) read after the call
+# shellcheck disable=SC2034
 ledger_clock() {
   local f=${NIGHTMILL_CLOCK_FILE:-} v=""
   if [ -n "$f" ]; then

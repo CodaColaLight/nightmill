@@ -97,6 +97,8 @@ ledger="$state/ledger.tsv"
 # record <kind> <slot> <branch> <name> <skill> <role> <pr> <from> <to> <issues>: one line of the record, stamped now
 record() {
   ledger_clock
+  # ledger_s is set by ledger_clock (lib/ledger.sh)
+  # shellcheck disable=SC2154
   ledger_append "$ledger" "$1" "$(ledger_stamp "$ledger_s")" "${@:2}"
 }
 # pr_times FLAT PREFIX: the createdAt, mergedAt and closing issue numbers (joined by ,) of the PR at PREFIX ([0]) of
