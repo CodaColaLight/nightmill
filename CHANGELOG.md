@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 43 (#109): `/init` writes the permissions an unattended run needs. A new plan line, Run permissions,
+  adds to `.claude/settings.local.json` the slot root as an additional directory, an edit rule for the slots, the git
+  commands the skills run in the main checkout and in each slot, the slot, room, validate-config and status scripts at
+  the plugin's folder, and the quick check; the skills write each of those commands in one form, and each skill that
+  injects the config declares `allowed-tools` for it. No config key.
+
 ## 0.5.0 (2026-11-08)
 
 - Iteration 42 (#200): the check runs its independent steps in parallel and has a quick mode. `tests/check.sh` runs

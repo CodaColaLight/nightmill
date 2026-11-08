@@ -1,6 +1,6 @@
 # Iteration 43: /init writes the permissions that run /spec, /next and /fix to a pull request without a prompt
 
-Status: draft, awaiting approval (#109)
+Status: delivered in iteration 43 (PR #216)
 
 Story: #109, epic #107 (Hardening from the code review), finding CR-2 of the review of 0.2.0. `/nightmill:init` gets a
 new plan line, **Run permissions**, that writes to the personal `.claude/settings.local.json`: the slot root under
