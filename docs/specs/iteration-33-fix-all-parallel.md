@@ -1,6 +1,6 @@
 # Iteration 33: /fix all fixes Ready bugs in parallel and runs until every bug is processed
 
-Status: draft, awaiting approval (#182)
+Status: delivered in iteration 33 (PR #207)
 
 Story: #182, epic #47 (Unattended runs). Rewrites "Batch mode: `/fix all`" in `skills/fix/SKILL.md`. The batch now
 runs several bugs at the same time, one per slot, as far as the free slots, the live agent limit and the room on the
