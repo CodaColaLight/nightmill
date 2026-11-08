@@ -1150,6 +1150,73 @@ else
   echo "FAIL: $dependabot_yml is missing"; fail=1
 fi
 
+echo "== /fix all runs bugs in parallel"
+# /fix all fixes Ready bugs in parallel, one per free slot, and ends only when every Ready bug has a pull request, was
+# skipped with a reason or is listed as not started (iteration 33): the key parallel.fixAllMaxBugs (default 0: no limit,
+# any other value that is not a whole number stops the run), one producer at a time per bug, one take at a time, the slot
+# freed with --abandon once the branch is the head of the open pull request and held when its files are uncommitted,
+# overlapping bugs that wait, the pause flag at each start, the Stopped line with the two lists, and one table at the end.
+# /fix is a conversation, so the lint pins the wording the behaviour depends on (each item on one line); the manual
+# check does the behaviour.
+fx=skills/fix/SKILL.md
+for w in 'parallel.fixAllMaxBugs' 'Stopped: parallel.fixAllMaxBugs must be a whole number of at least 0' \
+         'One producer at a time per bug' 'one take at a time' '--abandon' '-Abandon' '--json headRefOid' \
+         '--untracked-files=all' 'held: uncommitted files' 'Not started:' 'Stopped in flight:' 'run limit of <k> reached' \
+         'no slot frees in this run' 'parallel.hotFiles' 'parallel.doNotPair' 'overlaps #N, will conflict until that merges' \
+         'pause flag' '| Bug | Result | PR | Slot | Cause or reason | Verified |' 'git.mergeFlags'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all item: $w"; fail=1; }
+done
+for w in 'At most 5 per run' 'One fixer at a time'; do
+  if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still says '$w'"; fail=1; fi
+done
+# criterion 1: the batch runs bugs in parallel, and the sequential sentence of the old text is gone
+for w in '**In parallel, one slot per bug.**' 'several at the same time, one per slot' \
+         'count the agents (the live limit)' 'Agents go out without waiting on each other.' \
+         'bugs in flight run their agents beside'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all parallel item: $w"; fail=1; }
+done
+for w in 'the next bug starts only after the previous bug' 'only after the previous bug'"'"'s fixer has returned'; do
+  if grep -qF -- "$w" "$fx"; then echo "FAIL: $fx still runs the batch one bug after another: '$w'"; fail=1; fi
+done
+# criterion 3: bugs start by priority, then by issue number, lowest first
+w='`board.priorities` (highest first; no priority ranks last), then by issue number, lowest first'
+grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all order: $w"; fail=1; }
+# criterion 2: a bug for which nothing is free waits and starts as soon as something frees; a busy slot keeps the bug
+# first in waiting and never ends the run while a bug of the run is in flight
+for w in 'On `all <k> slots are busy`: the bug stays first' \
+         'in waiting, and no start is tried until an event that could free a slot' \
+         'A launch that the count does not allow waits for the next event.' \
+         'the number of agents running is' 'below the live agent limit' \
+         'wait for the next agent of the run to return' \
+         'A busy slot therefore never' 'ends the run while a bug of this run is still in flight' \
+         'it ends the run only when nothing this run does can free'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say a bug that finds nothing free waits and the run goes on: $w"; fail=1; }
+done
+# criterion 5: an overlapping bug waits until the earlier bug's PR is open (not until a merge), and later bugs may pass it
+for w in 'overlaps no bug in flight' \
+         'overlaps a bug started earlier in this run that is still in flight does not start' \
+         'until that bug has its pull request open or has ended' \
+         'bugs after it in the order may start before it' \
+         'and nothing waits for a merge'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say an overlapping bug waits for the earlier pull request to open: $w"; fail=1; }
+done
+# criterion 8: the board is read again and a bug that became Ready joins waiting, at most once per run
+for w in 'list the Ready bugs again' 'has not seen yet joins waiting in its place in the order' \
+         'processed at most once per run'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say how /fix all picks up a new Ready bug: $w"; fail=1; }
+done
+# criterion 10: each bug reports to its own slot, and nothing is reported to a slot once it is freed
+for w in 'In batch mode each bug reports to its own slot.' 'Nothing more is reported to a freed slot'; do
+  grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say each /fix all bug reports to its own slot: $w"; fail=1; }
+done
+grep -qF 'once its pull request is open and its branch pushed' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md: Parallel work does not say a slot is freed once its pull request is open and its branch pushed"; fail=1; }
+grep -qF '"fixAllMaxBugs": { "type": "integer", "minimum": 0, "default": 0,' schema/nightmill.schema.json || { echo "FAIL: schema: parallel.fixAllMaxBugs is not an integer with minimum 0 and default 0"; fail=1; }
+json_load templates/nightmill.example.json
+[ "$(json_get parallel.fixAllMaxBugs)" = 0 ] || { echo "FAIL: templates/nightmill.example.json: parallel.fixAllMaxBugs is not the schema default 0"; fail=1; }
+for w in 'fixAllMaxBugs' 'abandons it itself'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
