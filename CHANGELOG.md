@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0 (2026-11-08)
+
 - Iteration 43 (#109): `/init` writes the permissions an unattended run needs. A new plan line, Run permissions,
   adds to `.claude/settings.local.json` the slot root as an additional directory, an edit rule for the slots, the git
   commands the skills run in the main checkout and in each slot, the slot, room, validate-config and status scripts at
