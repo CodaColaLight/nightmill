@@ -5,7 +5,9 @@
 #                                                  .claude-plugin/plugin.json, cuts CHANGELOG.md and updates
 #                                                  the README's "Version" line; push it and open the pull request
 #   scripts\release.ps1 -Version X.Y.Z -Publish   after the merge: tag the release commit vX.Y.Z, push the tag
-#                                                  and create the GitHub Release from the changelog section
+#                                                  and create the GitHub Release from the changelog section;
+#                                                  each step that is already done is skipped, so a run that
+#                                                  failed half way is finished by running it again
 #   -DryRun     print what would happen, change and push nothing
 #   -NoPr       prepare without pushing or opening the pull request (the branch stays local)
 #   -NoRelease  publish without creating the GitHub Release (the tag is still pushed)
@@ -111,6 +113,20 @@ function Test-TagExists {
   return ((Text (G ls-remote --tags origin "refs/tags/$tag")).Trim() -ne "")
 }
 
+# The commit the tag points at on origin (peeled), or "" when origin has no such tag.
+function Get-RemoteTagCommit {
+  $lines = @(G ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")
+  if ($script:rc -ne 0) { Refuse "cannot list the tags on origin" }
+  $plain = ""; $peeled = ""
+  foreach ($l in $lines) {
+    $f = "$l" -split "\s+"
+    if ($f.Count -lt 2) { continue }
+    if ($f[1] -eq "refs/tags/$tag^{}") { $peeled = $f[0] } elseif ($f[1] -eq "refs/tags/$tag") { $plain = $f[0] }
+  }
+  if ($peeled) { return $peeled }
+  return $plain
+}
+
 try {
   # --- checks both modes make ------------------------------------------------------------------------------
 
@@ -130,7 +146,6 @@ try {
     if (-not $ocl -or $ocl -notmatch ("(?m)^## " + [regex]::Escape($Version) + " \(")) { Refuse "CHANGELOG.md on origin/main has no heading for $Version" }
     $ord = Get-OriginFile "README.md"
     if (-not $ord -or $ord -notmatch ("(?m)^Version " + [regex]::Escape($Version) + "\.")) { Refuse "README.md on origin/main has no 'Version $Version.' line" }
-    if (Test-TagExists) { Refuse "tag $tag already exists" }
 
     # the oldest commit on origin/main's first-parent history that holds this version: the merge of the
     # release pull request, not whatever main has become since
@@ -142,16 +157,38 @@ try {
     }
     if (-not $cand) { Refuse "no commit on origin/main holds version $Version" }
 
+    # every step is skipped when it is already done, so a run that failed half way can be run again; only a
+    # tag at another commit is refused
+    $short = (Text (G rev-parse --short $cand)).Trim()
+    $ltag = (Text (G rev-parse -q --verify "refs/tags/$tag^{commit}")).Trim()
+    if ($script:rc -ne 0) { $ltag = "" }
+    $rtag = Get-RemoteTagCommit
+    if ($ltag -and $ltag -ne $cand) { Refuse ("tag $tag already exists at another commit (" + (Text (G rev-parse --short $ltag)).Trim() + ", not $short)") }
+    if ($rtag -and $rtag -ne $cand) { Refuse ("tag $tag already exists on origin at another commit (" + $rtag.Substring(0, 7) + ", not $short)") }
+
     if ($DryRun) {
-      Write-Output ("would tag " + (Text (G log -1 --format="%h %s" $cand)) + " as $tag, push the tag and create the GitHub Release")
+      Write-Output ("would tag " + (Text (G log -1 --format="%h %s" $cand)) + " as $tag, push the tag and create the GitHub Release (steps already done are skipped)")
       exit 0
     }
-    $null = G tag -a $tag -m "nightmill $Version" $cand
-    if ($script:rc -ne 0) { throw "git tag failed" }
-    $null = G push -q origin $tag
-    if ($script:rc -ne 0) { throw "git push of the tag failed" }
-    Write-Output ("tagged $tag at " + (Text (G rev-parse --short $cand)))
+    if (-not $ltag -and -not $rtag) {
+      $null = G tag -a $tag -m "nightmill $Version" $cand
+      if ($script:rc -ne 0) { throw "git tag failed" }
+    }
+    if (-not $rtag) {
+      $null = G push -q origin "refs/tags/$tag"
+      if ($script:rc -ne 0) { throw "git push of the tag failed" }
+      Write-Output "tagged $tag at $short"
+    } else {
+      Write-Output "tag $tag is already on origin at $short"
+    }
+    $haveRelease = $false
     if (-not $NoRelease) {
+      # stderr is not redirected: under Stop a redirected native stderr becomes an exception
+      $null = & gh release view $tag
+      $haveRelease = ($LASTEXITCODE -eq 0)
+      if ($haveRelease) { Write-Output "the GitHub Release $tag already exists" }
+    }
+    if (-not $NoRelease -and -not $haveRelease) {
       $notes = [IO.Path]::GetTempFileName()
       [IO.File]::WriteAllText($notes, ((Get-Section $ocl $Version) + "`n"), $utf8)
       & gh release create $tag --title "nightmill $Version" --notes-file $notes --verify-tag --latest
