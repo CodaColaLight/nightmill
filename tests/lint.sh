@@ -1041,7 +1041,7 @@ if [ -z "$chk_block" ]; then
 else
   for f in tests/smoke-*.sh tests/smoke-*.ps1; do
     [ -f "$f" ] || continue
-    b=${f#tests/}; k=bash; case $b in *.ps1) k=ps ;; esac
+    b=${f#tests/}; k='bash'; case $b in *.ps1) k='ps' ;; esac
     c=$(printf '%s\n' "$chk_block" | awk -v k="$k" -v b="$b" '$2 == k && $3 == b' | wc -l | tr -d ' ')
     if [ "$c" = 0 ]; then echo "FAIL: tests/check.sh does not run tests/$b"; fail=1
     elif [ "$c" -gt 1 ]; then echo "FAIL: tests/check.sh runs tests/$b more than once"; fail=1; fi
