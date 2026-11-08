@@ -95,18 +95,18 @@ for needle in 'Big plan' 'Backlog one' 'Done one' 'A pull request on the board';
 done
 case "$out" in *"not shown: 2 at Backlog, 1 at Done (use --all)"*) ;; *) fail "the 'not shown' line" ;; esac
 case "$out" in *"[Story]"*|*"[Bug]"*) fail "a [Story] or [Bug] prefix was not removed" ;; esac
-printf '%s\n' "$out" | grep -q '^ *5  .*stale: Review but the PR is merged$' || fail "Review with a merged PR is not flagged"
-printf '%s\n' "$out" | grep -q '^ *8  .*stale: Spec but no spec PR$' || fail "Spec without a spec PR is not flagged"
-printf '%s\n' "$out" | grep -q '^ *9  .*Spec  .* 40m *$' || fail "a fresh Spec must not be flagged: $(printf '%s\n' "$out" | grep '^ *9 ')"
-printf '%s\n' "$out" | grep -q '^ *6  .*alex  *#34 open, ci pass' || fail "an assignee is not shown, or the PR column is wrong"
-printf '%s\n' "$out" | grep -q '^ *4  .*slot 1  *#33 open, ci fail' || fail "a slot is not shown as the worker"
-printf '%s\n' "$out" | grep -q '^ *14  .*#41 open, ci none' || fail "the open PR must win over the merged one"
-printf '%s\n' "$out" | grep -q '^ *15  .*#42 open, ci fail' || fail "a failing status context is not ci fail"
-printf '%s\n' "$out" | grep -q '^ *16  .*#43 draft' || fail "a draft PR"
-printf '%s\n' "$out" | grep -q '^ *7  .*#35 open, ci pending' || fail "a running check is not ci pending"
-printf '%s\n' "$out" | grep -q '^ *6  .*#34 open' || fail "the implementation PR must be shown at Review, not the spec PR"
-printf '%s\n' "$out" | grep -q '^ *2  .*#31 open, ci pass' || fail "the spec PR must be shown at Spec review"
-printf '%s\n' "$out" | grep -q '^ *10  .* 6d' || fail "an item without a status event takes its creation time"
+printf '%s\n' "$out" | grep '^ *5  .*stale: Review but the PR is merged$' >/dev/null || fail "Review with a merged PR is not flagged"
+printf '%s\n' "$out" | grep '^ *8  .*stale: Spec but no spec PR$' >/dev/null || fail "Spec without a spec PR is not flagged"
+printf '%s\n' "$out" | grep '^ *9  .*Spec  .* 40m *$' >/dev/null || fail "a fresh Spec must not be flagged: $(printf '%s\n' "$out" | grep '^ *9 ')"
+printf '%s\n' "$out" | grep '^ *6  .*alex  *#34 open, ci pass' >/dev/null || fail "an assignee is not shown, or the PR column is wrong"
+printf '%s\n' "$out" | grep '^ *4  .*slot 1  *#33 open, ci fail' >/dev/null || fail "a slot is not shown as the worker"
+printf '%s\n' "$out" | grep '^ *14  .*#41 open, ci none' >/dev/null || fail "the open PR must win over the merged one"
+printf '%s\n' "$out" | grep '^ *15  .*#42 open, ci fail' >/dev/null || fail "a failing status context is not ci fail"
+printf '%s\n' "$out" | grep '^ *16  .*#43 draft' >/dev/null || fail "a draft PR"
+printf '%s\n' "$out" | grep '^ *7  .*#35 open, ci pending' >/dev/null || fail "a running check is not ci pending"
+printf '%s\n' "$out" | grep '^ *6  .*#34 open' >/dev/null || fail "the implementation PR must be shown at Review, not the spec PR"
+printf '%s\n' "$out" | grep '^ *2  .*#31 open, ci pass' >/dev/null || fail "the spec PR must be shown at Spec review"
+printf '%s\n' "$out" | grep '^ *10  .* 6d' >/dev/null || fail "an item without a status event takes its creation time"
 # oldest first inside Review
 order=$(printf '%s\n' "$out" | grep ' Review ' | awk '{ printf "%s ", $1 }')
 [ "$order" = "7 5 14 6 17 16 15 " ] || fail "Review is not ordered oldest first: $order"
@@ -198,7 +198,7 @@ markers a
 run_in "$tmp/work" a --porcelain
 grep -qxF "$(printf 'slot\t3\tfree\t\t\t\t\t\t\t\t')" "$tmp/out.txt" || fail "porcelain: a free slot is not slot, 3, free and eight empty fields"
 grep -q "$(printf '^item\t2\t')" "$tmp/out.txt" || fail "porcelain: no item 2 line"
-grep "$(printf '^item\t2\t')" "$tmp/out.txt" | grep -q "$(printf '\t')Config validator against the schema, run by init and the lint\$" \
+grep "$(printf '^item\t2\t')" "$tmp/out.txt" | grep "$(printf '\t')Config validator against the schema, run by init and the lint\$" >/dev/null \
   || fail "porcelain: the title of item 2 is not whole: $(grep "$(printf '^item\t2\t')" "$tmp/out.txt")"
 echo "== porcelain without worktrees"
 markers b
