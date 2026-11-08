@@ -121,7 +121,7 @@ foreach ($t in $sel) {
     $from = Get-LedgerEpoch $t.FFrom; $to = Get-LedgerEpoch $t.FTo
     $firstKnown = if ($null -ne $S) { $S } else { $t.First }
     if ($from -ge $firstKnown) { $C = $from }
-    else { foreach ($s in $t.Steps) { if ($s.At -lt $to) { $C = $s.At } } }
+    else { foreach ($step in $t.Steps) { if ($step.At -lt $to) { $C = $step.At } } }
     $E = $to
   } elseif ($t.State -eq "freed") { $C = $t.FAt; $E = $C }
   elseif ($t.State -eq "not freed") { $C = $t.LastAt; $E = $C }
