@@ -2,3 +2,4 @@
 *.log
 /tmp/
 tests/forbidden-words.local.txt
+.claude/settings.local.json

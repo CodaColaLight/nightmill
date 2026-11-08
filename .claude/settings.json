@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Write(docs/specs/**)"
+      "Write(docs/specs/**)",
+      "Bash(gh project:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(bash tests/check.sh)"
     ]
   }
 }
