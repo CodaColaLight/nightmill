@@ -11,7 +11,8 @@ Project configuration (`.claude/nightmill.json`):
 
 Read the configuration above first. In this text, *the maintainer* is `maintainer.name`, *the board* is
 GitHub project `github.projectNumber` of `github.owner`, status names come from `board.statuses`, and
-*the check* is `verification.check`. Where this text and the configuration disagree, the configuration wins.
+*the check* is `verification.check`; *the quick check* is the check with ` --quick` appended, for a check
+whose first line then starts with `check: QUICK`. Where this text and the configuration disagree, the configuration wins.
 
 ## What lives where
 
@@ -101,6 +102,12 @@ PR says how it was verified. `verification.benchRule` applies when set. Tests ar
 
 Run the check (`/nightmill:check`) before every commit. Never commit red. If CI is red where the local
 run was green, fix the local loop, not just the test.
+
+While code is being written and before the work is done, an agent may run the quick check instead, as often as it
+likes, to see where it stands. The quick check never stands for the check: the check runs before every commit, before
+every pull request and in every fix round, and a `Check:` line reports the check's last line, never the quick check's.
+A run counts as a quick check only when its first line starts with `check: QUICK`; when it does not (a check without
+a quick mode), the agent stops using it for the rest of its task and runs the check instead.
 
 ## Agent roles and models
 

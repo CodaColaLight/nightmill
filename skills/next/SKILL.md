@@ -284,7 +284,9 @@ passes the dispute to the tester.
 Do this:
 1. Run the tester's tests and watch them fail. For each criterion the tester marked `not tested`, write a test named
    for the behaviour it protects and watch it fail.
-2. Implement until the tests pass. <verification.benchRule, when set>
+2. Implement until the tests pass. While you work you may run the quick check, <verification.check> --quick (only when its first line starts with
+   "check: QUICK"; else run the check), to see where you stand; it is not the check of step 3 and you do not report it as
+   `check`. <verification.benchRule, when set>
 3. Run the check: <verification.check>. When it is green, commit the work on the branch with a message that
    names the story. Never commit red.
 
@@ -303,7 +305,7 @@ End your last message with exactly this block:
 Result: complete | partial | failed
 Criteria: <one line per acceptance criterion: met or not met, and the test that protects it>
 Tests: <the tests added or changed>
-Check: <the check's last summary line>, green or red
+Check: <the last line of the check (never of the quick check)>, green or red
 Commits: <hash and subject, one per line; none>
 Manual check: needed | not needed (<the verification.manualCheckPaths touched>)
 Disputes: <one line per disputed test: <test name> (<file>): <why it is wrong or cannot be satisfied, one line>; none>

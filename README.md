@@ -154,7 +154,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `board` | Field names, status names, priority order |
 | `labels`, `areas`, `invariants` | Label scheme, area options, the project's rules (rendered into the issue forms) |
 | `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
-| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule |
+| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it) |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
@@ -490,6 +490,7 @@ command, auto-merge. `.claude/CLAUDE.md` holds the rules for working on it; `doc
 
 ```
 bash tests/check.sh         # everything this machine can run, lists what it skipped
+bash tests/check.sh --quick # the lint and the bash smoke tests only, while writing code
 bash tests/lint.sh          # generic words, JSON, skill frontmatter, shell syntax
 bash tests/smoke-slot.sh    # slot.sh against a throwaway repository
 bash tests/smoke-render.sh  # render-templates.sh
@@ -505,6 +506,7 @@ bash tests/smoke-control.sh # control.sh against fixtures of readings and a fixe
 bash tests/smoke-dashboard.sh # dashboard.sh against fixtures and a fake gh
 bash tests/smoke-panel.sh   # panel.sh against fixtures
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
+bash tests/smoke-check.sh   # tests/check.sh: the parallel steps, the order, the verdict, --quick
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
@@ -518,9 +520,16 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-control.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```
+
+`tests/check.sh` runs up to `verification.checkJobs` steps at once (default 4, never more than the machine's
+processors; `--jobs N` for one run; 1 runs them one after another, as before), prints each step whole and in a fixed
+order whatever order they finish in, and the time of every step and the total. `bash tests/check.sh --quick` runs the
+lint and the bash smoke tests only and says that the full check has not run: use it while writing code, and the full
+check before every commit and every pull request. CI runs the smoke jobs through `tests/check.sh --only`.
 
 CI runs all of them. `tests/check.sh` runs `claude plugin test .` when `claude` is on the PATH and has the
 `plugin test` subcommand, and lists it as skipped otherwise; CI runs it in the `validate` job, which does not block a
