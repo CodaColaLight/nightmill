@@ -20,9 +20,9 @@
 # Exit code is non-zero when any step that ran failed (2 for a usage error). Skipped steps are listed at the end. Each
 # result line carries the step's time, and a Times: block after the last step lists every step's time and the total
 # (iteration 41; the total is the wall time from the start to the end of the last step).
-# For the tests only: NIGHTMILL_CHECK_STEPS names a file of <name> TAB <command> [TAB <kind> [TAB <reason>]] lines
-# (kind lint, bash, ps or claude; bash when left out; a step with a reason is not run and is listed as SKIPPED:
-# <reason>); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
+# For the tests only: NIGHTMILL_CHECK_STEPS names a file of <name> TAB <command> [TAB <kind> [TAB <reason> [TAB first]]]
+# lines (kind lint, bash, ps or claude; bash when left out; a step with a reason is not run and is listed as SKIPPED:
+# <reason>; first marks a step to start first, as in the step list; empty fields keep their place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
 # scripts/lib/ledger.sh) is the clock the times are read from. CI sets neither.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
@@ -117,11 +117,18 @@ add ps smoke-check.ps1
 }
 
 if [ -n "${NIGHTMILL_CHECK_STEPS:-}" ]; then
-  while IFS=$'\t' read -r f_name f_cmd f_kind f_reason || [ -n "$f_name" ]; do
-    f_name=${f_name%$'\r'}; f_cmd=${f_cmd%$'\r'}; f_kind=${f_kind%$'\r'}; f_reason=${f_reason%$'\r'}
+  # Split on every tab, so an empty field (an empty reason before 'first') keeps its place; read with IFS=$'\t'
+  # would merge adjacent tabs, because a tab is IFS white space.
+  while IFS= read -r f_line || [ -n "$f_line" ]; do
+    f_line=${f_line%$'\r'}
+    f=(); while :; do
+      case $f_line in *$'\t'*) f+=("${f_line%%$'\t'*}"); f_line=${f_line#*$'\t'} ;; *) f+=("$f_line"); break ;; esac
+    done
+    f_name=${f[0]}; f_cmd=${f[1]:-}; f_kind=${f[2]:-}; f_reason=${f[3]:-}; f_first=${f[4]:-}
     [ -n "$f_name" ] || continue
     case ${f_kind:-bash} in lint|bash|ps|claude) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: unknown kind $f_kind" >&2; exit 2 ;; esac
-    add "${f_kind:-bash}" "$f_name"
+    case $f_first in ""|first) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the fifth field is first or empty, not $f_first" >&2; exit 2 ;; esac
+    add "${f_kind:-bash}" "$f_name" $f_first
     k_cmd[n - 1]=$f_cmd; k_skip[n - 1]=$f_reason
   done < "$NIGHTMILL_CHECK_STEPS"
   fixture=1
