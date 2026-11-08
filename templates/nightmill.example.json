@@ -68,7 +68,8 @@
     "controlMinAgents": 1,
     "controlMaxAgents": 4,
     "controlCooldownMinutes": 15,
-    "controlIntervalMinutes": 5
+    "controlIntervalMinutes": 5,
+    "fixAllMaxBugs": 0
   },
   "worktrees": {
     "root": "../widgets-wt",

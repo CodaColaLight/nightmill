@@ -164,7 +164,8 @@
         "controlMinAgents": { "type": "integer", "minimum": 1, "default": 1, "description": "The lowest agent limit the load controller sets (1 to 99)." },
         "controlMaxAgents": { "type": "integer", "minimum": 1, "default": 4, "description": "The highest agent limit the load controller sets (1 to 99). Its target never exceeds maxSuggestedAgents either." },
         "controlCooldownMinutes": { "type": "integer", "minimum": 1, "default": 15, "description": "Minutes after the last change of the live numbers before the load controller raises the agent limit by one more step or lowers it for CPU (1 to 1440). Short memory lowers it at once." },
-        "controlIntervalMinutes": { "type": "integer", "minimum": 1, "default": 5, "description": "How often the load controller should run, in minutes (1 to 1440): the interval for /loop and for an orchestrator. Each pass prints it." }
+        "controlIntervalMinutes": { "type": "integer", "minimum": 1, "default": 5, "description": "How often the load controller should run, in minutes (1 to 1440): the interval for /loop and for an orchestrator. Each pass prints it." },
+        "fixAllMaxBugs": { "type": "integer", "minimum": 0, "default": 0, "description": "The most bugs one /fix all run starts (a bug counts when its slot is taken). 0: no limit, every Ready bug is taken. Bugs past the limit are listed as not started." }
       }
     },
     "worktrees": {

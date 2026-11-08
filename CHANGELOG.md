@@ -29,6 +29,16 @@
   test hook `NIGHTMILL_CLAIM_GATE` (tests only, not a config key) holds a take at the publish. Supersedes bug #113.
   Retries of the take's own marker changes and the cleanup of an interrupted take are #189 and #190.
 
+- Iteration 33 (#182): `/fix all` fixes Ready bugs in parallel and runs until every bug is processed. It runs one bug
+  per slot, as many at a time as the free slots, the live agent limit and the room on the machine allow, and takes the
+  slots one at a time so two starts never get the same one. Bugs start by priority, then issue number; a bug that
+  becomes Ready during the run is picked up. A bug for which nothing is free waits instead of ending the run. A slot is
+  freed with `-Abandon` once the bug's branch is the head of its open pull request (the local branch is kept), and the
+  slot of a skipped bug stays held with its files. Bugs that overlap (a file named in both issues, the same
+  `parallel.hotFiles` entry, `parallel.doNotPair`) do not run at the same time. The fixed cap of five bugs is gone; the
+  new key `parallel.fixAllMaxBugs` (default 0: no limit, ignored by the previous version) limits the bugs one run
+  starts. A stop prints a `Not started:` and `Stopped in flight:` line, and the run ends with one table.
+
 - Iteration 32 (#69): a pane beside the Claude chat shows the slots and the agents in them. The plugin ships a Claude
   Code mod, `hooks/panel.tsx`, named under `modules` in `hooks/hooks.json` next to the `SessionStart` hook. It is off
   until asked: `/nightmill-slots` opens the pane, `/nightmill-slots off` (or the pane's close mark) closes it, and
