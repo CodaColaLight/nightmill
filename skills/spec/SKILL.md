@@ -22,8 +22,11 @@ skill of this plugin; this skill is the step list.
 Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`board.statuses.ready`).
 
 - If `$ARGUMENTS` holds an issue number, take that issue; refuse when it is not at Ready.
-- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .status, .priority, ((.labels // []) | join(",")), .content.title] | @tsv'`
+- Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .["<board.statusField, lower case>"], .["<board.priorityField, lower case>"], ((.labels // []) | join(",")), .content.title] | @tsv'`
   and take the highest-priority Ready story that is not an epic and not a bug (bugs go through `/fix`).
+  The two keys are the configured `board.statusField` and `board.priorityField`, lower-cased with spaces kept
+  (`gh` names each key after its field). When the listing returns 200 items, as many as `--limit`, warn visibly
+  that the page is full and items past it may be missing.
 - Nothing Ready: print `Nothing is Ready.`, add `Approved: #N ... Run /next to implement.` when Approved
   stories exist, change nothing and stop.
 - Print the line `Picking #N "<title>": <status>, <priority>, <reason>` before the first change.
