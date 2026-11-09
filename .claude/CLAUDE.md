@@ -34,7 +34,9 @@ twice (installed and `--plugin-dir`) in one session; they shadow each other.
 - **The status flow is fixed.** The eight statuses and who sets them change only with a decision record
   in `docs/decisions/` (short, dated, `NNNN-title.md`).
 - **CHANGELOG by version.** `CHANGELOG.md` has one section per plugin version. An iteration's entry is a
-  bullet under `Unreleased` naming the iteration and the issue; the maintainer cuts a version with
+  bullet under `Unreleased` naming the iteration and the issue; any other change under `skills/`, `agents/`,
+  `scripts/` or `hooks/` (not only an iteration) gets a bullet there too, naming the issue or pull request (a bug
+  fix excepted: bugs carry no entry); the maintainer cuts a version with
   `scripts/release.sh --version X.Y.Z` (or `release.ps1`), merges the release pull request it opens, then runs
   it again with `--publish` to tag. The lint keeps `plugin.json`, the changelog and the README line in step.
   Projects pin by version.
