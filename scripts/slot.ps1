@@ -338,7 +338,7 @@ function Invoke-Reap {
     foreach ($p in @($prs | ForEach-Object { $_ })) { if ([string]$p.headRefOid -ceq $tip) { $pr = $p.number; $prObj = $p; break } }
     if ($null -eq $pr) { continue }
     if ($fetched -eq 0) {
-      $f = Invoke-Native "git" @("fetch", "origin", $baseBranch)
+      $f = Invoke-Native "git" @("-C", $main, "fetch", "origin", $baseBranch)
       if ($f.Code -eq 0) { $fetched = 1 } else { $fetched = -1; $freason = Get-FirstLine $f.Err }
     }
     if ($fetched -ne 1) {
@@ -347,7 +347,7 @@ function Invoke-Reap {
     }
     $s = Invoke-Native "git" @("-C", $dir, "switch", "--detach", "origin/$baseBranch")
     if ($s.Code -ne 0) { continue }
-    $null = Invoke-Native "git" @("branch", "-D", $branch)
+    $null = Invoke-Native "git" @("-C", $main, "branch", "-D", $branch)
     Remove-Item (Get-Marker $n)
     $pt = Get-PrTimes $prObj
     Write-Record "free" $n $branch "reaped" "" "" "$pr" $pt.From $pt.To $pt.Issues
@@ -650,7 +650,8 @@ function Set-LeftClaim {
   if ($null -ne $e) { Remove-Item -LiteralPath $tmpl -Force -ErrorAction SilentlyContinue }
 }
 # Invoke-Git <arguments>: git with its output and error text passed through; returns the exit code. The text goes to
-# the standard streams directly, not through the host, so that it also works in the finally of a stopped take.
+# the standard streams directly, not through the host, so that it also works in the finally of a stopped take. Git runs
+# in the process's working directory, not the PowerShell location, so every call names its folder with -C.
 function Invoke-Git {
   $r = Invoke-Native "git" @($args)
   if ($r.Out) { [Console]::Out.Write($r.Out) }
@@ -662,7 +663,7 @@ function Invoke-Git {
 function Undo-Take([string]$step, [string]$what) {
   $ok = $true
   if ($script:created) {
-    if ((Invoke-Git worktree remove --force $dir) -ne 0) { $ok = $false }
+    if ((Invoke-Git -C $main worktree remove --force $dir) -ne 0) { $ok = $false }
   } elseif ($script:recorded) {
     if (@(git -C $dir status --porcelain).Count -gt 0) {
       [Console]::Error.WriteLine("slot $n has uncommitted files: $dir (commit, stash or discard them first)"); $ok = $false
