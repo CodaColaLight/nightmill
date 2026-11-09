@@ -3,14 +3,14 @@ name: fix
 description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" fixes every Ready bug, several at once while slots and room allow. Use when asked to fix a bug issue.
 argument-hint: [issue-number | all]
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
 ---
 
 Fix one bug from GitHub Issues, without an iteration: $ARGUMENTS (`all` = every Ready bug, in parallel, see "Batch mode")
 
 Project configuration (`.claude/nightmill.json`):
 
-!`cat .claude/nightmill.json`
+!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
 
 Read the configuration first. *The maintainer* is `maintainer.name`; `<owner>`, `<repo>`, `<project>` come
 from `github`; status names from `board.statuses`; label names from `labels`. Where this text and the

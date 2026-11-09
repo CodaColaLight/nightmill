@@ -3,14 +3,14 @@ name: story
 description: Turn the maintainer's one-line idea into a story issue on the board, filed from the story form under the right epic. Use when asked to file, write or create a story.
 argument-hint: <one-line idea>
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
 ---
 
 Turn this one-line idea into a story issue: $ARGUMENTS
 
 Project configuration (`.claude/nightmill.json`):
 
-!`cat .claude/nightmill.json`
+!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
 
 Read the configuration first. *The maintainer* is `maintainer.name`; `<owner>`, `<repo>`, `<project>` come
 from `github`; label names from `labels`; areas from `areas`. Where this text and the configuration

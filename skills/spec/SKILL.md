@@ -3,14 +3,14 @@ name: spec
 description: Write the spec for a Ready story as its own PR and stop at Spec review. Use when asked to spec a story, write the spec for an issue, or start the next Ready story. Implementing an Approved story is /next.
 argument-hint: [issue-number]
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
 ---
 
 Write the spec for a Ready story: $ARGUMENTS
 
 Project configuration (`.claude/nightmill.json`):
 
-!`cat .claude/nightmill.json`
+!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
 
 Read the configuration first. Below, *the maintainer* is `maintainer.name`; `<owner>`, `<repo>` and
 `<project>` come from `github`; status names from `board.statuses`; label names from `labels`. Where this
