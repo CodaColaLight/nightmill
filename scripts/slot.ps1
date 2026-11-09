@@ -40,12 +40,12 @@
 # scripts/stages.ps1); a failed append prints one note and changes nothing else. Same behaviour as slot.sh.
 param(
   [string]$Take,
-  [int]$Release = 0,
-  [int]$Abandon = 0,
+  [string]$Release = "0",
+  [string]$Abandon = "0",
   [switch]$Reap,
   [switch]$Status,
   [switch]$Porcelain,
-  [int]$Slot = 0,
+  [string]$Slot = "0",
   [string]$Base = "",
   [switch]$SkipWarmup,
   [switch]$Capacity,
@@ -62,6 +62,16 @@ $hasSlots = $PSBoundParameters.ContainsKey("SlotCount")
 $hasAgents = $PSBoundParameters.ContainsKey("AgentLimit")
 $hasReport = $PSBoundParameters.ContainsKey("Report")
 function Exit-Usage { [Console]::Error.WriteLine($usageText); exit 1 }
+# -Slot, -Release and -Abandon take only digits and are normalised to their number (02 is 2); 0 means not given
+function ConvertTo-SlotNumber([string]$v) {
+  if ($v -notmatch '^[0-9]+\z') { Exit-Usage }
+  $n = [long]0
+  if (-not [long]::TryParse($v, [ref]$n)) { Exit-Usage }
+  return $n
+}
+[long]$Slot = ConvertTo-SlotNumber $Slot
+[long]$Release = ConvertTo-SlotNumber $Release
+[long]$Abandon = ConvertTo-SlotNumber $Abandon
 if ($hasReport) {
   if ($Take -or $Release -gt 0 -or $Abandon -gt 0 -or $Reap -or $Status -or $Capacity) { Exit-Usage }
 } elseif ($PSBoundParameters.ContainsKey("Skill") -or $PSBoundParameters.ContainsKey("Role")) { Exit-Usage }
