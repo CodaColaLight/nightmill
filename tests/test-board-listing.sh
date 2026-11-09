@@ -21,8 +21,20 @@ for s in spec next fix; do
   # (a) the filter (the single-quoted part after --jq) names no literal .status or .priority key
   filter=$(sed -n "s/.*--j[q] '\([^']*\)'.*/\1/p" <<<"$line")
   if [ -z "$filter" ]; then echo "FAIL: $f listing has no quoted ${opt} filter"; fail=1
-  elif grep -E '\.(status|priority)([^A-Za-z]|$)' <<<"$filter" >/dev/null; then
-    echo "FAIL: $f listing hard-codes .status or .priority in its filter"; fail=1
+  else
+    if grep -E '\.(status|priority)([^A-Za-z]|$)|\[ *"(status|priority)" *\]' <<<"$filter" >/dev/null; then
+      echo "FAIL: $f listing hard-codes a status or priority key in its filter"; fail=1
+    fi
+    # the key is taken from the configured name: a placeholder inside the filter, for each field
+    for fld in statusField priorityField; do
+      if ! grep -E "\.\[\"<board\.${fld}[^>\"]*>\"\]" <<<"$filter" >/dev/null; then
+        echo "FAIL: $f filter does not index the item by a <board.${fld}> placeholder"; fail=1
+      fi
+    done
+    # ... and says the key is the lower-cased field name (in the placeholder or next to the listing)
+    if ! grep -i -E 'lower' <<<"$win" >/dev/null; then
+      echo "FAIL: $f listing does not say the key is the lower-cased field name"; fail=1
+    fi
   fi
   # ... and the text ties the filter to the configured field names
   if ! grep -F 'board.statusField' <<<"$win" >/dev/null || ! grep -F 'board.priorityField' <<<"$win" >/dev/null; then
