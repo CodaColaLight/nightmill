@@ -11,6 +11,10 @@
 - Iteration 37 (#148): `/story` searches open and closed issues of any label for a similar title before it files,
   shows up to 5 and, if any is similar, files only on "file anyway"; a failed search or a headless run files nothing.
   A search that hits its limit of 100 with nothing similar says older issues may not have been checked, then files.
+- Iteration 36 (#190): a take that is interrupted frees its claim and puts its slot back. bash traps INT and TERM
+  (exit 130, 143), PowerShell uses a `finally` (`stopped`, its own exit code); both run the same restore as a failed
+  step and print a `<step> interrupted` or `stopped` line. A take stopped while writing its marker keeps a claim
+  `--abandon` frees; a second signal does not stop a restore; a killed take leaves a dead claim as before.
 - Iteration 35 (#189): a take retries its own marker changes while a reader holds the marker open. The finishing move,
   the rewrite of a claim without a process id and the removal of its own claim are each tried up to 21 times 0.25 s
   apart (at most 5 s of waiting each), in both shells; only the last try's error is printed, and the messages and

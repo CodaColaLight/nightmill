@@ -5,7 +5,8 @@
 # capacity command (--capacity: the slot count and the agent limit changed during a session), the reports
 # (--report) and the claim of a take (iteration 34: a take claims its slot with a marker in the state "taking"
 # before it fetches, switches or warms up; two takes get different slots; a failed take puts its slot back; a
-# dead claim is freed only by --abandon).
+# dead claim is freed only by --abandon), and the interruption of a take (iteration 36: INT or TERM after the claim
+# puts the slot back and says so; a killed take leaves a dead claim).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-slot.XXXXXX")
@@ -1494,6 +1495,272 @@ retry_case9
 retry_case10
 claim_reset
 git -C "$tmp/work" branch -D feat/s10 >/dev/null 2>&1 || true
+cp "$tmp/cfg-claim.json" "$CFG"
+
+echo "== interruption (iteration 36)"
+# interruption (iteration 36): a take that is interrupted after it has claimed its slot (INT or TERM in bash) runs the
+# same restore as a failed take and says "<step> interrupted (INT)" with the outcome, exit 130 for INT and 143 for
+# TERM. Each take runs as a job of its own (set -m: a job of its own process group, otherwise INT is ignored) and the
+# signal goes to its group. Seven cases: (1) in the warm-up the slot is free and unswitched; (2) after the warm-up
+# changed a file the slot cannot be put back and a dead claim stays that --abandon frees; (3) while the finished marker
+# is written the claim stays (needs Windows, as the reader of iteration 35); (4) KILL leaves a dead claim, as in
+# iteration 34; (5) in the fetch and (6) in the switch, held by a hook, the slot is free; (7) at the publish nothing
+# was claimed. Every wait is bounded and no process is left behind.
+i_pids=()
+i_p=""
+i_gate=""
+i_kill_all() { # the whole group of every job, and the hook of cases 5 and 6, then the gates
+  local p h
+  for p in ${i_pids[@]+"${i_pids[@]}"}; do kill -KILL -- "-$p" 2>/dev/null || true; done
+  : > "$tmp/hold-go"
+  if [ -f "$tmp/hold.pid" ]; then for h in $(cat "$tmp/hold.pid"); do kill -KILL "$h" 2>/dev/null || true; done; fi
+}
+fail() { i_kill_all; if [ -n "$reader_pid" ]; then : > "$tmp/let-go"; fi; claim_stop; echo "FAIL: $*" >&2; exit 1; }
+i_pidgate() { echo "echo \$\$ > '$tmp/gate.pid'; $gate_cmd"; } # the gate warm-up, writing its own pid first
+i_start() { # i_start <name> <take arguments...>: the take as a job of its own; its pid (and group) is left in $i_p
+  local name=$1; shift
+  set -m
+  NIGHTMILL_CLAIM_GATE="$i_gate" bash "$S" "$@" >"$tmp/$name.out" 2>"$tmp/$name.err" </dev/null &
+  i_p=$!
+  set +m
+  i_pids+=("$i_p"); bg_pids+=("$i_p")
+}
+i_poll() { # i_poll <what> <command...>: until the command succeeds (60 s at most)
+  local what=$1 end=$((SECONDS + 60)); shift
+  until "$@"; do
+    [ "$SECONDS" -lt "$end" ] || fail "interruption: $what did not happen within 60 s"
+    kill -0 "$i_p" 2>/dev/null || { "$@" && return 0; fail "interruption: the take ended before $what: $(cat "$tmp"/*.err 2>/dev/null | tail -n 5)"; }
+    sleep 0.1
+  done
+}
+i_sign_gatepid() { [ -s "$tmp/gate.pid" ]; }
+i_sign_holdpid() { [ -s "$tmp/hold.pid" ]; }
+i_sign_claimtmp() { compgen -G "$S1/slot-1.claim.*.tmp" >/dev/null; }
+i_sign() { kill -"$1" -- "-$i_p"; } # i_sign <INT|TERM|KILL>: the signal to the group of the take
+i_end() { # i_end <name>: wait for the take (60 s at most); leaves $i_rc and $i_last (last line of standard error)
+  local end=$((SECONDS + 60))
+  while kill -0 "$i_p" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$end" ]; then fail "interruption: the take did not end within 60 s after the signal"; fi
+    sleep 0.1
+  done
+  i_rc=0; wait "$i_p" || i_rc=$?
+  i_last=$(tail -n 1 "$tmp/$1.err" | tr -d '\r')
+}
+i_gone() { # i_gone <what> <pid file>: every pid in the file has ended within 5 s
+  local end=$((SECONDS + 5)) p alive
+  [ -f "$2" ] || return 0
+  while :; do
+    alive=""
+    for p in $(cat "$2"); do if kill -0 "$p" 2>/dev/null; then alive="$alive $p"; fi; done
+    [ -z "$alive" ] && return 0
+    [ "$SECONDS" -lt "$end" ] || fail "interruption: $1: a process is still running 5 s after the interruption:$alive"
+    sleep 0.1
+  done
+}
+i_free() { # i_free <case> <branch> <X>: the slot is free and unswitched
+  local c=$1 b=$2 x=$3
+  [ ! -e "$(marker 1)" ] || fail "interruption $c: the marker of slot 1 is still there: $(cat "$(marker 1)")"
+  [ -z "$(c_leftovers 1)" ] || fail "interruption $c: temporary files are left: $(c_leftovers 1)"
+  [ -z "$(c_branch 1)" ] && [ "$(c_head 1)" = "$x" ] || fail "interruption $c: slot 1 is not detached at $x (branch '$(c_branch 1)', head $(c_head 1))"
+  [ -z "$(c_ref "$b")" ] || fail "interruption $c: the branch $b was left behind"
+  [ "$(bash "$S" --status --porcelain | sed -n 1p)" = "1${T}free" ] || fail "interruption $c: porcelain line 1: $(bash "$S" --status --porcelain)"
+}
+i_clean() { # a clean start for a case: slots free, gate warm-up config, no pid files, the branch gone
+  claim_reset
+  rm -f "$tmp/gate.pid" "$tmp/hold.pid" "$tmp/hold.winpid" "$tmp/hold-go"
+  i_pids=(); bg_pids=(); i_gate=""
+  for b in "$@"; do git -C "$tmp/work" branch -D "$b" >/dev/null 2>&1 || true; done
+}
+i_X=""
+
+# 1 interrupted in the warm-up: the slot is free and unswitched
+intr_case1() {
+  local sig code want branch
+  for sig in INT TERM; do
+    if [ "$sig" = INT ]; then code=130; branch=feat/i1; else code=143; branch=feat/i2; fi
+    i_clean feat/i1 feat/i2
+    write_cfg "[ { \"command\": \"$(i_pidgate)\" } ]"
+    i_X=$(c_head 1)
+    i_start i1 --take "$branch" --slot 1
+    waitfor 1 taking
+    i_poll "the warm-up's pid file" i_sign_gatepid
+    i_sign "$sig"
+    i_end i1
+    want="warm-up 1 interrupted ($sig); slot 1 is free again"
+    [ "$i_last" = "$want" ] || fail "interruption 1 ($sig): the last line of standard error is [$i_last], wanted [$want]: $(cat "$tmp/i1.err")"
+    [ "$i_rc" = "$code" ] || fail "interruption 1 ($sig): exit $i_rc, wanted $code"
+    i_free 1 "$branch" "$i_X"
+    i_gone "interruption 1 ($sig)" "$tmp/gate.pid"
+  done
+}
+
+# 2 interrupted after the warm-up changed a file: a dead claim that --abandon frees
+intr_case2() {
+  local since want
+  i_clean feat/i3
+  c_mkbranch feat/i3 i3.txt
+  write_cfg "[ { \"command\": \"echo changed > i3.txt; $(i_pidgate)\" } ]"
+  i_start i3 --take feat/i3 --slot 1
+  waitfor 1 taking
+  i_poll "the warm-up's pid file" i_sign_gatepid
+  i_sign INT
+  i_end i3
+  [ "$i_rc" = 130 ] || fail "interruption 2: exit $i_rc, wanted 130: $(cat "$tmp/i3.err")"
+  want="slot 1 has uncommitted files: $claim_root/slot-1 (commit, stash or discard them first)
+warm-up 1 interrupted (INT); slot 1 could not be put back and stays claimed: free it with --abandon 1"
+  [ "$(tail -n 2 "$tmp/i3.err" | tr -d '\r')" = "$want" ] || fail "interruption 2: the last two lines of standard error are [$(tail -n 2 "$tmp/i3.err")]"
+  [ "$(c_branch 1)" = feat/i3 ] || fail "interruption 2: slot 1 is not on feat/i3 (branch '$(c_branch 1)')"
+  [ "$(cat "$tmp/wt/slot-1/i3.txt")" = changed ] || fail "interruption 2: the changed file was not kept"
+  since=$(mget 1 since)
+  taking_text 1 feat/i3 "$since" > "$tmp/want.json"
+  c_same "$tmp/want.json" "$(marker 1)" "interruption 2"
+  [ "$(c_porc9 1)" = take-died ] || fail "interruption 2: porcelain field 9 is '$(c_porc9 1)', not take-died"
+  rep --status
+  grep -qF "taking: feat/i3 since $since (no process recorded; free it with --abandon 1)" <<<"$out" || fail "interruption 2: status: $out"
+  i_gone "interruption 2" "$tmp/gate.pid"
+  git -C "$tmp/wt/slot-1" checkout -- i3.txt
+  rep --abandon 1
+  [ "$rc" = 0 ] && [ "$out" = "Slot 1 is free (was feat/i3, a take that did not finish; the local branch is kept, delete it yourself if unwanted)." ] || fail "interruption 2: --abandon (exit $rc): $out / $err"
+  [ ! -e "$(marker 1)" ] || fail "interruption 2: the marker is still there after --abandon"
+  git -C "$tmp/work" branch -D feat/i3 >/dev/null
+}
+
+# 3 interrupted while writing the finished marker: the claim stays without pid
+intr_case3() {
+  local since want
+  i_clean feat/i4
+  write_cfg "$gate_json"
+  i_start i4 --take feat/i4 --slot 1
+  waitfor 1 taking
+  hold "$(marker 1)"
+  : > "$tmp/go"
+  i_poll "the finishing move" r_sign_take_tmp
+  i_sign INT
+  sleep 1
+  letgo
+  i_end i4
+  want="write marker interrupted (INT); slot 1 stays claimed: free it with --abandon 1"
+  [ "$i_last" = "$want" ] || fail "interruption 3: the last line of standard error is [$i_last], wanted [$want]"
+  [ "$i_rc" = 130 ] || fail "interruption 3: exit $i_rc, wanted 130"
+  since=$(mget 1 since)
+  taking_text 1 feat/i4 "$since" > "$tmp/want.json"
+  c_same "$tmp/want.json" "$(marker 1)" "interruption 3"
+  [ -z "$(c_leftovers 1)" ] || fail "interruption 3: temporary files are left: $(c_leftovers 1)"
+  [ "$(c_branch 1)" = feat/i4 ] || fail "interruption 3: slot 1 is not on feat/i4"
+  rep --status
+  grep -qF "(no process recorded; free it with --abandon 1)" <<<"$out" || fail "interruption 3: status: $out"
+  rep --abandon 1
+  [ "$rc" = 0 ] && [[ "$out" == "Slot 1 is free (was feat/i4, a take that did not finish; "* ]] || fail "interruption 3: --abandon (exit $rc): $out / $err"
+  git -C "$tmp/work" branch -D feat/i4 >/dev/null
+  rm -f "$tmp/go"
+}
+
+# 4 killed without a chance to clean up: a dead claim, as in iteration 34
+intr_case4() {
+  local since size
+  i_clean feat/i5
+  write_cfg "[ { \"command\": \"$(i_pidgate)\" } ]"
+  i_start i5 --take feat/i5 --slot 1
+  waitfor 1 taking
+  i_poll "the warm-up's pid file" i_sign_gatepid
+  size=$(wc -c < "$tmp/i5.err" | tr -d ' ')
+  i_sign KILL
+  i_end i5
+  [ "$(wc -c < "$tmp/i5.err" | tr -d ' ')" = "$size" ] || fail "interruption 4: the killed take wrote a line: $(cat "$tmp/i5.err")"
+  i_gone "interruption 4" "$tmp/gate.pid"
+  since=$(mget 1 since)
+  taking_text 1 feat/i5 "$since" "$(bg_winpid "$i_p")" > "$tmp/want.json"
+  c_same "$tmp/want.json" "$(marker 1)" "interruption 4"
+  rep --status
+  grep -qF "taking: feat/i5 since $since (process $(bg_winpid "$i_p") has ended; free it with --abandon 1)" <<<"$out" || fail "interruption 4: status: $out"
+  [ "$(c_porc9 1)" = take-died ] || fail "interruption 4: porcelain field 9 is '$(c_porc9 1)'"
+  rep --abandon 1
+  [ "$rc" = 0 ] && [[ "$out" == "Slot 1 is free (was feat/i5, a take that did not finish; "* ]] || fail "interruption 4: --abandon (exit $rc): $out / $err"
+  [ ! -e "$(marker 1)" ] || fail "interruption 4: the marker is still there after --abandon"
+  [ -n "$(c_ref feat/i5)" ] || fail "interruption 4: the branch feat/i5 is gone"
+  git -C "$tmp/work" branch -D feat/i5 >/dev/null
+}
+
+# the hold hook of cases 5 and 6
+mkdir -p "$tmp/hooks"
+cat > "$tmp/hooks/hold" <<EOT
+echo \$\$ >> '$tmp/hold.pid'; if [ -r /proc/\$\$/winpid ]; then cat /proc/\$\$/winpid >> '$tmp/hold.winpid'; fi; i=0; while [ ! -e '$tmp/hold-go' ] && [ \$i -lt 300 ]; do i=\$((i+1)); sleep 0.1; done
+EOT
+printf '%s\n' '#!/bin/sh' "sh '$tmp/hooks/hold'" 'exec git upload-pack "$@"' > "$tmp/hooks/upload-pack-hold"
+printf '%s\n' '#!/bin/sh' "sh '$tmp/hooks/hold'" > "$tmp/hooks/post-checkout"
+chmod +x "$tmp/hooks/upload-pack-hold" "$tmp/hooks/post-checkout"
+
+# 5 interrupted in the fetch: the slot is free
+intr_case5() {
+  local want
+  i_clean feat/i6
+  i_X=$(c_head 1)
+  git -C "$tmp/work" config remote.origin.uploadpack "sh '$tmp/hooks/upload-pack-hold'"
+  i_start i6 --take feat/i6 --slot 1 --skip-warmup
+  i_poll "the hold hook" i_sign_holdpid
+  i_sign INT
+  : > "$tmp/hold-go"
+  i_end i6
+  want="git fetch interrupted (INT); slot 1 is free again"
+  [ "$i_last" = "$want" ] || fail "interruption 5: the last line of standard error is [$i_last], wanted [$want]: $(cat "$tmp/i6.err")"
+  [ "$i_rc" = 130 ] || fail "interruption 5: exit $i_rc, wanted 130"
+  git -C "$tmp/work" config --unset remote.origin.uploadpack
+  i_free 5 feat/i6 "$i_X"
+  i_gone "interruption 5" "$tmp/hold.pid"
+  if [ -f "$tmp/hold.winpid" ]; then i_gone "interruption 5" "$tmp/hold.winpid"; fi
+}
+
+# 6 interrupted in the switch: the slot is unswitched and the new branch gone
+intr_case6() {
+  local want
+  i_clean feat/i7
+  i_X=$(c_head 1)
+  git -C "$tmp/work" config core.hooksPath "$tmp/hooks"
+  i_start i7 --take feat/i7 --slot 1 --skip-warmup
+  i_poll "the hold hook" i_sign_holdpid
+  i_sign TERM
+  : > "$tmp/hold-go"
+  i_end i7
+  want="git switch interrupted (TERM); slot 1 is free again"
+  [ "$i_last" = "$want" ] || fail "interruption 6: the last line of standard error is [$i_last], wanted [$want]: $(cat "$tmp/i7.err")"
+  [ "$i_rc" = 143 ] || fail "interruption 6: exit $i_rc, wanted 143"
+  git -C "$tmp/work" config --unset core.hooksPath
+  i_free 6 feat/i7 "$i_X"
+  i_gone "interruption 6" "$tmp/hold.pid"
+  if [ -f "$tmp/hold.winpid" ]; then i_gone "interruption 6" "$tmp/hold.winpid"; fi
+}
+
+# 7 interrupted at the publish: no claim and nothing left
+intr_case7() {
+  local sig code branch want
+  for sig in INT TERM; do
+    if [ "$sig" = INT ]; then code=130; branch=feat/i8; else code=143; branch=feat/i9; fi
+    i_clean feat/i8 feat/i9
+    rm -f "$tmp/claim-go"
+    i_X=$(c_head 1)
+    i_gate="$tmp/claim-go"
+    i_start i8 --take "$branch" --slot 1 --skip-warmup
+    i_gate=""
+    i_poll "the claim's temporary file" i_sign_claimtmp
+    [ ! -e "$(marker 1)" ] || fail "interruption 7: a marker exists before the publish: $(cat "$(marker 1)")"
+    i_sign "$sig"
+    i_end i8
+    want="claim interrupted ($sig); no slot was claimed"
+    [ "$i_last" = "$want" ] || fail "interruption 7 ($sig): the last line of standard error is [$i_last], wanted [$want]: $(cat "$tmp/i8.err")"
+    [ "$i_rc" = "$code" ] || fail "interruption 7 ($sig): exit $i_rc, wanted $code"
+    i_free 7 "$branch" "$i_X"
+    if kill -0 -- "-$i_p" 2>/dev/null; then fail "interruption 7 ($sig): a process of the take's group is left"; fi
+  done
+}
+
+intr_case1
+intr_case2
+if [ "$reader_ok" = 1 ]; then intr_case3; else r_skip; fi
+intr_case4
+intr_case5
+intr_case6
+intr_case7
+i_clean
 cp "$tmp/cfg-claim.json" "$CFG"
 
 echo "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"

@@ -311,6 +311,12 @@ that process, or remove the marker `<worktrees.root>/.slots/slot-N.json` by hand
 the marker at the same moment (/nightmill:status, the panel, the dashboard, another take) can make the take's last
 write to it fail for a moment. The take tries its own marker changes up to 21 times, 0.25 s apart, so such a collision
 does not leave the slot claimed; a reader that holds the marker for longer than that ends the take as described above.
+A take that is interrupted after it has claimed its slot (Ctrl+C, or a TERM signal in bash) puts the slot back and
+frees it as a failed take does, and names the step: "warm-up 1 interrupted (INT); slot 1 is free again" (bash, exit
+130, or 143 for TERM), "warm-up 1 stopped; slot 1 is free again" (PowerShell, which cannot tell why it was stopped and
+keeps its own exit code). Interrupted while it writes its finished marker, it leaves the claim, and -Abandon N
+(--abandon N) frees it. A take that is killed without a chance to clean up (Stop-Process, kill -KILL, a closed window)
+leaves a claim that slot -Status shows as ended; -Abandon N frees it.
 
 ### What a slot's agent is doing
 

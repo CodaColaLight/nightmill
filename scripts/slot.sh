@@ -41,6 +41,12 @@
 # 5 s of waiting), because on Windows a reader that holds the marker open makes them fail for a moment. Nothing is
 # printed between tries; only the last try's error is. The publish of the claim is tried once. Same behaviour as
 # slot.ps1.
+# Interruption (iteration 36): a take stopped by INT (Ctrl+C) or TERM after it has claimed its slot runs the same
+# restore as a failed step, prints "<step> interrupted (INT)" or "(TERM)" with the outcome and exits 130 or 143.
+# Stopped while it writes its finished marker, it leaves its claim without the process id; --abandon frees it. A
+# second signal does not stop a restore. A signal sent with kill to the take alone waits for the running command. A
+# take killed without a chance to clean up (KILL, a closed window) leaves a claim that is dead once its process has
+# ended. Same behaviour as slot.ps1, which prints "<step> stopped" and cannot set the exit code.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
 # scripts/stages.sh); a failed append prints one note and changes nothing else. Same behaviour as slot.ps1.
 set -euo pipefail
@@ -315,6 +321,7 @@ warmup() {
   count=$(json_len worktrees.warmup)
   for ((idx = 0; idx < count; idx++)); do
     i=$((i + 1))
+    take_step="warm-up $i"
     where="$dir"
     d=$(json_get "worktrees.warmup[$idx].dir")
     if [ -n "$d" ]; then where="$dir/$d"; fi
@@ -526,8 +533,12 @@ claim_slot() {
   tmpc="$state/slot-$n.claim.$me.tmp"; mk=$(marker "$n")
   claim_since=$(date +%Y-%m-%dT%H:%M:%S)
   ledger_clock; claim_at=$ledger_s
+  # what the interruption handler needs: the slot, the temporary file and the claim's text (decision 3 of iteration 36)
+  claim_n=$n; claim_mk=$mk; claim_tmp=$tmpc
+  claim_text=$(json_marker_taking "$n" "$take" "$claim_since" "$me")
   ( set -C; json_marker_taking "$n" "$take" "$claim_since" "$me" > "$tmpc" ) || c=$?
   if [ "$c" != 0 ]; then
+    trap ':' INT TERM
     rm -f "$tmpc"
     echo "claim failed (exit $c); slot $n was not claimed" >&2; exit 1
   fi
@@ -540,8 +551,9 @@ claim_slot() {
     rm -f "$tmpc" || true
     return 0
   fi
+  if [ -e "$mk" ]; then rm -f "$tmpc"; return 1; fi
+  trap ':' INT TERM
   rm -f "$tmpc"
-  if [ -e "$mk" ]; then return 1; fi
   echo "slot $n: could not claim ($(printf '%s\n' "$lerr" | head -n 1))" >&2; exit 1
 }
 # the take's own marker changes are tried this often, this many seconds apart (see Retries in the header)
@@ -570,9 +582,16 @@ leave_claim() {
     rm -f "$tmpl"
   fi
 }
-# restore_take <step> <code>: after a failed step, put the slot back as it was and remove the claim; exits 1
+# restore_take <step> <code> [<signal>]: after a failed step, or with the signal after an interruption (iteration 36),
+# put the slot back as it was and remove the claim; exits 1, or 130 for INT and 143 for TERM
 restore_take() {
-  local step=$1 code=$2 ok=1 cur_head cur_branch tip
+  trap ':' INT TERM
+  local step=$1 code=$2 sig=${3:-} ok=1 cur_head cur_branch tip what rc=1
+  what="failed (exit $code)"
+  if [ -n "$sig" ]; then
+    what="interrupted ($sig)"
+    if [ "$sig" = TERM ]; then rc=143; else rc=130; fi
+  fi
   if [ "$created" = 1 ]; then
     git worktree remove --force "$dir" || ok=0
   elif [ "$recorded" = 1 ]; then
@@ -592,17 +611,52 @@ restore_take() {
     if [ -n "$tip" ] && [ "$tip" = "$base_commit" ]; then git -C "$main" branch -D "$take" || ok=0; fi
   fi
   if [ "$ok" = 1 ]; then retry_marker rm -f "$mk" || ok=0; fi
-  if [ "$ok" = 1 ]; then echo "$step failed (exit $code); slot $n is free again" >&2; exit 1; fi
+  if [ "$ok" = 1 ]; then echo "$step $what; slot $n is free again" >&2; exit "$rc"; fi
   leave_claim
-  echo "$step failed (exit $code); slot $n could not be put back and stays claimed: free it with --abandon $n" >&2
-  exit 1
+  echo "$step $what; slot $n could not be put back and stays claimed: free it with --abandon $n" >&2
+  exit "$rc"
+}
+# own_claim: slot claim_n's marker holds byte for byte the claim this take wrote (decision 3 of iteration 36)
+own_claim() {
+  local cur
+  [ -n "$claim_text" ] && [ -f "$claim_mk" ] || return 1
+  cur=$(cat "$claim_mk" 2>/dev/null) || return 1
+  [ "$cur" = "$claim_text" ]
+}
+# on_signal <INT|TERM>: the take was interrupted after the trap was set (see Interruption in the header)
+on_signal() {
+  trap ':' INT TERM
+  local sig=$1 rc=130 what
+  if [ "$sig" = TERM ]; then rc=143; fi
+  what="interrupted ($sig)"
+  if [ "$take_step" = "write marker" ]; then
+    if own_claim; then
+      rm -f "$state/slot-$n.take.tmp" || true
+      leave_claim
+      echo "write marker $what; slot $n stays claimed: free it with --abandon $n" >&2
+    else
+      echo "write marker $what; slot $n is taken (branch $take): free it with --abandon $n if it is not used" >&2
+    fi
+    exit "$rc"
+  fi
+  if ! own_claim; then
+    if [ -n "$claim_tmp" ]; then rm -f "$claim_tmp" || true; fi
+    echo "claim $what; no slot was claimed" >&2
+    exit "$rc"
+  fi
+  n=$claim_n; mk=$claim_mk; dir=$(slot_dir "$n")
+  # a worktree counts as created by the take when it did not exist before step 3 and exists now
+  if [ "$had_dir" = 0 ] && [ -d "$dir" ]; then created=1; fi
+  restore_take "$take_step" "" "$sig"
 }
 # finish_take: the finished marker over the claim, then the hints
 finish_take() {
   local tmpt="$state/slot-$n.take.tmp" c=0
   json_marker "$n" "$take" "$(date +%Y-%m-%dT%H:%M:%S)" > "$tmpt" || c=$?
   if [ "$c" = 0 ]; then retry_marker mv -f "$tmpt" "$mk" || c=$?; fi
+  if [ "$c" = 0 ]; then trap - INT TERM; fi
   if [ "$c" != 0 ]; then
+    trap ':' INT TERM
     rm -f "$tmpt"
     leave_claim
     echo "write marker failed (exit $c); slot $n stays claimed: free it with --abandon $n" >&2; exit 1
@@ -618,22 +672,28 @@ if [ -n "$take" ]; then
   me=$(my_pid)
   claim_since=""
   n=$slot
+  mk=""; dir=""
+  created=0; recorded=0; old_head=""; old_branch=""; had_branch=1; base_commit=""
+  # the interruption handler (iteration 36): armed from the first claim attempt to the finished marker
+  claim_n=0; claim_mk=""; claim_tmp=""; claim_text=""; had_dir=""; take_step=claim
+  trap 'on_signal INT' INT
+  trap 'on_signal TERM' TERM
   # 1 pick and claim
   if [ "$n" = 0 ]; then
     for ((i = 1; i <= count; i++)); do
       has_marker "$i" && continue
       if claim_slot "$i"; then n=$i; break; fi
     done
-    [ "$n" != 0 ] || { echo "all $count slots are busy; see slot.sh --status" >&2; exit 1; }
+    [ "$n" != 0 ] || { trap ':' INT TERM; echo "all $count slots are busy; see slot.sh --status" >&2; exit 1; }
   else
-    { [ "$n" -ge 1 ] && [ "$n" -le "$count" ]; } || { echo "slot must be 1..$count" >&2; exit 1; }
-    if has_marker "$n"; then echo "slot $n is busy" >&2; exit 1; fi
-    claim_slot "$n" || { echo "slot $n is busy" >&2; exit 1; }
+    { [ "$n" -ge 1 ] && [ "$n" -le "$count" ]; } || { trap ':' INT TERM; echo "slot must be 1..$count" >&2; exit 1; }
+    if has_marker "$n"; then trap ':' INT TERM; echo "slot $n is busy" >&2; exit 1; fi
+    claim_slot "$n" || { trap ':' INT TERM; echo "slot $n is busy" >&2; exit 1; }
   fi
   mk=$(marker "$n"); dir=$(slot_dir "$n")
-  created=0; recorded=0; old_head=""; old_branch=""; had_branch=1; base_commit=""
 
   # 2 fetch, at most 3 attempts, 1 s apart
+  take_step="git fetch"
   for attempt in 1 2 3; do
     c=0; git fetch origin "$base_branch" || c=$?
     if [ "$c" = 0 ]; then break; fi
@@ -642,16 +702,20 @@ if [ -n "$take" ]; then
   [ "$c" = 0 ] || restore_take "git fetch" "$c"
 
   # 3 the worktree
+  take_step="git worktree add"
+  if [ -d "$dir" ]; then had_dir=1; else had_dir=0; fi
   if [ ! -d "$dir" ]; then
     c=0; git worktree add --detach "$dir" "$base" || c=$?
     [ "$c" = 0 ] || restore_take "git worktree add" "$c"
     created=1
   elif [ "$(dirty_count "$dir")" -gt 0 ]; then
+    trap ':' INT TERM
     retry_marker rm -f "$mk" || leave_claim
     echo "slot $n has uncommitted files; deal with them first: $dir" >&2; exit 1
   fi
 
   # 4 what the restore puts back
+  take_step="git switch"
   c=0; old_head=$(git -C "$dir" rev-parse HEAD) || c=$?
   [ "$c" = 0 ] || restore_take "git switch" "$c"
   c=0; old_branch=$(git -C "$dir" symbolic-ref -q --short HEAD) || c=$?
@@ -677,6 +741,7 @@ if [ -n "$take" ]; then
   warmup "$n" "$dir" || restore_take "warm-up $warm_idx" "$warm_code"
 
   # 7 finish
+  take_step="write marker"
   finish_take
   exit 0
 fi
