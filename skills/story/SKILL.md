@@ -3,7 +3,7 @@ name: story
 description: Turn the maintainer's one-line idea into a story issue on the board, filed from the story form under the right epic. Use when asked to file, write or create a story.
 argument-hint: <one-line idea>
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
 ---
 
 Turn this one-line idea into a story issue: $ARGUMENTS

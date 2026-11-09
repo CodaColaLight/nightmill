@@ -3,7 +3,7 @@ name: spec
 description: Write the spec for a Ready story as its own PR and stop at Spec review. Use when asked to spec a story, write the spec for an issue, or start the next Ready story. Implementing an Approved story is /next.
 argument-hint: [issue-number]
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
 ---
 
 Write the spec for a Ready story: $ARGUMENTS

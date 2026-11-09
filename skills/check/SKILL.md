@@ -1,7 +1,7 @@
 ---
 name: check
 description: Run the project's configured check command (the local equivalent of CI) and fix the cause of any failure. Use before every commit and whenever asked to run the checks.
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
 ---
 
 Project configuration (`.claude/nightmill.json`):

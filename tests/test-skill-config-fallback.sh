@@ -10,6 +10,37 @@ trap 'rm -rf "$work"' EXIT
 errors=0
 bad() { echo "FAIL: $*" >&2; errors=$((errors + 1)); }
 
+# split_parts <command>: print the parts of a compound command, one per line, split at && || ; | |& & and newlines
+# outside quotes; an & that belongs to a redirection (2>&1, &>) stays with its part.
+split_parts() {
+  local str=$1 i ch prev="" next quote="" cur=""
+  for ((i = 0; i < ${#str}; i++)); do
+    ch=${str:i:1}
+    next=${str:i+1:1}
+    if [ -n "${quote}" ]; then
+      cur+=$ch
+      [ "$ch" = "$quote" ] && quote=""
+    elif [ "$ch" = '"' ] || [ "$ch" = "'" ]; then
+      quote=$ch
+      cur+=$ch
+    elif [ "$ch" = "&" ] && { [ "$prev" = ">" ] || [ "$prev" = "<" ] || [ "$next" = ">" ]; }; then
+      cur+=$ch
+    elif [ "$ch" = "&" ] || [ "$ch" = "|" ] || [ "$ch" = ";" ] || [ "$ch" = $'\n' ]; then
+      printf '%s\n' "$cur"
+      cur=""
+      # the second char of && || |& is part of the operator
+      if [ "$ch" != ";" ] && [ "$ch" != $'\n' ] && { [ "$next" = "&" ] || { [ "$ch" = "|" ] && [ "$next" = "|" ]; }; }; then
+        i=$((i + 1))
+        ch=$next
+      fi
+    else
+      cur+=$ch
+    fi
+    prev=$ch
+  done
+  printf '%s\n' "$cur"
+}
+
 mkdir -p "$work/empty" "$work/withcfg/.claude"
 printf '{"marker":"cfg-present-7431"}\n' > "$work/withcfg/.claude/nightmill.json"
 
@@ -43,18 +74,30 @@ for name in spec next fix story check; do
   # allowed-tools covers the injection command
   allowed=$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} /^allowed-tools:/{print}' "$skill")
   if [ -z "$allowed" ]; then bad "$name: no allowed-tools in the frontmatter"; continue; fi
-  covered=0
+  rules=()
   while IFS= read -r rule; do
-    pat=${rule#Bash(}
-    pat=${pat%)}
-    base=${pat% \*}
-    # shellcheck disable=SC2254
-    case "$cmd" in
-      $pat) covered=1 ;;
-      "$base") covered=1 ;;
-    esac
+    rules+=("$rule")
   done < <(printf '%s\n' "${allowed#allowed-tools:}" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep '^Bash(' || true)
-  [ "$covered" -eq 1 ] || bad "$name: allowed-tools does not cover the injection command: $cmd"
+  # Claude Code splits a compound command at && || ; | |& & and newlines; every part needs its own rule
+  uncovered=""
+  while IFS= read -r part; do
+    part=${part#"${part%%[![:space:]]*}"}
+    part=${part%"${part##*[![:space:]]}"}
+    [ -n "${part}" ] || continue
+    covered=0
+    for rule in "${rules[@]+"${rules[@]}"}"; do
+      pat=${rule#Bash(}
+      pat=${pat%)}
+      base=${pat% \*}
+      # shellcheck disable=SC2254
+      case "$part" in
+        $pat) covered=1 ;;
+        "$base") covered=1 ;;
+      esac
+    done
+    [ "$covered" -eq 1 ] || uncovered="${uncovered}[${part}] "
+  done < <(split_parts "$cmd")
+  [ -z "$uncovered" ] || bad "$name: allowed-tools has no rule for part(s) of the injection command: $uncovered"
 done
 
 if [ "$errors" -ne 0 ]; then echo "$errors failure(s)" >&2; exit 1; fi
