@@ -586,7 +586,8 @@ leave_claim() {
 # put the slot back as it was and remove the claim; exits 1, or 130 for INT and 143 for TERM
 restore_take() {
   trap ':' INT TERM
-  local step=$1 code=$2 sig=${3:-} ok=1 cur_head cur_branch tip what="failed (exit $2)" rc=1
+  local step=$1 code=$2 sig=${3:-} ok=1 cur_head cur_branch tip what rc=1
+  what="failed (exit $code)"
   if [ -n "$sig" ]; then
     what="interrupted ($sig)"
     if [ "$sig" = TERM ]; then rc=143; else rc=130; fi

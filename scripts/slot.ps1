@@ -658,6 +658,12 @@ function Invoke-Git {
   if ($r.Err) { [Console]::Error.Write($r.Err) }
   return $r.Code
 }
+# Invoke-GitOut <arguments>: git with its error text passed through like Invoke-Git; returns Out and Code
+function Invoke-GitOut {
+  $r = Invoke-Native "git" @($args)
+  if ($r.Err) { [Console]::Error.Write($r.Err) }
+  return $r
+}
 # Undo-Take <step> <what>: after a failed step ("failed (exit N)") or a stop ("stopped"), put the slot back as it was
 # and remove the claim; prints the line and does not exit (it runs in the finally of the take)
 function Undo-Take([string]$step, [string]$what) {
@@ -786,8 +792,7 @@ if ($Take) {
     # 2 fetch, at most 3 attempts, 1 s apart
     $script:takeStep = "git fetch"
     for ($attempt = 1; $attempt -le 3; $attempt++) {
-      git fetch origin $baseBranch
-      $fc = $LASTEXITCODE
+      $fc = Invoke-Git -C $main fetch origin $baseBranch
       if ($fc -eq 0) { break }
       if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
     }
@@ -797,34 +802,33 @@ if ($Take) {
     $script:takeStep = "git worktree add"
     $script:hadDir = [bool](Test-Path $dir)
     if (-not (Test-Path $dir)) {
-      git worktree add --detach $dir $Base
-      if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git worktree add" $LASTEXITCODE }
+      $wc = Invoke-Git -C $main worktree add --detach $dir $Base
+      if ($wc -ne 0) { Exit-Take "fail" "git worktree add" $wc }
       $script:created = $true
-    } elseif (@(git -C $dir status --porcelain).Count -gt 0) {
+    } elseif ((Invoke-GitOut -C $dir status --porcelain).Out.Trim()) {
       Exit-Take "dirty" -Lines @("slot $n has uncommitted files; deal with them first: $dir")
     }
 
     # 4 what the restore puts back
     $script:takeStep = "git switch"
-    $h = git -C $dir rev-parse HEAD
-    if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git switch" $LASTEXITCODE }
-    $script:oldHead = ([string]$h).Trim()
-    $h = git -C $dir symbolic-ref -q --short HEAD
-    $sc = $LASTEXITCODE
-    if ($sc -eq 0) { $script:oldBranch = ([string]$h).Trim() } elseif ($sc -ne 1) { Exit-Take "fail" "git switch" $sc }
-    git -C $dir show-ref --verify --quiet "refs/heads/$Take"
-    $sc = $LASTEXITCODE
+    $r = Invoke-GitOut -C $dir rev-parse HEAD
+    if ($r.Code -ne 0) { Exit-Take "fail" "git switch" $r.Code }
+    $script:oldHead = $r.Out.Trim()
+    $r = Invoke-GitOut -C $dir symbolic-ref -q --short HEAD
+    $sc = $r.Code
+    if ($sc -eq 0) { $script:oldBranch = $r.Out.Trim() } elseif ($sc -ne 1) { Exit-Take "fail" "git switch" $sc }
+    $sc = (Invoke-GitOut -C $dir show-ref --verify --quiet "refs/heads/$Take").Code
     if ($sc -eq 0) { $script:hadBranch = $true } elseif ($sc -eq 1) { $script:hadBranch = $false } else { Exit-Take "fail" "git switch" $sc }
     if (-not $script:hadBranch) {
-      $h = git -C $dir rev-parse "$Base^{commit}"
-      if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git switch" $LASTEXITCODE }
-      $script:baseCommit = ([string]$h).Trim()
+      $r = Invoke-GitOut -C $dir rev-parse "$Base^{commit}"
+      if ($r.Code -ne 0) { Exit-Take "fail" "git switch" $r.Code }
+      $script:baseCommit = $r.Out.Trim()
     }
     $script:recorded = $true
 
     # 5 switch
-    if ($script:hadBranch) { git -C $dir switch $Take } else { git -C $dir switch -c $Take --no-track $Base }
-    if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git switch" $LASTEXITCODE }
+    if ($script:hadBranch) { $sc = Invoke-Git -C $dir switch $Take } else { $sc = Invoke-Git -C $dir switch -c $Take --no-track $Base }
+    if ($sc -ne 0) { Exit-Take "fail" "git switch" $sc }
 
     # 6 warm-up
     Invoke-Warmup $n $dir
@@ -834,6 +838,11 @@ if ($Take) {
     $script:takeStep = "write marker"
     Complete-Take
     exit 0
+  } catch {
+    # an uncaught error in a step (not a stop, not an exit): that step's failure (iteration 36)
+    if ($_.Exception -is [System.Management.Automation.PipelineStoppedException] -or $script:takeStep -eq "claim" -or $script:takeStep -eq "write marker") { throw }
+    [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message))
+    Exit-Take "fail" $script:takeStep 1
   } finally {
     if (-not $script:takeDone) { Close-Take }
   }

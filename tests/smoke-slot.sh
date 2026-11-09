@@ -1516,7 +1516,6 @@ i_kill_all() { # the whole group of every job, and the hook of cases 5 and 6, th
   if [ -f "$tmp/hold.pid" ]; then for h in $(cat "$tmp/hold.pid"); do kill -KILL "$h" 2>/dev/null || true; done; fi
 }
 fail() { i_kill_all; if [ -n "$reader_pid" ]; then : > "$tmp/let-go"; fi; claim_stop; echo "FAIL: $*" >&2; exit 1; }
-i_xcfg="$tmp/cfg-claim.json"
 i_pidgate() { echo "echo \$\$ > '$tmp/gate.pid'; $gate_cmd"; } # the gate warm-up, writing its own pid first
 i_start() { # i_start <name> <take arguments...>: the take as a job of its own; its pid (and group) is left in $i_p
   local name=$1; shift
