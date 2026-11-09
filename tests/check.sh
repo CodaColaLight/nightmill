@@ -97,6 +97,7 @@ add bash test-changelog-coverage.sh
 add bash test-json-speed.sh
 add bash test-mktemp-template.sh
 add bash test-skill-config-fallback.sh
+add bash test-slot-number.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1

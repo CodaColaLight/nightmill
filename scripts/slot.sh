@@ -61,11 +61,11 @@ while [ $# -gt 0 ]; do
     --status) status=1 ;;
     --porcelain) porcelain=1 ;;
     --take) take=${2:?--take needs a branch}; shift ;;
-    --slot) slot=${2:?}; shift ;;
+    --slot) [[ "${2:-}" =~ ^[0-9]+$ ]] || usage; slot=$((10#$2)); shift ;;
     --base) base=${2:?}; shift ;;
     --skip-warmup) skip=1 ;;
-    --release) release=${2:?}; shift ;;
-    --abandon) abandon=${2:?}; shift ;;
+    --release) [[ "${2:-}" =~ ^[0-9]+$ ]] || usage; release=$((10#$2)); shift ;;
+    --abandon) [[ "${2:-}" =~ ^[0-9]+$ ]] || usage; abandon=$((10#$2)); shift ;;
     *) usage ;;
   esac
   shift
