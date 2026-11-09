@@ -21,7 +21,7 @@ finding when one fails:
 5. it states whether the change is one of the escalation triggers of your prompt and whether the manual check of the
    paths in your prompt applies;
 6. it adds no scope the issue does not ask for: a rule, a flag, a key or a skill the issue never mentions;
-7. its first heading starts `# Iteration <N>:` and it has the line `Status: draft, awaiting approval (#<issue>)`.
+7. its first heading starts `# Iteration <N>:`, it has the line `Status: draft, awaiting approval (#<issue>)`, and it has every heading of the spec template in your prompt (`templates/spec.md` of the plugin) whose comment does not begin `Optional.`, with the template's text and in its order.
 
 A finding is **blocking** when it breaks one of these points, and **advisory** for anything else (wording, ordering, a
 clearer name). Do not pad: report what you can point at, with its file and line.
