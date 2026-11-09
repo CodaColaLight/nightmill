@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 44 (#112): `/spec N` and `/next N` finish a story that an earlier run left at Spec, Spec review, In
+  progress or Review. With a number, `/spec` also takes Spec and Spec review and `/next` also takes In progress and
+  Review when the story's own branch, slot or pull request exists; they print where they resume and go on from the
+  first step that left nothing behind, reuse the branch, the slot and an open pull request, and set no status, comment
+  or CHANGELOG entry twice. A story with nothing behind it, or a slot whose agent is still running, is refused. `/next`
+  names its branch with the iteration number. Without a number nothing changes.
 - Iteration 35 (#189): a take retries its own marker changes while a reader holds the marker open. The finishing move,
   the rewrite of a claim without a process id and the removal of its own claim are each tried up to 21 times 0.25 s
   apart (at most 5 s of waiting each), in both shells; only the last try's error is printed, and the messages and

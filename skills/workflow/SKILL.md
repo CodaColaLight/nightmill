@@ -61,7 +61,8 @@ options disables the workflows that pointed at a removed option.
 
 ## Stories and bugs
 
-- An agent only works on issues whose status is Ready (spec, or bug fix) or Approved (implementation).
+- An agent only works on issues whose status is Ready (spec, or bug fix) or Approved (implementation), and, named
+  by number, on a story at Spec, Spec review, In progress or Review to finish its own work (**Picking an issue**).
 - Every PR closes exactly one story or fixes one bug. `/spec` writes the spec for a Ready story, `/next`
   implements an Approved one, `/fix` fixes a bug, `/story` files a story.
 - **Bugs are not iterations**: no spec, milestone, iteration number or CHANGELOG entry. A failing test
@@ -77,10 +78,21 @@ options disables the workflows that pointed at a removed option.
 `/spec` and `/next` pick their issue by one rule and differ only in the status they take: `/spec` takes a
 **Ready** story (`board.statuses.ready`), `/next` an **Approved** one (`board.statuses.approved`).
 
-1. **With a number**, take that issue. An epic or a bug is refused (bugs go through `/fix`). An issue
-   whose board status is not the skill's status is refused with one line that names the status found and
-   the skill that takes it, for example `#12 is at Spec review, not Ready; /spec only takes Ready stories.`
-   Nothing is changed.
+1. **With a number**, take that issue. An epic or a bug is refused (bugs go through `/fix`). Named by number,
+   `/spec` also takes Spec and Spec review, and `/next` also takes In progress and Review, but only to finish a story
+   whose own artefacts exist: its branch (`<git.specPrefix><N>-*` for `/spec`, `<git.featurePrefix><N>-*` for `/next`,
+   N the iteration number; for `/next` also the head of an open pull request that closes the issue), its slot (the
+   busy slot holding that branch, `/next` only) and its pull requests (open, merged or closed). A status alone, or a
+   milestone alone, is not an artefact; more than one branch of the iteration is refused. Any other status is refused
+   with one line that names the status found and the skill that takes it, for example
+   `#12 is at Approved, not Ready, Spec or Spec review; /next takes it.` At Spec, Spec review, In progress or Review
+   without its own artefacts the issue is refused with
+   `#<n> is at <status>, but no branch <prefix><N>-*, no slot and no pull request of it exists; nothing to continue. The maintainer moves it back to <Ready | Approved>.`
+   A run that is visibly at work is never joined: a slot whose agent is `running` (or a take still `taking`) is
+   refused with a line that ends `another run is working on it. Nothing was changed.`, and so is a spec branch
+   checked out in another worktree. Every refusal changes nothing. Right after the picking line (rule 3) and before
+   the first change, a resumed run prints `Resuming #<n> at <step>: <what was found>` (the branch, the slot with its
+   agent state and last report, the pull request, the spec file); a run that starts at Ready or Approved prints none.
 2. **Without a number**, list the board (`gh project item-list`, filtered with its own `--jq`; do not pipe it into `python` or `jq`, which the project's permission rule `Bash(gh project *)` does not cover), keep open issues at the skill's status
    that are not epics and not bugs, and take the highest `board.priorityField` (the order of
    `board.priorities`; an item without a priority ranks last). On a tie ask the maintainer which, listing
@@ -90,6 +102,11 @@ options disables the workflows that pointed at a removed option.
 3. **Before the first change** (board, branch, file, slot) print one line:
    `Picking #N "<title>": <status>, <priority>, <reason>`, where the reason is `named by number`,
    `only <status> story` or `highest priority of K <status> stories`.
+4. **A resumed run** goes on from the first unfinished step: the first step that left no artefact (what a dead run
+   held only in its memory, a result block or a review, counts as not done and runs again). Every step is
+   idempotent: a status already set is not set again but read back, an existing branch is switched to, an open pull
+   request is reused, and a comment, a CHANGELOG entry or a status line already written is not written twice. The
+   tables of where each skill resumes are in "Resuming a story" of `/spec` and of `/next`.
 
 With nothing at the skill's status the skill changes nothing and says so. `/next` then lists the Ready
 stories and points to `/spec N`; it never starts a spec itself.

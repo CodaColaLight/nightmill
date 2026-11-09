@@ -10,8 +10,9 @@ the installed release. The rules are in `skills/workflow/SKILL.md`
 (`/nightmill:workflow`); this project's values are in `.claude/nightmill.json` (board 2 on the
 `CodaColaLight` account, labels, areas, the check command, slots). `/spec` writes the
 spec for a Ready story, `/next` implements an Approved one, `/fix` fixes a bug, `/story` files a story,
-`/check` runs the check. An agent only works on issues whose board status is Ready or Approved; only the
-maintainer sets those. Run the check before every commit; never commit red.
+`/check` runs the check. An agent only works on issues whose board status is Ready or Approved, and, named by
+number, on a story at Spec, Spec review, In progress or Review to finish its own work; only the maintainer sets
+Ready and Approved. Run the check before every commit; never commit red.
 
 **Work on the installed release; never `claude --plugin-dir .` here** (`docs/decisions/0003`). A folder
 loaded with `--plugin-dir` is a protected path, so with `.` almost every edit in this repository prompts.
