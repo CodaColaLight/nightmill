@@ -5,7 +5,7 @@
 # The pause is parallel.roomPauseSeconds 1 unless a case says otherwise, so nothing sleeps long. Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-room.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 R="$here/scripts/room.sh"
 unset NIGHTMILL_LOAD_FIXTURE

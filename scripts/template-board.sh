@@ -87,7 +87,7 @@ fi
 
 gh auth status >/dev/null 2>&1 || die "gh is not logged in (run gh auth login)"
 
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-template-board.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 if ! gh project view "$t_number" --owner "$t_owner" --format json > "$tmp/view.json" 2> "$tmp/err" \
   || ! gh project field-list "$t_number" --owner "$t_owner" --limit 50 --format json > "$tmp/fields.json" 2> "$tmp/err" \

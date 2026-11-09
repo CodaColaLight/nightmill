@@ -4,7 +4,7 @@
 # Same approach as smoke-status.sh: a fake gh answers from tests/fixtures/status-controls/. No network.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-test-status-controls.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 S="$here/scripts/status.sh"
 FIX="$here/tests/fixtures/status-controls"

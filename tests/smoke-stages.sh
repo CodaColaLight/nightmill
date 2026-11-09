@@ -6,7 +6,7 @@
 # no network (a fake gh logs every call; stages.sh must make none).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-stages.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 ST="$here/scripts/stages.sh"
 FIX="$here/tests/fixtures/stages"

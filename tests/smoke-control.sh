@@ -5,7 +5,7 @@
 # docs/specs/iteration-30-load-controller.md; smoke-control.ps1 runs the same cases. Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-control.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 C="$here/scripts/control.sh"
 unset WORKER_SLOTS NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW

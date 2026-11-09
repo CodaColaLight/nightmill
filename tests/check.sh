@@ -300,7 +300,7 @@ if [ "$L" = 1 ]; then
     result "$i" "$rc" "$t0" "$ledger_s"
   done
 else
-  dir=$(mktemp -d) || { echo "check: mktemp -d failed" >&2; exit 1; }
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-check.XXXXXX") || { echo "check: mktemp -d failed" >&2; exit 1; }
   trap stop_jobs EXIT
   # start_job <i>: step i (and the steps of its group) as one background job
   start_job() {

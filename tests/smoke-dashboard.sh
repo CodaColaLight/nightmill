@@ -6,7 +6,7 @@
 # (read the diff before committing). Needs bash and awk, no jq, no network. Nothing sleeps.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-dashboard.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 D="$here/scripts/dashboard.sh"
 S="$here/scripts/status.sh"

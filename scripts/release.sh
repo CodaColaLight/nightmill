@@ -168,7 +168,7 @@ if [ "$publish" = 1 ]; then
   if [ "$norel" = 0 ] && gh release view "$tag" >/dev/null 2>&1; then
     echo "the GitHub Release $tag already exists"
   elif [ "$norel" = 0 ]; then
-    tmpc=$(mktemp); notes=$(mktemp)
+    tmpc=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX"); notes=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
     gshow origin/main:CHANGELOG.md > "$tmpc"
     section "$version" "$tmpc" > "$notes"
     gh release create "$tag" --title "nightmill $version" --notes-file "$notes" --verify-tag --latest
@@ -213,7 +213,7 @@ rollback() { git reset -q --hard HEAD >/dev/null 2>&1 || true; git switch -q mai
 git switch -q -c "$rbranch"
 trap rollback ERR
 
-tmpf=$(mktemp)
+tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
 sed -E "s/^([[:space:]]*\"version\":[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")/\1$version\2/" "$PJ" > "$tmpf"
 cat "$tmpf" > "$PJ"
 awk -v v="$version" -v d="$date" '{ print } /^## Unreleased[[:space:]]*$/ && !done { print ""; print "## " v " (" d ")"; done = 1 }' CHANGELOG.md > "$tmpf"
@@ -232,7 +232,7 @@ if [ "$nopr" = 1 ]; then
   exit 0
 fi
 
-body=$(mktemp)
+body=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
 {
   section "$version" CHANGELOG.md
   echo
