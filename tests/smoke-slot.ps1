@@ -1486,7 +1486,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   $r = SlotE '-Take feat/n1 -Slot 02'
   if ($r.Code -ne 0 -or -not $r.Out.Contains('Slot 2 is yours')) { Fail "number: -Take -Slot 02: exit $($r.Code): $($r.Out) / $($r.Err)" }
   if ((Test-Path "$tmp\wt\slot-02") -or (Test-Path "$S1\slot-02.json")) { Fail 'number: -Take -Slot 02 made slot-02' }
-  if (-not (MText 2).Contains('"slot": 2,')) { Fail "number: the marker of -Slot 02: $(MText 2)" }
+  if ((MGet 2 'slot') -ne '2') { Fail "number: the marker of -Slot 02: $(MText 2)" }
   $r = SlotE '-Abandon 02'
   if ($r.Code -ne 0 -or (Test-Path (Marker 2))) { Fail "number: -Abandon 02: exit $($r.Code): $($r.Out) / $($r.Err)" }
   Reset-Gh
