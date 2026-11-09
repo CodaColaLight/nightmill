@@ -83,6 +83,9 @@ add bash smoke-panel.sh
 add bash smoke-stages.sh
 add bash smoke-check.sh
 add bash test-lintcopy-output.sh
+add bash test-lint-pipefail.sh
+add bash test-release-resume.sh
+add bash test-json-bom.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
@@ -99,6 +102,8 @@ add ps smoke-panel.ps1
 add ps smoke-stages.ps1
 add ps smoke-check.ps1
 add ps test-lintcopy-output.ps1
+add ps test-release-resume.ps1
+add ps test-json-bom.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then

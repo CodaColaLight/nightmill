@@ -146,7 +146,22 @@ commit_in "later work" "echo later >> README.md"
 [ "$(git -C "$W" cat-file -t v0.2.0)" = tag ] || fail "v0.2.0 is not an annotated tag"
 [ "$(git -C "$W" rev-parse 'v0.2.0^{commit}')" = "$release_commit" ] || fail "v0.2.0 does not point at the release commit"
 [ "$(git -C "$O" rev-parse 'v0.2.0^{commit}')" = "$release_commit" ] || fail "v0.2.0 is not on origin at the release commit"
-refuses "publish twice" "tag v0.2.0 already exists" --version 0.2.0 --publish --no-release
+( cd "$W" && bash scripts/release.sh --version 0.2.0 --publish --no-release ) >/dev/null || fail "publish twice exited non-zero"
+[ "$(git -C "$O" rev-parse 'v0.2.0^{commit}')" = "$release_commit" ] || fail "publish twice moved v0.2.0"
+
+echo "== publish: a failed tag push is finished by a rerun; a tag at another commit is refused (#130)"
+setup
+( cd "$W" && bash scripts/release.sh --version 0.2.0 --no-pr ) >/dev/null
+( cd "$W" && git merge -q --ff-only release/v0.2.0 && git push -q origin main )
+release_commit=$(git -C "$W" rev-parse HEAD)
+printf '#!/bin/sh\nwhile read old new ref; do case "$ref" in refs/tags/*) exit 1;; esac; done\nexit 0\n' > "$O/hooks/pre-receive"
+chmod +x "$O/hooks/pre-receive"
+if ( cd "$W" && bash scripts/release.sh --version 0.2.0 --publish --no-release ) >/dev/null 2>&1; then fail "publish succeeded although origin rejects tags"; fi
+rm -f "$O/hooks/pre-receive"
+( cd "$W" && bash scripts/release.sh --version 0.2.0 --publish --no-release ) >/dev/null || fail "the rerun after a failed push exited non-zero"
+[ "$(git -C "$O" rev-parse 'v0.2.0^{commit}')" = "$release_commit" ] || fail "the rerun did not push v0.2.0 at the release commit"
+git -C "$W" tag -d v0.2.0 >/dev/null; git -C "$W" tag -a v0.2.0 -m x "$release_commit^"
+refuses "tag at another commit" "tag v0.2.0 already exists at another commit" --version 0.2.0 --publish --no-release
 
 echo "== the lint notices versions that disagree"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"

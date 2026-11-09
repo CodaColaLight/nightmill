@@ -15,7 +15,8 @@
 #          as written; empty for null
 #
 # The grammar is RFC 8259: no trailing commas, comments, single quotes, leading zeros, control characters
-# in strings, text after the value, or nesting deeper than 64 levels. \uXXXX is decoded to UTF-8 (a
+# in strings, text after the value, or nesting deeper than 64 levels; a leading UTF-8 byte order mark is
+# skipped. \uXXXX is decoded to UTF-8 (a
 # surrogate pair gives one character); \u0000 is not supported. An error is one line on standard error,
 # "json: <file>: <reason> at byte <n>".
 #
@@ -208,11 +209,13 @@ function json_value(depth,   c) {
   return json_fail("unexpected character")
 }
 
-# parse a text; returns the root node id, or 0 with the reason in jerr
+# parse a text; returns the root node id, or 0 with the reason in jerr. A leading UTF-8 byte order mark is
+# skipped (Windows PowerShell 5.1 writes one; the PowerShell readers strip it), so byte offsets stay the file's.
 function json_parse(text) {
   jt = text
   jlen = length(jt)
   jp = 1
+  if (substr(jt, 1, 3) == "\357\273\277") jp = 4
   jerr = ""
   jroot = json_value(1)
   if (!jroot) return 0

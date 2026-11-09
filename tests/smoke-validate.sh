@@ -35,7 +35,7 @@ check() {
   [ "$rc" = "$code" ] || fail "$name: expected exit code $code, got $rc: $out"
   local l
   for l in "$@"; do
-    printf '%s\n' "$out" | grep -qxF -- "$l" || fail "$name: missing the line '$l' in: $out"
+    printf '%s\n' "$out" | grep -xF -- "$l" >/dev/null || fail "$name: missing the line '$l' in: $out"
   done
 }
 
@@ -142,7 +142,7 @@ printf '%s\n' '{"mode":"medium","extra":1}' > "$tmp/mini.json"
 set +e; out=$(bash "$V" --schema "$mini" "$tmp/mini.json" 2>&1); rc=$?; set -e
 [ "$rc" = 1 ] || fail "enum: expected exit code 1, got $rc"
 for l in 'error: extra: unknown key is not allowed' 'error: mode: must be one of: fast, slow, got "medium"' '2 errors, 0 warnings'; do
-  printf '%s\n' "$out" | grep -qxF -- "$l" || fail "enum: missing the line '$l' in: $out"
+  printf '%s\n' "$out" | grep -xF -- "$l" >/dev/null || fail "enum: missing the line '$l' in: $out"
 done
 printf '%s\n' '{"mode":"fast"}' > "$tmp/mini.json"
 bash "$V" --schema "$mini" "$tmp/mini.json" >/dev/null || fail "enum: a valid value was refused"

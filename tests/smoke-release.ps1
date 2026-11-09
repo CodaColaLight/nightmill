@@ -168,7 +168,28 @@ try {
   if ((G $script:W @("cat-file", "-t", "v0.2.0")) -ne "tag") { Fail "v0.2.0 is not an annotated tag" }
   if ((G $script:W @("rev-parse", "v0.2.0^{commit}")) -ne $releaseCommit) { Fail "v0.2.0 does not point at the release commit" }
   if ((G $script:O @("rev-parse", "v0.2.0^{commit}")) -ne $releaseCommit) { Fail "v0.2.0 is not on origin at the release commit" }
-  Refuses "publish twice" "tag v0.2.0 already exists" @("-Version", "0.2.0", "-Publish", "-NoRelease")
+  $r = Run-Release @("-Version", "0.2.0", "-Publish", "-NoRelease")
+  if ($r.Code -ne 0) { Fail "publish twice exited with $($r.Code): $($r.Err)" }
+  if ((G $script:O @("rev-parse", "v0.2.0^{commit}")) -ne $releaseCommit) { Fail "publish twice moved v0.2.0" }
+
+  Write-Host "== publish: a failed tag push is finished by a rerun; a tag at another commit is refused (#130)"
+  Setup
+  $r = Run-Release @("-Version", "0.2.0", "-NoPr")
+  if ($r.Code -ne 0) { Fail "prepare exited with $($r.Code): $($r.Err)" }
+  $null = G $script:W @("merge", "-q", "--ff-only", "release/v0.2.0")
+  $null = G $script:W @("push", "-q", "origin", "main")
+  $releaseCommit = G $script:W @("rev-parse", "HEAD")
+  $hook = Join-Path $script:O "hooks\pre-receive"
+  Write-Utf8 $hook "#!/bin/sh`nwhile read old new ref; do case `"`$ref`" in refs/tags/*) exit 1;; esac; done`nexit 0`n"
+  $r = Run-Release @("-Version", "0.2.0", "-Publish", "-NoRelease")
+  if ($r.Code -eq 0) { Fail "publish succeeded although origin rejects tags" }
+  Remove-Item $hook
+  $r = Run-Release @("-Version", "0.2.0", "-Publish", "-NoRelease")
+  if ($r.Code -ne 0) { Fail "the rerun after a failed push exited with $($r.Code): $($r.Err)" }
+  if ((G $script:O @("rev-parse", "v0.2.0^{commit}")) -ne $releaseCommit) { Fail "the rerun did not push v0.2.0 at the release commit" }
+  $null = G $script:W @("tag", "-d", "v0.2.0")
+  $null = G $script:W @("tag", "-a", "v0.2.0", "-m", "x", "$releaseCommit^")
+  Refuses "tag at another commit" "tag v0.2.0 already exists at another commit" @("-Version", "0.2.0", "-Publish", "-NoRelease")
 
   Write-Host "== the lint notices versions that disagree"
   $bash = $null
