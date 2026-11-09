@@ -6,7 +6,9 @@
 #                                                  .claude-plugin/plugin.json, cuts CHANGELOG.md and updates
 #                                                  the README's "Version" line; push it and open the pull request
 #   scripts/release.sh --version X.Y.Z --publish   after the merge: tag the release commit vX.Y.Z, push the tag
-#                                                  and create the GitHub Release from the changelog section
+#                                                  and create the GitHub Release from the changelog section;
+#                                                  each step that is already done is skipped, so a run that
+#                                                  failed half way is finished by running it again
 #   --dry-run     print what would happen, change and push nothing
 #   --no-pr       prepare without pushing or opening the pull request (the branch stays local)
 #   --no-release  publish without creating the GitHub Release (the tag is still pushed)
@@ -109,6 +111,15 @@ tag_exists() {
   [ -n "$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" ]
 }
 
+# remote_tag_commit: the commit the tag points at on origin (peeled), empty when origin has no such tag
+remote_tag_commit() {
+  local l c=""
+  l=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}") || refuse "cannot list the tags on origin"
+  c=$(printf '%s\n' "$l" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')
+  [ -n "$c" ] || c=$(printf '%s\n' "$l" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
+  printf '%s' "$c"
+}
+
 # --- checks both modes make --------------------------------------------------------------------------------
 
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "version must be X.Y.Z with digits only, got '$version'"
@@ -124,7 +135,6 @@ if [ "$publish" = 1 ]; then
     || refuse "CHANGELOG.md on origin/main has no heading for $version"
   gshow origin/main:README.md | awk -v v="$version" 'index($0, "Version " v ".") == 1 { f = 1 } END { exit !f }' \
     || refuse "README.md on origin/main has no 'Version $version.' line"
-  tag_exists && refuse "tag $tag already exists"
 
   # the oldest commit on origin/main's first-parent history that holds this version: the merge of the
   # release pull request, not whatever main has become since
@@ -135,14 +145,29 @@ if [ "$publish" = 1 ]; then
   done
   [ -n "$cand" ] || refuse "no commit on origin/main holds version $version"
 
+  # every step is skipped when it is already done, so a run that failed half way can be run again; only a
+  # tag at another commit is refused
+  ltag=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" 2>/dev/null || true)
+  rtag=$(remote_tag_commit)
+  [ -z "$ltag" ] || [ "$ltag" = "$cand" ] || refuse "tag $tag already exists at another commit ($(git rev-parse --short "$ltag"), not $(git rev-parse --short "$cand"))"
+  [ -z "$rtag" ] || [ "$rtag" = "$cand" ] || refuse "tag $tag already exists on origin at another commit (${rtag:0:7}, not $(git rev-parse --short "$cand"))"
+
   if [ "$dry" = 1 ]; then
-    echo "would tag $(git log -1 --format='%h %s' "$cand") as $tag, push the tag and create the GitHub Release"
+    echo "would tag $(git log -1 --format='%h %s' "$cand") as $tag, push the tag and create the GitHub Release (steps already done are skipped)"
     exit 0
   fi
-  git tag -a "$tag" -m "nightmill $version" "$cand"
-  git push -q origin "$tag"
-  echo "tagged $tag at $(git rev-parse --short "$cand")"
-  if [ "$norel" = 0 ]; then
+  if [ -z "$ltag" ] && [ -z "$rtag" ]; then
+    git tag -a "$tag" -m "nightmill $version" "$cand"
+  fi
+  if [ -z "$rtag" ]; then
+    git push -q origin "refs/tags/$tag"
+    echo "tagged $tag at $(git rev-parse --short "$cand")"
+  else
+    echo "tag $tag is already on origin at $(git rev-parse --short "$cand")"
+  fi
+  if [ "$norel" = 0 ] && gh release view "$tag" >/dev/null 2>&1; then
+    echo "the GitHub Release $tag already exists"
+  elif [ "$norel" = 0 ]; then
     tmpc=$(mktemp); notes=$(mktemp)
     gshow origin/main:CHANGELOG.md > "$tmpc"
     section "$version" "$tmpc" > "$notes"

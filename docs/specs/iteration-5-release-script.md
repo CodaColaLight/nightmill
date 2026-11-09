@@ -75,13 +75,18 @@ Refuses when:
 1. the version is not valid, the working tree is dirty, or `origin/main` cannot be fetched;
 2. `origin/main`'s `plugin.json` does not hold `X.Y.Z` (the release pull request has not merged), or its
    `CHANGELOG.md` has no `## X.Y.Z (` heading, or its README has no `Version X.Y.Z.` line;
-3. the tag `vX.Y.Z` already exists locally or on `origin`.
+3. the tag `vX.Y.Z` exists locally or on `origin` at a commit other than the release commit below.
 
 Otherwise it finds the oldest commit on `origin/main`'s first-parent history whose `plugin.json` holds
 `X.Y.Z` (the merge of the release pull request, not whatever `main` has become since), creates the annotated
 tag `vX.Y.Z` on it with the message `nightmill X.Y.Z`, and pushes the tag. Unless `--no-release` it then runs
 `gh release create vX.Y.Z --title "nightmill X.Y.Z" --notes <the changelog section of X.Y.Z> --verify-tag
 --latest`. With `--dry-run` it prints the commit it would tag and stops.
+
+Every step is skipped when it is already done, so a run that failed half way is finished by running it again
+(#130): a tag that exists locally at the release commit is not created again, a tag that is already on
+`origin` at the release commit is not pushed again, and the Release is not created when `gh release view
+vX.Y.Z` finds one.
 
 ## The lint check
 
@@ -120,7 +125,8 @@ copy of the three files and a `main` branch, no `gh` needed (`--no-pr`, `--no-re
    no file other than these three changed.
 4. **Publish**: the release commit is merged into `main` and pushed (the test plays the maintainer), then one
    more commit is added to `main`; publish creates the annotated tag `v0.2.0` on the release commit and not
-   on the later one, and the tag exists on `origin`. Publish before the merge refuses; publish twice refuses.
+   on the later one, and the tag exists on `origin`. Publish before the merge refuses; publish twice succeeds and leaves the tag where it is; a rerun after a
+   failed tag push pushes the tag; a tag at another commit refuses.
 5. The lint check: a copy of the real repository files with one version changed makes `tests/lint.sh` report a
    mismatch; the real files pass.
 
