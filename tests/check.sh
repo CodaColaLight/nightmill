@@ -99,6 +99,7 @@ add bash test-mktemp-template.sh
 add bash test-skill-config-fallback.sh
 add bash test-slot-number.sh
 add bash test-board-listing.sh
+add bash test-resume-stuck.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1

@@ -21,7 +21,12 @@ skill of this plugin; this skill is the step list.
 
 Follow **Picking an issue** in the `workflow` skill with the status **Approved** (`board.statuses.approved`).
 
-- If `$ARGUMENTS` holds an issue number, take that issue; refuse when it is not at Approved.
+- If `$ARGUMENTS` holds an issue number, take that issue. It also takes In progress and Review, only to finish the
+  story's own work (see "Resuming a story" below). The other statuses are refused with one line, changing nothing:
+  Backlog `#<n> is at Backlog, not Approved, In progress or Review; only the maintainer moves a story to Ready.`;
+  Ready, Spec `#<n> is at <status>, not Approved, In progress or Review; /spec takes it.`;
+  Spec review `#<n> is at Spec review, not Approved, In progress or Review; the maintainer approves its spec first.`;
+  Done `#<n> is at Done; nothing is left to do.` An epic or a bug is refused as today.
 - Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .["<board.statusField, lower case>"], .["<board.priorityField, lower case>"], ((.labels // []) | join(",")), .content.title] | @tsv'`
   and take the highest-priority Approved story that is not an epic and not a bug (bugs go through `/fix`).
   The two keys are the configured `board.statusField` and `board.priorityField`, lower-cased with spaces kept
@@ -43,19 +48,25 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
   (empty when the body was never edited). When `lastEditedAt` is later than that comment's `created_at`, change
   nothing and stop with `Stopped: the body of #<issue> was edited after the spec comment (<lastEditedAt>). Nothing was changed; the status stays Approved.`
   The maintainer then checks the edit; posting the spec comment again as that login clears the stop.
+- At In progress or Review (the edit check above runs as today), step 2.1 reads the status back and finds the spec;
+  then find the story's own artefacts and where it resumes ("Resuming a story" below), print the resume line, and go
+  on from there; a refusal there changes nothing.
 
 ## 2. Implement the approved story
 
-1. Set the status to **In progress** and read it back (`gh project item-list` for the item id,
+1. Set the status to **In progress** and read it back (a status already at In progress or Review is not set again; it is read back;
+   `gh project item-list` for the item id,
    `gh project field-list` for the field and option ids, then `gh project item-edit`). Find the spec: the
    issue comment `/spec` left (`Spec: <path> (PR #<pr>)`), else the milestone's spec in
    `iterations.specDir`. Read it completely; the spec is the contract. The iteration number N is the one
    in the spec's file name.
 2. Before it, check the room on the machine (**Parallel work** in the `workflow` skill). Take a slot:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><slug>` (PowerShell)
-   or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><slug>` (bash). Work in that
+   `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><N>-<slug>` (PowerShell)
+   or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><N>-<slug>` (bash), N the iteration
+   number from the spec's file name, so that a resumed run finds the branch. Work in that
    worktree; `-Release N` after the merge. Without slots, `git fetch origin`, then
-   `git switch -c <git.featurePrefix><slug> origin/<git.baseBranch>`. In a slot every git command, the session's own
+   `git switch -c <git.featurePrefix><N>-<slug> origin/<git.baseBranch>`. A resumed run takes the slot as "Resuming a
+   story" says ("The slot" there). In a slot every git command, the session's own
    included, is `git -C <slot path> ...` with the absolute slot path, never `cd <slot> && git ...`.
    Respect the agent limit and `parallel.hotFiles`. Right after the take report the step `slot-taken` (see
    "Reporting the steps" below); from here on every step is reported there.
@@ -71,19 +82,23 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    (its last result counts), first copy the text of each of those paths and of each disputed file that is not committed
    (`git -C <slot> diff -- <path>` for a changed file, the file for a new one) for step 8, then set them aside with
    `git -C <slot> stash push --include-untracked -m "Unmet tests for #<issue>: <title>" -- <the paths>`, so the tree is
-   clean for the rebase and for the release of the slot. Add the CHANGELOG entry for iteration N and change the spec's
-   status line to `Status: delivered in iteration <N> (PR #<pr>)`, and commit both:
+   clean for the rebase and for the release of the slot. Add the CHANGELOG entry for iteration N, only when
+   `iterations.changelog` on the branch has no entry for iteration N, and change the spec's status line to
+   `Status: delivered in iteration <N> (PR #<pr>)`, only when it is not already `Status: delivered in iteration <N> ...`,
+   and commit both (nothing to commit when both are there):
    `git -C <slot path> add <iterations.changelog> <the spec>`, `git -C <slot path> commit -m "<message>"`. Rebase on
    `origin/<git.baseBranch>`: `git fetch origin` in the main checkout, then `git -C <slot path> rebase origin/<git.baseBranch>`;
    on a CHANGELOG conflict keep both entries in iteration order, `git -C <slot path> add <iterations.changelog>`, then
-   `git -C <slot path> rebase --continue`. Push with `git -C <slot path> push -u origin <branch>`. Without slots the
+   `git -C <slot path> rebase --continue`. Push with `git -C <slot path> push -u origin <branch>`; a rejected push stops
+   with `Stopped: the push of <branch> was rejected: <first line of git's message>. Nothing was opened; the status of #<issue> is In progress and the slot is taken.` Without slots the
    same commands run in the checkout without `-C <slot path>` (`git rebase origin/<git.baseBranch>`,
    `git push -u origin <branch>`). Every commit message is passed with `-m "<message>"`, never through a command
    substitution or a heredoc.
    Before you run the check for that commit, check the room on the machine (**Parallel work** in the `workflow` skill).
-6. Open a PR titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
+6. Open a PR, only when no open pull request has the branch as its head (an open one is reused and its body is not
+   rewritten), titled `Iteration <N>: <what> (#<issue>)` with `Closes #<issue>`, directly under it the line
    `Written by the implementer role on <model>.` (`<model>` is the exact string passed as `model` in the
-   Agent call), and a "How verified" section written from the tester's and the implementer's result blocks (tests, the
+   Agent call; a run resumed at the code review writes the lines of "Resuming a story" instead), and a "How verified" section written from the tester's and the implementer's result blocks (tests, the
    check) and your own manual check, and the `## Review` section of "The code review" (step 5 there). "How verified"
    begins with:
 
@@ -140,6 +155,7 @@ reports nothing.
 | When | Role | Step |
 |---|---|---|
 | right after the take (step 2.2) | `session` | `slot-taken` |
+| when a resumed run has its slot ("Resuming a story") | `session` | `resumed` |
 | just before the tester is launched (step 3, "The tester") | `tester` | `write-tests` |
 | just before the implementer is launched (step 3) | `implementer` | `implement` |
 | the implementer, before its step 1 / step 2 | `implementer` | `tests` / `code` |
@@ -158,6 +174,76 @@ reports nothing.
 The implementer reports its own steps (the paragraph in its prompt); the session reports the others, the code review
 too, because the code reviewer cannot run a script. A slot whose last step is `done` waits for its merge and shows
 `stalled` once `worktrees.stalledAfterMinutes` has passed, until it is freed.
+
+## Resuming a story
+
+Named by number, `/next` also takes a story at In progress or Review when its own artefacts exist (**Picking an
+issue** in the `workflow` skill). N is the number in the spec's file name, found as step 2.1 finds it.
+
+- **The implementation pull requests**: `gh pr list --state all --search "<issue> in:body" --limit 50 --json number,state,headRefName,body,autoMergeRequest,closingIssuesReferences`,
+  filtered with its own `--jq` (not piped into `jq` or `python`) to those whose `closingIssuesReferences` holds the
+  issue. The head of an open one is the story's branch whatever its name (a branch named before the iteration number
+  was in it, `<git.featurePrefix><slug>`, is found this way).
+- **The branch**: after `git fetch origin`, `git for-each-ref --format='%(refname:short)' refs/heads/<git.featurePrefix><N>-* refs/remotes/origin/<git.featurePrefix><N>-*`
+  (a local branch and its `origin/` twin are one branch). More than one is refused:
+  `#<n> has more than one branch of iteration <N>: <names, comma-separated>; the maintainer keeps one. Nothing was changed.`
+  A branch only on `origin` is created locally before the take: `git branch --no-track <branch> origin/<branch>`.
+- **The slot**: the busy line of `slot --status --porcelain` (`slot.ps1 -Status -Porcelain`) whose field 3 is the
+  branch; field 6 is the agent state, field 9 the step, field 10 the report time.
+- **No artefact**: `#<n> is at <status>, but no branch <git.featurePrefix><N>-*, no slot and no pull request of it exists; nothing to continue. The maintainer moves it back to Approved.`
+  Nothing is changed.
+
+**A run that is visibly at work is never joined.** Refused, changing nothing, when the slot holding the branch is:
+
+| Slot state (porcelain) | Line |
+|---|---|
+| field 6 `running` | `#<n>: slot <s> (<branch>) is running (last report <field 10>, step <field 9>); another run is working on it. Nothing was changed.` |
+| field 9 `taking` | `#<n>: slot <s> (<branch>) is being taken; another run is working on it. Nothing was changed.` |
+| field 9 `take-died` | `#<n>: slot <s> (<branch>) holds a take that did not finish; free it with slot --abandon <s> (-Abandon <s>) and run /next <n> again. Nothing was changed.` |
+
+`stalled` and `unknown` are resumed (the threshold is `worktrees.stalledAfterMinutes`); the resume line names the
+state and the last report.
+
+Right after the picking line print `Resuming #<n> at <step>: <what was found>` (`branch <name>`, with
+`, only on origin` when there is no local one; `slot <s> (<agent state>, last report <time> | no report)`;
+`pull request #<pr> <open | merged>`; `no pull request`), for example
+`Resuming #112 at the code review: branch feat/44-resume-stuck-issues, slot 2 (stalled, last report 2026-11-08T09:14:02), no pull request.`
+The table is read top to bottom; the first row that matches decides.
+
+| # | Found | Resumes at | Then |
+|---|---|---|---|
+| N1 | an open pull request that closes the issue | `Review` | set Review when it is not, read it back, again after a minute; step 7 only when its `autoMergeRequest` is empty and its body does not have `Auto-merge is not enabled`; report `done` to the slot that holds its branch, if any |
+| N2 | a merged one, none open | refused: `#<n>: its pull request #<pr> has merged; its Closes sets Done. Nothing was changed.` | |
+| N3 | only closed, unmerged ones | refused: `#<n>: its pull request #<pr> was closed without a merge; the maintainer decides. Nothing was changed.` | |
+| N4 | at Review, none of the above | refused: `#<n> is at Review, but no pull request of it is open; the maintainer decides. Nothing was changed.` | |
+| N5 | the branch in a slot that is visibly at work (above) | refused (the table above) | |
+| N6 | the branch, in a stalled, unknown or `done` slot, or in no slot | `the slot` | the slot (below), then N7 to N9 on what the branch holds |
+| N7 | the slot's tree not clean | refused: `Stopped: slot <s> (<branch>) of #<n> has uncommitted files from an earlier run: <paths, at most 10, then "and <k> more">. Nothing else was changed; commit, stash or discard them and run /next <n> again.` (report `stopped`) | |
+| N8 | no commit on the branch (`git -C <slot> log origin/<git.baseBranch>..HEAD` empty) | `the tester` | step 3 as today, then steps 4 to 8 |
+| N9 | commits on the branch | `the code review` | the tester's files (below), then "The code review" from step 1 (round 0, the full `review.maxFixRounds`), steps 4 to 8 |
+| N10 | no artefact | refused (no artefact, above) | |
+
+**The slot** (N6). A slot that holds the branch (stalled, unknown or `done`) is reused as it is: no take. Otherwise the
+branch is taken with `--take <branch>` (`-Take <branch>`; the take switches to the existing local branch). Without
+slots, the session's checkout is switched to it (`git switch <branch>`, the tree clean). Right after, report the step
+`resumed` (role `session`) to the slot, so that it shows `running` again; from there every step is reported as today.
+A take that fails because the branch is checked out elsewhere stops with the take's line, as every failed take does.
+
+**The tester's files in a resumed code review** (N9). The dead run's `<tester files>` are not known. Take as
+`<tester files>` every path of `git -C <slot> diff --name-only origin/<git.baseBranch>...HEAD` that is a test path by
+the `Test paths:` line of "The tester", record `<tester blobs>` and `<tester originals>` for them by rule 1 of "The
+tester's files" (round 0), and from there guard them as today. The code review's prompt lists them as committed. "How
+verified" begins, instead of the tester's block, with:
+
+```
+Resumed by /next at the code review; the earlier run's tester result is not known. Tests on the branch:
+- <path>, one per line
+```
+
+and the line under `Closes #<issue>` is `Written by the implementer role in an earlier run that did not finish; resumed by /next at the code review.`,
+followed by `Fix rounds by the implementer role on <model>.` when this run launched the implementer. A stash entry whose
+message is `Unmet tests for #<issue>: <title>` (`git stash list`) is named in the final message and in "How verified" as
+`- set aside by an earlier run: stash "<message>"`; it is not popped.
 
 ## The tester
 

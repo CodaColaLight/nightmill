@@ -19,9 +19,12 @@ Show the table as the script printed it, then add at most three lines:
    **Approved** (waiting for a worker; `/next` takes it).
 2. What is flagged (`stale: ...`) and who fixes it: Review with a merged PR is board automation or the
    maintainer; a busy slot with a merged PR is `slot --release N`, a dropped one `slot --abandon N`;
-   In progress or Spec with nothing behind it is `/next`, `/spec` or the maintainer. A `stalled` slot is one whose
+   a story at Spec, Spec review, In progress or Review with a branch, a slot or a pull request behind it is continued
+   by `/spec N` (Spec, Spec review) or `/next N` (In progress, Review); with nothing behind it the maintainer moves
+   it back to Ready or Approved. A `stalled` slot is one whose
    agent has not reported for `worktrees.stalledAfterMinutes` (the session may have ended or crashed; with the step
-   `done` the run is over and the slot waits for its merge): the maintainer looks at it and, if it was dropped, frees
+   `done` the run is over and the slot waits for its merge): a `/next` run left there is continued by `/next N` (the
+   issue of the slot's iteration), or the maintainer looks at it and, if it was dropped, frees
    it with `slot --abandon N`; a merged one is freed by `slot --release N`, `--reap` or the next take.
 3. That nothing was changed.
 
