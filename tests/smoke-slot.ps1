@@ -1479,6 +1479,43 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   Remove-Item Env:NIGHTMILL_CLOCK_FILE
   Claim-Reset
 
+  Write-Host "== slot numbers take only digits (bug 128)"
+  # -Slot, -Release and -Abandon accept only digits and normalise them (02 is slot 2); anything else prints the usage
+  # line, exits 1 and changes nothing
+  Reset-Gh
+  $r = SlotE '-Take feat/n1 -Slot 02'
+  if ($r.Code -ne 0 -or -not $r.Out.Contains('Slot 2 is yours')) { Fail "number: -Take -Slot 02: exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if ((Test-Path "$tmp\wt\slot-02") -or (Test-Path "$S1\slot-02.json")) { Fail 'number: -Take -Slot 02 made slot-02' }
+  if (-not (MText 2).Contains('"slot": 2,')) { Fail "number: the marker of -Slot 02: $(MText 2)" }
+  $r = SlotE '-Abandon 02'
+  if ($r.Code -ne 0 -or (Test-Path (Marker 2))) { Fail "number: -Abandon 02: exit $($r.Code): $($r.Out) / $($r.Err)" }
+  Reset-Gh
+  $null = Slot -Take feat/n2 -Slot 2
+  [System.IO.File]::WriteAllText("$tmp\wt\slot-2\number-n2.txt", "n2`n")
+  git -C "$tmp\wt\slot-2" add -A
+  git -C "$tmp\wt\slot-2" -c user.name=t -c user.email=t@example.invalid commit -qm 'work on feat/n2'
+  Gq -C "$tmp\wt\slot-2" push -q origin feat/n2
+  Merged feat/n2 28 (Get-Head 2)
+  $r = SlotE '-Release 02'
+  if ($r.Code -ne 0 -or -not $r.Out.Contains('Slot 2 is free (was feat/n2, PR #28).')) { Fail "number: -Release 02: exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if (Test-Path (Marker 2)) { Fail 'number: -Release 02 left the marker' }
+  Reset-Gh
+  $null = Slot -Take feat/n3 -Slot 2
+  function Get-MList { (@(Get-ChildItem -LiteralPath $S1 -Name | Where-Object { $_ -notlike 'ledger*' }) | Sort-Object) -join ' ' }
+  $before = Get-MList; $m2 = MText 2
+  foreach ($v in '1x', '-1', '""') {
+    foreach ($a in '-Take feat/n4 -Slot', '-Release', '-Abandon') {
+      $r = SlotE "$a $v"
+      if ($r.Code -ne 1) { Fail "number: $a $v`: exit $($r.Code): $($r.Err)" }
+      if ($r.Err -notmatch '^usage: ') { Fail "number: $a $v`: no usage line: $($r.Err)" }
+      if ($r.Out) { Fail "number: $a $v`: printed $($r.Out)" }
+      if ((Get-MList) -cne $before -or (MText 2) -cne $m2) { Fail "number: $a $v changed the markers: $(Get-MList)" }
+    }
+  }
+  if (Test-Path "$tmp\wt\slot-1x") { Fail 'number: a slot directory was made for 1x' }
+  $null = Slot -Abandon 2
+  Gq -C $work branch -D feat/n1 feat/n3
+
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {
   Set-Location $here
