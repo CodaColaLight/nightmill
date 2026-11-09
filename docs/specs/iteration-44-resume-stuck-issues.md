@@ -1,6 +1,6 @@
 # Iteration 44: /spec and /next, named by number, finish a story that an earlier run left at Spec, Spec review, In progress or Review
 
-Status: draft, awaiting approval (#112)
+Status: delivered in iteration 44 (PR #243)
 
 Story: #112, epic #107 (Hardening from the code review), finding HI-4 of the review of 0.2.0. With an issue number,
 `/spec` also takes a story at Spec or Spec review, and `/next` also takes one at In progress or Review, when the story's

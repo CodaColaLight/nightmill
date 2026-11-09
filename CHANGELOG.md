@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Iteration 44 (#112): `/spec N` and `/next N` finish a story that an earlier run left at Spec, Spec review, In
+  progress or Review. With a number, `/spec` also takes Spec and Spec review and `/next` also takes In progress and
+  Review when the story's own branch, slot or pull request exists; they print where they resume and go on from the
+  first step that left nothing behind, reuse the branch, the slot and an open pull request, and set no status, comment
+  or CHANGELOG entry twice. A story with nothing behind it, or a slot whose agent is still running, is refused. `/next`
+  names its branch with the iteration number. Without a number nothing changes.
+
 ## 0.6.0 (2026-11-08)
 
 - Iteration 43 (#109): `/init` writes the permissions an unattended run needs. A new plan line, Run permissions,

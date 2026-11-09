@@ -34,8 +34,8 @@ not a conversation.
 
 | Piece | What it does |
 |---|---|
-| `/nightmill:spec [N]` | Takes a Ready story and writes its spec as its own PR, sets Spec review and stops. |
-| `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. |
+| `/nightmill:spec [N]` | Takes a Ready story and writes its spec as its own PR, sets Spec review and stops. With a number it also continues a story that a run left at Spec or Spec review, from the first step that left nothing behind. |
+| `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. With a number it also continues a story that a run left at In progress or Review, from the first step that left nothing behind. |
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` fixes every Ready bug, several at once (one per free slot, within the agent limit and the room), and ends with one table. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog. |
 | `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. |
