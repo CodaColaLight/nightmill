@@ -4,7 +4,8 @@
 # capacity command (-Capacity: the slot count and the agent limit changed during a session), the reports
 # (-Report) and the claim of a take (iteration 34: a take claims its slot with a marker in the state "taking"
 # before it fetches, switches or warms up; two takes get different slots; a failed take puts its slot back; a
-# dead claim is freed only by -Abandon).
+# dead claim is freed only by -Abandon), and the interruption of a take (iteration 36: a stop after the claim puts the
+# slot back and says so; a killed take leaves a dead claim).
 # Runs on Windows PowerShell 5.1 and pwsh.
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
@@ -1455,6 +1456,247 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   }
   Retry-Case5
   Claim-Reset
+  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+
+  Write-Host "== interruption (iteration 36)"
+  # interruption (iteration 36): a take that is stopped after it has claimed its slot runs, in a finally block, the same
+  # restore as a failed take and says "<step> stopped" with the outcome (the exit code is PowerShell's own and is not
+  # asserted). The take runs in a runspace of this process and is stopped with BeginStop(), the same pipeline stop as
+  # Ctrl+C in a console; its lines go to a StringWriter that stands in for [Console]::Error. Seven cases: (1) in the
+  # warm-up the slot is free and unswitched; (2) after the warm-up changed a file the slot cannot be put back and a
+  # claim without pid stays that -Abandon frees (the claim's process, this one, still runs); (3) while the finished
+  # marker is written the claim stays (needs Windows, as the reader of iteration 35); (4) Stop-Process leaves a dead
+  # claim, as in iteration 34; (5) in the fetch and (6) in the switch, held by a hook, the slot is free; (7) at the
+  # publish nothing was claimed. Every wait is bounded.
+  $script:intr = $null
+  $script:intrErrOld = $null
+  function Restore-Err { if ($null -ne $script:intrErrOld) { [Console]::SetError($script:intrErrOld); $script:intrErrOld = $null } }
+  function Remove-IntrGate { Remove-Item Env:\NIGHTMILL_CLAIM_GATE -ErrorAction SilentlyContinue }
+  function Kill-Intr { # at a failure: stop the runspace, give back the console error, open the hook's gate, end the hook
+    Restore-Err
+    Remove-IntrGate
+    if ($null -ne $script:intr) { try { [void]$script:intr.Ps.BeginStop($null, $null) } catch { } }
+    try { [System.IO.File]::WriteAllText("$tmp\hold-go", "") } catch { }
+    if (Test-Path -LiteralPath "$tmp\hold.winpid") {
+      foreach ($x in @(Get-Content -LiteralPath "$tmp\hold.winpid")) { if ("$x".Trim() -match '^[0-9]+$') { Stop-Process -Id ([int]"$x".Trim()) -Force -ErrorAction SilentlyContinue } }
+    }
+  }
+  function Fail($msg) { Kill-Intr; Let-Go; Stop-Claim; Write-Host "FAIL: $msg" -ForegroundColor Red; exit 1 }
+  $pidGate = "Set-Content '$tf/gate.pid' x; $gateBody"
+  function Start-Intr([string]$arguments, [string]$gate = "") {
+    $sw = New-Object System.IO.StringWriter
+    $script:intrErrOld = [Console]::Error
+    [Console]::SetError($sw)
+    if ($gate) { $env:NIGHTMILL_CLAIM_GATE = $gate }
+    $p = [powershell]::Create()
+    [void]$p.AddScript("Set-Location -LiteralPath '$work'; & '$S' $arguments")
+    $ar = $p.BeginInvoke()
+    $script:intr = [pscustomobject]@{ Ps = $p; Ar = $ar; Sw = $sw; Stop = $null; State = ""; Err = "" }
+  }
+  function Wait-IntrSign([string]$what, [scriptblock]$cond) { # until the condition holds (60 s at most; the take must still run)
+    $end = (Get-Date).AddSeconds(60)
+    while (-not (& $cond)) {
+      if ((Get-Date) -gt $end) { Fail "interruption: $what did not happen within 60 s" }
+      if ($script:intr.Ar.IsCompleted -and -not (& $cond)) { Fail "interruption: the take ended before $what`: $($script:intr.Sw.ToString())" }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  function Begin-StopIntr { $script:intr.Stop = $script:intr.Ps.BeginStop($null, $null) }
+  function End-StopIntr { # waits for the stop (60 s at most); leaves State and Err (the take's lines, LF) in $script:intr
+    if (-not $script:intr.Stop.AsyncWaitHandle.WaitOne(60000)) { Fail "interruption: the take did not end within 60 s after the stop" }
+    try { $script:intr.Ps.EndStop($script:intr.Stop) } catch { }
+    Restore-Err
+    Remove-IntrGate
+    $script:intr.State = [string]$script:intr.Ps.InvocationStateInfo.State
+    $script:intr.Err = ($script:intr.Sw.ToString() -replace "`r`n", "`n")
+    $script:intr.Ps.Dispose()
+  }
+  function Stop-Intr { Begin-StopIntr; End-StopIntr }
+  function Intr-Clean([string[]]$branches) { # a clean start for a case: slots free, no pid files, the branches gone
+    Claim-Reset
+    Remove-Item "$tmp\gate.pid", "$tmp\hold.pid", "$tmp\hold.winpid", "$tmp\hold-go" -Force -ErrorAction SilentlyContinue
+    foreach ($b in $branches) { Gq -C $work branch -D $b }
+  }
+  function Test-IntrFree([string]$case, [string]$branch, [string]$x) { # the slot is free and unswitched
+    if (Test-Path (Marker 1)) { Fail "interruption $case`: the marker of slot 1 is still there: $(MText 1)" }
+    if (@(Get-Leftovers 1).Count -gt 0) { Fail "interruption $case`: temporary files are left: $(Get-Leftovers 1)" }
+    if ((Get-Current 1) -or (Get-Head 1) -ne $x) { Fail "interruption $case`: slot 1 is not detached at $x (branch '$(Get-Current 1)', head $(Get-Head 1))" }
+    if (Get-Ref $branch) { Fail "interruption $case`: the branch $branch was left behind" }
+    $line1 = ((SlotE "-Status -Porcelain").Out -split "`n")[0]
+    if ($line1 -ne "1${T}free") { Fail "interruption $case`: porcelain line 1: $line1" }
+  }
+  function Test-IntrLast([string]$case, [string]$want) {
+    if ($script:intr.State -ne "Stopped") { Fail "interruption $case`: the runspace state is $($script:intr.State), not Stopped: $($script:intr.Err)" }
+    if ((Get-LastLine $script:intr.Err) -cne $want) { Fail "interruption $case`: the last line of standard error is [$(Get-LastLine $script:intr.Err)], wanted [$want]: $($script:intr.Err)" }
+  }
+  function Wait-IntrTaking {
+    $end = (Get-Date).AddSeconds(60)
+    while ((Get-Porc9 1) -ne "taking") {
+      if ((Get-Date) -gt $end) { Fail "interruption: slot 1 did not show the step 'taking' within 60 s" }
+      if ($script:intr.Ar.IsCompleted) { Fail "interruption: the take ended before it showed the step 'taking': $($script:intr.Sw.ToString())" }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  function Test-IntrGone([string]$case) { # every hook process of hold.winpid has ended within 5 s (where Windows ids are recorded)
+    if (-not (Test-Path -LiteralPath "$tmp\hold.winpid")) { return }
+    $end = (Get-Date).AddSeconds(5)
+    while ($true) {
+      $alive = @(Get-Content -LiteralPath "$tmp\hold.winpid" | Where-Object { "$_".Trim() -match '^[0-9]+$' } | Where-Object { Get-Process -Id ([int]"$_".Trim()) -ErrorAction SilentlyContinue })
+      if ($alive.Count -eq 0) { return }
+      if ((Get-Date) -gt $end) { Fail "interruption $case`: a hook process is still running 5 s after the stop: $($alive -join ', ')" }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+
+  # 1 stopped in the warm-up: the slot is free and unswitched
+  function Intr-Case1 {
+    Intr-Clean @("feat/i1")
+    Write-Cfg "[ { `"command`": `"$pidGate`" } ]"
+    $x = Get-Head 1
+    Start-Intr "-Take feat/i1 -Slot 1"
+    Wait-IntrTaking
+    Wait-IntrSign "the warm-up's pid file" { Test-Path -LiteralPath "$tmp\gate.pid" }
+    Stop-Intr
+    Test-IntrLast "1" "warm-up 1 stopped; slot 1 is free again"
+    Test-IntrFree "1" "feat/i1" $x
+  }
+
+  # 2 stopped after the warm-up changed a file: a claim without pid that -Abandon frees
+  function Intr-Case2 {
+    Intr-Clean @("feat/i3")
+    New-Branch "feat/i3" "i3.txt"
+    Write-Cfg "[ { `"command`": `"Set-Content i3.txt changed; $pidGate`" } ]"
+    Start-Intr "-Take feat/i3 -Slot 1"
+    Wait-IntrTaking
+    Wait-IntrSign "the warm-up's pid file" { Test-Path -LiteralPath "$tmp\gate.pid" }
+    Stop-Intr
+    if ($script:intr.State -ne "Stopped") { Fail "interruption 2: the runspace state is $($script:intr.State): $($script:intr.Err)" }
+    $left = "slot 1 has uncommitted files: $claimRoot\slot-1 (commit, stash or discard them first)"
+    if (-not (Test-EndsWithLines $script:intr.Err @($left, "warm-up 1 stopped; slot 1 could not be put back and stays claimed: free it with -Abandon 1"))) { Fail "interruption 2: the last two lines of standard error: $($script:intr.Err)" }
+    if ((Get-Current 1) -ne "feat/i3") { Fail "interruption 2: slot 1 is not on feat/i3 (branch '$(Get-Current 1)')" }
+    if (((Get-Content "$tmp\wt\slot-1\i3.txt") -join "") -ne "changed") { Fail "interruption 2: the changed file was not kept" }
+    $since = MGet 1 "since"
+    Test-Same (Taking-Text 1 "feat/i3" $since) 1 "interruption 2"
+    if ((Get-Porc9 1) -ne "take-died") { Fail "interruption 2: porcelain field 9 is '$(Get-Porc9 1)', not take-died (the claim's process, this one, still runs)" }
+    if (-not (SlotE "-Status").Out.Contains("taking: feat/i3 since $since (no process recorded; free it with -Abandon 1)")) { Fail "interruption 2: status: $((SlotE '-Status').Out)" }
+    Gq -C "$tmp\wt\slot-1" checkout -- i3.txt
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/i3, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "interruption 2: -Abandon (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if (Test-Path (Marker 1)) { Fail "interruption 2: the marker is still there after -Abandon" }
+    Gq -C $work branch -D feat/i3
+  }
+
+  # 3 stopped while writing the finished marker: the claim stays without pid
+  function Intr-Case3 {
+    Intr-Clean @("feat/i4")
+    Write-Cfg $gateJson
+    Start-Intr "-Take feat/i4 -Slot 1"
+    Wait-IntrTaking
+    Hold-Marker (Marker 1)
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    Wait-IntrSign "the finishing move" { Test-Path -LiteralPath "$S1\slot-1.take.tmp" }
+    Begin-StopIntr
+    Start-Sleep -Seconds 1
+    Let-Go
+    End-StopIntr
+    Test-IntrLast "3" "write marker stopped; slot 1 stays claimed: free it with -Abandon 1"
+    Test-Same (Taking-Text 1 "feat/i4" (MGet 1 "since")) 1 "interruption 3"
+    if (@(Get-Leftovers 1).Count -gt 0) { Fail "interruption 3: temporary files are left: $(Get-Leftovers 1)" }
+    if ((Get-Current 1) -ne "feat/i4") { Fail "interruption 3: slot 1 is not on feat/i4" }
+    if (-not (SlotE "-Status").Out.Contains("(no process recorded; free it with -Abandon 1)")) { Fail "interruption 3: status: $((SlotE '-Status').Out)" }
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or -not $r.Out.StartsWith("Slot 1 is free (was feat/i4, a take that did not finish; ")) { Fail "interruption 3: -Abandon (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Gq -C $work branch -D feat/i4
+    Remove-Item "$tmp\go" -Force -ErrorAction SilentlyContinue
+  }
+
+  # 4 Stop-Process, no chance to clean up: a dead claim, as in iteration 34
+  function Intr-Case4 {
+    Intr-Clean @("feat/i5")
+    Write-Cfg "[ { `"command`": `"$pidGate`" } ]"
+    $h = Start-Take "-Take feat/i5 -Slot 1"
+    Wait-For 1 "taking"
+    $end = (Get-Date).AddSeconds(60)
+    while (-not (Test-Path -LiteralPath "$tmp\gate.pid")) {
+      if ((Get-Date) -gt $end) { Fail "interruption 4: the warm-up's pid file did not appear within 60 s" }
+      Start-Sleep -Milliseconds 100
+    }
+    $id = $h.P.Id
+    Stop-Process -Id $id -Force
+    if (-not $h.P.WaitForExit(60000)) { Fail "interruption 4: the stopped take did not end within 60 s" }
+    $r = Wait-Take $h; $script:bgs.Clear()
+    if ($r.Err -match 'stopped|interrupted|free again') { Fail "interruption 4: the killed take wrote a line: $($r.Err)" }
+    $since = MGet 1 "since"
+    Test-Same (Taking-Text 1 "feat/i5" $since "$id") 1 "interruption 4"
+    if (-not (SlotE "-Status").Out.Contains("taking: feat/i5 since $since (process $id has ended; free it with -Abandon 1)")) { Fail "interruption 4: status: $((SlotE '-Status').Out)" }
+    if ((Get-Porc9 1) -ne "take-died") { Fail "interruption 4: porcelain field 9 is '$(Get-Porc9 1)'" }
+    $r = SlotE "-Abandon 1"
+    if ($r.Code -ne 0 -or -not $r.Out.StartsWith("Slot 1 is free (was feat/i5, a take that did not finish; ")) { Fail "interruption 4: -Abandon (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    if (Test-Path (Marker 1)) { Fail "interruption 4: the marker is still there after -Abandon" }
+    if (-not (Get-Ref "feat/i5")) { Fail "interruption 4: the branch feat/i5 is gone" }
+    Gq -C $work branch -D feat/i5
+  }
+
+  # the hold hook of cases 5 and 6
+  New-Item -ItemType Directory -Force "$tmp\hooks" | Out-Null
+  $holdText = 'echo $$ >> ''@T@/hold.pid''; if [ -r /proc/$$/winpid ]; then cat /proc/$$/winpid >> ''@T@/hold.winpid''; fi; i=0; while [ ! -e ''@T@/hold-go'' ] && [ $i -lt 300 ]; do i=$((i+1)); sleep 0.1; done'
+  [System.IO.File]::WriteAllText("$tmp\hooks\hold", $holdText.Replace('@T@', $tf) + "`n")
+  [System.IO.File]::WriteAllText("$tmp\hooks\upload-pack-hold", "#!/bin/sh`nsh '$tf/hooks/hold'`nexec git upload-pack `"`$@`"`n")
+  [System.IO.File]::WriteAllText("$tmp\hooks\post-checkout", "#!/bin/sh`nsh '$tf/hooks/hold'`n")
+
+  # 5 stopped in the fetch: the slot is free
+  function Intr-Case5 {
+    Intr-Clean @("feat/i6")
+    $x = Get-Head 1
+    git -C $work config remote.origin.uploadpack "sh '$tf/hooks/upload-pack-hold'"
+    Start-Intr "-Take feat/i6 -Slot 1 -SkipWarmup"
+    Wait-IntrSign "the hold hook" { Test-Path -LiteralPath "$tmp\hold.pid" }
+    Begin-StopIntr
+    [System.IO.File]::WriteAllText("$tmp\hold-go", "")
+    End-StopIntr
+    Gq -C $work config --unset remote.origin.uploadpack
+    Test-IntrLast "5" "git fetch stopped; slot 1 is free again"
+    Test-IntrFree "5" "feat/i6" $x
+    Test-IntrGone "5"
+  }
+
+  # 6 stopped in the switch: the slot is unswitched and the new branch gone
+  function Intr-Case6 {
+    Intr-Clean @("feat/i7")
+    $x = Get-Head 1
+    git -C $work config core.hooksPath "$tf/hooks"
+    Start-Intr "-Take feat/i7 -Slot 1 -SkipWarmup"
+    Wait-IntrSign "the hold hook" { Test-Path -LiteralPath "$tmp\hold.pid" }
+    Begin-StopIntr
+    [System.IO.File]::WriteAllText("$tmp\hold-go", "")
+    End-StopIntr
+    Gq -C $work config --unset core.hooksPath
+    Test-IntrLast "6" "git switch stopped; slot 1 is free again"
+    Test-IntrFree "6" "feat/i7" $x
+    Test-IntrGone "6"
+  }
+
+  # 7 stopped at the publish: no claim and nothing left
+  function Intr-Case7 {
+    Intr-Clean @("feat/i8")
+    Remove-Item "$tmp\claim-go" -Force -ErrorAction SilentlyContinue
+    $x = Get-Head 1
+    Start-Intr "-Take feat/i8 -Slot 1 -SkipWarmup" "$tmp\claim-go"
+    Wait-IntrSign "the claim's temporary file" { (Get-ClaimFiles 1).Count -ge 1 }
+    if (Test-Path (Marker 1)) { Fail "interruption 7: a marker exists before the publish: $(MText 1)" }
+    Stop-Intr
+    Test-IntrLast "7" "claim stopped; no slot was claimed"
+    Test-IntrFree "7" "feat/i8" $x
+  }
+
+  Intr-Case1
+  Intr-Case2
+  if ($canHold) { Intr-Case3 } else { Write-Host "skipped: no reader that holds the marker open (needs Windows)" }
+  Intr-Case4
+  Intr-Case5
+  Intr-Case6
+  Intr-Case7
+  Intr-Clean @()
   [System.IO.File]::WriteAllText($CFG, $cfgBefore)
 
   Write-Host "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"

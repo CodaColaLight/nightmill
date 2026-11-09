@@ -101,6 +101,7 @@ add bash test-slot-number.sh
 add bash test-board-listing.sh
 add bash test-resume-stuck.sh
 add bash test-story-dedup.sh
+add bash test-interrupt-docs.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
@@ -281,11 +282,12 @@ else
 fi
 
 dir=""; started=()
-# stop_jobs: TERM to every job this run started that still runs, then the run's folder is removed
+# stop_jobs: TERM to the process group of every job this run started that still runs, then the run's folder is
+# removed
 stop_jobs() {
   local s
   for s in ${started[@]+"${started[@]}"}; do
-    [ "${j_live[s]}" != 1 ] || kill -TERM "${j_pid[s]}" 2>/dev/null
+    [ "${j_live[s]}" != 1 ] || kill -TERM -- "-${j_pid[s]}" 2>/dev/null || kill -TERM "${j_pid[s]}" 2>/dev/null
   done
   [ -z "$dir" ] || rm -rf "$dir"
 }
@@ -308,9 +310,12 @@ if [ "$L" = 1 ]; then
 else
   dir=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-check.XXXXXX") || { echo "check: mktemp -d failed" >&2; exit 1; }
   trap stop_jobs EXIT
-  # start_job <i>: step i (and the steps of its group) as one background job
+  # start_job <i>: step i (and the steps of its group) as one background job, in a process group of its own (set -m):
+  # without job control a background job has INT ignored, which no step could undo (the interruption cases of
+  # tests/smoke-slot.sh signal their takes with INT); stop_jobs ends the group
   start_job() {
     local i=$1
+    set -m
     (
       j=$i
       while [ -n "$j" ]; do
@@ -321,7 +326,7 @@ else
         j=${g_next[j]}
       done
     ) &
-    j_pid[i]=$!; j_live[i]=1; started+=("$i")
+    j_pid[i]=$!; set +m; j_live[i]=1; started+=("$i")
     ledger_clock; j_t0[i]=$ledger_s
   }
   ns=${#starts[@]}; np=${#prints[@]}; next=0; running=0; p=0

@@ -41,6 +41,11 @@
 # 5 s of waiting), because on Windows a reader that holds the marker open makes them fail for a moment. Nothing is
 # printed between tries; only the last try's error is. The publish of the claim is tried once. Same behaviour as
 # slot.sh.
+# Interruption (iteration 36): a take stopped by Ctrl+C after it has claimed its slot runs, in a finally block, the
+# same restore as a failed step, prints "<step> stopped" with the outcome. Stopped while it writes its finished
+# marker, it leaves its claim without the process id; -Abandon frees it. A second signal does not stop a restore. A
+# take killed without a chance to clean up (Stop-Process, a closed console) leaves a claim that is dead once its
+# process has ended. Same behaviour as slot.sh, which names the signal and exits 130 or 143.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
 # scripts/stages.ps1); a failed append prints one note and changes nothing else. Same behaviour as slot.sh.
 param(
@@ -360,6 +365,7 @@ function Invoke-Warmup($n, $dir) {
   $i = 0
   foreach ($w in @($wt.warmup)) {
     $i++
+    $script:takeStep = "warm-up $i"
     $where = $dir
     if ($w.dir) { $where = Join-Path $dir $w.dir }
     $stamp = Join-Path $state "slot-$n.warmup-$i"
@@ -583,11 +589,12 @@ function Invoke-Claim([int]$n) {
   $mk = Get-Marker $n
   $script:claimSince = (Get-Date).ToString("s")
   $script:claimAt = Get-LedgerClock
-  try { Write-Lf $tmpc (Get-TakingText $n $Take $script:claimSince "$PID") }
+  # what the finally of the take needs: the slot, the temporary file and the claim's text (decision 3 of iteration 36)
+  $text = Get-TakingText $n $Take $script:claimSince "$PID"
+  $script:claimN = $n; $script:claimMk = $mk; $script:claimTmp = $tmpc; $script:claimText = $text
+  try { Write-Lf $tmpc $text }
   catch {
-    [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message))
-    Remove-Item -LiteralPath $tmpc -Force -ErrorAction SilentlyContinue
-    Exit-Line "claim failed (exit 1); slot $n was not claimed"
+    Exit-Take "end" -Tmp $tmpc -Lines @((Get-FirstLine $_.Exception.Message), "claim failed (exit 1); slot $n was not claimed")
   }
   # for the tests only: hold every take here until the file exists (60 s at most)
   if ($env:NIGHTMILL_CLAIM_GATE) {
@@ -597,10 +604,25 @@ function Invoke-Claim([int]$n) {
   try { [System.IO.File]::Move($tmpc, $mk); return $true }
   catch {
     $why = Get-FirstLine $_.Exception.Message
-    Remove-Item -LiteralPath $tmpc -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $mk) { return $false }
-    Exit-Line "slot ${n}: could not claim ($why)"
+    if (Test-Path -LiteralPath $mk) {
+      Remove-Item -LiteralPath $tmpc -Force -ErrorAction SilentlyContinue
+      return $false
+    }
+    Exit-Take "end" -Tmp $tmpc -Lines @("slot ${n}: could not claim ($why)")
   }
+}
+# Exit-Take <kind> [step code] [-Tmp <file>] [-Lines <lines>]: a normal end of the take (iteration 36, decision 7):
+# records what is left to do for the finally of the take, then exits 1. Kinds: end (remove Tmp, print the lines),
+# fail (the restore of the failed step), dirty (step 3's removal of the claim), finish (the failed finish's cleanup).
+function Exit-Take([string]$kind, [string]$step = "", $code = 0, [string]$tmp = "", [string[]]$lines = @()) {
+  $script:takeEnded = [pscustomobject]@{ Kind = $kind; Step = $step; Code = $code; Tmp = $tmp; Lines = $lines }
+  exit 1
+}
+# Test-OwnClaim: the marker of the slot being claimed holds exactly the claim this take wrote (decision 3 of iteration
+# 36); a read that fails means not its own
+function Test-OwnClaim {
+  if (-not $script:claimText -or -not $script:claimMk) { return $false }
+  try { return ([System.IO.File]::ReadAllText($script:claimMk) -ceq $script:claimText) } catch { return $false }
 }
 # the take's own marker changes are tried this often, this many milliseconds apart (see Retries in the header)
 $markerTries = 21
@@ -627,10 +649,17 @@ function Set-LeftClaim {
   $e = Invoke-MarkerRetry { [System.IO.File]::Replace($tmpl, $mk, [NullString]::Value) }
   if ($null -ne $e) { Remove-Item -LiteralPath $tmpl -Force -ErrorAction SilentlyContinue }
 }
-# Invoke-Git <arguments>: git with its output and error text passed through; returns the exit code
-function Invoke-Git { & git @args | Out-Host; return $LASTEXITCODE }
-# Undo-Take <step> <code>: after a failed step, put the slot back as it was and remove the claim; exits 1
-function Undo-Take([string]$step, $code) {
+# Invoke-Git <arguments>: git with its output and error text passed through; returns the exit code. The text goes to
+# the standard streams directly, not through the host, so that it also works in the finally of a stopped take.
+function Invoke-Git {
+  $r = Invoke-Native "git" @($args)
+  if ($r.Out) { [Console]::Out.Write($r.Out) }
+  if ($r.Err) { [Console]::Error.Write($r.Err) }
+  return $r.Code
+}
+# Undo-Take <step> <what>: after a failed step ("failed (exit N)") or a stop ("stopped"), put the slot back as it was
+# and remove the claim; prints the line and does not exit (it runs in the finally of the take)
+function Undo-Take([string]$step, [string]$what) {
   $ok = $true
   if ($script:created) {
     if ((Invoke-Git worktree remove --force $dir) -ne 0) { $ok = $false }
@@ -658,9 +687,55 @@ function Undo-Take([string]$step, $code) {
     $e = Invoke-MarkerRetry { Remove-Item -LiteralPath $mk -Force -ErrorAction Stop }
     if ($null -ne $e) { [Console]::Error.WriteLine((Get-FirstLine $e.Message)); $ok = $false }
   }
-  if ($ok) { Exit-Line "$step failed (exit $code); slot $n is free again" }
+  if ($ok) { [Console]::Error.WriteLine("$step $what; slot $n is free again"); return }
   Set-LeftClaim
-  Exit-Line "$step failed (exit $code); slot $n could not be put back and stays claimed: free it with -Abandon $n"
+  [Console]::Error.WriteLine("$step $what; slot $n could not be put back and stays claimed: free it with -Abandon $n")
+}
+# Close-Take: the finally of the take (iteration 36, decision 7): what a normal end left to do, or, after a stop or an
+# uncaught error, what decision 4 says; never exits
+function Close-Take {
+  $end = $script:takeEnded
+  if ($null -ne $end) {
+    switch ($end.Kind) {
+      "fail" { Undo-Take $end.Step "failed (exit $($end.Code))" }
+      "dirty" {
+        $e = Invoke-MarkerRetry { Remove-Item -LiteralPath $mk -Force -ErrorAction Stop }
+        if ($null -ne $e) { [Console]::Error.WriteLine((Get-FirstLine $e.Message)); Set-LeftClaim }
+        foreach ($l in $end.Lines) { [Console]::Error.WriteLine($l) }
+      }
+      "finish" {
+        [Console]::Error.WriteLine($end.Lines[0])
+        Remove-Item -LiteralPath (Join-Path $state "slot-$n.take.tmp") -Force -ErrorAction SilentlyContinue
+        Set-LeftClaim
+        [Console]::Error.WriteLine($end.Lines[1])
+      }
+      default {
+        if ($end.Tmp) { Remove-Item -LiteralPath $end.Tmp -Force -ErrorAction SilentlyContinue }
+        foreach ($l in $end.Lines) { [Console]::Error.WriteLine($l) }
+      }
+    }
+    return
+  }
+  $own = Test-OwnClaim
+  if ($script:takeStep -eq "write marker") {
+    if ($own) {
+      Remove-Item -LiteralPath (Join-Path $state "slot-$n.take.tmp") -Force -ErrorAction SilentlyContinue
+      Set-LeftClaim
+      [Console]::Error.WriteLine("write marker stopped; slot $n stays claimed: free it with -Abandon $n")
+    } else {
+      [Console]::Error.WriteLine("write marker stopped; slot $n is taken (branch $Take): free it with -Abandon $n if it is not used")
+    }
+    return
+  }
+  if (-not $own) {
+    if ($script:claimTmp) { Remove-Item -LiteralPath $script:claimTmp -Force -ErrorAction SilentlyContinue }
+    [Console]::Error.WriteLine("claim stopped; no slot was claimed")
+    return
+  }
+  $script:n = $script:claimN; $script:mk = $script:claimMk; $script:dir = Get-SlotDir $script:claimN
+  # a worktree counts as created by the take when it did not exist before step 3 and exists now
+  if ($script:hadDir -eq $false -and (Test-Path -LiteralPath $script:dir)) { $script:created = $true }
+  Undo-Take $script:takeStep "stopped"
 }
 # Complete-Take: the finished marker over the claim, then the hints
 function Complete-Take {
@@ -671,11 +746,9 @@ function Complete-Take {
     Write-Lf $tmpt $marker
   } catch { $e = $_.Exception }
   if ($null -eq $e) { $e = Invoke-MarkerRetry { [System.IO.File]::Replace($tmpt, $mk, [NullString]::Value) } }
+  if ($null -eq $e) { $script:takeDone = $true }
   if ($null -ne $e) {
-    [Console]::Error.WriteLine((Get-FirstLine $e.Message))
-    Remove-Item -LiteralPath $tmpt -Force -ErrorAction SilentlyContinue
-    Set-LeftClaim
-    Exit-Line "write marker failed (exit 1); slot $n stays claimed: free it with -Abandon $n"
+    Exit-Take "finish" -Lines @((Get-FirstLine $e.Message), "write marker failed (exit 1); slot $n stays claimed: free it with -Abandon $n")
   }
   $doneAt = Get-LedgerStamp (Get-LedgerClock)
   Add-LedgerLine $ledger @("take", $doneAt, "$n", $Take, "take", "", "", "", (Get-LedgerStamp $script:claimAt), $doneAt, "")
@@ -687,71 +760,82 @@ if ($Take) {
   Invoke-Reap
   $script:claimSince = ""
   $n = $Slot
-  # 1 pick and claim
-  if ($n -eq 0) {
-    for ($i = 1; $i -le $count; $i++) {
-      if (Read-Marker $i) { continue }
-      if (Invoke-Claim $i) { $n = $i; break }
-    }
-    if ($n -eq 0) { Exit-Line "all $count slots are busy; see slot.ps1 -Status" }
-  } else {
-    if ($n -lt 1 -or $n -gt $count) { Exit-Line "slot must be 1..$count" }
-    if (Read-Marker $n) { Exit-Line "slot $n is busy" }
-    if (-not (Invoke-Claim $n)) { Exit-Line "slot $n is busy" }
-  }
-  $mk = Get-Marker $n
-  $dir = Get-SlotDir $n
+  $mk = ""; $dir = ""
   $script:created = $false; $script:recorded = $false; $script:oldHead = ""; $script:oldBranch = ""
   $script:hadBranch = $true; $script:baseCommit = ""
+  # the finally of the take (iteration 36): from the first claim attempt to the finished marker
+  $script:takeEnded = $null; $script:takeDone = $false; $script:takeStep = "claim"
+  $script:claimN = 0; $script:claimMk = ""; $script:claimTmp = ""; $script:claimText = ""; $script:hadDir = $null
+  try {
+    # 1 pick and claim
+    if ($n -eq 0) {
+      for ($i = 1; $i -le $count; $i++) {
+        if (Read-Marker $i) { continue }
+        if (Invoke-Claim $i) { $n = $i; break }
+      }
+      if ($n -eq 0) { Exit-Take "end" -Lines @("all $count slots are busy; see slot.ps1 -Status") }
+    } else {
+      if ($n -lt 1 -or $n -gt $count) { Exit-Take "end" -Lines @("slot must be 1..$count") }
+      if (Read-Marker $n) { Exit-Take "end" -Lines @("slot $n is busy") }
+      if (-not (Invoke-Claim $n)) { Exit-Take "end" -Lines @("slot $n is busy") }
+    }
+    $mk = Get-Marker $n
+    $dir = Get-SlotDir $n
 
-  # 2 fetch, at most 3 attempts, 1 s apart
-  for ($attempt = 1; $attempt -le 3; $attempt++) {
-    git fetch origin $baseBranch
-    $fc = $LASTEXITCODE
-    if ($fc -eq 0) { break }
-    if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
+    # 2 fetch, at most 3 attempts, 1 s apart
+    $script:takeStep = "git fetch"
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+      git fetch origin $baseBranch
+      $fc = $LASTEXITCODE
+      if ($fc -eq 0) { break }
+      if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
+    }
+    if ($fc -ne 0) { Exit-Take "fail" "git fetch" $fc }
+
+    # 3 the worktree
+    $script:takeStep = "git worktree add"
+    $script:hadDir = [bool](Test-Path $dir)
+    if (-not (Test-Path $dir)) {
+      git worktree add --detach $dir $Base
+      if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git worktree add" $LASTEXITCODE }
+      $script:created = $true
+    } elseif (@(git -C $dir status --porcelain).Count -gt 0) {
+      Exit-Take "dirty" -Lines @("slot $n has uncommitted files; deal with them first: $dir")
+    }
+
+    # 4 what the restore puts back
+    $script:takeStep = "git switch"
+    $h = git -C $dir rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git switch" $LASTEXITCODE }
+    $script:oldHead = ([string]$h).Trim()
+    $h = git -C $dir symbolic-ref -q --short HEAD
+    $sc = $LASTEXITCODE
+    if ($sc -eq 0) { $script:oldBranch = ([string]$h).Trim() } elseif ($sc -ne 1) { Exit-Take "fail" "git switch" $sc }
+    git -C $dir show-ref --verify --quiet "refs/heads/$Take"
+    $sc = $LASTEXITCODE
+    if ($sc -eq 0) { $script:hadBranch = $true } elseif ($sc -eq 1) { $script:hadBranch = $false } else { Exit-Take "fail" "git switch" $sc }
+    if (-not $script:hadBranch) {
+      $h = git -C $dir rev-parse "$Base^{commit}"
+      if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git switch" $LASTEXITCODE }
+      $script:baseCommit = ([string]$h).Trim()
+    }
+    $script:recorded = $true
+
+    # 5 switch
+    if ($script:hadBranch) { git -C $dir switch $Take } else { git -C $dir switch -c $Take --no-track $Base }
+    if ($LASTEXITCODE -ne 0) { Exit-Take "fail" "git switch" $LASTEXITCODE }
+
+    # 6 warm-up
+    Invoke-Warmup $n $dir
+    if ($script:warmFail) { Exit-Take "fail" "warm-up $($script:warmFail.Index)" $script:warmFail.Code }
+
+    # 7 finish
+    $script:takeStep = "write marker"
+    Complete-Take
+    exit 0
+  } finally {
+    if (-not $script:takeDone) { Close-Take }
   }
-  if ($fc -ne 0) { Undo-Take "git fetch" $fc }
-
-  # 3 the worktree
-  if (-not (Test-Path $dir)) {
-    git worktree add --detach $dir $Base
-    if ($LASTEXITCODE -ne 0) { Undo-Take "git worktree add" $LASTEXITCODE }
-    $script:created = $true
-  } elseif (@(git -C $dir status --porcelain).Count -gt 0) {
-    $e = Invoke-MarkerRetry { Remove-Item -LiteralPath $mk -Force -ErrorAction Stop }
-    if ($null -ne $e) { [Console]::Error.WriteLine((Get-FirstLine $e.Message)); Set-LeftClaim }
-    Exit-Line "slot $n has uncommitted files; deal with them first: $dir"
-  }
-
-  # 4 what the restore puts back
-  $h = git -C $dir rev-parse HEAD
-  if ($LASTEXITCODE -ne 0) { Undo-Take "git switch" $LASTEXITCODE }
-  $script:oldHead = ([string]$h).Trim()
-  $h = git -C $dir symbolic-ref -q --short HEAD
-  $sc = $LASTEXITCODE
-  if ($sc -eq 0) { $script:oldBranch = ([string]$h).Trim() } elseif ($sc -ne 1) { Undo-Take "git switch" $sc }
-  git -C $dir show-ref --verify --quiet "refs/heads/$Take"
-  $sc = $LASTEXITCODE
-  if ($sc -eq 0) { $script:hadBranch = $true } elseif ($sc -eq 1) { $script:hadBranch = $false } else { Undo-Take "git switch" $sc }
-  if (-not $script:hadBranch) {
-    $h = git -C $dir rev-parse "$Base^{commit}"
-    if ($LASTEXITCODE -ne 0) { Undo-Take "git switch" $LASTEXITCODE }
-    $script:baseCommit = ([string]$h).Trim()
-  }
-  $script:recorded = $true
-
-  # 5 switch
-  if ($script:hadBranch) { git -C $dir switch $Take } else { git -C $dir switch -c $Take --no-track $Base }
-  if ($LASTEXITCODE -ne 0) { Undo-Take "git switch" $LASTEXITCODE }
-
-  # 6 warm-up
-  Invoke-Warmup $n $dir
-  if ($script:warmFail) { Undo-Take "warm-up $($script:warmFail.Index)" $script:warmFail.Code }
-
-  # 7 finish
-  Complete-Take
-  exit 0
 }
 
 if ($Release -gt 0) {
