@@ -36,7 +36,7 @@ jobs:
         run: |
           sudo mv "$(command -v jq)" "$RUNNER_TEMP/jq.hidden"
           if command -v jq; then echo "jq is still on the PATH"; exit 1; fi
-      - run: bash tests/check.sh --only smoke-hook.sh,smoke-release.sh,smoke-slot.sh,smoke-render.sh,smoke-validate.sh,smoke-status.sh,smoke-template-board.sh,smoke-models.sh,smoke-load.sh,smoke-room.sh,smoke-control.sh,smoke-dashboard.sh,smoke-panel.sh,smoke-stages.sh,smoke-check.sh,test-lintcopy-output.sh,test-lint-pipefail.sh,test-release-resume.sh,test-json-bom.sh,test-render-quoting.sh,test-check-skill.sh
+      - run: bash tests/check.sh --only smoke-hook.sh,smoke-release.sh,smoke-slot.sh,smoke-render.sh,smoke-validate.sh,smoke-status.sh,smoke-template-board.sh,smoke-models.sh,smoke-load.sh,smoke-room.sh,smoke-control.sh,smoke-dashboard.sh,smoke-panel.sh,smoke-stages.sh,smoke-check.sh,test-lintcopy-output.sh,test-lint-pipefail.sh,test-release-resume.sh,test-json-bom.sh,test-render-quoting.sh,test-changelog-refs.sh,test-check-skill.sh
 
   smoke-powershell:
     # Required check: the ruleset on main requires this name; renaming it blocks every pull request.
