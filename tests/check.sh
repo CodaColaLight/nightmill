@@ -87,6 +87,7 @@ add bash test-lint-pipefail.sh
 add bash test-release-resume.sh
 add bash test-json-bom.sh
 add bash test-render-quoting.sh
+add bash test-changelog-refs.sh
 add bash test-worker-merge.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
