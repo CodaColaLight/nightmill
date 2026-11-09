@@ -14,12 +14,12 @@ if [ -z "$step" ]; then echo "FAIL: step 1 not found in $f"; exit 1; fi
 r='(refus|reject|declin)'
 
 # (a) a numbered issue whose status is not Ready is refused
-if ! grep -i -E "$r[^.]*(status|Ready)|(status|Ready)[^.]*$r|not Ready" <<<"$step" >/dev/null; then
+if ! grep -i -E "${r}[^.]*(status|Ready)|(status|Ready)[^.]*$r|not Ready" <<<"$step" >/dev/null; then
   echo "FAIL: $f step 1 does not refuse a numbered issue whose status is not Ready"; fail=1
 fi
 
 # (b) a numbered issue without labels.bug (a story or an epic) is refused
-if ! grep -i -E "$r[^.]*(labels\.bug|bug label|story|stories|epic)|(without|lack|missing|no|not (carry|have|labelled))[^.]*labels\.bug[^.]*$r|(story|epic)[^.]*$r" <<<"$step" >/dev/null; then
+if ! grep -i -E "${r}[^.]*(labels\.bug|bug label|story|stories|epic)|(without|lack|missing|no|not (carry|have|labelled))[^.]*labels\.bug[^.]*$r|(story|epic)[^.]*$r" <<<"$step" >/dev/null; then
   echo "FAIL: $f step 1 does not refuse a numbered issue without the labels.bug label"; fail=1
 fi
 
