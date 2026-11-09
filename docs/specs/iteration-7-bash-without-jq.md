@@ -39,7 +39,8 @@ A recursive-descent parser for JSON as RFC 8259 defines it, written in the POSIX
 intervals. It is always run as `LC_ALL=C awk`, so every character is one byte and `printf "%c"` writes
 bytes. It rejects: an empty file, trailing commas, comments, single quotes, leading zeros, a bare `+`,
 control characters inside a string, bad escapes, an unterminated string, object or array, text after the
-value, and nesting deeper than 64 levels. An error is one line on standard error,
+value, and nesting deeper than 64 levels. A leading UTF-8 byte order mark is skipped, as the PowerShell
+readers do (#132). An error is one line on standard error,
 `json: <file>: <reason> at byte <n>`, and exit code 1. `\uXXXX` is decoded to UTF-8 (a surrogate pair gives
 one four-byte character); raw UTF-8 passes through unchanged.
 
