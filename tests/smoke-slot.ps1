@@ -1252,6 +1252,211 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   Claim-Case7
   Claim-Reset
 
+  Write-Host "== marker retries (iteration 35)"
+  # marker retries (iteration 35): a take tries its own marker changes (the move of the finished marker over its claim,
+  # the rewrite of a claim it leaves behind without pid, the removal of its claim) up to 21 times, 0.25 s apart, while a
+  # reader holds the marker open; the publish of the claim is tried once. Cases 1 to 4 hold the marker open from this
+  # process ([System.IO.File]::Open with FileShare.Read, no delete sharing) and need Windows; elsewhere they print a skip
+  # line. Case 5 (the publish is tried once) runs everywhere.
+  $script:held = $null
+  $script:retryL = 0
+  function Hold-Marker([string]$path) {
+    $script:held = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+  }
+  function Let-Go { if ($null -ne $script:held) { $script:held.Dispose(); $script:held = $null } }
+  function Fail($msg) { Let-Go; Stop-Claim; Write-Host "FAIL: $msg" -ForegroundColor Red; exit 1 }
+  function Wait-Until([string]$what, [scriptblock]$cond) { # until the condition holds (60 s at most)
+    $end = (Get-Date).AddSeconds(60)
+    while (-not (& $cond)) {
+      if ((Get-Date) -gt $end) { Fail "retries: $what did not happen within 60 s" }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  function Test-AtMove($h, [string]$what, [scriptblock]$sign) { # the sign, then 1 s: the take still runs and the marker is as before
+    Wait-Until $what $sign
+    Start-Sleep -Seconds 1
+    if ($h.P.HasExited) { Fail "retries: the take ended within 1 s of $what`: it tried once, not again" }
+    if ((MText 1) -cne $script:before) { Fail "retries: the marker changed within 1 s of $what`: $(MText 1)" }
+  }
+  function Get-LineCount([string]$err) { @($err -split "`n" | Where-Object { $_ -ne "" }).Count }
+  function Get-LastLine([string]$err) { $p = @($err -split "`n" | Where-Object { $_ -ne "" }); if ($p.Count -eq 0) { "" } else { $p[-1] } }
+  function Test-SameAsRef([string]$case, $r, $ref) {
+    if ($r.Code -ne $ref.Code) { Fail "retries $case`: exit $($r.Code), the reference run gave $($ref.Code)" }
+    if ((Get-LastLine $r.Err) -cne (Get-LastLine $ref.Err)) { Fail "retries $case`: last line of standard error [$(Get-LastLine $r.Err)], the reference run gave [$(Get-LastLine $ref.Err)]" }
+    if ((Get-LineCount $r.Err) -ne (Get-LineCount $ref.Err)) { Fail "retries $case`: $(Get-LineCount $r.Err) lines of standard error, the reference run gave $(Get-LineCount $ref.Err) (nothing may be printed for a failed try): $($r.Err)" }
+  }
+  $gateBody = "`$gi = 0; while (-not (Test-Path '$tf/go')) { `$gi++; if (`$gi -ge 1200) { throw 'no go' }; Start-Sleep -Milliseconds 100 }"
+  function Get-GateJson([string]$after) { "[ { `"command`": `"$gateBody$after`" } ]" }
+  $canHold = ($env:OS -eq "Windows_NT")
+
+  # 1 the finishing move
+  function Retry-Case1 {
+    Claim-Reset
+    Gq -C $work branch -D feat/r1   # both runs start without the branch (an earlier case may have left it)
+    Write-Cfg $gateJson
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    $ref = SlotE "-Take feat/r1 -Slot 1"
+    $script:retryL = Get-LineCount $ref.Err
+    Claim-Reset; Gq -C $work branch -D feat/r1
+    Write-Cfg $gateJson
+    $h = Start-Take "-Take feat/r1 -Slot 1"
+    Wait-For 1 "taking"
+    $script:before = MText 1
+    Hold-Marker (Marker 1)
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    Test-AtMove $h "the finishing move" { Test-Path -LiteralPath "$S1\slot-1.take.tmp" }
+    Let-Go
+    $r = Wait-Take $h
+    $script:bgs.Clear()
+    if ($r.Code -ne 0 -or $r.Out -notmatch '(?m)^Slot 1 is yours') { Fail "retries 1: the take did not finish after the reader let go (exit $($r.Code)): $($r.Out) / $($r.Err)" }
+    Test-SameAsRef "1" $r $ref
+    if (-not (Test-Finished 1)) { Fail "retries 1: the marker is not a finished marker: $(MText 1)" }
+    if ((MGet 1 "branch") -ne "feat/r1" -or (Get-Current 1) -ne "feat/r1") { Fail "retries 1: slot 1 is not on feat/r1" }
+    if (@(Get-Leftovers 1).Count -gt 0) { Fail "retries 1: temporary files are left: $(Get-Leftovers 1)" }
+    $line1 = ((SlotE "-Status -Porcelain").Out -split "`n")[0]
+    if (-not $line1.StartsWith("1${T}busy${T}feat/r1${T}")) { Fail "retries 1: porcelain line 1: $line1" }
+    $x = SlotE "-Report check -Slot 1 -Skill next -Role implementer"
+    if ($x.Code -ne 0) { Fail "retries 1: -Report on the finished slot exited $($x.Code): $($x.Err)" }
+    $x = SlotE "-Abandon 1"
+    if ($x.Code -ne 0) { Fail "retries 1: -Abandon exited $($x.Code): $($x.Err)" }
+    Gq -C $work branch -D feat/r1
+  }
+
+  # 2 the removal of the claim (restore item 5)
+  function Retry-Case2 {
+    Claim-Reset
+    Write-Cfg (Get-GateJson "; cmd /c exit 7")
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    $ref = SlotE "-Take feat/r2 -Slot 1"
+    $want = "warm-up 1 failed (exit 7); slot 1 is free again"
+    if ($ref.Code -ne 1 -or (Get-LastLine $ref.Err) -cne $want) { Fail "retries 2: the reference run (exit $($ref.Code)): $($ref.Err)" }
+    Claim-Reset
+    Write-Cfg (Get-GateJson "; cmd /c exit 7")
+    $h = Start-Take "-Take feat/r2 -Slot 1"
+    Wait-For 1 "taking"
+    Wait-Until "the switch to feat/r2" { [bool](Get-Ref "feat/r2") }
+    $script:before = MText 1
+    Hold-Marker (Marker 1)
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    Test-AtMove $h "the removal of the claim" { -not (Get-Ref "feat/r2") }
+    Let-Go
+    $r = Wait-Take $h
+    $script:bgs.Clear()
+    if ($r.Code -ne 1 -or (Get-LastLine $r.Err) -cne $want) { Fail "retries 2: the take (exit $($r.Code)): $($r.Err)" }
+    Test-SameAsRef "2" $r $ref
+    if (Test-Path -LiteralPath (Marker 1)) { Fail "retries 2: the marker is still there: $(MText 1)" }
+    if (Get-Current 1) { Fail "retries 2: slot 1 is not detached" }
+    $line1 = ((SlotE "-Status -Porcelain").Out -split "`n")[0]
+    if ($line1 -ne "1${T}free") { Fail "retries 2: porcelain line 1: $line1" }
+  }
+
+  # 3 the rewrite without pid
+  function Retry-Case3 {
+    Claim-Reset
+    New-Branch "feat/rw" "rw.txt"
+    $json = Get-GateJson "; Set-Content rw.txt changed; cmd /c exit 7"
+    Write-Cfg $json
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    $ref = SlotE "-Take feat/rw -Slot 1"
+    $want = "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with -Abandon 1"
+    if ($ref.Code -ne 1 -or (Get-LastLine $ref.Err) -cne $want) { Fail "retries 3: the reference run (exit $($ref.Code)): $($ref.Err)" }
+    Claim-Reset
+    Write-Cfg $json
+    $h = Start-Take "-Take feat/rw -Slot 1"
+    Wait-For 1 "taking"
+    $since = MGet 1 "since"
+    $script:before = MText 1
+    Hold-Marker (Marker 1)
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    Test-AtMove $h "the rewrite of the claim" { @(Get-ChildItem -LiteralPath $S1 -Filter "slot-1.left.*.tmp" -File -ErrorAction SilentlyContinue).Count -gt 0 }
+    Let-Go
+    $r = Wait-Take $h
+    $script:bgs.Clear()
+    if ($r.Code -ne 1 -or (Get-LastLine $r.Err) -cne $want) { Fail "retries 3: the take (exit $($r.Code)): $($r.Err)" }
+    Test-SameAsRef "3" $r $ref
+    $m = (MText 1) | ConvertFrom-Json
+    $names = ($m.PSObject.Properties.Name | Sort-Object) -join ","
+    if ($names -ne "branch,since,slot,state" -or [string]$m.branch -ne "feat/rw" -or [string]$m.since -ne $since -or [string]$m.state -ne "taking") { Fail "retries 3: the claim left behind is not the claim without pid: $(MText 1)" }
+    if (@(Get-Leftovers 1).Count -gt 0) { Fail "retries 3: temporary files are left: $(Get-Leftovers 1)" }
+    if ((Get-Porc9 1) -ne "take-died") { Fail "retries 3: porcelain field 9 is '$(Get-Porc9 1)'" }
+    Gq -C "$tmp\wt\slot-1" checkout -- rw.txt
+    $x = SlotE "-Abandon 1"
+    if ($x.Code -ne 0) { Fail "retries 3: -Abandon exited $($x.Code): $($x.Err)" }
+    Gq -C $work branch -D feat/rw
+  }
+
+  # 4 a reader that never lets go
+  function Retry-Case4 {
+    Claim-Reset
+    Write-Cfg $gateJson
+    $h = Start-Take "-Take feat/r4 -Slot 1"
+    Wait-For 1 "taking"
+    $since = MGet 1 "since"
+    $script:before = MText 1
+    $mj = $script:before | ConvertFrom-Json
+    $procId = [string]$mj.pid
+    Hold-Marker (Marker 1)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    [System.IO.File]::WriteAllText("$tmp\go", "")
+    if (-not $h.P.WaitForExit(60000)) { Fail "retries 4: the take did not end within 60 s" }
+    $sw.Stop()
+    $r = Wait-Take $h
+    $script:bgs.Clear()
+    Let-Go
+    if ($r.Code -ne 1) { Fail "retries 4: the take exited $($r.Code): $($r.Out) / $($r.Err)" }
+    if ($sw.Elapsed.TotalSeconds -lt 9) { Fail "retries 4: the take ended after $($sw.Elapsed.TotalSeconds) s, not after at least 9 s (it did not retry)" }
+    if ((Get-LastLine $r.Err) -cne "write marker failed (exit 1); slot 1 stays claimed: free it with -Abandon 1") { Fail "retries 4: the last line of standard error: $($r.Err)" }
+    if ((Get-LineCount $r.Err) -gt $script:retryL + 3) { Fail "retries 4: more than $($script:retryL + 3) lines of standard error: $($r.Err)" }
+    if ((MText 1) -cne $script:before) { Fail "retries 4: the claim changed: $(MText 1)" }
+    if (@(Get-Leftovers 1).Count -gt 0) { Fail "retries 4: temporary files are left: $(Get-Leftovers 1)" }
+    if ((Get-Current 1) -ne "feat/r4") { Fail "retries 4: slot 1 is on '$(Get-Current 1)'" }
+    $st = (SlotE "-Status").Out
+    if (-not $st.Contains("taking: feat/r4 since $since (process $procId has ended; free it with -Abandon 1)")) { Fail "retries 4: status: $st" }
+    $x = SlotE "-Abandon 1"
+    if ($x.Code -ne 0 -or $x.Out.Trim() -cne "Slot 1 is free (was feat/r4, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "retries 4: -Abandon (exit $($x.Code)): $($x.Out) / $($x.Err)" }
+    Gq -C $work branch -D feat/r4
+  }
+
+  # 5 the publish is tried once
+  function Retry-Case5 {
+    Claim-Reset
+    $gate = @{ NIGHTMILL_CLAIM_GATE = "$tf/claim-go" }
+    $h1 = Start-Take "-Take feat/p5a -Slot 1 -SkipWarmup" $gate
+    $h2 = Start-Take "-Take feat/p5b -Slot 1 -SkipWarmup" $gate
+    Wait-Claims 1 2
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    [System.IO.File]::WriteAllText("$tmp\claim-go", "")
+    $t1 = $null; $t2 = $null
+    $end = (Get-Date).AddSeconds(60)
+    while ($null -eq $t1 -or $null -eq $t2) {
+      if ((Get-Date) -gt $end) { Fail "retries 5: the takes did not end within 60 s" }
+      if ($null -eq $t1 -and $h1.P.HasExited) { $t1 = $sw.Elapsed.TotalSeconds }
+      if ($null -eq $t2 -and $h2.P.HasExited) { $t2 = $sw.Elapsed.TotalSeconds }
+      Start-Sleep -Milliseconds 100
+    }
+    $r1 = Wait-Take $h1; $r2 = Wait-Take $h2
+    $script:bgs.Clear()
+    if (-not ((($r1.Code -eq 0) -and ($r2.Code -eq 1)) -or (($r1.Code -eq 1) -and ($r2.Code -eq 0)))) { Fail "retries 5: the exits are $($r1.Code) and $($r2.Code), not one 0 and one 1: $($r1.Err) / $($r2.Err)" }
+    if ($r1.Code -eq 0) { $loser = $r2; $tl = $t2 } else { $loser = $r1; $tl = $t1 }
+    if ((Get-LastLine $loser.Err) -cne "slot 1 is busy") { Fail "retries 5: the loser's standard error: $($loser.Err)" }
+    if ($tl -gt 4) { Fail "retries 5: the loser ended $tl s after the gate opened: the publish was retried" }
+    Claim-Reset
+    Gq -C $work branch -D feat/p5a
+    Gq -C $work branch -D feat/p5b
+  }
+
+  if ($canHold) {
+    Retry-Case1
+    Retry-Case2
+    Retry-Case3
+    Retry-Case4
+  } else {
+    1..4 | ForEach-Object { Write-Host "skipped: no reader that holds the marker open (needs Windows)" }
+  }
+  Retry-Case5
+  Claim-Reset
+  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+
   Write-Host "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"
   # 13 (iteration 33, /fix all): the skill frees a bug's slot with -Abandon once the bug's branch is on its open pull
   # request, and holds a slot with uncommitted files. The slot scripts already do both, and this case pins it: takes run

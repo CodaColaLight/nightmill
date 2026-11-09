@@ -1,6 +1,6 @@
 # Iteration 35: a take retries its own marker changes while a reader holds the marker open
 
-Status: draft, awaiting approval (#189)
+Status: delivered in iteration 35 (PR #244)
 
 Story: #189, epic #107 (Hardening from the code review). Split off from #186. A take tries each of its own marker
 changes up to 21 times, 0.25 s apart: the move of the finished marker over its claim, the rewrite of a claim it leaves
