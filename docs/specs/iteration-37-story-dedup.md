@@ -1,6 +1,6 @@
 # Iteration 37: /story looks for an existing issue before it files one
 
-Status: draft, awaiting approval (#148)
+Status: delivered in iteration 37 (PR #245)
 
 Story: #148, epic #107 (Hardening from the code review), finding MD-S14. Before `/story` drafts anything and before it
 creates, it searches every issue of the repository, open and closed and with any label, for a similar title, shows
@@ -38,7 +38,7 @@ Checked for this spec on this repository with `gh` (read only).
 **1. Two searches: the idea first, the title last.** The first runs as the new step 1, after `$ARGUMENTS` is known and
 before the epic is looked for or a draft is written, so no work is done for a duplicate. The second runs right before
 `gh issue create`, on the accepted draft's title, by decisions 2 to 9 with the title in place of the idea; it asks only
-about issues the first did not show, and with none it creates; its answers do what decision 7 says for the second
+about issues the first did not show, and with none it creates (at its limit of 100 too, after the line of decision 3); its answers do what decision 7 says for the second
 search (no loop: decision 7). Idea `dedup stories` filed as
 `/story looks for an existing issue before it files one`, run again: only the second finds it (same title).
 
@@ -57,8 +57,10 @@ form (the word without its `s` when decision 2 removed one, else the word with `
 
 At most 16 words, no `--label`, no `--state open`. GitHub returns the candidates; the skill decides which are similar.
 An idea with no key word is not searched: the skill asks for the idea in more words and files nothing until it has one.
-At exactly 100 the list may be incomplete: the skill shows the similar ones it has, prints
-`The search returned 100 issues, its limit: a similar issue may be missing.` and asks decision 7.
+At exactly 100 the list may be incomplete: the skill prints
+`The search hit its limit of 100 issues: older issues may not have been checked.` With no similar issue among the 100
+it then goes on as when nothing similar was found (it files at the second search) and does not claim that similar
+issues exist; with similar ones it shows them and asks decision 7. This holds for the first and the second search alike.
 
 **4. Similar, decided by the skill.** A candidate is similar when either holds:
 
@@ -138,7 +140,7 @@ behaviour. **`tests/lint.sh`**, new section `== /story looks for an existing iss
   label filter, so issues of any label come back (criterion 3);
 - the first line of the file that contains `--state all --search` comes before the first that contains
   `gh issue create` (criterion 1: before creating);
-- it contains `at least 2 key words`, `At most 5`, `No similar issue found`, `The search returned 100 issues`,
+- it contains `at least 2 key words`, `At most 5`, `No similar issue found`, `The search hit its limit of 100`,
   `closed as not planned`, `whatever they are` (criteria 1 and 3);
 - it contains `` `file anyway` ``, `` `use #<n>` ``, `` `do not file` ``, `trimmed and lower-cased`,
   `no third search`, `at most once per run`,
