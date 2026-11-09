@@ -16,10 +16,11 @@ if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
 $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 function Yaml-Quote($s) { '"' + (([string]$s) -replace '\\', '\\' -replace '"', '\"') + '"' }
-function Label($key, $default) { if ($cfg.labels -and $cfg.labels.$key) { $cfg.labels.$key } else { $default } }
+# Areas, labels and invariants are all double-quoted YAML scalars, so `,` `:` `#` and `"` keep the forms valid.
+function Label($key, $default) { Yaml-Quote $(if ($cfg.labels -and $cfg.labels.$key) { $cfg.labels.$key } else { $default }) }
 
 if (-not $cfg.areas -or @($cfg.areas).Count -eq 0) { throw "nightmill.json needs at least one entry in areas" }
-$areas = "[" + (@($cfg.areas) -join ", ") + "]"
+$areas = "[" + ((@($cfg.areas) | ForEach-Object { Yaml-Quote $_ }) -join ", ") + "]"
 
 # @($null) would be a one-element array; filter so a missing key means "no invariants".
 $invariants = @($cfg.invariants | Where-Object { $null -ne $_ -and "$_" -ne "" })

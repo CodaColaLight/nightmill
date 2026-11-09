@@ -1,6 +1,6 @@
 # tests/smoke-render.ps1 - render-templates.ps1 against a throwaway project: placeholders filled,
-# invariants quoted, non-ASCII text intact, the no-invariants case drops the checkbox block,
-# existing forms kept without -Force.
+# areas, labels and invariants quoted (also with , : # and "), non-ASCII text intact, the no-invariants
+# case drops the checkbox block, existing forms kept without -Force.
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
 $R = Join-Path $here "scripts\render-templates.ps1"
@@ -28,7 +28,7 @@ try {
   Write-Host "== render"
   $null = Render
   $story = [System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\story.yml", $utf8)
-  if ($story -notmatch 'options: \[core, ui\]') { Fail "areas not filled" }
+  if (-not $story.Contains('options: ["core", "ui"]')) { Fail "areas not filled or not quoted" }
   if ($story -notmatch 'labels: \["feature", "needs-spec"\]') { Fail "labels not filled: $story" }
   if ($story -notmatch '- label: "Fog of war — nothing unseen is sent"') { Fail "non-ASCII invariant damaged or unquoted" }
   if ($story -notmatch '- label: "Quote \\"this\\" and `that`"') { Fail "quotes not escaped" }
@@ -61,6 +61,25 @@ try {
   $story = [System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\story.yml", $utf8)
   if ($story -match 'invariants') { Fail "checkbox block not dropped: $story" }
   if ($story -match '\{\{') { Fail "placeholder left after drop" }
+
+  Write-Host '== areas and labels with , : # and " are quoted and escaped (bug #135)'
+  $cfg3 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a, b", "c: d", "#e", "f \"g\""],
+  "labels": { "story": "s: \"x\"", "bug": "b #1, y", "epic": "e, \"z\"" }
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg3, $utf8)
+  $null = Render -Force
+  function FormLines($f) { [System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\$f", $utf8) -split "`r?`n" }
+  foreach ($f in "story.yml", "bug.yml") {
+    if (-not ((FormLines $f) | Where-Object { $_.Contains('options: ["a, b", "c: d", "#e", "f \"g\""]') })) { Fail "$f areas not quoted" }
+  }
+  if ((FormLines "story.yml") -cnotcontains 'labels: ["s: \"x\"", "needs-spec"]') { Fail "story labels not quoted" }
+  if ((FormLines "bug.yml") -cnotcontains 'labels: ["b #1, y"]') { Fail "bug label not quoted" }
+  if ((FormLines "epic.yml") -cnotcontains 'labels: ["e, \"z\""]') { Fail "epic label not quoted" }
 
   Write-Host "RENDER OK" -ForegroundColor Green
 } finally {

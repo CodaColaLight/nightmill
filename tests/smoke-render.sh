@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/smoke-render.sh - render-templates.sh against a throwaway project: placeholders filled,
-# invariants quoted, non-ASCII text intact, the no-invariants case drops the checkbox block,
-# existing forms kept without --force.
+# areas, labels and invariants quoted (also with , : # and "), non-ASCII text intact, the no-invariants
+# case drops the checkbox block, existing forms kept without --force.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 R="$here/scripts/render-templates.sh"
@@ -24,7 +24,7 @@ EOF
 echo "== render"
 bash "$R" --project "$tmp" >/dev/null
 story="$tmp/.github/ISSUE_TEMPLATE/story.yml"
-grep -qF 'options: [core, ui]' "$story" || fail "areas not filled"
+grep -qF 'options: ["core", "ui"]' "$story" || fail "areas not filled or not quoted"
 grep -qF 'labels: ["feature", "needs-spec"]' "$story" || fail "labels not filled"
 grep -qF -- '- label: "Fog of war — nothing unseen is sent"' "$story" || fail "non-ASCII invariant damaged or unquoted"
 grep -qF -- '- label: "Quote \"this\" and `that`"' "$story" || fail "quotes not escaped"
@@ -54,5 +54,23 @@ grep -v '"invariants"' "$tmp/.claude/nightmill.json" > "$tmp/cfg2.json" && mv "$
 bash "$R" --project "$tmp" --force >/dev/null
 ! grep -q 'invariants' "$story" || fail "checkbox block not dropped"
 ! grep -q '{{' "$story" || fail "placeholder left after drop"
+
+echo "== areas and labels with , : # and \" are quoted and escaped (bug #135)"
+cat > "$tmp/.claude/nightmill.json" <<'EOF'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a, b", "c: d", "#e", "f \"g\""],
+  "labels": { "story": "s: \"x\"", "bug": "b #1, y", "epic": "e, \"z\"" }
+}
+EOF
+bash "$R" --project "$tmp" --force >/dev/null
+d="$tmp/.github/ISSUE_TEMPLATE"
+for f in story bug; do
+  grep -qF 'options: ["a, b", "c: d", "#e", "f \"g\""]' "$d/$f.yml" || fail "$f.yml areas not quoted: $(grep 'options:' "$d/$f.yml")"
+done
+grep -qxF 'labels: ["s: \"x\"", "needs-spec"]' "$d/story.yml" || fail "story labels not quoted: $(grep '^labels:' "$d/story.yml")"
+grep -qxF 'labels: ["b #1, y"]' "$d/bug.yml" || fail "bug label not quoted: $(grep '^labels:' "$d/bug.yml")"
+grep -qxF 'labels: ["e, \"z\""]' "$d/epic.yml" || fail "epic label not quoted: $(grep '^labels:' "$d/epic.yml")"
 
 echo "RENDER OK"

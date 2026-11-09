@@ -1,7 +1,7 @@
 name: Bug
 description: A defect in shipped behaviour
 title: "[Bug] "
-labels: ["{{LABEL_BUG}}"]
+labels: [{{LABEL_BUG}}]
 body:
   - type: dropdown
     id: area
