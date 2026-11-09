@@ -361,6 +361,17 @@
 
 ## 0.2.0 (2026-11-05)
 
+- Skills (#54): `/spec`, `/next` and `/fix` list the board with its own `--jq` (`gh project item-list ... --format
+  json --jq '<filter>'`), and the workflow skill says not to pipe the listing into `python` or `jq`, so the whole
+  command matches the `Bash(gh project *)` rule and a board listing no longer prompts. This repository's
+  `.claude/settings.json` allows `Write(docs/specs/**)`, so `/spec` writes its spec without a prompt.
+- Decision 0003 (#53, #55): nightmill is developed on the installed release, not with `--plugin-dir .` in the
+  checkout being edited (that makes the repository a protected path and every edit prompts). Before a release the
+  maintainer installs the release pull request's branch as a preview and tries it in a real project; a skill still
+  being changed is tried with `--plugin-dir` on a separate checkout. A fix merged to `main` reaches the
+  maintainer's own workflow only once a version is cut, and removing the marketplace to switch to a preview and back
+  uninstalls nightmill from every other project on the machine that installed it from there. It replaces the
+  plugin-loading part of decision 0001.
 - Iteration 11 (#33): the workflow skill defines the agent roles and how a skill picks a role's model. A new
   section "Agent roles and models" lists the seven roles with what each produces and which role reviews which,
   and states the rule: the model of a role is `roles.<role>.model`, else the default in the schema, passed
