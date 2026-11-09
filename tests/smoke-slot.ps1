@@ -1292,6 +1292,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   # 1 the finishing move
   function Retry-Case1 {
     Claim-Reset
+    Gq -C $work branch -D feat/r1   # both runs start without the branch (an earlier case may have left it)
     Write-Cfg $gateJson
     [System.IO.File]::WriteAllText("$tmp\go", "")
     $ref = SlotE "-Take feat/r1 -Slot 1"

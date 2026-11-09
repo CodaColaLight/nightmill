@@ -1224,6 +1224,7 @@ r_skip() { echo "skipped: no reader that holds the marker open (needs Windows)";
 # 1 the finishing move
 retry_case1() {
   claim_reset
+  git -C "$tmp/work" branch -D feat/r1 >/dev/null 2>&1 || true   # both runs start without the branch (an earlier case may have left it)
   local p since
   write_cfg "$gate_json"
   : > "$tmp/go"
