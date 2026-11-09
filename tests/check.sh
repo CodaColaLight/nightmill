@@ -94,6 +94,7 @@ add bash test-worker-merge.sh
 add bash test-script-modes.sh
 add bash test-fix-pick.sh
 add bash test-changelog-coverage.sh
+add bash test-json-speed.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
