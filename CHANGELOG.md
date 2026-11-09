@@ -413,16 +413,16 @@
   what a stranger needs before installing. The lint checks that they exist and say what the spec requires;
   the render smoke tests check that rendering leaves other forms alone; the lint job in CI passes the
   `FORBIDDEN_WORDS` secret to the generic-words check when the repository has one.
-- Iteration 3 (#12): a `SessionStart` hook (`hooks/hooks.json`, `scripts/session-start.sh` and `.ps1`)
+- Iteration 3 (issue 12 in the original repository): a `SessionStart` hook (`hooks/hooks.json`, `scripts/session-start.sh` and `.ps1`)
   makes Claude offer `/nightmill:init` in a project that has the plugin enabled but no
   `.claude/nightmill.json`; in a configured project it is silent. `NIGHTMILL_HINT=off` silences it for
   people who enabled the plugin at user scope.
-- Iteration 2 (#14): `/spec` and `/next` are two commands. `/spec [N]` writes the spec for a Ready story
+- Iteration 2 (issue 14 in the original repository): `/spec` and `/next` are two commands. `/spec [N]` writes the spec for a Ready story
   and stops at Spec review; `/next [N]` implements an Approved story only and, with nothing Approved,
   lists the Ready stories and points to `/spec`. Both print `Picking #N ...` before they change anything
   (rule: "Picking an issue" in the `workflow` skill). **`/next` no longer writes specs**: a project note
   or habit that calls `/next` for a Ready story must call `/spec`.
-- Iteration 1 (#10): `/init` is an install chat. It detects owner, repo, board, check command and areas,
+- Iteration 1 (issue 10 in the original repository): `/init` is an install chat. It detects owner, repo, board, check command and areas,
   asks the rest one question at a time with a proposed default, shows one plan, and after one
   confirmation creates or completes the board (eight Status options with existing ids kept, Priority and
   Area, four views (Board, Ready, Epics, Bugs) with filters and visible fields so the statuses are columns,
