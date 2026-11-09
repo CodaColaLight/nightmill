@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "PVTI_1",
+      "content": {
+        "number": 1,
+        "title": "[Story] x\u001b[31mRED\u001b]0;text\u0007\u007fend",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/1"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Approved",
+      "title": "[Story] x\u001b[31mRED\u001b]0;text\u0007\u007fend"
+    }
+  ]
+}

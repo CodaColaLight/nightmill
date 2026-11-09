@@ -245,8 +245,12 @@ function PrCell($p) {
 }
 
 # ---- the table
+# a value as printed: every C0 control and DEL removed (#134), so a title cannot drive the terminal; the tabs and
+# line ends of the layout are added after this
+function Clean($v) { return ([string]$v) -replace '[\x01-\x1F\x7F]', '' }
 function Format-Table2($rows, [bool[]]$right) {
   $cols = $rows[0].Count
+  foreach ($r in $rows) { for ($c = 0; $c -lt $cols; $c++) { $r[$c] = Clean $r[$c] } }
   $w = @(0) * $cols
   foreach ($r in $rows) { for ($c = 0; $c -lt $cols; $c++) { if ($r[$c].Length -gt $w[$c]) { $w[$c] = $r[$c].Length } } }
   foreach ($r in $rows) {
@@ -282,7 +286,7 @@ $rows = @(, @("#", "Title", "Status", "Who", "PR", "Age", "Flag"))
 $porc = New-Object System.Collections.Generic.List[string]
 foreach ($s in $shown) {
   $it = $s.Item; $n = $s.N; $st = [string]$it.status
-  $title = ([string]$it.title) -replace '^\[(Story|Bug)\] ', ''
+  $title = (Clean $it.title) -replace '^\[(Story|Bug)\] ', ''
   if ($title.Length -gt 36) { $title = $title.Substring(0, 33) + "..." }
   $want = "impl"
   if ($st -eq $stSpec -or $st -eq $stSpecReview) { $want = "spec" }
@@ -310,7 +314,7 @@ foreach ($s in $shown) {
   $rows += , @($n, $title, $st, $who, (PrCell $k), $ageText, $flag)
   # porcelain: the whole decoded title, the prefix removed case-sensitively, every tab, CR and LF one space
   $whole = (([string]$it.title) -creplace '^\[(Story|Bug)\] ', '') -replace "[`t`r`n]", " "
-  $porc.Add((@("item", $n, $st, $who, (PrCell $k), $ageText, $flag, $whole) -join "`t")) | Out-Null
+  $porc.Add((@("item", $n, $st, $who, (PrCell $k), $ageText, $flag, $whole) | ForEach-Object { Clean $_ }) -join "`t") | Out-Null
 }
 if (-not $Porcelain) {
   if ($shown.Count -eq 0) { Write-Output "nothing to show at these statuses" }
@@ -326,7 +330,7 @@ if ($prs.Count -ge $limitPrs) { $notes += "only the $limitPrs most recent pull r
 if ($Porcelain) {
   foreach ($nt in $notes) { $porc.Add("note`t$nt") | Out-Null }
 } else {
-  if ($hid) { Write-Output "not shown: $hid (use --all)" }
+  if ($hid) { Write-Output "not shown: $(Clean $hid) (use --all)" }
   foreach ($nt in $notes) { Write-Output "note: $nt" }
 }
 
@@ -361,7 +365,7 @@ if ($hasSlots) {
     $srows += , @("$($b.Slot)", "busy", $b.Agent, $b.Branch, $who, $step, $rep, (Span $sinceAge), (PrCell $k), $flag)
   }
   if ($Porcelain) {
-    for ($r = 1; $r -lt $srows.Count; $r++) { $porc.Add("slot`t" + ($srows[$r] -join "`t")) | Out-Null }
+    for ($r = 1; $r -lt $srows.Count; $r++) { $porc.Add("slot`t" + (($srows[$r] | ForEach-Object { Clean $_ }) -join "`t")) | Out-Null }
     $porc.Add("capacity`t" + ($capLine -replace '^capacity: ', '')) | Out-Null
   } else {
     Format-Table2 $srows @($true, $false, $false, $false, $false, $false, $true, $true, $false, $false)
