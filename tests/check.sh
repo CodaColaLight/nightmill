@@ -89,6 +89,7 @@ add bash test-json-bom.sh
 add bash test-render-quoting.sh
 add bash test-changelog-refs.sh
 add bash test-check-skill.sh
+add bash test-status-controls.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
@@ -108,6 +109,7 @@ add ps test-lintcopy-output.ps1
 add ps test-release-resume.ps1
 add ps test-json-bom.ps1
 add ps test-render-quoting.ps1
+add ps test-status-controls.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then

@@ -181,6 +181,13 @@ function prcell(k,   s) {
   return "#" pnum[k] " " s
 }
 
+# a value as printed: every C0 control and DEL removed (#134), so a title cannot drive the terminal; the tabs and
+# line ends of the layout are added after this
+function clean(s) {
+  gsub(/[\001-\037\177]/, "", s)
+  return s
+}
+
 # the table: rows in R[r, c] (row 0 is the header), widths W[c], right aligned columns in RA[c]
 function pad(s, w, right) {
   if (right) return sprintf("%" w "s", s)
@@ -190,6 +197,7 @@ function pad(s, w, right) {
 function table(nrows, ncols,   r, c, line) {
   for (c = 1; c <= ncols; c++) {
     W[c] = 0
+    for (r = 0; r <= nrows; r++) R[r, c] = clean(R[r, c])
     for (r = 0; r <= nrows; r++) if (length(R[r, c]) > W[c]) W[c] = length(R[r, c])
   }
   for (r = 0; r <= nrows; r++) {
@@ -224,7 +232,7 @@ function unflat(s,   out, i, n, c, d) {
 # porcelain: one record, the kind and the fields joined with tabs
 function record(kind, nf, F,   i, line) {
   line = kind
-  for (i = 1; i <= nf; i++) line = line "\t" F[i]
+  for (i = 1; i <= nf; i++) line = line "\t" clean(F[i])
   printf "%s\n", line
 }
 
@@ -305,7 +313,7 @@ BEGIN {
   RA[1] = 1; RA[6] = 1
   for (a = 1; a <= ns; a++) {
     i = sidx[a]; n = inum[i]; s = istatus[i]
-    title = ititle[i]
+    title = clean(ititle[i])
     sub(/^\[(Story|Bug)\] /, "", title)
     if (length(title) > 36) title = substr(title, 1, 33) "..."
     want = "impl"
@@ -347,7 +355,7 @@ BEGIN {
   line = ""
   if (hidden_backlog > 0) line = hidden_backlog " at " st_backlog
   if (hidden_done > 0) line = line (line != "" ? ", " : "") hidden_done " at " st_done
-  if (line != "" && !porcelain) print "not shown: " line " (use --all)"
+  if (line != "" && !porcelain) print "not shown: " clean(line) " (use --all)"
   note_board = "the board has " total " items, only the first " limit_items " were read"
   note_prs = "only the " limit_prs " most recent pull requests were read"
   if (porcelain) {

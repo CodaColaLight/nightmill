@@ -72,6 +72,10 @@ progress, Review, Spec, Ready, and with `--all` Backlog and Done; within one sta
 | `Age` | the time since the status was set (the latest status-change event on the issue's timeline; the item's creation time when there is none), as `<m>m` under an hour, `<h>h` under a day, else `<d>d` |
 | `Flag` | `stale: <reason>` or empty |
 
+Every value is printed with each C0 control character and DEL (bytes 0x01 to 0x1F and 0x7F) removed, in both
+shells (#134): a title or another value from the board, a pull request or a slot cannot reach the terminal as an
+escape sequence. The title is cleaned before it is cut to 36 characters.
+
 An issue's pull requests are those that close it (`closingIssuesReferences`) or whose title contains
 `(#<issue>)`. The PR shown is the open one, else the most recently merged, else the most recently closed. A
 spec PR (branch starts with `git.specPrefix`) is shown only while the status is Spec or Spec review, an
