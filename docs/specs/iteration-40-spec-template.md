@@ -1,6 +1,6 @@
 # Iteration 40: specs are written from a template, and the lint checks their headings
 
-Status: draft, awaiting approval (#150)
+Status: delivered in iteration 40 (PR #247)
 
 Story: #150, epic #107 (Hardening from the code review), finding MD-S16 of the review of 0.2.0. A new file
 `templates/spec.md` holds the title, the status line and seven required sections; `/spec`'s writer writes from it, the
