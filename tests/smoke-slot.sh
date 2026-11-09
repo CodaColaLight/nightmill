@@ -1166,6 +1166,335 @@ claim_case6
 claim_case7
 claim_reset
 
+echo "== marker retries (iteration 35)"
+# marker retries (iteration 35): a take tries its own marker changes (the move of the finished marker over its claim,
+# the rewrite of a claim it leaves behind without pid, the removal of its claim) up to 21 times, 0.25 s apart, while a
+# reader holds the marker open; the publish of the claim is tried once. Cases 1 to 4 hold the marker open from a reader
+# and need Windows (a powershell process that opens it with FileShare.Read); they print a skip line elsewhere.
+# Case 5 (the publish is tried once) runs everywhere. Cases 6 to 10 run everywhere: a failing mv or rm first on the PATH
+# stands in for the reader, so the retries are tested also where no reader can block a rename.
+reader_ok=0
+if command -v powershell >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then reader_ok=1; fi
+reader_pid=""
+retry_L=0
+hold() { # hold <file>: open it with FileShare.Read (no delete sharing) from a background powershell until letgo
+  local wf wh wl end
+  rm -f "$tmp/held" "$tmp/let-go"
+  wf=$(cygpath -w "$1"); wh=$(cygpath -w "$tmp/held"); wl=$(cygpath -w "$tmp/let-go")
+  powershell -NoProfile -Command "\$f = [System.IO.File]::Open('$wf', [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); [System.IO.File]::WriteAllText('$wh', ''); \$i = 0; while (-not (Test-Path -LiteralPath '$wl') -and \$i -lt 1200) { \$i++; Start-Sleep -Milliseconds 100 }; \$f.Dispose()" >/dev/null 2>&1 &
+  reader_pid=$!
+  end=$((SECONDS + 60))
+  while [ ! -e "$tmp/held" ]; do
+    [ "$SECONDS" -lt "$end" ] || fail "hold: the reader did not open $1 within 60 s"
+    sleep 0.1
+  done
+}
+letgo() { : > "$tmp/let-go"; if [ -n "$reader_pid" ]; then wait "$reader_pid" 2>/dev/null || true; fi; reader_pid=""; }
+fail() { if [ -n "$reader_pid" ]; then : > "$tmp/let-go"; fi; claim_stop; echo "FAIL: $*" >&2; exit 1; }
+r_poll() { # r_poll <what> <command...>: until the command succeeds (60 s at most)
+  local what=$1 end=$((SECONDS + 60)); shift
+  until "$@"; do
+    [ "$SECONDS" -lt "$end" ] || fail "retries: $what did not happen within 60 s"
+    sleep 0.1
+  done
+}
+r_at_move() { # r_at_move <pid> <what> <sign command...>: wait for the sign, then 1 s; the take still runs, the marker is as before
+  local p=$1 what=$2; shift 2
+  r_poll "$what" "$@"
+  sleep 1
+  kill -0 "$p" 2>/dev/null || fail "retries: the take ended within 1 s of $what: it tried once, not again"
+  c_same "$tmp/before.json" "$(marker 1)" "retries: after 1 s at $what"
+}
+r_sign_take_tmp() { [ -e "$S1/slot-1.take.tmp" ]; }
+r_sign_left() { compgen -G "$S1/slot-1.left.*.tmp" >/dev/null; }
+r_sign_r2_gone() { [ -z "$(c_ref feat/r2)" ]; }
+r_sign_r2_there() { [ -n "$(c_ref feat/r2)" ]; }
+r_ref() { # r_ref: after rep, record the exit code, the last line and the number of lines of standard error of a reference run
+  ref_rc=$rc; ref_last=$(tail -n 1 "$tmp/err.txt" | tr -d '\r'); ref_lines=$(wc -l < "$tmp/err.txt" | tr -d ' ')
+}
+r_same_as_ref() { # r_same_as_ref <case> <name> <rc> : the held run (output in $tmp/<name>.err) gives the reference's exit code, last line and number of lines
+  local got_last got_lines
+  got_last=$(tail -n 1 "$tmp/$2.err" | tr -d '\r'); got_lines=$(wc -l < "$tmp/$2.err" | tr -d ' ')
+  [ "$3" = "$ref_rc" ] || fail "retries $1: exit $3, the reference run gave $ref_rc"
+  [ "$got_last" = "$ref_last" ] || fail "retries $1: last line of standard error [$got_last], the reference run gave [$ref_last]"
+  [ "$got_lines" = "$ref_lines" ] || fail "retries $1: $got_lines lines of standard error, the reference run gave $ref_lines (nothing may be printed for a failed try): $(cat "$tmp/$2.err")"
+}
+r_skip() { echo "skipped: no reader that holds the marker open (needs Windows)"; }
+
+# 1 the finishing move
+retry_case1() {
+  claim_reset
+  local p since
+  write_cfg "$gate_json"
+  : > "$tmp/go"
+  rep --take feat/r1 --slot 1
+  r_ref; retry_L=$ref_lines
+  claim_reset; git -C "$tmp/work" branch -D feat/r1 >/dev/null
+  write_cfg "$gate_json"
+  bg_pids=()
+  bg_take r1 --take feat/r1 --slot 1; p=$bg_pid
+  waitfor 1 taking
+  cp "$(marker 1)" "$tmp/before.json"
+  hold "$(marker 1)"
+  : > "$tmp/go"
+  r_at_move "$p" "the finishing move" r_sign_take_tmp
+  letgo
+  bg_wait "$p" r1
+  bg_pids=()
+  [ "$rc" = 0 ] && grep -q 'Slot 1 is yours' <<<"$out" || fail "retries 1: the take did not finish after the reader let go (exit $rc): $out / $err"
+  r_same_as_ref 1 r1 "$rc"
+  c_finished 1 || fail "retries 1: the marker is not a finished marker: $(cat "$(marker 1)")"
+  [ "$(mget 1 branch)" = feat/r1 ] && [ "$(c_branch 1)" = feat/r1 ] || fail "retries 1: slot 1 is not on feat/r1"
+  [ -z "$(c_leftovers 1)" ] || fail "retries 1: temporary files are left: $(c_leftovers 1)"
+  [[ "$(bash "$S" --status --porcelain | sed -n 1p)" == "1${T}busy${T}feat/r1${T}"* ]] || fail "retries 1: porcelain line 1: $(bash "$S" --status --porcelain)"
+  rep --report check --slot 1 --skill next --role implementer
+  [ "$rc" = 0 ] || fail "retries 1: --report on the finished slot exited $rc: $err"
+  rep --abandon 1
+  [ "$rc" = 0 ] || fail "retries 1: --abandon exited $rc: $err"
+  git -C "$tmp/work" branch -D feat/r1 >/dev/null
+}
+
+# 2 the removal of the claim (restore item 5)
+retry_case2() {
+  claim_reset
+  local p
+  write_cfg "[ { \"command\": \"$gate_cmd; exit 7\" } ]"
+  : > "$tmp/go"
+  rep --take feat/r2 --slot 1
+  r_ref
+  [ "$ref_rc" = 1 ] && [ "$ref_last" = "warm-up 1 failed (exit 7); slot 1 is free again" ] || fail "retries 2: the reference run (exit $ref_rc): $err"
+  claim_reset
+  write_cfg "[ { \"command\": \"$gate_cmd; exit 7\" } ]"
+  bg_pids=()
+  bg_take r2 --take feat/r2 --slot 1; p=$bg_pid
+  waitfor 1 taking
+  r_poll "the switch to feat/r2" r_sign_r2_there
+  cp "$(marker 1)" "$tmp/before.json"
+  hold "$(marker 1)"
+  : > "$tmp/go"
+  r_at_move "$p" "the removal of the claim" r_sign_r2_gone
+  letgo
+  bg_wait "$p" r2
+  bg_pids=()
+  [ "$rc" = 1 ] && [ "${err##*$'\n'}" = "warm-up 1 failed (exit 7); slot 1 is free again" ] || fail "retries 2: the take (exit $rc): $err"
+  r_same_as_ref 2 r2 "$rc"
+  [ ! -e "$(marker 1)" ] || fail "retries 2: the marker is still there: $(cat "$(marker 1)")"
+  [ -z "$(c_branch 1)" ] || fail "retries 2: slot 1 is not detached"
+  [ "$(bash "$S" --status --porcelain | sed -n 1p)" = "1${T}free" ] || fail "retries 2: porcelain line 1: $(bash "$S" --status --porcelain)"
+}
+
+# 3 the rewrite without pid
+retry_case3() {
+  claim_reset
+  local p since
+  c_mkbranch feat/rw rw.txt
+  write_cfg "[ { \"command\": \"$gate_cmd; echo changed > rw.txt; exit 7\" } ]"
+  : > "$tmp/go"
+  rep --take feat/rw --slot 1
+  r_ref
+  [ "$ref_rc" = 1 ] && [ "$ref_last" = "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with --abandon 1" ] || fail "retries 3: the reference run (exit $ref_rc): $err"
+  claim_reset
+  write_cfg "[ { \"command\": \"$gate_cmd; echo changed > rw.txt; exit 7\" } ]"
+  bg_pids=()
+  bg_take r3 --take feat/rw --slot 1; p=$bg_pid
+  waitfor 1 taking
+  since=$(mget 1 since)
+  cp "$(marker 1)" "$tmp/before.json"
+  hold "$(marker 1)"
+  : > "$tmp/go"
+  r_at_move "$p" "the rewrite of the claim" r_sign_left
+  letgo
+  bg_wait "$p" r3
+  bg_pids=()
+  [ "$rc" = 1 ] && [ "${err##*$'\n'}" = "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with --abandon 1" ] || fail "retries 3: the take (exit $rc): $err"
+  r_same_as_ref 3 r3 "$rc"
+  taking_text 1 feat/rw "$since" > "$tmp/want1.json"
+  c_same "$tmp/want1.json" "$(marker 1)" "retries 3: the claim left behind"
+  [ -z "$(c_leftovers 1)" ] || fail "retries 3: temporary files are left: $(c_leftovers 1)"
+  [ "$(c_porc9 1)" = take-died ] || fail "retries 3: porcelain field 9 is '$(c_porc9 1)'"
+  git -C "$tmp/wt/slot-1" checkout -q -- rw.txt
+  rep --abandon 1
+  [ "$rc" = 0 ] || fail "retries 3: --abandon exited $rc: $err"
+  git -C "$tmp/work" branch -D feat/rw >/dev/null
+}
+
+# 4 a reader that never lets go
+retry_case4() {
+  claim_reset
+  local p since t0 elapsed pid
+  write_cfg "$gate_json"
+  bg_pids=()
+  bg_take r4 --take feat/r4 --slot 1; p=$bg_pid
+  waitfor 1 taking
+  since=$(mget 1 since); pid=$(bg_winpid "$p")
+  cp "$(marker 1)" "$tmp/before.json"
+  hold "$(marker 1)"
+  t0=$SECONDS
+  : > "$tmp/go"
+  r_poll "the end of the take" bash -c "! kill -0 $p 2>/dev/null"
+  elapsed=$((SECONDS - t0))
+  bg_wait "$p" r4
+  bg_pids=()
+  letgo
+  [ "$rc" = 1 ] || fail "retries 4: the take exited $rc: $out / $err"
+  [ "$elapsed" -ge 9 ] || fail "retries 4: the take ended after $elapsed s, not after at least 9 s (it did not retry)"
+  [ "${err##*$'\n'}" = "write marker failed (exit 1); slot 1 stays claimed: free it with --abandon 1" ] || fail "retries 4: the last line of standard error: $err"
+  [ "$(wc -l < "$tmp/r4.err" | tr -d ' ')" -le $((retry_L + 3)) ] || fail "retries 4: more than $((retry_L + 3)) lines of standard error: $err"
+  c_same "$tmp/before.json" "$(marker 1)" "retries 4: the claim"
+  [ -z "$(c_leftovers 1)" ] || fail "retries 4: temporary files are left: $(c_leftovers 1)"
+  [ "$(c_branch 1)" = feat/r4 ] || fail "retries 4: slot 1 is on '$(c_branch 1)'"
+  grep -qF "taking: feat/r4 since $since (process $pid has ended; free it with --abandon 1)" <<<"$(bash "$S" --status)" || fail "retries 4: status: $(bash "$S" --status)"
+  rep --abandon 1
+  [ "$rc" = 0 ] && [ "$out" = "Slot 1 is free (was feat/r4, a take that did not finish; the local branch is kept, delete it yourself if unwanted)." ] || fail "retries 4: --abandon (exit $rc): $out / $err"
+  git -C "$tmp/work" branch -D feat/r4 >/dev/null
+}
+
+# 5 the publish is tried once
+retry_case5() {
+  claim_reset
+  local p1 p2 t0 e1="" e2="" end
+  bg_pids=()
+  NIGHTMILL_CLAIM_GATE="$tmp/claim-go" bg_take q1 --take feat/p5a --slot 1 --skip-warmup; p1=$bg_pid
+  NIGHTMILL_CLAIM_GATE="$tmp/claim-go" bg_take q2 --take feat/p5b --slot 1 --skip-warmup; p2=$bg_pid
+  wait_claims 1 2
+  t0=$SECONDS
+  : > "$tmp/claim-go"
+  end=$((SECONDS + 60))
+  while [ -z "$e1" ] || [ -z "$e2" ]; do
+    [ "$SECONDS" -lt "$end" ] || fail "retries 5: the takes did not end within 60 s"
+    if [ -z "$e1" ] && ! kill -0 "$p1" 2>/dev/null; then e1=$((SECONDS - t0 + 1)); fi
+    if [ -z "$e2" ] && ! kill -0 "$p2" 2>/dev/null; then e2=$((SECONDS - t0 + 1)); fi
+    sleep 0.1
+  done
+  bg_wait "$p1" q1; r1=$rc; o1=$out; e1s=$err
+  bg_wait "$p2" q2; r2=$rc; o2=$out; e2s=$err
+  bg_pids=()
+  { [ "$r1" = 0 ] && [ "$r2" = 1 ]; } || { [ "$r1" = 1 ] && [ "$r2" = 0 ]; } || fail "retries 5: exits $r1 and $r2, not one 0 and one 1: $o1 / $e1s / $o2 / $e2s"
+  if [ "$r1" = 0 ]; then
+    [ "${e2s##*$'\n'}" = "slot 1 is busy" ] || fail "retries 5: the loser's standard error: $e2s"
+    [ "$e2" -le 4 ] || fail "retries 5: the loser ended $e2 s after the gate opened: the publish was retried"
+  else
+    [ "${e1s##*$'\n'}" = "slot 1 is busy" ] || fail "retries 5: the loser's standard error: $e1s"
+    [ "$e1" -le 4 ] || fail "retries 5: the loser ended $e1 s after the gate opened: the publish was retried"
+  fi
+  claim_reset
+  git -C "$tmp/work" branch -D feat/p5a >/dev/null 2>&1 || true
+  git -C "$tmp/work" branch -D feat/p5b >/dev/null 2>&1 || true
+}
+
+# 6 to 10 a failing mv or rm on the PATH in place of the reader
+mkdir -p "$tmp/shim"
+real_mv=$(command -v mv); real_rm=$(command -v rm)
+cat > "$tmp/shim/mv" <<'EOF'
+#!/usr/bin/env bash
+# fails the first SHIM_FAILS calls whose target is a slot-1 marker, as a reader that holds it open would
+cmd=${0##*/}
+last=${!#}
+case "$last" in
+  */slot-1.json)
+    echo x >> "$SHIM_COUNT"
+    n=$(( $(wc -l < "$SHIM_COUNT") ))
+    if [ "$n" -le "${SHIM_FAILS:-0}" ]; then
+      if [ "$cmd" = mv ]; then echo "mv: cannot move '$2' to '$last': Device or resource busy" >&2
+      else echo "rm: cannot remove '$last': Device or resource busy" >&2; fi
+      exit 1
+    fi ;;
+esac
+if [ "$cmd" = mv ]; then exec "$SHIM_REAL_MV" "$@"; else exec "$SHIM_REAL_RM" "$@"; fi
+EOF
+chmod +x "$tmp/shim/mv"; cp "$tmp/shim/mv" "$tmp/shim/rm"
+shim_rep() { # shim_rep <fails> <arguments...>: rep with the shim first on the PATH; the tries are counted in $tmp/shim.count
+  local f=$1; shift
+  : > "$tmp/shim.count"
+  SHIM_COUNT="$tmp/shim.count" SHIM_FAILS=$f SHIM_REAL_MV=$real_mv SHIM_REAL_RM=$real_rm PATH="$tmp/shim:$PATH" rep "$@"
+}
+shim_tries() { wc -l < "$tmp/shim.count" | tr -d ' '; }
+shim_quiet() { # shim_quiet <case>: the failed tries printed nothing
+  if grep -q 'Device or resource busy' <<<"$err"; then fail "retries $1: a failed try was printed: $err"; fi
+}
+
+retry_case6() { # the finishing move fails five times, then goes through
+  claim_reset
+  shim_rep 5 --take feat/s6 --slot 1 --skip-warmup
+  [ "$rc" = 0 ] && grep -q 'Slot 1 is yours' <<<"$out" || fail "retries 6: the take did not finish (exit $rc): $out / $err"
+  shim_quiet 6
+  [ "$(shim_tries)" = 6 ] || fail "retries 6: the move was tried $(shim_tries) times, not 6"
+  c_finished 1 || fail "retries 6: the marker is not a finished marker: $(cat "$(marker 1)")"
+  [ -z "$(c_leftovers 1)" ] || fail "retries 6: temporary files are left: $(c_leftovers 1)"
+  bash "$S" --abandon 1 >/dev/null
+  git -C "$tmp/work" branch -D feat/s6 >/dev/null
+}
+retry_case7() { # the rewrite of the claim fails five times, then goes through
+  claim_reset
+  local since
+  write_cfg '[ { "command": "echo x > junk.txt; exit 7" } ]'
+  shim_rep 5 --take feat/s7 --slot 1
+  [ "$rc" = 1 ] && [ "${err##*$'\n'}" = "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with --abandon 1" ] || fail "retries 7: the take (exit $rc): $err"
+  shim_quiet 7
+  [ "$(shim_tries)" = 6 ] || fail "retries 7: the rewrite was tried $(shim_tries) times, not 6"
+  since=$(mget 1 since)
+  taking_text 1 feat/s7 "$since" > "$tmp/want1.json"
+  c_same "$tmp/want1.json" "$(marker 1)" "retries 7: the claim left behind"
+  [ -z "$(c_leftovers 1)" ] || fail "retries 7: temporary files are left: $(c_leftovers 1)"
+  rm -f "$tmp/wt/slot-1/junk.txt"
+  bash "$S" --abandon 1 >/dev/null
+  git -C "$tmp/work" branch -D feat/s7 >/dev/null
+}
+retry_case8() { # the removal in the restore fails five times, then goes through
+  claim_reset
+  write_cfg "$exit7_json"
+  shim_rep 5 --take feat/s8 --slot 1
+  [ "$rc" = 1 ] && [ "${err##*$'\n'}" = "warm-up 1 failed (exit 7); slot 1 is free again" ] || fail "retries 8: the take (exit $rc): $err"
+  shim_quiet 8
+  [ "$(shim_tries)" = 6 ] || fail "retries 8: the removal was tried $(shim_tries) times, not 6"
+  [ ! -e "$(marker 1)" ] || fail "retries 8: the marker is still there: $(cat "$(marker 1)")"
+}
+retry_case9() { # the removal for uncommitted files (step 3) fails five times, then goes through
+  claim_reset
+  echo x > "$tmp/wt/slot-1/untracked.txt"
+  shim_rep 5 --take feat/s9 --slot 1 --skip-warmup
+  [ "$rc" = 1 ] && [ "${err##*$'\n'}" = "slot 1 has uncommitted files; deal with them first: $claim_root/slot-1" ] || fail "retries 9: the take (exit $rc): $err"
+  shim_quiet 9
+  [ "$(shim_tries)" = 6 ] || fail "retries 9: the removal was tried $(shim_tries) times, not 6"
+  [ ! -e "$(marker 1)" ] || fail "retries 9: the marker is still there: $(cat "$(marker 1)")"
+  rm -f "$tmp/wt/slot-1/untracked.txt"
+}
+retry_case10() { # a move that never works: bounded, and iteration 34's message and state
+  claim_reset
+  local t0 elapsed
+  t0=$SECONDS
+  shim_rep 1000 --take feat/s10 --slot 1 --skip-warmup
+  elapsed=$((SECONDS - t0))
+  [ "$rc" = 1 ] || fail "retries 10: the take exited $rc: $out / $err"
+  [ "$elapsed" -ge 9 ] && [ "$elapsed" -le 60 ] || fail "retries 10: the take ended after $elapsed s, not within 9 to 60 s"
+  [ "${err##*$'\n'}" = "write marker failed (exit 1); slot 1 stays claimed: free it with --abandon 1" ] || fail "retries 10: the last line of standard error: $err"
+  [ "$(shim_tries)" = 42 ] || fail "retries 10: $(shim_tries) tries, not 42 (21 for the move and 21 for the rewrite)"
+  [ "$(grep -c 'Device or resource busy' <<<"$err" || true)" = 2 ] || fail "retries 10: only the last try of each change may print: $err"
+  grep -q '"pid"' "$(marker 1)" || fail "retries 10: the claim lost its pid: $(cat "$(marker 1)")"
+  grep -q '"state": "taking"' "$(marker 1)" || fail "retries 10: the marker is not the claim: $(cat "$(marker 1)")"
+  [ -z "$(c_leftovers 1)" ] || fail "retries 10: temporary files are left: $(c_leftovers 1)"
+  [ "$(c_branch 1)" = feat/s10 ] || fail "retries 10: slot 1 is on '$(c_branch 1)'"
+}
+
+if [ "$reader_ok" = 1 ]; then
+  retry_case1
+  retry_case2
+  retry_case3
+  retry_case4
+else
+  r_skip; r_skip; r_skip; r_skip
+  retry_L=0
+fi
+retry_case5
+retry_case6
+retry_case7
+retry_case8
+retry_case9
+retry_case10
+claim_reset
+git -C "$tmp/work" branch -D feat/s10 >/dev/null 2>&1 || true
+cp "$tmp/cfg-claim.json" "$CFG"
+
 echo "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"
 # 13 (iteration 33, /fix all): the skill frees a bug's slot with --abandon once the bug's branch is on its open pull
 # request, and holds a slot with uncommitted files. The slot scripts already do both, and this case pins it: takes run

@@ -36,6 +36,11 @@
 # A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
 # claim whose process has ended is dead: --status shows take-died, and only --abandon frees it. Same behaviour as
 # slot.ps1.
+# Retries (iteration 35): the take's own marker changes (the move of the finished marker over its claim, the
+# rewrite of a claim it leaves behind and the removal of its claim) are tried up to 21 times, 0.25 s apart (at most
+# 5 s of waiting), because on Windows a reader that holds the marker open makes them fail for a moment. Nothing is
+# printed between tries; only the last try's error is. The publish of the claim is tried once. Same behaviour as
+# slot.ps1.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
 # scripts/stages.sh); a failed append prints one note and changes nothing else. Same behaviour as slot.ps1.
 set -euo pipefail
@@ -539,11 +544,28 @@ claim_slot() {
   if [ -e "$mk" ]; then return 1; fi
   echo "slot $n: could not claim ($(printf '%s\n' "$lerr" | head -n 1))" >&2; exit 1
 }
+# the take's own marker changes are tried this often, this many seconds apart (see Retries in the header)
+marker_tries=21
+marker_pause=0.25
+# retry_marker <command> <args...>: runs the command until it succeeds, at most marker_tries times, marker_pause
+# apart, printing nothing for a failed try; returns the last try's status and, on failure, writes its text to
+# standard error
+retry_marker() {
+  local t=1 rc out
+  while :; do
+    rc=0; out=$("$@" 2>&1) || rc=$?
+    [ "$rc" != 0 ] || return 0
+    [ "$t" -lt "$marker_tries" ] || break
+    t=$((t + 1)); sleep "$marker_pause"
+  done
+  [ -z "$out" ] || printf '%s\n' "$out" >&2
+  return "$rc"
+}
 # leave_claim: the claim stays, rewritten without its pid, so that it is dead at once and --abandon frees it
 leave_claim() {
   local tmpl="$state/slot-$n.left.$me.tmp"
   if ( set -C; json_marker_taking "$n" "$take" "$claim_since" > "$tmpl" ); then
-    mv -f "$tmpl" "$mk" || rm -f "$tmpl"
+    retry_marker mv -f "$tmpl" "$mk" || rm -f "$tmpl"
   else
     rm -f "$tmpl"
   fi
@@ -569,7 +591,7 @@ restore_take() {
     tip=$(git -C "$main" rev-parse --verify -q "refs/heads/$take" 2>/dev/null) || tip=""
     if [ -n "$tip" ] && [ "$tip" = "$base_commit" ]; then git -C "$main" branch -D "$take" || ok=0; fi
   fi
-  if [ "$ok" = 1 ]; then rm -f "$mk" || ok=0; fi
+  if [ "$ok" = 1 ]; then retry_marker rm -f "$mk" || ok=0; fi
   if [ "$ok" = 1 ]; then echo "$step failed (exit $code); slot $n is free again" >&2; exit 1; fi
   leave_claim
   echo "$step failed (exit $code); slot $n could not be put back and stays claimed: free it with --abandon $n" >&2
@@ -579,7 +601,7 @@ restore_take() {
 finish_take() {
   local tmpt="$state/slot-$n.take.tmp" c=0
   json_marker "$n" "$take" "$(date +%Y-%m-%dT%H:%M:%S)" > "$tmpt" || c=$?
-  if [ "$c" = 0 ]; then mv -f "$tmpt" "$mk" || c=$?; fi
+  if [ "$c" = 0 ]; then retry_marker mv -f "$tmpt" "$mk" || c=$?; fi
   if [ "$c" != 0 ]; then
     rm -f "$tmpt"
     leave_claim
@@ -625,7 +647,7 @@ if [ -n "$take" ]; then
     [ "$c" = 0 ] || restore_take "git worktree add" "$c"
     created=1
   elif [ "$(dirty_count "$dir")" -gt 0 ]; then
-    rm -f "$mk" || leave_claim
+    retry_marker rm -f "$mk" || leave_claim
     echo "slot $n has uncommitted files; deal with them first: $dir" >&2; exit 1
   fi
 

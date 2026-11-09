@@ -36,6 +36,11 @@
 # A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
 # claim whose process has ended is dead: --status shows take-died, and only -Abandon frees it. Same behaviour as
 # slot.sh.
+# Retries (iteration 35): the take's own marker changes (the move of the finished marker over its claim, the
+# rewrite of a claim it leaves behind and the removal of its claim) are tried up to 21 times, 0.25 s apart (at most
+# 5 s of waiting), because on Windows a reader that holds the marker open makes them fail for a moment. Nothing is
+# printed between tries; only the last try's error is. The publish of the claim is tried once. Same behaviour as
+# slot.sh.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
 # scripts/stages.ps1); a failed append prints one note and changes nothing else. Same behaviour as slot.sh.
 param(
@@ -597,15 +602,30 @@ function Invoke-Claim([int]$n) {
     Exit-Line "slot ${n}: could not claim ($why)"
   }
 }
+# the take's own marker changes are tried this often, this many milliseconds apart (see Retries in the header)
+$markerTries = 21
+$markerPauseMs = 250
+# Invoke-MarkerRetry { <command> }: runs the command until it does not throw, at most $markerTries times,
+# $markerPauseMs apart, printing nothing for a failed try; returns $null, or the last try's exception
+function Invoke-MarkerRetry([scriptblock]$change) {
+  $last = $null
+  for ($tryNo = 1; $tryNo -le $markerTries; $tryNo++) {
+    try { & $change | Out-Null; return $null } catch { $last = $_.Exception }
+    if ($tryNo -lt $markerTries) { Start-Sleep -Milliseconds $markerPauseMs }
+  }
+  return $last
+}
 # Set-LeftClaim: the claim stays, rewritten without its pid, so that it is dead at once and -Abandon frees it
 function Set-LeftClaim {
   $tmpl = Join-Path $state "slot-$n.left.$PID.tmp"
   try {
     Write-Lf $tmpl (Get-TakingText $n $Take $script:claimSince)
-    [System.IO.File]::Replace($tmpl, $mk, [NullString]::Value)
   } catch {
     Remove-Item -LiteralPath $tmpl -Force -ErrorAction SilentlyContinue
+    return
   }
+  $e = Invoke-MarkerRetry { [System.IO.File]::Replace($tmpl, $mk, [NullString]::Value) }
+  if ($null -ne $e) { Remove-Item -LiteralPath $tmpl -Force -ErrorAction SilentlyContinue }
 }
 # Invoke-Git <arguments>: git with its output and error text passed through; returns the exit code
 function Invoke-Git { & git @args | Out-Host; return $LASTEXITCODE }
@@ -635,7 +655,8 @@ function Undo-Take([string]$step, $code) {
     }
   }
   if ($ok) {
-    try { Remove-Item -LiteralPath $mk -Force } catch { [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message)); $ok = $false }
+    $e = Invoke-MarkerRetry { Remove-Item -LiteralPath $mk -Force -ErrorAction Stop }
+    if ($null -ne $e) { [Console]::Error.WriteLine((Get-FirstLine $e.Message)); $ok = $false }
   }
   if ($ok) { Exit-Line "$step failed (exit $code); slot $n is free again" }
   Set-LeftClaim
@@ -644,12 +665,14 @@ function Undo-Take([string]$step, $code) {
 # Complete-Take: the finished marker over the claim, then the hints
 function Complete-Take {
   $tmpt = Join-Path $state "slot-$n.take.tmp"
+  $e = $null
   try {
     $marker = @{ slot = $n; branch = $Take; since = (Get-Date).ToString("s") } | ConvertTo-Json
     Write-Lf $tmpt $marker
-    [System.IO.File]::Replace($tmpt, $mk, [NullString]::Value)
-  } catch {
-    [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message))
+  } catch { $e = $_.Exception }
+  if ($null -eq $e) { $e = Invoke-MarkerRetry { [System.IO.File]::Replace($tmpt, $mk, [NullString]::Value) } }
+  if ($null -ne $e) {
+    [Console]::Error.WriteLine((Get-FirstLine $e.Message))
     Remove-Item -LiteralPath $tmpt -Force -ErrorAction SilentlyContinue
     Set-LeftClaim
     Exit-Line "write marker failed (exit 1); slot $n stays claimed: free it with -Abandon $n"
@@ -696,7 +719,8 @@ if ($Take) {
     if ($LASTEXITCODE -ne 0) { Undo-Take "git worktree add" $LASTEXITCODE }
     $script:created = $true
   } elseif (@(git -C $dir status --porcelain).Count -gt 0) {
-    try { Remove-Item -LiteralPath $mk -Force } catch { [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message)); Set-LeftClaim }
+    $e = Invoke-MarkerRetry { Remove-Item -LiteralPath $mk -Force -ErrorAction Stop }
+    if ($null -ne $e) { [Console]::Error.WriteLine((Get-FirstLine $e.Message)); Set-LeftClaim }
     Exit-Line "slot $n has uncommitted files; deal with them first: $dir"
   }
 

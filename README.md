@@ -307,7 +307,10 @@ leaves a claim that `slot -Status` shows with `has ended` (or `no process record
 slot back) and `/nightmill:status` with the step `take-died`. Nothing frees it automatically, and `-Abandon N`
 (`--abandon N`) frees it once its files are dealt with, keeping the branch. If `-Abandon` says the process is still
 running but no take is (its number was reused, or it is the PowerShell console a stopped take ran in), end or close
-that process, or remove the marker `<worktrees.root>/.slots/slot-N.json` by hand.
+that process, or remove the marker `<worktrees.root>/.slots/slot-N.json` by hand. On Windows, a program that reads
+the marker at the same moment (/nightmill:status, the panel, the dashboard, another take) can make the take's last
+write to it fail for a moment. The take tries its own marker changes up to 21 times, 0.25 s apart, so such a collision
+does not leave the slot claimed; a reader that holds the marker for longer than that ends the take as described above.
 
 ### What a slot's agent is doing
 
