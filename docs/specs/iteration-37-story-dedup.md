@@ -1,6 +1,6 @@
 # Iteration 37: /story looks for an existing issue before it files one
 
-Status: draft, awaiting approval (#148)
+Status: delivered in iteration 37 (PR #245)
 
 Story: #148, epic #107 (Hardening from the code review), finding MD-S14. Before `/story` drafts anything and before it
 creates, it searches every issue of the repository, open and closed and with any label, for a similar title, shows
