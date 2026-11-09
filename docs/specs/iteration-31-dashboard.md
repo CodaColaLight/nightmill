@@ -143,7 +143,8 @@ record kind and tab-separated fields, in this order:
 Every `item` line has eight fields and every `slot` line eleven (the kind included); empty fields stay. The cells are
 those of the text form, from the same functions, with one difference: `Title` is the whole decoded title with a leading
 `[Story] ` or `[Bug] ` removed, not cut, and every tab, carriage return and line feed in it replaced by one space. No
-other cell can hold a tab or a newline.
+other cell can hold a tab or a newline. After that every C0 control character and DEL left in a cell is removed, as in
+the text form (#134).
 
 **The title is decoded the same in both shells.** PowerShell has the decoded string from `ConvertFrom-Json`. In bash
 the title comes from a flat record of `json.awk`, which decodes every JSON escape (`\uXXXX` included) but writes a
