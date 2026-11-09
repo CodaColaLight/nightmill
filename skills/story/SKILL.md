@@ -10,7 +10,7 @@ Turn this one-line idea into a story issue: $ARGUMENTS
 
 Project configuration (`.claude/nightmill.json`):
 
-!`cat .claude/nightmill.json`
+!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
 
 Read the configuration first. *The maintainer* is `maintainer.name`; `<owner>`, `<repo>`, `<project>` come
 from `github`; label names from `labels`; areas from `areas`. Where this text and the configuration

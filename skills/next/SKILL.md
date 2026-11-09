@@ -10,7 +10,7 @@ Implement the next Approved story from the board: $ARGUMENTS
 
 Project configuration (`.claude/nightmill.json`):
 
-!`cat .claude/nightmill.json`
+!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
 
 Read the configuration first. Below, *the maintainer* is `maintainer.name`; `<owner>`, `<repo>` and
 `<project>` come from `github`; status names from `board.statuses`; label names from `labels`. Where this

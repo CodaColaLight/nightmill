@@ -73,8 +73,8 @@ skill has `allowed-tools` in its frontmatter.
 - The workflow skill writes the capacity and room calls as `"${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Capacity
   -Porcelain` / `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --capacity --porcelain` and
   `"${CLAUDE_PLUGIN_ROOT}/scripts/room.ps1"` / `bash "${CLAUDE_PLUGIN_ROOT}/scripts/room.sh"`.
-- Seven skills inject the config: `init` and `workflow` with `` !`cat .claude/nightmill.json 2>/dev/null || echo ...` ``,
-  `spec`, `next`, `fix`, `check` and `story` with `` !`cat .claude/nightmill.json` ``.
+- Seven skills inject the config, all with `` !`cat .claude/nightmill.json 2>/dev/null || echo ...` `` (`spec`, `next`,
+  `fix`, `check` and `story` got the fallback with #127).
 
 **Where the slots are.** `scripts/slot.sh` takes the main checkout as the parent of
 `git rev-parse --path-format=absolute --git-common-dir`, the root as `<main>/<worktrees.root>` (default

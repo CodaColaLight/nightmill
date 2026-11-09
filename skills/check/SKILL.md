@@ -6,7 +6,7 @@ allowed-tools: Bash(cat .claude/nightmill.json *)
 
 Project configuration (`.claude/nightmill.json`):
 
-!`cat .claude/nightmill.json`
+!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
 
 Run `verification.check` from the repository root (in a slot worktree:
 `cd <absolute slot path> && <verification.check>`, and `cd <absolute slot path> && <verification.check> --quick` for
