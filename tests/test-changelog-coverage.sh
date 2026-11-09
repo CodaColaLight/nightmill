@@ -26,9 +26,18 @@ fi
 
 # (c) the changelog rule covers skills/agents/scripts/hooks
 rule=$(awk '/CHANGELOG by version/{on=1; print; next} on && /^- \*\*/{on=0} on && /^## /{on=0} on' .claude/CLAUDE.md)
+# The clause (split at ';' and at sentence ends) that gives a change an entry or bullet
+# must itself name all four directories; a mention elsewhere (scripts/release.sh) does not count.
+clauses=$(tr '\n' ' ' <<<"${rule}" | sed -E 's/; /\n/g; s/\. /\n/g')
 for d in skills agents scripts hooks; do
-  if ! grep -Eq "${d}/" <<<"${rule}"; then
-    echo "FAIL: the 'CHANGELOG by version' rule does not mention a change under ${d}/"
+  found=0
+  while IFS= read -r clause; do
+    if grep -Eqi 'bullet|entry' <<<"${clause}" && grep -Eq "${d}/" <<<"${clause}"; then
+      found=1
+    fi
+  done <<<"${clauses}"
+  if [ "${found}" -eq 0 ]; then
+    echo "FAIL: no clause of the 'CHANGELOG by version' rule gives a change under ${d}/ an entry"
     fail=1
   fi
 done
