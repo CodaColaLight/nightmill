@@ -23,6 +23,11 @@ milestone, iteration number or CHANGELOG entry.
    Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .status, .priority, ((.labels // []) | join(",")), .content.title] | @tsv'`), keep
    open issues labelled `labels.bug`, take the highest `board.priorityField` and ask the maintainer on a
    tie. Nothing Ready: say so and stop. Read it with `gh issue view N --json number,title,labels,body`.
+   With a number, read its labels there and its board status from the item list above. An issue whose status
+   is not Ready is refused with one line that names the status found and the skill that takes it, for example
+   `#12 is at Backlog, not Ready; /fix only takes Ready bugs.`; an issue without the `labels.bug` label (a story
+   or an epic) is refused the same way, pointing to `/spec` or `/next`. Nothing is changed: the refusal comes
+   before step 2 and before any status change, slot or agent.
 2. **Decide whether it is a bug.** If the fix needs one of `escalation.storyTriggers` or a design choice,
    stop: say so and suggest the maintainer files it as a story (`/story`).
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
