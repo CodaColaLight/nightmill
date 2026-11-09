@@ -1375,4 +1375,37 @@ if grep -q $'\r' "$RL"; then fail "record: the record has carriage returns"; fi
 unset NIGHTMILL_CLOCK_FILE
 claim_reset
 
+echo "== slot numbers take only digits (bug 128)"
+# --slot, --release and --abandon accept only digits and normalise them (02 is slot 2); anything else prints the
+# usage line, exits 1 and changes nothing
+reset_gh
+rep --take feat/n1 --slot 02
+[ "$rc" = 0 ] && grep -q "Slot 2 is yours" <<<"$out" || fail "number: --take --slot 02: exit $rc: $out / $err"
+[ ! -e "$tmp/wt/slot-02" ] && [ ! -e "$tmp/wt/.slots/slot-02.json" ] || fail "number: --take --slot 02 made slot-02"
+grep -q '"slot": 2,' "$(marker 2)" || fail "number: the marker of --slot 02: $(mtext 2)"
+rep --abandon 02
+[ "$rc" = 0 ] && [ ! -f "$(marker 2)" ] || fail "number: --abandon 02: exit $rc: $out / $err"
+reset_gh; bash "$S" --take feat/n2 --slot 2 >/dev/null 2>&1
+echo n2 > "$tmp/wt/slot-2/number-n2.txt"; G "$tmp/wt/slot-2" add -A; G "$tmp/wt/slot-2" commit -qm "work on feat/n2"
+git -C "$tmp/wt/slot-2" push -q origin feat/n2 2>/dev/null; merged feat/n2 28 "$(git -C "$tmp/wt/slot-2" rev-parse HEAD)"
+rep --release 02
+[ "$rc" = 0 ] && grep -q "Slot 2 is free (was feat/n2, PR #28)." <<<"$out" || fail "number: --release 02: exit $rc: $out / $err"
+[ ! -f "$(marker 2)" ] || fail "number: --release 02 left the marker"
+reset_gh; bash "$S" --take feat/n3 --slot 2 >/dev/null 2>&1
+mlist() { ls "$tmp/wt/.slots" | { grep -v '^ledger' || true; } | tr '\n' ' '; }
+before=$(mlist); m2=$(mtext 2)
+for v in 1x -1 ""; do
+  for args in "--take feat/n4 --slot" "--release" "--abandon"; do
+    # shellcheck disable=SC2086
+    rep $args "$v"
+    [ "$rc" = 1 ] || fail "number: $args '$v': exit $rc"
+    [[ "$err" == "usage: "* ]] || fail "number: $args '$v': no usage line: $err"
+    [ -z "$out" ] || fail "number: $args '$v': printed $out"
+    [ "$(mlist)" = "$before" ] && [ "$(mtext 2)" = "$m2" ] || fail "number: $args '$v' changed the markers: $(mlist)"
+  done
+done
+[ ! -e "$tmp/wt/slot-1x" ] || fail "number: a slot directory was made for 1x"
+bash "$S" --abandon 2 >/dev/null
+git -C "$tmp/work" branch -D feat/n1 feat/n3 >/dev/null 2>&1 || true
+
 echo "SMOKE OK"
