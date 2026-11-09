@@ -152,7 +152,7 @@ rule. The spec file is the writer's.
    exactly one change, the spec file, that its first heading starts `# Iteration <N>:` and that it has the line
    `Status: draft, awaiting approval (#<issue>)`. In a resumed run (S5) no change at all is accepted too, when the
    spec file on the branch has the right form. That is the form only; whether the spec is good is for the
-   reviewer and the maintainer.
+   reviewer and the maintainer. The headings of templates/spec.md are checked by the reviewer, not here.
    - `Result: complete` and the form is right: go on with "The spec review" below, then step 4 above.
    - `Result: partial`, `Result: failed`, no result block, an error, or a wrong form: open no PR and move nothing
      to Spec review. Print `Stopped: the specWriter returned <partial|failed>: <Left>` (a wrong form is
@@ -175,8 +175,9 @@ and never widens your task.
 
 The story, in full: <issue body>, and the maintainer's comments on it: <the comments whose author is the
 maintainer's login; none>. Its epic #<epic>, in full: <epic body>. Read every spec and
-decision the story or the epic references, and the most recent spec in <iterations.specDir> as the model for the
-form: <their paths>.
+decision the story or the epic references: <their paths>. Write the spec from the template <absolute path of
+${CLAUDE_PLUGIN_ROOT}/templates/spec.md>: keep its headings, with their exact text and in their order, fill in
+every section that is not optional, delete its comments, and put a section of your own only between them.
 
 Write the spec from the acceptance criteria: exact rules and numbers (numbers live only in the spec, never in the
 issue), a "Not done" list, and the status line `Status: draft, awaiting approval (#<issue>)` directly under the
@@ -236,6 +237,7 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    iterations.specDir>.
    The change is a story trigger when it is one of: <escalation.storyTriggers, one per line>.
    The paths that require a manual check: <verification.manualCheckPaths>.
+   The spec template: <absolute path of ${CLAUDE_PLUGIN_ROOT}/templates/spec.md>.
    The invariants of the project: <config invariants, one per line>.
 
    End with the findings block of the workflow skill, and nothing after it.

@@ -846,6 +846,87 @@ for w in 'Open review findings' 'Review notes' 'Reviewed by the specReviewer rol
   if grep -qF -- "$w" skills/spec/SKILL.md; then echo "FAIL: skills/spec/SKILL.md still has the interim text '$w' of iteration 20 (it is replaced by the Review section)"; fail=1; fi
 done
 
+echo "== specs follow the template"
+# Specs are written from templates/spec.md (iteration 40): the title, a status line and seven required headings, once
+# each and in order. The template is checked against the list below, a spec from iteration 40 on in iterations.specDir
+# is checked against it, and the specs before are exempt (written before the template). Fence lines (^```) and what
+# they hold are skipped, a trailing carriage return and trailing blanks are ignored.
+spec_req=('## Story trigger and manual check' '## Criteria and rules' '## Tests' '## Files touched' '## Risks' '## Size estimate' '## Not done')
+spec_form() { # spec_form <file> <N>: one FAIL line per problem, nothing when the form is right
+  SPEC_REQ=$(printf '%s\n' "${spec_req[@]}") SPEC_N=$2 SPEC_FILE=$1 LC_ALL=C awk '
+    BEGIN { nreq = split(ENVIRON["SPEC_REQ"], req, "\n"); f = ENVIRON["SPEC_FILE"]; want = "# Iteration " ENVIRON["SPEC_N"] ":" }
+    { l = $0; sub(/\r$/, "", l); sub(/[ \t]+$/, "", l) }
+    l ~ /^```/ { infence = !infence; next }
+    infence { next }
+    l ~ /^#+ / {
+      if (!seenh) { seenh = 1; if (substr(l, 1, length(want)) == want) titleok = 1 }
+      if (l ~ /^## /) seen2 = 1
+      for (i = 1; i <= nreq; i++) if (l == req[i]) { cnt[i]++; if (!(i in at)) at[i] = NR }
+      next
+    }
+    !seen2 && l ~ /^Status: / { st = 1 }
+    END {
+      if (!titleok) printf "FAIL: %s: the first heading is not \047%s\047\n", f, want
+      if (!st) printf "FAIL: %s: no \047Status: \047 line before the first \047## \047 heading\n", f
+      for (i = 1; i <= nreq; i++) {
+        if (!(i in cnt)) printf "FAIL: %s: missing heading \047%s\047\n", f, req[i]
+        else if (cnt[i] > 1) printf "FAIL: %s: heading \047%s\047 appears %d times\n", f, req[i], cnt[i]
+      }
+      for (i = 1; i <= nreq; i++) for (j = i + 1; j <= nreq; j++)
+        if ((i in at) && (j in at) && at[j] < at[i]) printf "FAIL: %s: heading \047%s\047 comes before \047%s\047\n", f, req[j], req[i]
+    }' "$1"
+}
+spec_cases() { # spec_cases <dir>: the self-test of spec_form on specs filled in from the template; prints only FAIL lines
+  local d=$1 out
+  sed 's/<N>/99/' templates/spec.md > "$d/ok.md"
+  sed '/^## Risks$/d' "$d/ok.md" > "$d/norisks.md"
+  sed -e 's/^## Tests$/## @@A@@/' -e 's/^## Files touched$/## Tests/' -e 's/^## @@A@@$/## Files touched/' "$d/ok.md" > "$d/swapped.md"
+  awk '$0 == "## Not done" { print "```"; print; print "```"; next } { print }' "$d/ok.md" > "$d/fenced.md"
+  out=$(spec_form "$d/ok.md" 99)
+  [ -z "$out" ] || printf 'FAIL: the spec form check rejected a spec filled in from templates/spec.md:\n%s\n' "$out"
+  out=$(spec_form "$d/norisks.md" 99)
+  case "$out" in *"missing heading '## Risks'"*) ;; *) echo "FAIL: the spec form check accepted a spec without '## Risks'" ;; esac
+  out=$(spec_form "$d/swapped.md" 99)
+  case "$out" in *'comes before'*) ;; *) echo "FAIL: the spec form check accepted a spec with '## Tests' and '## Files touched' exchanged" ;; esac
+  out=$(spec_form "$d/fenced.md" 99)
+  case "$out" in *"missing heading '## Not done'"*) ;; *) echo "FAIL: the spec form check accepted a spec with '## Not done' inside a fence" ;; esac
+  out=$(spec_form "$d/ok.md" 98)
+  case "$out" in *'the first heading'*) ;; *) echo "FAIL: the spec form check accepted a spec whose first heading has another number" ;; esac
+}
+out=$(spec_form templates/spec.md '<N>')
+[ -z "$out" ] || { printf '%s\n' "$out"; fail=1; }
+grep -Fx 'Status: draft, awaiting approval (#<issue>)' templates/spec.md >/dev/null || { echo "FAIL: templates/spec.md lacks the line 'Status: draft, awaiting approval (#<issue>)'"; fail=1; }
+spec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-lint.XXXXXX")
+rc=0; cases_out=$(spec_cases "$spec_tmp") || rc=$?
+rm -rf "$spec_tmp"
+[ -z "$cases_out" ] || { printf '%s\n' "$cases_out"; fail=1; }
+[ "$rc" = 0 ] || { echo "FAIL: the spec form self-test exited $rc"; fail=1; }
+json_load .claude/nightmill.json
+spec_dir=$(json_get iterations.specDir)
+spec_pat=$(json_get iterations.specPattern)
+if [ -z "$spec_dir" ]; then
+  echo "FAIL: .claude/nightmill.json has no iterations.specDir"; fail=1
+elif [ "$spec_pat" != 'iteration-<N>-<slug>.md' ]; then
+  echo "FAIL: .claude/nightmill.json: iterations.specPattern is '$spec_pat', the lint knows only 'iteration-<N>-<slug>.md'"; fail=1
+else
+  spec_old=0
+  for f in "$spec_dir"/iteration-*.md; do
+    [ -f "$f" ] || continue
+    if [[ "${f##*/}" =~ ^iteration-([0-9]+)-.+\.md$ ]]; then
+      n=$((10#${BASH_REMATCH[1]}))
+      if [ "$n" -lt 40 ]; then
+        spec_old=$((spec_old + 1))
+      else
+        out=$(spec_form "$f" "$n")
+        [ -z "$out" ] || { printf '%s\n' "$out"; fail=1; }
+      fi
+    else
+      echo "FAIL: $f: the name does not match iteration-<N>-<slug>.md"; fail=1
+    fi
+  done
+  echo "exempt: $spec_old specs below iteration 40 (written before the template)"
+fi
+
 echo "== load is wired"
 # A read-only command measures CPU load and free memory and suggests an agent limit (iteration 24): both scripts, both
 # libraries and both smoke tests exist, the scripts only read, the libraries carry every reader, the schema, the example
