@@ -55,7 +55,9 @@ exit 0
     } finally { Pop-Location }
     if ($code -ne 0) { Fail "${mode}: exit code ${code}: $out" }
     if ($out -notmatch 'RED') { Fail "${mode}: the title is not printed at all" }
-    if ($out -match '[\x01-\x08\x0B-\x1F\x7F]') { Fail "${mode}: a control character from the title reached the output" }
+    # CR (0x0D) and LF (0x0A) are left out of the class: Out-String adds CRLF line endings itself, and the
+    # fixture title holds no CR or LF of its own (only ESC, BEL and DEL), so every title control is still caught.
+    if ($out -match '[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]') { Fail "${mode}: a control character from the title reached the output" }
     if (-not $out.Contains('x[31mRED]0;textend')) { Fail "${mode}: the printable text of the title was not kept" }
   }
   Write-Host "ok"
