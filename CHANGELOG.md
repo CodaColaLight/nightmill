@@ -8,6 +8,9 @@
   first step that left nothing behind, reuse the branch, the slot and an open pull request, and set no status, comment
   or CHANGELOG entry twice. A story with nothing behind it, or a slot whose agent is still running, is refused. `/next`
   names its branch with the iteration number. Without a number nothing changes.
+- Iteration 37 (#148): `/story` searches open and closed issues of any label for a similar title before it files,
+  shows up to 5 and, if any is similar, files only on "file anyway"; a failed search or a headless run files nothing.
+  A search that hits its limit of 100 with nothing similar says older issues may not have been checked, then files.
 
 ## 0.6.0 (2026-11-08)
 
