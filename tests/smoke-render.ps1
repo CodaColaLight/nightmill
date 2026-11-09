@@ -62,7 +62,7 @@ try {
   if ($story -match 'invariants') { Fail "checkbox block not dropped: $story" }
   if ($story -match '\{\{') { Fail "placeholder left after drop" }
 
-  Write-Host "== areas and labels with , : # and \" are quoted and escaped (bug #135)"
+  Write-Host '== areas and labels with , : # and " are quoted and escaped (bug #135)'
   $cfg3 = @'
 {
   "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
