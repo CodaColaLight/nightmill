@@ -88,6 +88,7 @@ add bash test-release-resume.sh
 add bash test-json-bom.sh
 add bash test-render-quoting.sh
 add bash test-changelog-refs.sh
+add bash test-check-skill.sh
 add bash test-status-controls.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
