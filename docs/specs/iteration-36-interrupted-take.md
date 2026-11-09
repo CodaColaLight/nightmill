@@ -1,6 +1,6 @@
 # Iteration 36: a take that is interrupted frees its claim and puts its slot back
 
-Status: draft, awaiting approval (#190)
+Status: delivered in iteration 36 (PR #246)
 
 Story: #190, epic #107 (Hardening from the code review). Split off from #186. A take that is interrupted after it has
 claimed its slot runs the same restore as a failed step (iteration 34, decision 5) and says so: bash catches INT and
