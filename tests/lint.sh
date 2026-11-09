@@ -15,7 +15,7 @@ fail=0
 echo "== forbidden words"
 words=tests/forbidden-words.local.txt
 if [ -n "${FORBIDDEN_WORDS:-}" ]; then
-  words=$(mktemp); trap 'rm -f "$words"' EXIT
+  words=$(mktemp "${TMPDIR:-/tmp}/nightmill-lint.XXXXXX"); trap 'rm -f "$words"' EXIT
   printf '%s
 ' "$FORBIDDEN_WORDS" > "$words"
 fi
@@ -147,7 +147,7 @@ for w in 'ranks below' 'is not in models.ranking'; do
   grep -qF -- "$w" scripts/validate-config.ps1 || { echo "FAIL: scripts/validate-config.ps1 does not carry the pairing rule text: $w"; fail=1; }
 done
 # the validator this lint runs on the example and on the repository's own config has the rule
-pair_cfg=$(mktemp)
+pair_cfg=$(mktemp "${TMPDIR:-/tmp}/nightmill-lint.XXXXXX")
 sed 's/"specReviewer": { "model": "opus" }/"specReviewer": { "model": "haiku" }/' templates/nightmill.example.json > "$pair_cfg"
 if out=$(bash scripts/validate-config.sh "$pair_cfg" 2>&1); then
   echo "FAIL: scripts/validate-config.sh accepted a spec reviewer on a model ranked below the spec writer's"; fail=1
@@ -1109,6 +1109,14 @@ done
 for w in 'claude plugin test --help' 'claude plugin test not available'; do
   grep -qF -- "$w" tests/check.sh || { echo "FAIL: tests/check.sh does not carry: $w"; fail=1; }
 done
+
+echo "== temporary files have a template"
+# Bug 115: on macOS a call without a template ignores $TMPDIR and lands in /var/folders, which a sandbox denies; every
+# call names a template under ${TMPDIR:-/tmp} (for example "${TMPDIR:-/tmp}/nightmill.XXXXXX").
+bare_tmp=$(grep -nE '(^|[^A-Za-z0-9_.-])mktemp( -d)?[ ]*([)`;|&]|$)' scripts/*.sh scripts/lib/*.sh tests/*.sh | grep -vE '^[^:]+:[0-9]+:[ ]*#' | grep -vF 'command -v mktemp' || true)
+if [ -n "$bare_tmp" ]; then
+  echo "FAIL: mktemp without a template (use a template under \${TMPDIR:-/tmp}):"; printf '%s\n' "$bare_tmp"; fail=1
+fi
 
 echo "== the check starts the longest steps first"
 # Iteration 42, decision 1: exactly the two slot tests (the longest steps) carry the mark 'first' in the step list of

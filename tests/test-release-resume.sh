@@ -4,7 +4,7 @@
 # points at a different commit. gh is a fake on PATH (it logs, and fails when told to).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-test-release-resume.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 

@@ -42,7 +42,7 @@ fi
 load_settings
 
 # The numbers, from the slot script of the same plugin (its standard error passes through)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-control.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 slot_call() { # slot_call <output file> <arguments...>
   local out=$1

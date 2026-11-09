@@ -6,7 +6,7 @@
 # duration is 0s. Same cases and same expected text as tests/smoke-check.ps1. Needs bash, git and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-check.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 echo 1794038400 > "$tmp/clock"

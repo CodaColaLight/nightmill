@@ -7,7 +7,7 @@
 # no jq, no network. Nothing sleeps.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-panel.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 P="$here/scripts/panel.sh"
 FIX="$here/tests/fixtures/panel/run-stall-old-free"

@@ -8,7 +8,7 @@
 # dead claim is freed only by --abandon).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-slot.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 S="$here/scripts/slot.sh"
 

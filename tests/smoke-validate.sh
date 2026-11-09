@@ -6,7 +6,7 @@
 # Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-validate.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 V="$here/scripts/validate-config.sh"
 

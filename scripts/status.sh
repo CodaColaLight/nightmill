@@ -50,7 +50,7 @@ st() { json_get "board.statuses.$1" "$2"; }
 # the statuses in the order of the table, tab separated
 order="$(st specReview 'Spec review')	$(st approved Approved)	$(st inProgress 'In progress')	$(st review Review)	$(st spec Spec)	$(st ready Ready)	$(st backlog Backlog)	$(st 'done' Done)"
 
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-status.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 flat() { JSON_MODE=flat JSON_FILE="$1" LC_ALL=C awk -f "$here/lib/json.awk"; }

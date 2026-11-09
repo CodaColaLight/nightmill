@@ -95,6 +95,7 @@ add bash test-script-modes.sh
 add bash test-fix-pick.sh
 add bash test-changelog-coverage.sh
 add bash test-json-speed.sh
+add bash test-mktemp-template.sh
 add bash test-skill-config-fallback.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
@@ -301,7 +302,7 @@ if [ "$L" = 1 ]; then
     result "$i" "$rc" "$t0" "$ledger_s"
   done
 else
-  dir=$(mktemp -d) || { echo "check: mktemp -d failed" >&2; exit 1; }
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-check.XXXXXX") || { echo "check: mktemp -d failed" >&2; exit 1; }
   trap stop_jobs EXIT
   # start_job <i>: step i (and the steps of its group) as one background job
   start_job() {

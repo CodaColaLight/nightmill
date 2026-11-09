@@ -39,7 +39,7 @@ json_load "$cfg" || exit 2
 load_settings
 
 # The slot numbers, from the slot script of the same plugin (its standard error passes through)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-load.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 slot_call() { # slot_call <output file> <arguments...>
   local out=$1

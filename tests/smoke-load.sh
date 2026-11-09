@@ -5,7 +5,7 @@
 # docs/specs/iteration-24-machine-load.md; smoke-load.ps1 runs the same cases. Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-load.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 L="$here/scripts/load.sh"
 unset WORKER_SLOTS NIGHTMILL_LOAD_FIXTURE

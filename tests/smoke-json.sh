@@ -4,7 +4,7 @@
 # (CI) - a cross-check that every value the scripts read equals what jq reads. Needs no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-json.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 # shellcheck source=../scripts/lib/json.sh
 . "$here/scripts/lib/json.sh"

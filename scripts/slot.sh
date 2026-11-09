@@ -267,7 +267,7 @@ reap_all() {
     if ! command -v gh >/dev/null 2>&1; then
       echo "slot $n: not checked for a merged PR (gh is not on the PATH)" >&2; continue
     fi
-    tmpf=$(mktemp); errf=$(mktemp)
+    tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-slot.XXXXXX"); errf=$(mktemp "${TMPDIR:-/tmp}/nightmill-slot.XXXXXX")
     if ! gh pr list --state merged --head "$branch" --json number,headRefOid,createdAt,mergedAt,closingIssuesReferences > "$tmpf" 2> "$errf"; then
       echo "slot $n: not checked for a merged PR ($(head -n 1 "$errf"))" >&2
       rm -f "$tmpf" "$errf"; continue
@@ -669,7 +669,7 @@ if [ "$release" != 0 ]; then
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir" >&2; exit 1; }
   git fetch origin "$base_branch"
   prjson=$(gh pr list --state merged --head "$branch" --json number,createdAt,mergedAt,closingIssuesReferences)
-  tmpf=$(mktemp); printf '%s\n' "$prjson" > "$tmpf"
+  tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-slot.XXXXXX"); printf '%s\n' "$prjson" > "$tmpf"
   flat=$(JSON_MODE=flat JSON_FILE="$tmpf" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" 2>/dev/null) || flat=""
   rm -f "$tmpf"
   merged=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' '$1 == "[0].number" && $2 == "number" { print $3 }')

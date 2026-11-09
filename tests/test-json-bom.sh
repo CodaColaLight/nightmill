@@ -3,7 +3,7 @@
 # (Windows PowerShell 5.1 writes one) must not make the bash scripts reject the file; the PowerShell twins accept it.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-test-json-bom.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 # shellcheck source=../scripts/lib/json.sh
 . "$here/scripts/lib/json.sh"
