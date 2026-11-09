@@ -71,8 +71,8 @@ fi
 out=""
 err=""
 trap 'if [ -n "$out" ]; then rm -f "$out"; fi; if [ -n "$err" ]; then rm -f "$err"; fi' EXIT
-out=$(mktemp)
-err=$(mktemp)
+out=$(mktemp "${TMPDIR:-/tmp}/nightmill-panel.XXXXXX")
+err=$(mktemp "${TMPDIR:-/tmp}/nightmill-panel.XXXXXX")
 code="0"
 bash "$here/slot.sh" --status --porcelain > "$out" 2> "$err" || code="$?"
 

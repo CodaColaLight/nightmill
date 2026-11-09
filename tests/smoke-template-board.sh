@@ -5,7 +5,7 @@
 # both shells print the same. Needs bash and awk, no jq, no network.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-template-board.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 FIX="$here/tests/fixtures/template-board"
 

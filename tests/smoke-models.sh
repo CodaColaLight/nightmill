@@ -6,7 +6,7 @@
 # subfolder and from a second worktree. Same cases as smoke-models.ps1. Needs bash, awk and git, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-models.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 M="$here/scripts/models.sh"
 V="$here/scripts/validate-config.sh"

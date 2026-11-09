@@ -6,7 +6,7 @@
 # Not a smoke script: run it with `bash tests/test-lintcopy-output.sh`. Needs bash, git, tar and awk.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-test-lintcopy-output.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 bad=0
