@@ -90,6 +90,7 @@ add bash test-render-quoting.sh
 add bash test-changelog-refs.sh
 add bash test-check-skill.sh
 add bash test-status-controls.sh
+add bash test-worker-merge.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
