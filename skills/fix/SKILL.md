@@ -20,9 +20,11 @@ A bug is a defect in shipped behaviour (form: `.github/ISSUE_TEMPLATE/bug.yml`).
 milestone, iteration number or CHANGELOG entry.
 
 1. **Pick the issue.** If `$ARGUMENTS` has a number, use it; otherwise list the items whose status is
-   Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .status, .priority, ((.labels // []) | join(",")), .content.title] | @tsv'`), keep
+   Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .["<board.statusField, lower case>"], .["<board.priorityField, lower case>"], ((.labels // []) | join(",")), .content.title] | @tsv'`), keep
    open issues labelled `labels.bug`, take the highest `board.priorityField` and ask the maintainer on a
-   tie. Nothing Ready: say so and stop. Read it with `gh issue view N --json number,title,labels,body`.
+   tie. The two keys of the filter are the configured `board.statusField` and `board.priorityField`, lower-cased
+   with spaces kept; when the listing returns 200 items, as many as `--limit`, warn visibly that the page is full
+   and items past it may be missing. Nothing Ready: say so and stop. Read it with `gh issue view N --json number,title,labels,body`.
    With a number, read its labels there and its board status from the item list above. An issue whose status
    is not Ready is refused with one line that names the status found and the skill that takes it, for example
    `#12 is at Backlog, not Ready; /fix only takes Ready bugs.`; an issue without the `labels.bug` label (a story

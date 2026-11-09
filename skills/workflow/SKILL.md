@@ -84,7 +84,9 @@ options disables the workflows that pointed at a removed option.
 2. **Without a number**, list the board (`gh project item-list`, filtered with its own `--jq`; do not pipe it into `python` or `jq`, which the project's permission rule `Bash(gh project *)` does not cover), keep open issues at the skill's status
    that are not epics and not bugs, and take the highest `board.priorityField` (the order of
    `board.priorities`; an item without a priority ranks last). On a tie ask the maintainer which, listing
-   the tied issues.
+   the tied issues. The filter takes the status and priority keys from the configured `board.statusField` and
+   `board.priorityField` (lower-cased, spaces kept); a listing that returns as many items as its `--limit` gets a
+   visible warning that items past it may be missing.
 3. **Before the first change** (board, branch, file, slot) print one line:
    `Picking #N "<title>": <status>, <priority>, <reason>`, where the reason is `named by number`,
    `only <status> story` or `highest priority of K <status> stories`.
