@@ -83,8 +83,9 @@ for w in 'interaction limits' 'token scope' 'branch protection' 'ruleset' 'bypas
   contains "$low" "$w" || fail "README.md: the Security model section does not mention '$w'"
 done
 
-# 8. token scopes in What to restrict
-rs=$(printf '%s\n' "$sec" | awk '/^### What to restrict$/ { s = 1; next } s && /^### / { exit } s { print }' | tr '\n' ' ' | sed -E 's/ +/ /g')
+# 8. token scopes in What to restrict. The awk calls on "$sec" and "$inst" read to the end (a flag, no exit): an early
+# exit can kill printf with SIGPIPE, and under pipefail that fails the pipe.
+rs=$(printf '%s\n' "$sec" | awk 'd { next } /^### What to restrict$/ { s = 1; next } s && /^### / { d = 1; next } s { print }' | tr '\n' ' ' | sed -E 's/ +/ /g')
 for w in '`repo`' '`read:org`' '`gist`' '`project`' '`workflow`' '--remove-scopes workflow'; do
   contains "$rs" "$w" || fail "README.md: 'What to restrict' does not contain $w"
 done
@@ -95,7 +96,7 @@ if ! printf '%s\n' "$sec" | grep -xF "$hdr" >/dev/null; then
   fail "README.md: the Security model section has no line '$hdr'"
 else
   nums=""
-  rows=$(printf '%s\n' "$sec" | awk -v h="$hdr" '$0 == h { s = 1; next } s && /^\|/ { print; next } s { exit }' | sed '1{/^|[-| :]*$/d;}')
+  rows=$(printf '%s\n' "$sec" | awk -v h="$hdr" 'd { next } $0 == h { s = 1; next } s && /^\|/ { print; next } s { d = 1 }' | sed '1{/^|[-| :]*$/d;}')
   while IFS= read -r row; do
     [ -n "$row" ] || continue
     state=$(printf '%s' "$row" | awk -F'|' '{ gsub(/^ +| +$/, "", $(NF-2)); print $(NF-2) }')
@@ -160,7 +161,7 @@ fi
 
 # 14. the Install section points to it before the first code block
 inst=$(awk '/^## Install$/ { s = 1; next } s && /^## / { exit } s { print }' "$readme")
-before=$(printf '%s\n' "$inst" | awk '/^```/ { exit } { print }')
+before=$(printf '%s\n' "$inst" | awk 'd { next } /^```/ { d = 1; next } { print }')
 contains "$before" 'Security model' || fail "README.md: '## Install' does not mention 'Security model' before its first code block"
 
 [ "$bad" = 0 ] && echo "ok: the security model is documented"

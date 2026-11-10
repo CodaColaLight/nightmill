@@ -29,8 +29,9 @@ done
 repo=$(grep -oE '/plugin marketplace add [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' "$readme" | head -1 | sed 's|.* ||' || true)
 [ -n "$repo" ] || fail "README.md: no /plugin marketplace add line"
 
-# part <heading line>: the lines of sec after that heading up to the next '### '
-part() { printf '%s\n' "$sec" | awk -v h="$1" '$0 == h { s = 1; next } s && /^### / { exit } s { print }'; }
+# part <heading line>: the lines of sec after that heading up to the next '### '. awk reads to the end (a flag, no
+# exit): an early exit can kill printf with SIGPIPE, and under pipefail that fails the pipe.
+part() { printf '%s\n' "$sec" | awk -v h="$1" 'd { next } $0 == h { s = 1; next } s && /^### / { d = 1; next } s { print }'; }
 
 # 1. exactly one heading, after the limit sub-section and before Developing nightmill
 n=$(grep -c '^## Running unattended$' "$readme" || true)

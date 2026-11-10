@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Iteration 52 (#164): an unattended driver, `scripts/drive.sh` and `drive.ps1`, runs `/nightmill:fix all` and then
+  `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the run's time limit is reached or the
+  kill switch `.git/nightmill-stop` is set; it checks for a clean base branch, a free slot and room on the machine
+  before each step, takes one lock per repository, posts one summary comment (picked, merged, blocked, cost) and
+  leaves no process running. A workflow template, `templates/workflows/nightmill-drive.yml`, runs it on a schedule
+  and on demand on a self-hosted runner. New config keys `unattended.maxMinutes` (default 240) and
+  `unattended.summaryIssue`; README section "Running on a schedule".
 - Iteration 51 (#157): the lint keeps the README's list of smoke tests and the shell twins in agreement with the
   files: every `tests/smoke-*` file is listed in the README, every `tests/smoke-*.sh` has a `.ps1` twin
   (`smoke-json.sh` is the one listed exception) and every `scripts/*.sh` has a `.ps1` twin

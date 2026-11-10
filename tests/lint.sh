@@ -1391,6 +1391,10 @@ echo "== running unattended is documented"
 # tests/test-unattended-docs.sh.
 bash tests/test-unattended-docs.sh "$PWD" || fail=1
 
+echo "== the driver is wired"
+# Iteration 52 (#164): the driver's flags, that it sets no status, the workflow template and the README section.
+bash tests/test-drive-docs.sh "$PWD" || fail=1
+
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
 # --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in
