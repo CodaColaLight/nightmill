@@ -119,8 +119,8 @@ Read on `main` at d299241 (iteration 38 merged), with iteration 41's spec read f
   1 s and a minute count from `now - 1700`; `smoke-room.ps1` fails a call that takes 30 s or more. `smoke-slot.*` wait
   up to 60 s (`Wait-For`, `Wait-Claims`) and 120 s (the claim gate) for background takes. These margins are wide
   against a few steps at once; see Risks.
-- **CI** (`.github/workflows/ci.yml`): jobs `lint`, `smoke-bash` (`ubuntu-latest`, `timeout-minutes: 7`: `bash
-  tests/smoke-json.sh`, then "Hide jq", then 13 `run: bash tests/smoke-<x>.sh` steps), `smoke-powershell`
+- **CI** (`.github/workflows/ci.yml`): jobs `lint`, `smoke-bash` (`ubuntu-latest`, `timeout-minutes: 7`, 22 since bug
+  #264: `bash tests/smoke-json.sh`, then "Hide jq", then 13 `run: bash tests/smoke-<x>.sh` steps), `smoke-powershell`
   (`windows-latest`, `timeout-minutes: 38`: 13 `run: powershell -NoProfile -ExecutionPolicy Bypass -File
   tests/smoke-<x>.ps1` steps, so Windows PowerShell 5.1, never `pwsh`) and `validate` (not blocking). The ruleset on
   `main` requires the names `Lint (generic, JSON, skills, shell)`, `bash scripts smoke tests` and `PowerShell scripts
