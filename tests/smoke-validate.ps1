@@ -155,6 +155,79 @@ try {
   $r = Run-V $f @("-Schema", "`"$mini`"")
   if ($r.Code -ne 0) { Fail "enum: a valid value was refused: $($r.Out)" }
 
+  Write-Host "== git.mergeFlags must contain --auto and never --admin"
+  $MF = '"mergeFlags": "--auto --squash"'
+  $pAuto = 'error: git.mergeFlags: must match the pattern ^(.* )?--auto( .*)?$, got '
+  $pAdmin = 'error: git.mergeFlags: must not match the pattern ^(.* )?--admin(( |=).*)?$, got '
+  Check "merge flags without auto" (Edit $ex $MF '"mergeFlags": "--squash"') 1 @(($pAuto + '"--squash"'))
+  Check "merge flags with admin" (Edit $ex $MF '"mergeFlags": "--auto --admin --squash"') 1 @(($pAdmin + '"--auto --admin --squash"'))
+  Check "merge flags admin and no auto" (Edit $ex $MF '"mergeFlags": "--admin --squash"') 1 @(($pAuto + '"--admin --squash"'), ($pAdmin + '"--admin --squash"'), "2 errors, 0 warnings")
+  Check "merge flags in the other order" (Edit $ex $MF '"mergeFlags": "--squash --auto"') 0 @("0 errors, 0 warnings")
+  Check "merge flags with a longer word" (Edit $ex $MF '"mergeFlags": "--auto --administrator"') 0 @("0 errors, 0 warnings")
+  Check "merge flags admin with a value" (Edit $ex $MF '"mergeFlags": "--admin=true --auto"') 1 @(($pAdmin + '"--admin=true --auto"'))
+  Check "merge flags an integer" (Edit $ex $MF '"mergeFlags": 3') 1 @("error: git.mergeFlags: expected string, got integer", "1 error, 0 warnings")
+
+  Write-Host "== pattern and not, with a schema of their own"
+  $pat = Join-Path $tmp "pat.schema.json"
+  Write-Utf8 $pat '{"type":"object","properties":{"a":{"type":"string","pattern":"^a"},"b":{"type":"string","not":{"pattern":"b$"}}}}'
+  $pf = Join-Path $tmp "pat.json"
+  Write-Utf8 $pf '{"a":"b","b":"ab"}'
+  $r = Run-V $pf @("-Schema", "`"$pat`"")
+  if ($r.Code -ne 1) { Fail "pattern: expected exit code 1, got $($r.Code): $($r.Out) $($r.Err)" }
+  $got = @($r.Out -split "`r?`n")
+  foreach ($l in 'error: a: must match the pattern ^a, got "b"', 'error: b: must not match the pattern b$, got "ab"', '2 errors, 0 warnings') { if ($got -cnotcontains $l) { Fail "pattern: missing the line '$l' in: $($r.Out)" } }
+  Write-Utf8 $pf '{"a":"ab","b":"ba"}'
+  $r = Run-V $pf @("-Schema", "`"$pat`"")
+  if ($r.Code -ne 0) { Fail "pattern: valid values were refused: $($r.Out)" }
+
+  Write-Host "== -Base reads the configuration on origin/HEAD"
+  # Run-Base <directory> <arguments>: the validator started in that directory
+  function Run-Base([string]$dir, [string]$argText) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $psExe
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$V`" " + $argText
+    $psi.WorkingDirectory = $dir
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $out = $p.StandardOutput.ReadToEnd()
+    $err = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    return [pscustomobject]@{ Out = $out; Err = $err; Code = $p.ExitCode }
+  }
+  function Bgit([string]$dir) {
+    # run git in $dir with the remaining arguments; stderr is folded into the output, the exit code is not checked
+    $a = @($args)
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    try { & git -C $dir -c user.name=t -c user.email=t@example.invalid @a 2>&1 | Out-Null } finally { $ErrorActionPreference = $prev }
+  }
+  $borigin = Join-Path $tmp "borigin.git"
+  $brepo = Join-Path $tmp "brepo"
+  New-Item -ItemType Directory -Path $borigin, (Join-Path $brepo ".claude") | Out-Null
+  Bgit $borigin init -q --bare
+  Bgit $brepo init -q -b main
+  Write-Utf8 (Join-Path $brepo ".claude\nightmill.json") (Edit $ex $MF '"mergeFlags": "--squash"')
+  Bgit $brepo add -A
+  Bgit $brepo commit -qm base
+  Bgit $brepo remote add origin $borigin
+  Bgit $brepo push -q origin main
+  Bgit $brepo remote set-head origin main
+  Write-Utf8 (Join-Path $brepo ".claude\nightmill.json") $ex
+  $r = Run-Base $brepo "-Base"
+  if ($r.Code -ne 1) { Fail "-Base: expected exit code 1, got $($r.Code): $($r.Out) $($r.Err)" }
+  $got = @($r.Out -split "`r?`n")
+  if (-not ($got | Where-Object { $_.StartsWith("validating origin/HEAD:.claude/nightmill.json against ") })) { Fail "-Base: no header naming origin/HEAD: $($r.Out)" }
+  if ($got -cnotcontains ($pAuto + '"--squash"')) { Fail "-Base: the base config was not read: $($r.Out)" }
+  $r = Run-Base $brepo "-Config `".claude\nightmill.json`""
+  if ($r.Code -ne 0) { Fail "the file argument reads the working tree: expected exit code 0, got $($r.Code): $($r.Out)" }
+  $r = Run-Base $brepo "-Base -Config `".claude\nightmill.json`""
+  if ($r.Code -ne 2) { Fail "-Base with a file: expected exit code 2, got $($r.Code): $($r.Out) $($r.Err)" }
+  Bgit $brepo remote set-head origin --delete
+  $r = Run-Base $brepo "-Base"
+  if ($r.Code -ne 2) { Fail "-Base without origin/HEAD: expected exit code 2, got $($r.Code): $($r.Out) $($r.Err)" }
+  if (($r.Out + $r.Err) -notlike "*run git remote set-head origin --auto once*") { Fail "-Base without origin/HEAD: no set-head line: $($r.Out) $($r.Err)" }
+
   Write-Host "== usage errors exit 2"
   $r = Run-V (Join-Path $tmp "does-not-exist.json")
   if ($r.Code -ne 2) { Fail "missing file: expected exit code 2, got $($r.Code)" }
@@ -189,13 +262,13 @@ try {
     if ($LASTEXITCODE -ge 8) { Fail "could not copy the repository (robocopy $LASTEXITCODE)" }
     $schemaPath = Join-Path $copy "schema\nightmill.schema.json"
     $s = [IO.File]::ReadAllText($schemaPath, $utf8)
-    Write-Utf8 $schemaPath ($s -replace '(?m)^(\s*"title":)', ('  "pattern": "x",' + "`n" + '$1'))
+    Write-Utf8 $schemaPath ($s -replace '(?m)^(\s*"title":)', ('  "format": "x",' + "`n" + '$1'))
     Push-Location $copy
     $ErrorActionPreference = "Continue"
     try {
       $out = (& $bash tests/lint.sh 2>&1 | Out-String)
-      if ($LASTEXITCODE -eq 0) { Fail "the lint accepted a schema with a pattern keyword" }
-      if ($out -notlike "*pattern*") { Fail "the lint did not name the keyword: $out" }
+      if ($LASTEXITCODE -eq 0) { Fail "the lint accepted a schema with a format keyword" }
+      if ($out -notlike "*format*") { Fail "the lint did not name the keyword: $out" }
     }
     finally { Pop-Location }
 

@@ -2,8 +2,8 @@
 #   VAL_CONFIG=config.json VAL_SCHEMA=schema.json LC_ALL=C awk -f json.awk -f validate.awk
 # Prints one record per finding, "<path> TAB <rank> TAB <line>" (rank 0 for an error, 1 for a warning), in
 # no particular order; the caller sorts them with LC_ALL=C sort. Same checks, texts and order as
-# validate-config.ps1: type, enum, minimum, minItems, items, required, properties, additionalProperties
-# (a schema, true or false); an unknown key is a warning, with a hint when it looks like a typo. After the
+# validate-config.ps1: type, enum, pattern, not (only { "pattern": ... }), minimum, minItems, items, required,
+# properties, additionalProperties (a schema, true or false); an unknown key is a warning, with a hint when it looks like a typo. After the
 # walk, vpairs() checks that a reviewer role is not ranked below the role it reviews (iteration 15).
 # Exit code 2 (message on standard error) when the schema or the config cannot be read, or the schema is
 # not valid JSON. A config that is not valid JSON is a finding.
@@ -67,7 +67,7 @@ function vhint(key, props,   i, k, lkey) {
   return ""
 }
 
-function vnode(id, sid, path,   k, t, e, i, ok, list, item, mn, mi, it, req, props, ap, key, cid, cpath, pn, h, msg) {
+function vnode(id, sid, path,   k, t, e, pt, nt, i, ok, list, item, mn, mi, it, req, props, ap, key, cid, cpath, pn, h, msg) {
   k = vkind(id)
   t = json_child(sid, "type")
   if (t && !vtypeok(id, jv[t])) {
@@ -87,6 +87,17 @@ function vnode(id, sid, path,   k, t, e, i, ok, list, item, mn, mi, it, req, pro
         else list = list vtext(item)
       }
       vfinding(path, "error", "must be one of: " list ", got " vtext(id))
+    }
+  }
+  # pattern and not (iteration 48): a search, case-sensitive (LC_ALL=C); a value that is not a string is not judged
+  if (k == "string") {
+    pt = json_child(sid, "pattern")
+    if (pt && jk[pt] == "string" && jv[id] !~ jv[pt]) {
+      vfinding(path, "error", "must match the pattern " jv[pt] ", got " vtext(id))
+    }
+    nt = json_child(json_child(sid, "not") + 0, "pattern")
+    if (nt && jk[nt] == "string" && jv[id] ~ jv[nt]) {
+      vfinding(path, "error", "must not match the pattern " jv[nt] ", got " vtext(id))
     }
   }
   mn = json_child(sid, "minimum")

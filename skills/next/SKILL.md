@@ -3,14 +3,14 @@ name: next
 description: Implement the next Approved story from the board - slot, tests, code, check, PR, auto-merge. Use when asked to pick up the next story, implement an approved spec, or start an approved story. Writing the spec for a Ready story is /spec.
 argument-hint: [issue-number]
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
+allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
 ---
 
 Implement the next Approved story from the board: $ARGUMENTS
 
-Project configuration (`.claude/nightmill.json`):
+Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; the first line names the base ref; see **The configuration** in the `workflow` skill):
 
-!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
+!`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
 
 Read the configuration first. Below, *the maintainer* is `maintainer.name`; `<owner>`, `<repo>` and
 `<project>` come from `github`; status names from `board.statuses`; label names from `labels`. Where this
@@ -136,6 +136,12 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    and say why in the PR, when the PR changes one of `escalation.storyTriggers`, is partial, skipped
    a required manual check, or has blocking review findings left, or has a dispute over the tester's tests still
    open. Then say `Auto-merge is not enabled: a dispute over the tester's tests is still open (see Disputed tests).`
+   Before it, the two checks of the merge step in **CI and merging** of the `workflow` skill: `git.mergeFlags`, split at spaces, has a word `--auto` and no word that is `--admin` or starts with `--admin=`, else `Auto-merge is not enabled: git.mergeFlags is "<value>"; it must contain --auto and never --admin.`; and
+   `git -C <slot path> diff --name-only --no-renames origin/<git.baseBranch>...<branch>` lists no path that starts with `.claude/` or `.github/`, else `Auto-merge is not enabled: it changes <the first such path>, under .claude/ or .github/, which is never auto-merged.` (a `git diff` that fails: `Auto-merge is not enabled: the changed paths could not be listed (<the first line of git's message>).`) (in the session's checkout without `-C <slot path>`). When one applies, `gh pr merge` is not run and the line
+   goes where the PR says why auto-merge was withheld. A resumed run (row N1) runs the same two checks before step 7;
+   when one applies it does not enable auto-merge, prints the line and posts it once with
+   `gh pr comment <pr> --body "<the line>"` (only when no comment of the maintainer's login on the pull request starts
+   with `Auto-merge is not enabled:`); the body is not rewritten.
 8. If the story ends up only partly done: file the rest as a new story under the same epic (`/story`),
    link both issues, say so in the PR. The PR still closes the old issue; never tick criteria that were not met.
    When tests of unmet criteria were set aside in step 5, the new story's body lists their paths, the stash's message
@@ -189,6 +195,9 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
      `git diff <the pull request's head>..HEAD`). The pairing is not checked again. A blocking finding: nothing is
      pushed; while a round is left, round k + 1 starts at the producer with its own record, the same red check and,
      added to the paragraph, "Fix exactly these blocking findings too: <the lines>"; else the hand-over.
+   - **The round's paths**: `git -C <slot path> diff --name-only --no-renames <the pull request's head>..HEAD` (in the
+     session's checkout without `-C <slot path>`); a path that starts with `.claude/` or `.github/` is not pushed: the
+     hand-over with the reason `the fix of round <k> changes <path>, under .claude/ or .github/, which is never auto-merged`.
    - **The push**: `git -C <slot path> push -u origin <branch>` (in the session's checkout `git push -u origin <branch>`),
      never forced, then watch again with the full `review.watchChecksMinutes`.
    - **The hand-over** is the workflow rule's: the issue comment, the label `blocked`, then report `handed-over` and
@@ -622,9 +631,10 @@ lines.
 After the implementer's result (not `failed`) and before the manual check, a different agent reviews the change. The
 findings format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
 
-1. **The pairing.** Run `validate-config` of the shell in use on the project's config
-   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
+1. **The pairing.** Run `validate-config` of the shell in use on the project's base configuration
+   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Base`, or
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
+   the base branch, **The configuration** in the `workflow` skill; a stop of that rule is exit 2). When it reports a line
    on `roles.codeReviewer.model` with the text `ranks below`, stop with
    `Stopped: the codeReviewer ranks below the implementer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
    (the line may name the other producer, then name it). When the validator cannot run (exit code 2, missing

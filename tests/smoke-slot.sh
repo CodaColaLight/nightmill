@@ -89,6 +89,8 @@ git add -A
 git -c user.name=t -c user.email=t@example.invalid commit -qm init
 git remote add origin "$tmp/origin.git"
 git push -q origin main
+# iteration 48: the config comes from the base branch (origin/HEAD, then git.baseBranch)
+git remote set-head origin main
 
 echo "== status before anything"
 # Output is captured first: with pipefail, grep -q closing the pipe early would fail the pipeline.
@@ -264,6 +266,15 @@ echo "== capacity"
 # --capacity (iteration 22): the slot count and the agent limit, set during a session in <root>/.slots/capacity.json
 C="$tmp/wt/.slots/capacity.json"
 CFG="$tmp/work/.claude/nightmill.json"
+# pubcfg: commit the config file in the main checkout and push it to origin main, so the slot script reads it from the base
+pubcfg() {
+  git -C "$tmp/work" diff --quiet -- .claude/nightmill.json && return 0
+  git -C "$tmp/work" add .claude/nightmill.json
+  git -C "$tmp/work" -c user.name=t -c user.email=t@example.invalid commit -qm "config"
+  git -C "$tmp/work" fetch -q origin main
+  git -C "$tmp/work" -c user.name=t -c user.email=t@example.invalid rebase -q origin/main
+  git -C "$tmp/work" push -q origin main
+}
 cp "$CFG" "$tmp/cfg-before.json"
 nl=$'\n'
 show() { bash "$S" --capacity "$@"; }
@@ -386,6 +397,7 @@ out=$(show --porcelain --slot-count 3 --agent-limit 3)
 [ "$(WORKER_SLOTS=4 bash "$S" --status --porcelain | wc -l | tr -d ' ')" = 3 ] || fail "--status does not use the live count over WORKER_SLOTS"
 show --clear >/dev/null
 sed 's/"git": { "baseBranch": "main" },/"git": { "baseBranch": "main" }, "parallel": { "maxAgents": 5 },/' "$tmp/cfg-before.json" > "$CFG"
+pubcfg
 grep -q '"maxAgents": 5' "$CFG" || fail "the config copy has no maxAgents"
 [ "$(show | sed -n 2p)" = "agents: 5 (config)" ] || fail "config does not win over the default: $(show)"
 [ "$(show --porcelain | sed -n 2p)" = "agents${T}5${T}config${T}5" ] || fail "porcelain config agents"
@@ -394,6 +406,7 @@ show --agent-limit 3 >/dev/null
 [ "$(show --porcelain | sed -n 2p)" = "agents${T}3${T}live${T}5" ] || fail "porcelain live agents over config"
 show --clear >/dev/null
 cp "$tmp/cfg-before.json" "$CFG"
+pubcfg
 
 # 11 an unusable capacity.json is ignored with a note
 unusable() { # unusable <content> <expected show output> <reason>
@@ -520,7 +533,7 @@ hand 1 check 2026-11-05T11:30:00
 
 # 6 the threshold comes from the config
 cp "$CFG" "$tmp/cfg-reports.json"
-setcfg() { sed "s/\"slots\": 2,/\"slots\": 2, \"stalledAfterMinutes\": $1,/" "$tmp/cfg-reports.json" > "$CFG"; }
+setcfg() { sed "s/\"slots\": 2,/\"slots\": 2, \"stalledAfterMinutes\": $1,/" "$tmp/cfg-reports.json" > "$CFG"; pubcfg; }
 setcfg 5
 grep -q '"stalledAfterMinutes": 5,' "$CFG" || fail "the config copy has no stalledAfterMinutes"
 [ "$(agent $((B + 300)))" = running ] || fail "threshold 5: 300 seconds is not running"
@@ -539,14 +552,17 @@ done
 setcfg null
 [ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] && [ ! -s "$tmp/err.txt" ] || fail "threshold null: $(cat "$tmp/err.txt")"
 cp "$tmp/cfg-reports.json" "$CFG"
+pubcfg
 [ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] && [ ! -s "$tmp/err.txt" ] || fail "no threshold key: $(cat "$tmp/err.txt")"
 # without worktrees the root is ../<checkout>-wt and there are two slots
 sed '/"worktrees": {/,/^  }/d; s/"git": { "baseBranch": "main" },/"git": { "baseBranch": "main" }/' "$tmp/cfg-reports.json" > "$CFG"
+pubcfg
 ! grep -q worktrees "$CFG" || fail "the config copy still has worktrees"
 mkdir -p "$tmp/work-wt/.slots"; hand 1 check 2026-11-05T11:30:00 "$tmp/work-wt/.slots/slot-1.json"
 [ "$(agent $((B + 1800)))" = running ] && [ "$(agent $((B + 1801)))" = stalled ] && [ ! -s "$tmp/err.txt" ] || fail "no worktrees: $(cat "$tmp/err.txt")"
 rm -rf "$tmp/work-wt"
 cp "$tmp/cfg-reports.json" "$CFG"
+pubcfg
 
 # 8 the step plays no part
 for s in "done" "stopped"; do
@@ -635,6 +651,7 @@ write_cfg() { # write_cfg <worktrees.warmup as JSON>: the test config with that 
   }
 }
 EOF
+  pubcfg
 }
 # bg_take <name> <arguments>: slot.sh in the background; standard output and error go to $tmp/<name>.out and .err, the
 # process id is left in $bg_pid. bg_wait <pid> <name> then leaves $rc, $out and $err (without carriage returns).
@@ -694,6 +711,7 @@ claim_reset() { # every slot free and detached at origin/main, the original conf
   local n d
   claim_stop; rm -f "$tmp/go" "$tmp/claim-go" "$tmp/barrier" "$S1/capacity.json"
   cp "$tmp/cfg-claim.json" "$CFG"
+  pubcfg
   git -C "$tmp/work" config --unset remote.origin.uploadpack 2>/dev/null || true
   git -C "$tmp/work" config --unset core.hooksPath 2>/dev/null || true
   git -C "$tmp/work" remote set-url origin "$tmp/origin.git"
@@ -859,6 +877,7 @@ claim_case3() {
   [ -z "$(c_ref feat/f4)" ] || fail "claim 3: the branch feat/f4 was left behind"
   # switch
   cp "$tmp/cfg-claim.json" "$CFG"
+  pubcfg
   rep --take feat/f5 --slot 1 --base origin/nope
   c_restored 1 2 "git switch failed (exit 128); slot 1 is free again"
   [ -z "$(c_branch 1)" ] && [ "$(c_head 1)" = "$X" ] || fail "claim 3: slot 1 is not detached at $X after the failed switch"
@@ -939,6 +958,7 @@ warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free 
   [ -z "$(c_branch 1)" ] && [ -z "$(git -C "$tmp/wt/slot-1" status --porcelain)" ] || fail "claim 3: slot 1 is not detached and clean after --abandon"
   git -C "$tmp/work" branch -D feat/f9 >/dev/null
   cp "$tmp/cfg-claim.json" "$CFG"
+  pubcfg
 }
 
 # 4 a dead claim is recognised and freed only by --abandon, without losing work
@@ -1496,6 +1516,7 @@ retry_case10
 claim_reset
 git -C "$tmp/work" branch -D feat/s10 >/dev/null 2>&1 || true
 cp "$tmp/cfg-claim.json" "$CFG"
+pubcfg
 
 echo "== interruption (iteration 36)"
 # interruption (iteration 36): a take that is interrupted after it has claimed its slot (INT or TERM in bash) runs the
@@ -1762,6 +1783,7 @@ intr_case6
 intr_case7
 i_clean
 cp "$tmp/cfg-claim.json" "$CFG"
+pubcfg
 
 echo "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"
 # 13 (iteration 33, /fix all): the skill frees a bug's slot with --abandon once the bug's branch is on its open pull
@@ -2004,5 +2026,106 @@ done
 [ ! -e "$tmp/wt/slot-1x" ] || fail "number: a slot directory was made for 1x"
 bash "$S" --abandon 2 >/dev/null
 git -C "$tmp/work" branch -D feat/n1 feat/n3 >/dev/null 2>&1 || true
+
+echo "== the config comes from the base branch (iteration 48)"
+# mkbase <name> <baseBranch> <warm-up command> [<extra JSON after git>]: a repository $tmp/<name>/work with a bare
+# origin, the config committed and pushed to main, origin/HEAD set to main; the slot root is $tmp/<name>/wt
+cfgtext() { # cfgtext <baseBranch> <warm-up command> <invariant text>
+  cat <<CFGEOF
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "verification": { "check": "true" },
+  "invariants": [ "$3" ],
+  "git": { "baseBranch": "$1" },
+  "worktrees": {
+    "root": "../wt",
+    "slots": 2,
+    "warmup": [ { "dir": "client", "command": "$2", "lockfile": "client/lock.txt" } ]
+  }
+}
+CFGEOF
+}
+mkbase() {
+  local d="$tmp/$1"
+  mkdir -p "$d"
+  git init -q --bare "$d/origin.git"
+  git init -q -b main "$d/work"
+  mkdir -p "$d/work/.claude" "$d/work/client"
+  cfgtext "$2" "$3" "${4:-plain}" > "$d/work/.claude/nightmill.json"
+  echo v1 > "$d/work/client/lock.txt"
+  git -C "$d/work" config core.autocrlf false
+  git -C "$d/work" add -A
+  git -C "$d/work" -c user.name=t -c user.email=t@example.invalid commit -qm init
+  git -C "$d/work" remote add origin "$d/origin.git"
+  git -C "$d/work" push -q origin main
+  git -C "$d/work" remote set-head origin main
+}
+# in_repo <name> <arguments>: slot.sh from that repository's main checkout; leaves $rc, $out and $err
+in_repo() {
+  local n=$1; shift
+  set +e
+  out=$(cd "$tmp/$n/work" && bash "$S" "$@" 2>"$tmp/in_repo.err")
+  rc=$?
+  set -e
+  err=$(tr -d '\r' < "$tmp/in_repo.err")
+}
+
+echo "-- the warm-up comes from the base, not from the working tree"
+mkbase cb1 main "echo warm > warmed.txt"
+cfgtext main "echo evil > evil.txt" plain > "$tmp/cb1/work/.claude/nightmill.json"
+in_repo cb1 --take feat/a
+[ "$rc" = 0 ] || fail "base config: the take exited $rc: $out / $err"
+[ -f "$tmp/cb1/wt/slot-1/client/warmed.txt" ] || fail "base config: the warm-up of the pushed config did not run"
+[ -z "$(find "$tmp/cb1/wt" -name evil.txt 2>/dev/null)" ] || fail "base config: the warm-up of the uncommitted working-tree config ran"
+
+echo "-- the base branch hop: git.baseBranch of origin/HEAD names the branch whose config is read"
+mkbase cb2 trunk "echo warm > warmed.txt"
+git -C "$tmp/cb2/work" switch -q -c trunk
+cfgtext trunk "echo hop > trunk.txt" plain > "$tmp/cb2/work/.claude/nightmill.json"
+git -C "$tmp/cb2/work" -c user.name=t -c user.email=t@example.invalid commit -qam "trunk config"
+git -C "$tmp/cb2/work" push -q origin trunk
+git -C "$tmp/cb2/work" switch -q main
+in_repo cb2 --take feat/a
+[ "$rc" = 0 ] || fail "base hop: the take exited $rc: $out / $err"
+[ -f "$tmp/cb2/wt/slot-1/client/trunk.txt" ] || fail "base hop: the warm-up of origin/trunk did not run"
+[ ! -f "$tmp/cb2/wt/slot-1/client/warmed.txt" ] || fail "base hop: the warm-up of origin/HEAD's config ran"
+bash "$S" --abandon 1 >/dev/null 2>&1 || true
+mkbase cb2b nope "echo warm > warmed.txt"
+in_repo cb2b --take feat/a
+[ "$rc" = 1 ] || fail "base hop: a base branch with no config: exit $rc, not 1: $out / $err"
+case "$err" in *"origin/nope has no .claude/nightmill.json (git.baseBranch of the configuration on origin/HEAD)"*) ;; *) fail "base hop: wrong stop line: $err" ;; esac
+
+echo "-- no origin/HEAD stops with the set-head line"
+mkbase cb3 main "echo warm > warmed.txt"
+git -C "$tmp/cb3/work" remote set-head origin --delete >/dev/null
+in_repo cb3 --status
+[ "$rc" = 1 ] || fail "no origin/HEAD: --status exit $rc, not 1: $out / $err"
+case "$err" in *"origin/HEAD is not set, so the base branch's configuration cannot be found; run git remote set-head origin --auto once"*) ;; *) fail "no origin/HEAD: wrong line: $err" ;; esac
+
+echo "-- offline: no remote branch, the working-tree file is read"
+mkdir -p "$tmp/cb4/work/.claude"
+git init -q -b main "$tmp/cb4/work"
+cfgtext main "echo warm > warmed.txt" plain > "$tmp/cb4/work/.claude/nightmill.json"
+in_repo cb4 --status
+[ "$rc" = 0 ] || fail "offline: --status exit $rc: $out / $err"
+case "$err" in *"nightmill: no branch of origin is known; the configuration is read from the working tree."*) ;; *) fail "offline: wrong line: $err" ;; esac
+case "$out" in "slots = 2"*) ;; *) fail "offline: the working-tree config was not used: $out" ;; esac
+
+echo "-- no file on the base: the working-tree file, with the line"
+mkbase cb5 main "echo warm > warmed.txt"
+git -C "$tmp/cb5/work" rm -q --cached .claude/nightmill.json
+git -C "$tmp/cb5/work" -c user.name=t -c user.email=t@example.invalid commit -qm "no config"
+git -C "$tmp/cb5/work" push -q origin main
+in_repo cb5 --status
+[ "$rc" = 0 ] || fail "no file on the base: --status exit $rc: $out / $err"
+case "$err" in *"nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree."*) ;; *) fail "no file on the base: wrong line: $err" ;; esac
+case "$out" in "slots = 2"*) ;; *) fail "no file on the base: the working-tree config was not used: $out" ;; esac
+
+echo "-- a base config with a non-ASCII value works"
+mkbase cb6 main "echo warm > warmed.txt" "Generic $(printf '\342\200\224') no private words"
+in_repo cb6 --status
+[ "$rc" = 0 ] || fail "UTF-8: --status exit $rc: $out / $err"
+case "$out" in "slots = 2"*) ;; *) fail "UTF-8: unexpected status: $out" ;; esac
 
 echo "SMOKE OK"

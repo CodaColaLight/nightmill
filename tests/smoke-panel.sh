@@ -67,9 +67,23 @@ markers() { # markers: set the busy slots of the fixture; a line with the four r
   done < "$FIX/markers.txt"
 }
 
+# base_sync <dir> (iteration 48): slot.sh reads the config on origin/HEAD, not the working tree's file, so before a run
+# origin/HEAD of the test repository is made to hold the working tree's config: a commit of that one file, with no
+# remote needed (refs/remotes/origin/main and origin/HEAD are set directly). Without the file nothing changes.
+base_sync() {
+  local d=$1 blob tree commit
+  [ -f "$d/.claude/nightmill.json" ] || return 0
+  blob=$(git -C "$d" hash-object -w -- "$d/.claude/nightmill.json")
+  tree=$(printf '100644 blob %s\tnightmill.json\n' "$blob" | git -C "$d" mktree)
+  tree=$(printf '040000 tree %s\t.claude\n' "$tree" | git -C "$d" mktree)
+  commit=$(git -C "$d" -c user.name=t -c user.email=t@example.invalid commit-tree -m base "$tree")
+  git -C "$d" update-ref refs/remotes/origin/main "$commit"
+  git -C "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
 run_p() { # run_p <dir> [args]: the output in out.txt and err.txt, the exit code in $code
   local dir=$1
   shift
+  base_sync "$dir"
   set +e
   (cd "$dir" && PATH="$tmp/bin:$PATH" GH_LOG="$tmp/gh.log" NIGHTMILL_NOW=$NOW TMPDIR="$tmp/tdir" bash "$P" "$@") > "$tmp/out.txt" 2> "$tmp/err.txt"
   code=$?

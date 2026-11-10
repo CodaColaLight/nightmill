@@ -3,14 +3,14 @@ name: spec
 description: Write the spec for a Ready story as its own PR and stop at Spec review. Use when asked to spec a story, write the spec for an issue, or start the next Ready story. Implementing an Approved story is /next.
 argument-hint: [issue-number]
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
+allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
 ---
 
 Write the spec for a Ready story: $ARGUMENTS
 
-Project configuration (`.claude/nightmill.json`):
+Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; the first line names the base ref; see **The configuration** in the `workflow` skill):
 
-!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
+!`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
 
 Read the configuration first. Below, *the maintainer* is `maintainer.name`; `<owner>`, `<repo>` and
 `<project>` come from `github`; status names from `board.statuses`; label names from `labels`. Where this
@@ -63,7 +63,10 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
    with the body `Spec for #<issue>.` (not `Closes`) and, on its own line,
    `Written by the specWriter role on <model>.` (`<model>` is the exact string passed as `model` in the Agent
    call), then the `## Review` section of "The spec review" (step 5 there), and `gh pr merge <pr> <git.mergeFlags>`:
-   a spec PR is docs only (not when a blocking review finding is still open, step 5 there). Switch back to the
+   a spec PR is docs only (not when a blocking review finding is still open, step 5 there). Before the pull request
+   is created, the two checks of the merge step in **CI and merging** of the `workflow` skill: `git.mergeFlags`, split at spaces, has a word `--auto` and no word that is `--admin` or starts with `--admin=`, else `Auto-merge is not enabled: git.mergeFlags is "<value>"; it must contain --auto and never --admin.`; and
+   `git diff --name-only --no-renames origin/<git.baseBranch>...<branch>` lists no path that starts with `.claude/` or `.github/`, else `Auto-merge is not enabled: it changes <the first such path>, under .claude/ or .github/, which is never auto-merged.` (a `git diff` that fails: `Auto-merge is not enabled: the changed paths could not be listed (<the first line of git's message>).`). When one applies, `gh pr merge` is not run and the line goes into the body. A spec pull request changes only its
+   spec file, so the second never applies to a normal run; it runs all the same. Switch back to the
    branch you came from (`git switch <branch>`).
 5. Set the status to **Spec review** and read it back (a status already at Spec review is not set again; it is read
    back). Comment on the issue, only when no comment of the maintainer's login on it starts with
@@ -120,6 +123,11 @@ At **Spec review**:
 | R1 | an open spec pull request | `the pull request` | auto-merge as in S1; the comment of step 5 when it is missing; the watch of step 5; step 6 |
 | R2 | a merged spec pull request, none open | `the comment` | the comment of step 5 when it is missing; step 6 |
 | R3 | anything else | refused: `#<n> is at Spec review, but no open or merged spec pull request of it exists; the maintainer decides. Nothing was changed.` | |
+
+Before S1 or R1 enables auto-merge on the reused pull request, it runs the two checks of step 4; when one applies it
+does not enable auto-merge, prints the line and posts it once with `gh pr comment <pr> --body "<the line>"` (only when no
+comment of the maintainer's login on the pull request starts with `Auto-merge is not enabled:`); the body is not
+rewritten.
 
 When R1 or R2 finds nothing to do, print `#<n>: every step of /spec is done; the spec waits for approval (PR #<pr>, <open | merged>).`
 and change nothing.
@@ -209,9 +217,10 @@ After the writer's `Result: complete` and a right form, and before the commit, t
 different agent reviews the spec file as it is in the working tree. The findings format, the rounds and the pairing
 rule are in **Findings and fix rounds** in the `workflow` skill.
 
-1. **The pairing.** Run `validate-config` of the shell in use on the project's config
-   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
+1. **The pairing.** Run `validate-config` of the shell in use on the project's base configuration
+   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Base`, or
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
+   the base branch, **The configuration** in the `workflow` skill; a stop of that rule is exit 2). When it reports a line
    on `roles.specReviewer.model` with the text `ranks below`, stop with
    `Stopped: the specReviewer ranks below the specWriter: <the text of that line>. Nothing was reviewed; the status of #<issue> is Spec.`
    and do the clean-up of "The spec writer". When the validator cannot run (exit code 2, missing script), stop with
@@ -301,7 +310,10 @@ round k:
    head; the reviewer reads the file in the working tree). The pairing is not checked again. A blocking finding:
    nothing is committed or pushed; while a round is left, round k + 1 starts at step 2 with its own record, the same
    red check and, added to the paragraph, "Fix exactly these blocking findings too: <the lines>" (the writer finds its
-   uncommitted change in place); else the hand-over.
+   uncommitted change in place); else the hand-over. Then *the round's paths*:
+   `git diff --name-only --no-renames <the pull request's head>` (the uncommitted spec file); a path that starts with
+   `.claude/` or `.github/` is not committed or pushed: the hand-over with the reason
+   `the fix of round <k> changes <path>, under .claude/ or .github/, which is never auto-merged`.
 4. **The commit and the push.** The session commits the spec file only: `git add <spec file>`, then
    `git commit -m "docs: iteration <N> spec (#<issue>), check fix round <k>"`, and pushes with
    `git push -u origin <branch>`, never forced, then switches back and watches again with the full

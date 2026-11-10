@@ -1,8 +1,14 @@
 # scripts/validate-config.ps1 - check a nightmill config against the schema.
 #
 #   validate-config.ps1 [-Config path] [-Schema path] [-Strict]
+#   validate-config.ps1 -Base [-Schema path] [-Strict]
 #
 # -Config  the file to check (default: .claude/nightmill.json in the repository this script lives in)
+# -Base    check the configuration on the base branch of the current directory's repository instead of a file
+#          (iteration 48, lib\baseconfig.ps1): origin/HEAD, then git.baseBranch; the working tree's file only without
+#          a remote-tracking branch or before the base branch has one (the fallback's line goes to standard error).
+#          The header names the ref: validating origin/HEAD:.claude/nightmill.json against <schema>. A stop of the
+#          rule (no origin/HEAD, no file on origin/<git.baseBranch>, not valid JSON) and -Config with it exit 2.
 # -Schema  the schema to check against (default: schema/nightmill.schema.json in that repository)
 # -Strict  warnings (unknown keys) fail too
 #
@@ -14,28 +20,50 @@
 # or an unreadable file. Same behaviour and output as validate-config.sh.
 #
 # The validator walks the schema; it supports type, properties, required, items, minimum, minItems,
-# additionalProperties (a schema, true or false) and enum. tests/lint.sh fails if the schema uses a keyword
+# additionalProperties (a schema, true or false), enum, pattern and not (only as { "pattern": ... }; a search,
+# case-sensitive, on string values; iteration 48). tests/lint.sh fails if the schema uses a keyword
 # that is not on that list. After the walk, Test-Pairs checks that a reviewer role is not ranked below the
 # role it reviews (iteration 15).
 param(
   [string]$Config,
   [string]$Schema,
   [switch]$Strict,
+  [switch]$Base,
   [Parameter(ValueFromRemainingArguments = $true)]$Rest
 )
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
 
 function Usage {
-  [Console]::Error.WriteLine("usage: validate-config.ps1 [-Config path] [-Schema path] [-Strict]")
+  [Console]::Error.WriteLine("usage: validate-config.ps1 [-Config path | -Base] [-Schema path] [-Strict]")
   exit 2
 }
 if ($Rest -and @($Rest).Count -gt 0) { [Console]::Error.WriteLine("unknown argument: $($Rest -join ' ')"); Usage }
 
 $root = Split-Path $PSScriptRoot -Parent
-if (-not $Config) { $Config = Join-Path $root ".claude\nightmill.json" }
+$shown = ""
+$baseText = $null
+if ($Base) {
+  if ($PSBoundParameters.ContainsKey("Config")) { Usage }
+  $top = $null
+  $eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+  try { $top = & git rev-parse --show-toplevel 2>$null } catch { $top = $null }
+  $topCode = $LASTEXITCODE
+  $ErrorActionPreference = $eap
+  if ($topCode -ne 0 -or -not $top) { [Console]::Error.WriteLine("run validate-config.ps1 -Base from inside a git checkout"); exit 2 }
+  $top = [System.IO.Path]::GetFullPath(([string]$top).Trim())
+  . (Join-Path $PSScriptRoot "lib\baseconfig.ps1")
+  $baseCfg = Get-BaseConfig $top
+  if ($baseCfg.Stop) { [Console]::Error.WriteLine($baseCfg.Stop); exit 2 }
+  if ($baseCfg.Note) { [Console]::Error.WriteLine($baseCfg.Note) }
+  if ($null -ne $baseCfg.Text) { $baseText = $baseCfg.Text; $shown = $baseCfg.From }
+  else { $Config = $baseCfg.Path }
+}
+if (-not $Config -and $null -eq $baseText) { $Config = Join-Path $root ".claude\nightmill.json" }
 if (-not $Schema) { $Schema = Join-Path $root "schema\nightmill.schema.json" }
-foreach ($pair in @(@("config", $Config), @("schema", $Schema))) {
+$checks = @(,@("schema", $Schema))
+if ($null -eq $baseText) { $checks = @(@("config", $Config), @("schema", $Schema)) }
+foreach ($pair in $checks) {
   if (-not (Test-Path -LiteralPath $pair[1] -PathType Leaf)) { [Console]::Error.WriteLine("cannot read $($pair[0]): $($pair[1])"); exit 2 }
 }
 
@@ -114,6 +142,20 @@ function Test-Node($val, $s, [string]$p) {
     if (-not $ok) {
       $list = (@($s.enum) | ForEach-Object { if ($_ -is [string]) { $_ } else { Get-JsonText $_ } }) -join ", "
       Add-Finding $p "error" ("must be one of: " + $list + ", got " + (Get-JsonText $val))
+    }
+  }
+  # pattern and not (iteration 48): a search, case-sensitive; a value that is not a string is not judged
+  if ($kind -ceq "string") {
+    if ($sprops -ccontains "pattern" -and $s.pattern -is [string] -and -not ($val -cmatch $s.pattern)) {
+      Add-Finding $p "error" ("must match the pattern " + $s.pattern + ", got " + (Get-JsonText $val))
+    }
+    $notSchema = $null
+    if ($sprops -ccontains "not") { $notSchema = $s.PSObject.Properties["not"].Value }
+    if ($notSchema -is [System.Management.Automation.PSCustomObject]) {
+      $np = $notSchema.PSObject.Properties["pattern"]
+      if ($null -ne $np -and $np.Value -is [string] -and ($val -cmatch $np.Value)) {
+        Add-Finding $p "error" ("must not match the pattern " + $np.Value + ", got " + (Get-JsonText $val))
+      }
     }
   }
   if ($sprops -ccontains "minimum" -and ($kind -ceq "integer" -or $kind -ceq "number") -and $val -lt $s.minimum) {
@@ -228,10 +270,12 @@ function Test-Pairs($cfg, $sch) {
 
 # --- run -----------------------------------------------------------------------------------------------------
 
-Write-Output "validating $Config against $Schema"
+if (-not $shown) { $shown = $Config }
+Write-Output "validating $shown against $Schema"
 
 $schemaDoc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText((Resolve-Path -LiteralPath $Schema).Path, $utf8))
-$text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Config).Path, $utf8)
+if ($null -ne $baseText) { $text = $baseText }
+else { $text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Config).Path, $utf8) }
 
 $doc = $null
 $valid = $true

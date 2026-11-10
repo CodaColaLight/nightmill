@@ -62,9 +62,24 @@ markers() { # markers <scenario>: set the busy slots of the scenario; a line wit
   done < "$FIX/$1/markers.txt"
 }
 
+# base_sync <dir> (iteration 48): slot.sh reads the config on origin/HEAD, not the working tree's file, so before a run
+# origin/HEAD of the test repository is made to hold the working tree's config: a commit of that one file, with no
+# remote needed (refs/remotes/origin/main and origin/HEAD are set directly). Without the file nothing changes.
+base_sync() {
+  local d=$1 blob tree commit
+  [ -f "$d/.claude/nightmill.json" ] || return 0
+  blob=$(git -C "$d" hash-object -w -- "$d/.claude/nightmill.json")
+  tree=$(printf '100644 blob %s\tnightmill.json\n' "$blob" | git -C "$d" mktree)
+  tree=$(printf '040000 tree %s\t.claude\n' "$tree" | git -C "$d" mktree)
+  commit=$(git -C "$d" -c user.name=t -c user.email=t@example.invalid commit-tree -m base "$tree")
+  git -C "$d" update-ref refs/remotes/origin/main "$commit"
+  git -C "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
+
 run_in() { # run_in <dir> <scenario> [args]: the status output, the exit code in $code
   local dir=$1 scn=$2
   shift 2
+  base_sync "$dir"
   : > "$tmp/gh.log"
   set +e
   (cd "$dir" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/$scn" GH_LOG="$tmp/gh.log" NIGHTMILL_NOW=$NOW bash "$S" "$@") > "$tmp/out.txt" 2> "$tmp/err.txt"
@@ -216,6 +231,7 @@ if grep -q 'not shown' "$tmp/out.txt"; then fail "porcelain --all prints 'not sh
 fields_ok "porcelain --all"
 echo "== porcelain with a failing gh"
 set +e
+base_sync "$tmp/work"
 (cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/a" GH_LOG="$tmp/gh.log" GH_FAIL=1 NIGHTMILL_NOW=$NOW bash "$S" --porcelain) > "$tmp/out.txt" 2> "$tmp/err.txt"
 code=$?
 set -e
@@ -236,6 +252,7 @@ run_in "$tmp/work" a --nope
 run_in "$tmp/plain" a
 [ "$code" = 2 ] && grep -q 'nightmill.json' "$tmp/err.txt" || fail "no config must exit 2 and name the file: $(cat "$tmp/err.txt")"
 set +e
+base_sync "$tmp/work"
 (cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/a" GH_LOG="$tmp/gh.log" GH_FAIL=1 NIGHTMILL_NOW=$NOW bash "$S") > "$tmp/out.txt" 2> "$tmp/err.txt"
 code=$?
 set -e

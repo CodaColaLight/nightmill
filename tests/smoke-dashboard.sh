@@ -71,10 +71,24 @@ markers() { # markers <markers.txt>: set the busy slots; a line with the four re
   done < "$1"
 }
 
+# base_sync <dir> (iteration 48): slot.sh reads the config on origin/HEAD, not the working tree's file, so before a run
+# origin/HEAD of the test repository is made to hold the working tree's config: a commit of that one file, with no
+# remote needed (refs/remotes/origin/main and origin/HEAD are set directly). Without the file nothing changes.
+base_sync() {
+  local d=$1 blob tree commit
+  [ -f "$d/.claude/nightmill.json" ] || return 0
+  blob=$(git -C "$d" hash-object -w -- "$d/.claude/nightmill.json")
+  tree=$(printf '100644 blob %s\tnightmill.json\n' "$blob" | git -C "$d" mktree)
+  tree=$(printf '040000 tree %s\t.claude\n' "$tree" | git -C "$d" mktree)
+  commit=$(git -C "$d" -c user.name=t -c user.email=t@example.invalid commit-tree -m base "$tree")
+  git -C "$d" update-ref refs/remotes/origin/main "$commit"
+  git -C "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
 run_d() { # run_d <dir> <gh fixture dir> <temp folder> [args]: the output in out.txt and err.txt, the exit code in $code
   local dir=$1 fix=$2 tdir=$3
   shift 3
   : > "$tmp/gh.log"
+  base_sync "$dir"
   set +e
   (cd "$dir" && PATH="$tmp/bin:$PATH" GH_FIX="$fix" GH_LOG="$tmp/gh.log" NIGHTMILL_NOW=$NOW TMPDIR="$tdir" bash "$D" "$@") > "$tmp/out.txt" 2> "$tmp/err.txt"
   code=$?
@@ -131,6 +145,7 @@ hasnot 'feat/<b' "escaping"
 
 echo "== a title is decoded before the tab becomes a space"
 set +e
+base_sync "$tmp/work"
 (cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX" GH_LOG="$tmp/gh.log" NIGHTMILL_NOW=$NOW bash "$S" --porcelain) > "$tmp/porc.txt" 2> "$tmp/err.txt"
 code=$?
 set -e

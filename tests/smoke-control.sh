@@ -78,10 +78,24 @@ check_slots() {
   done
 }
 
+# base_sync <dir> (iteration 48): slot.sh reads the config on origin/HEAD, not the working tree's file, so before a run
+# origin/HEAD of the test repository is made to hold the working tree's config: a commit of that one file, with no
+# remote needed (refs/remotes/origin/main and origin/HEAD are set directly). Without the file nothing changes.
+base_sync() {
+  local d=$1 blob tree commit
+  [ -f "$d/.claude/nightmill.json" ] || return 0
+  blob=$(git -C "$d" hash-object -w -- "$d/.claude/nightmill.json")
+  tree=$(printf '100644 blob %s\tnightmill.json\n' "$blob" | git -C "$d" mktree)
+  tree=$(printf '040000 tree %s\t.claude\n' "$tree" | git -C "$d" mktree)
+  commit=$(git -C "$d" -c user.name=t -c user.email=t@example.invalid commit-tree -m base "$tree")
+  git -C "$d" update-ref refs/remotes/origin/main "$commit"
+  git -C "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
 run_in() { # run_in <dir> <now or -> <fixture> [args]: the output in out.txt and err.txt, the exit code in $code
   local dir=$1 now=$2 fx=$3 before
   shift 3
   before=$(cat "$cfg")
+  base_sync "$dir"
   set +e
   (
     cd "$dir" || exit 99
@@ -165,6 +179,7 @@ run - roomy
 code_is "raise" 0
 expect_out "raise" "control: agent limit 2 -> 3, slots 2 -> 3 (room; $M_ROOMY)
 $NEXT"
+base_sync "$work"
 (cd "$work" && bash "$here/scripts/slot.sh" --capacity --porcelain) > "$tmp/cap.txt"
 grep -qxF "slots${TAB}3${TAB}live${TAB}2" "$tmp/cap.txt" || { cat "$tmp/cap.txt"; fail "raise: slots not 3 live"; }
 grep -qxF "agents${TAB}3${TAB}live${TAB}2" "$tmp/cap.txt" || { cat "$tmp/cap.txt"; fail "raise: agents not 3 live"; }
@@ -455,6 +470,7 @@ code_is "one sample" 2
 no_out "one sample"
 has_err "one sample" "load: NIGHTMILL_LOAD_FIXTURE needs at least 2 samples"
 set +e
+base_sync "$work"
 (cd "$work" && WORKER_SLOTS=x NIGHTMILL_LOAD_FIXTURE="$tmp/fx/roomy" bash "$C") > "$tmp/out.txt" 2> "$tmp/err.txt"
 code=$?
 set -e
