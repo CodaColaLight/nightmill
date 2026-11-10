@@ -12,7 +12,6 @@ trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 [ -f "$G" ] || fail "scripts/guard.sh does not exist"
 
-TAB=$(printf '\t')
 mkdir -p "$tmp/bin" "$tmp/proj/.claude" "$tmp/trunk/.claude" "$tmp/bare"
 cat > "$tmp/proj/.claude/nightmill.json" <<'JSON'
 { "github": { "owner": "o", "projectNumber": 7 } }

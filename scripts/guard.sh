@@ -28,8 +28,11 @@ cmd=$(json_get tool_input.command)
 root=${CLAUDE_PROJECT_DIR:-$PWD}
 cfg="$root/.claude/nightmill.json"
 [ -f "$cfg" ] || exit 0
+# json_get (lib/json.sh) reads JSON_FLAT; json_load leaves it as it is on failure, so a config that is not valid JSON
+# gives the defaults below, not the event.
+# shellcheck disable=SC2034
 JSON_FLAT=""
-json_load "$cfg" 2>/dev/null || JSON_FLAT=""
+json_load "$cfg" 2>/dev/null || :
 owner=$(json_get github.owner)
 number=$(json_get github.projectNumber)
 field=$(json_get board.statusField Status)
