@@ -1,6 +1,6 @@
 # Iteration 49: the README has a "Running unattended" section: the headless commands for /next and /fix, the settings a run needs, how runs share the slots, and what a stopped run leaves
 
-Status: draft, awaiting approval (#160)
+Status: delivered in iteration 49 (PR #259)
 
 Story #160, epic #107 (Hardening from the code review), finding MD-T13 of the review of 0.2.0. The README promises a
 lights-out workflow but never says how to start one without a person. After this iteration it has a section

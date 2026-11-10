@@ -1343,6 +1343,12 @@ echo "== the security model is documented"
 # tests/test-security-model.sh, which reads the data rule from the skill as the section above does.
 bash tests/test-security-model.sh "$PWD" || fail=1
 
+echo "== running unattended is documented"
+# Iteration 49 (#160): the README has a Running unattended section with the headless commands, the settings a run
+# needs, how runs share the slots, how to watch them and what a stopped run leaves. The pins live in
+# tests/test-unattended-docs.sh.
+bash tests/test-unattended-docs.sh "$PWD" || fail=1
+
 echo "== CI runs with least privilege"
 # The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level
 # permissions (1), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on

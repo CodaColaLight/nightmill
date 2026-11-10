@@ -157,7 +157,7 @@ commands in exactly one form, because a rule matches only the text that is typed
   which holds its version. Run `/init` again after an upgrade or after any of those changes; it adds the missing
   rules and keeps the old ones. A second run with nothing changed reports the line as exists.
 - **Taking it back:** delete the entries from `.claude/settings.local.json`.
-- **Headless runs:** how to start a run without a terminal is described in "Running unattended" (#160), not here.
+- **Headless runs:** how to start a run without a terminal is in [Running unattended](#running-unattended) (#160).
 
 ### The deny rules and the guard
 
@@ -347,7 +347,7 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 | The check, warm-ups and tests run in a sandbox without the token and with a network allowlist | not enforced yet | [#169](https://github.com/CodaColaLight/nightmill/issues/169) |
 | The plugin's own CI runs with least privilege | enforced by `.github/workflows/ci.yml`, pinned by `tests/lint.sh` | [#154](https://github.com/CodaColaLight/nightmill/issues/154) |
 
-How to run without a person is not described yet ([#160](https://github.com/CodaColaLight/nightmill/issues/160)), no
+How to run without a person is in [Running unattended](#running-unattended) ([#160](https://github.com/CodaColaLight/nightmill/issues/160)), no
 trigger that starts runs ships yet ([#164](https://github.com/CodaColaLight/nightmill/issues/164)), and an upgrade that
 changes the script rules of the run permissions needs `/init` again until
 [#213](https://github.com/CodaColaLight/nightmill/issues/213).
@@ -704,6 +704,151 @@ until `-Clear`, as for a hand-set value.
 The controller does not see the API's rate limits, the token budget, or agents outside the slots; nor what the load
 command does not see (GPU, disk, network, memory a build has not taken yet; CPU used by other programs counts as the
 agents').
+
+## Running unattended
+
+A run started with `claude -p` takes one item (or, with `/fix all`, every Ready bug) to its pull request with nobody
+at the terminal. Nothing in nightmill starts runs on a schedule yet
+([#164](https://github.com/CodaColaLight/nightmill/issues/164)), and no limit or kill switch bounds a run yet
+([#165](https://github.com/CodaColaLight/nightmill/issues/165)). This section was written for Claude Code 2.1.321;
+after a Claude Code upgrade, a run that does not find `/nightmill:next` is the first thing to check. A headless run
+is not safe or bounded by itself: read the [Security model](#security-model) first.
+
+### Before the first run
+
+1. `gh` signed in with the `project` scope, as [Install](#install) says; a headless run uses the stored login.
+2. `/nightmill:init` run once in an interactive session in the main checkout, with its four permission lines applied:
+   **Permissions** and **Deny rules** in `.claude/settings.json`
+   ([The run permissions](#the-run-permissions), [The deny rules and the guard](#the-deny-rules-and-the-guard)),
+   **Edit permission** and **Run permissions** in `.claude/settings.local.json`
+   ([The edit permission](#the-edit-permission), [The run permissions](#the-run-permissions)).
+   `.claude/settings.local.json` stays untracked by git (`/init` says when it is not ignored). A declined line means
+   the commands it covers are denied in a headless run, and the run stops or skips at the first of them.
+3. The workspace trusted once. Start `claude` interactively in the main checkout and accept the trust dialog; the
+   session of step 2 does this. Or set `projects["<the repository root>"].hasTrustDialogAccepted` to `true` in
+   `~/.claude.json`. Without it, a headless run ignores the allow rules of `.claude/settings.json` (all of `gh`), and
+   stderr shows `this workspace has not been trusted`. The trust covers the slots, which are worktrees of the same
+   repository.
+4. `/init` again, in an interactive session, after an upgrade of nightmill (until
+   [#213](https://github.com/CodaColaLight/nightmill/issues/213)), and after a change of `worktrees.slots`,
+   `worktrees.root` or a branch prefix. The script and slot rules follow them, and a headless run whose rule no longer
+   matches is denied the command, not asked.
+5. No `permissions.defaultMode` other than `default` (or `manual`) in any settings file the run reads, and the flags
+   of [The commands](#the-commands).
+
+The limits of a headless run:
+
+- A command or edit that no rule covers is denied, not asked. That covers a write under `.claude/` (a protected path,
+  so a story that changes `.claude/` cannot be done headless), a git command the skills do not write, and a test
+  command an agent chooses on its own. A denied call is reported in the final message.
+- `/next` and `/fix` without a number ask the maintainer on a tie of priorities, and nobody answers a headless run. So
+  give a run its number, or keep the priorities distinct. `/fix all` asks nothing.
+
+### The commands
+
+Start each run in the project's main checkout (the folder where `/init` ran), on the base branch, with a clean tree,
+one run per terminal:
+
+```sh
+claude -p "/nightmill:next" --permission-mode manual
+claude -p "/nightmill:next 112" --permission-mode manual
+claude -p "/nightmill:fix 57" --permission-mode manual
+claude -p "/nightmill:fix all" --permission-mode manual
+```
+
+`112` and `57` are example issue numbers: `/nightmill:next <N>` implements story N, `/nightmill:fix <N>` fixes bug N,
+and `/nightmill:fix all` fixes every Ready bug. The plugin's full skill names are used because the bare `/next` and
+`/fix` can be shadowed by another plugin or project command of the same name ([What is in the
+plugin](#what-is-in-the-plugin)).
+
+`--permission-mode manual` is written out so that the run's mode depends neither on the Claude Code version (before
+2.1.302 a `-p` run could start in auto mode) nor on a `defaultMode` in your settings. `manual` is the name
+`claude --help` lists; its config value is `default`, and a version whose `--help` lists `default` and not `manual`
+takes `--permission-mode default`. In a `-p` run in Manual mode a call that no rule allows is denied, not waited for,
+and the run goes on without it, so neither `dontAsk` nor `acceptEdits` is needed. Do not pass:
+
+- `--permission-mode bypassPermissions` or `--dangerously-skip-permissions`: the allow rules have no effect there and
+  every call runs except what a deny rule refuses; whether the guard's refusals hold there is not shown
+  ([What is enforced](#what-is-enforced)).
+- `--permission-mode auto`: a classifier decides where the rules were written for prompts, and its behaviour with the
+  guard is not shown either.
+- `--bare`: it skips the installed plugin, its guard hook and CLAUDE.md.
+- `--allowedTools`: the rules belong in the files `/init` writes, where the lint and this README describe them.
+
+By default (`text`) a run prints its final message when it ends: the pull request, the `Stopped:` line, or `/fix all`'s
+table. For a script, `--output-format json` prints one JSON object with that message in `result`. To keep a run's
+output, redirect it to a file outside the checkout (a file in the checkout makes the tree dirty, which stops
+`/fix all`); stderr carries the trust warning:
+
+```sh
+claude -p "/nightmill:fix all" --permission-mode manual > "$HOME/nightmill-fix-all.log" 2>&1
+```
+
+### Several runs at once
+
+- Every session of the project on the machine, headless or not, shares the same slots. Their number is
+  `worktrees.slots` (default 2), unless `WORKER_SLOTS` or a live value from `slot -Capacity` replaces it
+  ([Changing the numbers during a session](#changing-the-numbers-during-a-session)).
+- A `/next` or a single `/fix` run holds one slot from its take until the slot is freed after the merge (by the next
+  take, `-Reap` or `-Release`), also after the run has ended. `/fix all` holds one slot per bug in flight and frees
+  each once its pull request is open. So at most as many `/next` and `/fix` runs work at once as there are slots,
+  counting the slots that still wait for a merge.
+- A run that finds every slot busy stops with `all <k> slots are busy`. Its story or bug is then at In progress with
+  nothing behind it, because the status is set before the take; the maintainer moves it back (Approved for a story,
+  Ready for a bug). So start no more runs than there are free slots (`slot -Status`, or `/nightmill:status`).
+- The agent limit (`parallel.maxAgents`, default 2, or the live value) is counted by each session for the agents it
+  started, so two sessions can run up to twice the limit. The room check before each start measures the whole machine
+  and holds a start back when memory or CPU is short ([Room for one more agent](#room-for-one-more-agent)).
+- Two runs without a number can take the same item until the first has set In progress, because no claim exists yet
+  ([#176](https://github.com/CodaColaLight/nightmill/issues/176)). Give each `/next` its own issue number, run at most
+  one `/next` without a number at a time, and run no other `/fix` beside `/fix all`.
+- Without `worktrees` (no slots) the runs share one checkout and its branch, so run only one at a time.
+
+### Watching a run
+
+A headless run prints nothing until it ends. To see where it is, from another terminal in the project:
+
+```sh
+claude -p "/nightmill:status" --permission-mode manual
+```
+
+or `/nightmill:status` in an interactive session. It shows the board items with their pull requests and CI, and every
+slot as **running**, **stalled** or **unknown** with the skill and the step; it changes nothing
+([What a slot's agent is doing](#what-a-slots-agent-is-doing)). The page in the browser and the pane beside the chat
+show the same slots ([Watching the run in a browser](#watching-the-run-in-a-browser),
+[Watching the run beside the chat](#watching-the-run-beside-the-chat)); the pane needs an interactive session, not
+the headless one.
+
+`/next` and a single `/fix` end only after watching their pull request's checks, for at most
+`review.watchChecksMinutes` (default 30) per push, so a run lasts that long after its pull request opens. The exit
+code says whether Claude Code ran, not what the skill did: a `Stopped:` line is the skill's result, so read the final
+message and `/nightmill:status`.
+
+### When a run is stopped
+
+Stop a run with Ctrl+C in its terminal, or with SIGTERM (`kill <pid>`), which ends Claude Code with exit code 143,
+terminates the commands it is running and starts nothing new. There is no kill switch yet
+([#165](https://github.com/CodaColaLight/nightmill/issues/165)). What it leaves:
+
+- **During a take:** an interrupted take frees its slot again ("interrupted ...; slot <n> is free again"). A take
+  killed without a chance to clean up (`kill -KILL`, a closed window) leaves a claim that `/nightmill:status` shows
+  with the step `take-died`; `-Abandon N` (`--abandon N`) frees it once its files are dealt with
+  ([Why slots](#why-slots)).
+- **After the take:** nothing is undone. The board status stays as the run last set it (In progress, or Review once
+  the pull request is open). The slot stays taken with its branch, its commits and its uncommitted files. Its last
+  report stays, so `/nightmill:status` shows it **running** until `worktrees.stalledAfterMinutes` (default 30) have
+  passed since that report, then **stalled**. A pull request with auto-merge on merges by itself when its checks
+  pass, and its `Closes #N` (a bug's `Fixes #N`) sets Done; the next take frees the slot after that merge.
+- **Continuing a story:** `/nightmill:next <N>` (headless too) continues a story at In progress or Review from the
+  first step that left nothing behind. It refuses while the slot still shows **running**, so wait until it shows
+  **stalled**. A slot with uncommitted files from the stopped run is refused until they are committed, stashed or
+  discarded.
+- **A bug:** `/fix` continues nothing. A bug stopped in flight stays at In progress with its slot taken; the
+  maintainer looks at the slot, frees it with `-Abandon N` and moves the bug back to Ready for a new run.
+- **`/fix all`** stopped by a signal prints no final table. Each bug in flight is left as a single run is. A slot it
+  already freed stays free, and a bug whose pull request is open is at Review.
+- `--continue` or `--resume` reopens the stopped conversation, but they are not needed: work is continued through the
+  board and the slots, as above.
 
 ## Developing nightmill
 
