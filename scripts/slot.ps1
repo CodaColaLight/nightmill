@@ -8,7 +8,8 @@
 #   slot.ps1 -Capacity [-SlotCount N] [-AgentLimit M] [-Porcelain]   # show or set the numbers for the session
 #   slot.ps1 -Capacity -Clear            # back to the configuration's numbers
 # Run it from inside the project: any checkout or worktree of it. Configuration comes from
-# .claude/nightmill.json in the main checkout, keys under "worktrees" (see schema/nightmill.schema.json);
+# .claude/nightmill.json on the base branch (origin/HEAD, then git.baseBranch; lib\baseconfig.ps1, iteration 48), the
+# working tree's file of the main checkout only without a remote branch, keys under "worktrees" (see schema/nightmill.schema.json);
 # $env:WORKER_SLOTS overrides worktrees.slots. A slot is never removed: a new task only switches it
 # to a new branch from the base branch, so build output stays warm. A slot is busy from -Take to
 # -Release, -Abandon or an automatic release (a marker file in <root>/.slots, outside any repo) (a take's claim
@@ -91,9 +92,19 @@ $gitDir = git rev-parse --path-format=absolute --git-common-dir 2>$null
 if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "run slot.ps1 from inside a git checkout of the project" }
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 
-$cfgPath = Join-Path $main ".claude\nightmill.json"
-if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
-$cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+# The configuration is the one on the base branch (iteration 48, lib\baseconfig.ps1): origin/HEAD, then git.baseBranch;
+# the working tree's file only without a remote-tracking branch or before the base branch has one.
+. (Join-Path $PSScriptRoot "lib\baseconfig.ps1")
+$baseCfg = Get-BaseConfig $main
+if ($baseCfg.Stop) { [Console]::Error.WriteLine($baseCfg.Stop); exit 1 }
+if ($baseCfg.Note) { [Console]::Error.WriteLine($baseCfg.Note) }
+if ($null -ne $baseCfg.Text) {
+  $cfg = ConvertFrom-Json -InputObject $baseCfg.Text
+} else {
+  $cfgPath = $baseCfg.Path
+  if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
+  $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+}
 $wt = $cfg.worktrees
 
 $baseBranch = "main"

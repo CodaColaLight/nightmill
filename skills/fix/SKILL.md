@@ -3,14 +3,14 @@ name: fix
 description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" fixes every Ready bug, several at once while slots and room allow. Use when asked to fix a bug issue.
 argument-hint: [issue-number | all]
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "NO CONFIG* run /nightmill:init first")
+allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
 ---
 
 Fix one bug from GitHub Issues, without an iteration: $ARGUMENTS (`all` = every Ready bug, in parallel, see "Batch mode")
 
-Project configuration (`.claude/nightmill.json`):
+Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; the first line names the base ref; see **The configuration** in the `workflow` skill):
 
-!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
+!`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
 
 Read the configuration first. *The maintainer* is `maintainer.name`; `<owner>`, `<repo>`, `<project>` come
 from `github`; status names from `board.statuses`; label names from `labels`. Where this text and the
@@ -101,6 +101,9 @@ milestone, iteration number or CHANGELOG entry.
    that has blocking review findings left, or one that touches `escalation.storyTriggers` (that is a story), or one
    with a dispute over the tester's test still open; then say
    `Auto-merge is not enabled: a dispute over the tester's tests is still open (see Disputed tests).`
+   Before it (one bug and `/fix all` alike), the two checks of the merge step in **CI and merging** of the `workflow`
+   skill: `git.mergeFlags`, split at spaces, has a word `--auto` and no word that is `--admin` or starts with `--admin=`, else `Auto-merge is not enabled: git.mergeFlags is "<value>"; it must contain --auto and never --admin.`; and `git -C <slot path> diff --name-only --no-renames origin/<git.baseBranch>...<branch>` (in the session's checkout without `-C <slot path>`) lists no path that starts with `.claude/` or `.github/`, else `Auto-merge is not enabled: it changes <the first such path>, under .claude/ or .github/, which is never auto-merged.` (a `git diff` that fails: `Auto-merge is not enabled: the changed paths could not be listed (<the first line of git's message>).`). When one applies, `gh pr merge` is not run and the line goes where the PR
+   says why auto-merge was withheld.
 7. **Watch the checks** (**Watching the checks** in the `workflow` skill), after step 6, only when the pull request
    has auto-merge on (`gh pr view <pr> --json autoMergeRequest` is not empty); a pull request whose auto-merge step 6
    withheld ends the run as before, unwatched. The watch, its bound, its verdict, green, the time running out, the
@@ -140,6 +143,9 @@ milestone, iteration number or CHANGELOG entry.
      `git diff <the pull request's head>..HEAD`). The pairing is not checked again. A blocking finding: nothing is
      pushed; while a round is left, round k + 1 starts at the producer with its own record, the same red check and,
      added to the paragraph, "Fix exactly these blocking findings too: <the lines>"; else the hand-over.
+   - **The round's paths**: `git -C <slot path> diff --name-only --no-renames <the pull request's head>..HEAD` (in the
+     session's checkout without `-C <slot path>`); a path that starts with `.claude/` or `.github/` is not pushed: the
+     hand-over with the reason `the fix of round <k> changes <path>, under .claude/ or .github/, which is never auto-merged`.
    - **The push**: `git -C <slot path> push -u origin <branch>` (in the session's checkout `git push -u origin <branch>`),
      never forced, then watch again with the full `review.watchChecksMinutes`.
    - **The hand-over** is the workflow rule's: the issue comment, the label `blocked`, then report `handed-over` and
@@ -517,9 +523,10 @@ The tester's dispute prompt carries no reason of the fixer beyond its `Disputes`
 After the fixer's result (not `failed`) and before the manual check, a different agent reviews the fix. The findings
 format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
 
-1. **The pairing.** Run `validate-config` of the shell in use on the project's config
-   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <project>/.claude/nightmill.json`, or
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <project>/.claude/nightmill.json`). When it reports a line
+1. **The pairing.** Run `validate-config` of the shell in use on the project's base configuration
+   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Base`, or
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
+   the base branch, **The configuration** in the `workflow` skill; a stop of that rule is exit 2). When it reports a line
    on `roles.codeReviewer.model` with the text `ranks below`, stop with
    `Stopped: the codeReviewer ranks below the fixer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
    (the line may name the other producer, then name it). When the validator cannot run (exit code 2, missing

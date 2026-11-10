@@ -123,6 +123,8 @@ try {
   git -c user.name=t -c user.email=t@example.invalid commit -qm init
   git remote add origin "$tmp\origin.git"
   git push -q origin main
+  # iteration 48: the config comes from the base branch (origin/HEAD, then git.baseBranch)
+  git remote set-head origin main
 
   Write-Host "== status before anything"
   $out = Slot -Status
@@ -318,6 +320,21 @@ try {
   $C = "$tmp\wt\.slots\capacity.json"
   $CFG = "$work\.claude\nightmill.json"
   $cfgBefore = [System.IO.File]::ReadAllText($CFG)
+  # Pub-Cfg: commit the config file in the main checkout and push it to origin main, so the slot script reads it from the base
+  function Pub-Cfg {
+    $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    try {
+      & git -C $work diff --quiet -- .claude/nightmill.json 2>&1 | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        & git -C $work add .claude/nightmill.json 2>&1 | Out-Null
+        & git -C $work -c user.name=t -c user.email=t@example.invalid commit -qm config 2>&1 | Out-Null
+        & git -C $work fetch -q origin main 2>&1 | Out-Null
+        & git -C $work -c user.name=t -c user.email=t@example.invalid rebase -q origin/main 2>&1 | Out-Null
+        & git -C $work push -q origin main 2>&1 | Out-Null
+      }
+    } finally { $ErrorActionPreference = $ea }
+  }
+  function Put-Cfg([string]$path, [string]$text) { [System.IO.File]::WriteAllText($path, $text); Pub-Cfg }
   function Cap([string]$arguments = "", [hashtable]$extraEnv = @{}) { SlotE ("-Capacity " + $arguments) $extraEnv }
   function Lines([string]$text) { @($text -split "`n" | Where-Object { $_ -ne "" }) }
   function Read-Cap { if (Test-Path $C) { [System.IO.File]::ReadAllText($C) } else { "<none>" } }
@@ -454,7 +471,7 @@ try {
   if ((Lines (Cap "" @{ WORKER_SLOTS = "4" }).Out)[0] -ne "slots: 3 (live; config 2)") { Fail "live does not win over WORKER_SLOTS" }
   if ((Lines (SlotE "-Status -Porcelain" @{ WORKER_SLOTS = "4" }).Out).Count -ne 3) { Fail "-Status does not use the live count over WORKER_SLOTS" }
   $null = Cap "-Clear"
-  [System.IO.File]::WriteAllText($CFG, $cfgBefore.Replace('"git": { "baseBranch": "main" },', '"git": { "baseBranch": "main" }, "parallel": { "maxAgents": 5 },'))
+  Put-Cfg $CFG ($cfgBefore.Replace('"git": { "baseBranch": "main" },', '"git": { "baseBranch": "main" }, "parallel": { "maxAgents": 5 },'))
   if (-not [System.IO.File]::ReadAllText($CFG).Contains('"maxAgents": 5')) { Fail "the config copy has no maxAgents" }
   if ((Lines (Cap).Out)[1] -ne "agents: 5 (config)") { Fail "config does not win over the default: $((Cap).Out)" }
   if ((Lines (Cap "-Porcelain").Out)[1] -ne "agents`t5`tconfig`t5") { Fail "porcelain config agents" }
@@ -462,7 +479,7 @@ try {
   if ((Lines (Cap).Out)[1] -ne "agents: 3 (live; config 5)") { Fail "live does not win over the config: $((Cap).Out)" }
   if ((Lines (Cap "-Porcelain").Out)[1] -ne "agents`t3`tlive`t5") { Fail "porcelain live agents over config" }
   $null = Cap "-Clear"
-  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+  Put-Cfg $CFG ($cfgBefore)
 
   # 11 an unusable capacity.json is ignored with a note
   function Test-Unusable([string]$content, [string]$want, [string]$reason) {
@@ -593,7 +610,7 @@ try {
   if ($last.Err) { Fail "the default threshold printed: $($last.Err)" }
 
   # 6 the threshold comes from the config
-  function Set-Cfg([string]$v) { [System.IO.File]::WriteAllText($CFG, $cfgBefore.Replace('"slots": 2,', "`"slots`": 2, `"stalledAfterMinutes`": $v,")) }
+  function Set-Cfg([string]$v) { Put-Cfg $CFG ($cfgBefore.Replace('"slots": 2,', "`"slots`": 2, `"stalledAfterMinutes`": $v,")) }
   Set-Cfg "5"
   if (-not [System.IO.File]::ReadAllText($CFG).Contains('"stalledAfterMinutes": 5,')) { Fail "the config copy has no stalledAfterMinutes" }
   if ((Agent ($B + 300)) -ne "running") { Fail "threshold 5: 300 seconds is not running" }
@@ -614,16 +631,16 @@ try {
     if ((Agent ($B + 1801)) -ne "stalled" -or $last.Err) { Fail "$what`: 1801 seconds: $($last.Err)" }
   }
   Set-Cfg "null"; Test-Default "threshold null"
-  [System.IO.File]::WriteAllText($CFG, $cfgBefore); Test-Default "no threshold key"
+  Put-Cfg $CFG ($cfgBefore); Test-Default "no threshold key"
   # without worktrees the root is ../<checkout>-wt and there are two slots
   $noWt = [regex]::Replace($cfgBefore, '(?s),\s*"worktrees": \{.*?\r?\n  \}', '')
   if ($noWt.Contains("worktrees")) { Fail "the config copy still has worktrees" }
-  [System.IO.File]::WriteAllText($CFG, $noWt)
+  Put-Cfg $CFG ($noWt)
   New-Item -ItemType Directory -Force "$tmp\work-wt\.slots" | Out-Null
   Hand 1 "check" "2026-11-05T11:30:00" "$tmp\work-wt\.slots\slot-1.json"
   Test-Default "no worktrees"
   Remove-Item -Recurse -Force "$tmp\work-wt"
-  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+  Put-Cfg $CFG ($cfgBefore)
 
   # 8 the step plays no part
   foreach ($stepName in "done", "stopped") {
@@ -703,7 +720,7 @@ try {
   function Fail($msg) { Stop-Claim; Write-Host "FAIL: $msg" -ForegroundColor Red; exit 1 }
   $claimRoot = ((Lines (SlotE "-Status").Out)[0]) -replace '^slots = [0-9]+  root = ', ''
   if (-not $claimRoot) { Fail "claim: no root in the status header" }
-  function Write-Cfg([string]$warm) { [System.IO.File]::WriteAllText($CFG, $cfgBefore.Replace($origWarm, '"warmup": ' + $warm + ',')) }
+  function Write-Cfg([string]$warm) { Put-Cfg $CFG ($cfgBefore.Replace($origWarm, '"warmup": ' + $warm + ',')) }
   # Start-Proc <file> <arguments> [environment]: a child process with its output read in the background
   function Start-Proc([string]$file, [string]$arguments, [hashtable]$extraEnv = @{}) {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -790,7 +807,7 @@ try {
   function Claim-Reset { # every slot free and detached at origin/main, the original config, both gates open, nothing left over
     Stop-Claim
     Remove-Item "$tmp\go", "$tmp\claim-go", "$tmp\barrier", "$S1\capacity.json" -Force -ErrorAction SilentlyContinue
-    [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+    Put-Cfg $CFG ($cfgBefore)
     Gq -C $work config --unset remote.origin.uploadpack
     Gq -C $work config --unset core.hooksPath
     Gq -C $work remote set-url origin "$tmp\origin.git"
@@ -957,7 +974,7 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
     if ((git -C $work worktree list) -match "slot-4") { Fail "claim 3: git still lists the worktree slot-4" }
     if (Get-Ref "feat/f4") { Fail "claim 3: the branch feat/f4 was left behind" }
     # switch
-    [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+    Put-Cfg $CFG ($cfgBefore)
     $r = SlotE "-Take feat/f5 -Slot 1 -Base origin/nope"
     Test-Restored $r 1 2 "git switch failed (exit 128); slot 1 is free again"
     if ((Get-Current 1) -or (Get-Head 1) -ne $X) { Fail "claim 3: slot 1 is not detached at $X after the failed switch" }
@@ -1036,7 +1053,7 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
     if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/f9, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 3: -Abandon after junk.txt was removed (exit $($r.Code)): $($r.Out) / $($r.Err)" }
     if ((Get-Current 1) -or (git -C "$tmp\wt\slot-1" status --porcelain)) { Fail "claim 3: slot 1 is not detached and clean after -Abandon" }
     Gq -C $work branch -D feat/f9
-    [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+    Put-Cfg $CFG ($cfgBefore)
   }
 
   # 4 a dead claim is recognised and freed only by -Abandon, without losing work
@@ -1456,7 +1473,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   }
   Retry-Case5
   Claim-Reset
-  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+  Put-Cfg $CFG ($cfgBefore)
 
   Write-Host "== interruption (iteration 36)"
   # interruption (iteration 36): a take that is stopped after it has claimed its slot runs, in a finally block, the same
@@ -1697,7 +1714,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   Intr-Case6
   Intr-Case7
   Intr-Clean @()
-  [System.IO.File]::WriteAllText($CFG, $cfgBefore)
+  Put-Cfg $CFG ($cfgBefore)
 
   Write-Host "== 13 a slot is freed once its branch is pushed, and a dirty slot is held"
   # 13 (iteration 33, /fix all): the skill frees a bug's slot with -Abandon once the bug's branch is on its open pull
@@ -1962,6 +1979,110 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   if (Test-Path "$tmp\wt\slot-1x") { Fail 'number: a slot directory was made for 1x' }
   $null = Slot -Abandon 2
   Gq -C $work branch -D feat/n1 feat/n3
+
+  Write-Host "== the config comes from the base branch (iteration 48)"
+  $utf8n = New-Object System.Text.UTF8Encoding $false
+  function Cfg-Text([string]$base, [string]$warm, [string]$inv) {
+    @"
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "verification": { "check": "true" },
+  "invariants": [ "$inv" ],
+  "git": { "baseBranch": "$base" },
+  "worktrees": {
+    "root": "../wt",
+    "slots": 2,
+    "warmup": [ { "dir": "client", "command": "$warm", "lockfile": "client/lock.txt" } ]
+  }
+}
+"@
+  }
+  function Mk-Base([string]$name, [string]$base, [string]$warm, [string]$inv = "plain") {
+    $d = "$tmp\$name"
+    New-Item -ItemType Directory "$d\work\.claude", "$d\work\client", "$d\origin.git" | Out-Null
+    Gq -C "$d\origin.git" init -q --bare
+    Gq -C "$d\work" init -q -b main
+    Gq -C "$d\work" config core.autocrlf false
+    [System.IO.File]::WriteAllText("$d\work\.claude\nightmill.json", (Cfg-Text $base $warm $inv), $utf8n)
+    [System.IO.File]::WriteAllText("$d\work\client\lock.txt", "v1`n")
+    Gq -C "$d\work" add -A
+    Gq -C "$d\work" -c user.name=t -c user.email=t@example.invalid commit -qm init
+    Gq -C "$d\work" remote add origin "$d\origin.git"
+    Gq -C "$d\work" push -q origin main
+    Gq -C "$d\work" remote set-head origin main
+  }
+  # SlotIn <name> <arguments>: slot.ps1 started in the main checkout of that repository; Out, Err, Code
+  function SlotIn([string]$name, [string]$arguments) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $psExe
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$S`" $arguments"
+    $psi.WorkingDirectory = "$tmp\$name\work"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $errTask = $p.StandardError.ReadToEndAsync()
+    $out = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit()
+    [pscustomobject]@{ Out = ($out -replace "`r`n", "`n"); Err = ($errTask.Result -replace "`r`n", "`n"); Code = $p.ExitCode }
+  }
+
+  Write-Host "-- the warm-up comes from the base, not from the working tree"
+  Mk-Base "cb1" "main" "Set-Content warmed.txt warm"
+  [System.IO.File]::WriteAllText("$tmp\cb1\work\.claude\nightmill.json", (Cfg-Text "main" "Set-Content evil.txt evil" "plain"), $utf8n)
+  $r = SlotIn "cb1" "-Take feat/a"
+  if ($r.Code -ne 0) { Fail "base config: the take exited $($r.Code): $($r.Out) / $($r.Err)" }
+  if (-not (Test-Path "$tmp\cb1\wt\slot-1\client\warmed.txt")) { Fail "base config: the warm-up of the pushed config did not run" }
+  if (@(Get-ChildItem "$tmp\cb1\wt" -Recurse -Filter evil.txt -ErrorAction SilentlyContinue).Count -ne 0) { Fail "base config: the warm-up of the uncommitted working-tree config ran" }
+
+  Write-Host "-- the base branch hop: git.baseBranch of origin/HEAD names the branch whose config is read"
+  Mk-Base "cb2" "trunk" "Set-Content warmed.txt warm"
+  Gq -C "$tmp\cb2\work" switch -q -c trunk
+  [System.IO.File]::WriteAllText("$tmp\cb2\work\.claude\nightmill.json", (Cfg-Text "trunk" "Set-Content trunk.txt hop" "plain"), $utf8n)
+  Gq -C "$tmp\cb2\work" -c user.name=t -c user.email=t@example.invalid commit -qam "trunk config"
+  Gq -C "$tmp\cb2\work" push -q origin trunk
+  Gq -C "$tmp\cb2\work" switch -q main
+  $r = SlotIn "cb2" "-Take feat/a"
+  if ($r.Code -ne 0) { Fail "base hop: the take exited $($r.Code): $($r.Out) / $($r.Err)" }
+  if (-not (Test-Path "$tmp\cb2\wt\slot-1\client\trunk.txt")) { Fail "base hop: the warm-up of origin/trunk did not run" }
+  if (Test-Path "$tmp\cb2\wt\slot-1\client\warmed.txt") { Fail "base hop: the warm-up of origin/HEAD's config ran" }
+  Mk-Base "cb2b" "nope" "Set-Content warmed.txt warm"
+  $r = SlotIn "cb2b" "-Take feat/a"
+  if ($r.Code -ne 1) { Fail "base hop: a base branch with no config: exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if (-not $r.Err.Contains("origin/nope has no .claude/nightmill.json (git.baseBranch of the configuration on origin/HEAD)")) { Fail "base hop: wrong stop line: $($r.Err)" }
+
+  Write-Host "-- no origin/HEAD stops with the set-head line"
+  Mk-Base "cb3" "main" "Set-Content warmed.txt warm"
+  Gq -C "$tmp\cb3\work" remote set-head origin --delete
+  $r = SlotIn "cb3" "-Status"
+  if ($r.Code -ne 1) { Fail "no origin/HEAD: -Status exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if (-not $r.Err.Contains("origin/HEAD is not set, so the base branch's configuration cannot be found; run git remote set-head origin --auto once")) { Fail "no origin/HEAD: wrong line: $($r.Err)" }
+
+  Write-Host "-- offline: no remote branch, the working-tree file is read"
+  New-Item -ItemType Directory "$tmp\cb4\work\.claude" | Out-Null
+  Gq -C "$tmp\cb4\work" init -q -b main
+  [System.IO.File]::WriteAllText("$tmp\cb4\work\.claude\nightmill.json", (Cfg-Text "main" "Set-Content warmed.txt warm" "plain"), $utf8n)
+  $r = SlotIn "cb4" "-Status"
+  if ($r.Code -ne 0) { Fail "offline: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if (-not $r.Err.Contains("nightmill: no branch of origin is known; the configuration is read from the working tree.")) { Fail "offline: wrong line: $($r.Err)" }
+  if (-not $r.Out.StartsWith("slots = 2")) { Fail "offline: the working-tree config was not used: $($r.Out)" }
+
+  Write-Host "-- no file on the base: the working-tree file, with the line"
+  Mk-Base "cb5" "main" "Set-Content warmed.txt warm"
+  Gq -C "$tmp\cb5\work" rm -q --cached .claude/nightmill.json
+  Gq -C "$tmp\cb5\work" -c user.name=t -c user.email=t@example.invalid commit -qm "no config"
+  Gq -C "$tmp\cb5\work" push -q origin main
+  $r = SlotIn "cb5" "-Status"
+  if ($r.Code -ne 0) { Fail "no file on the base: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if (-not $r.Err.Contains("nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree.")) { Fail "no file on the base: wrong line: $($r.Err)" }
+  if (-not $r.Out.StartsWith("slots = 2")) { Fail "no file on the base: the working-tree config was not used: $($r.Out)" }
+
+  Write-Host "-- a base config with a non-ASCII value works"
+  Mk-Base "cb6" "main" "Set-Content warmed.txt warm" ("Generic " + [char]0x2014 + " no private words")
+  $r = SlotIn "cb6" "-Status"
+  if ($r.Code -ne 0) { Fail "UTF-8: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if (-not $r.Out.StartsWith("slots = 2")) { Fail "UTF-8: unexpected status: $($r.Out)" }
 
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {

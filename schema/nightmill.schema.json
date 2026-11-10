@@ -145,7 +145,13 @@
         "featurePrefix": { "type": "string", "default": "feat/" },
         "fixPrefix": { "type": "string", "default": "fix/" },
         "specPrefix": { "type": "string", "default": "spec/" },
-        "mergeFlags": { "type": "string", "default": "--auto --squash" }
+        "mergeFlags": {
+          "type": "string",
+          "default": "--auto --squash",
+          "pattern": "^(.* )?--auto( .*)?$",
+          "not": { "pattern": "^(.* )?--admin(( |=).*)?$" },
+          "description": "The flags of the skills' merge step, gh pr merge <pr> <mergeFlags>. Must contain the word --auto and never --admin, words separated by single spaces: auto-merge waits for the required checks, the admin bypass would not. The guard hook refuses a merge without --auto or with --admin."
+        }
       }
     },
     "parallel": {

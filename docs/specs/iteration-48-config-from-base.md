@@ -1,6 +1,6 @@
 # Iteration 48: the skills and the slot script read the config from the base branch, git.mergeFlags must hold --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged
 
-Status: draft, awaiting approval (#111)
+Status: delivered in iteration 48 (PR #258)
 
 Story #111, no epic (it comes from the code review of 0.2.0, finding HI-3, like the stories of epic #107; the issue
 was filed as a bug and relabelled story on 2026-11-10, its title still starts `[Bug]`). Today every skill injects

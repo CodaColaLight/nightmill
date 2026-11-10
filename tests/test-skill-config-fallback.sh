@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/test-skill-config-fallback.sh - regression for #127: the config injection of spec, next, fix, story and check
-# must fall back to the "run /nightmill:init" hint when there is no config, and each skill must declare allowed-tools
+# tests/test-skill-config-fallback.sh - regression for #127 and #111: the config injection of workflow, spec, next, fix,
+# story and check reads the configuration from the base branch (origin/HEAD) and must fall back to the "run /nightmill:init" hint when there is no config, and each skill must declare allowed-tools
 # that cover its own injection command. A skill is text plus an injection the harness runs, so the test runs the
 # injection command itself.
 set -uo pipefail
@@ -41,10 +41,26 @@ split_parts() {
   printf '%s\n' "$cur"
 }
 
-mkdir -p "$work/empty" "$work/withcfg/.claude"
-printf '{"marker":"cfg-present-7431"}\n' > "$work/withcfg/.claude/nightmill.json"
+mkdir -p "$work/empty"
+# mkrepo <dir> <set-head: yes|no>: a repository with a bare origin; origin/main has a config with the marker
+# base-marker-5520, the working tree's file the marker tree-marker-9913 (not committed)
+mkrepo() {
+  local d=$1
+  mkdir -p "$d/.claude"
+  git init -q --bare "$d.origin.git"
+  git init -q -b main "$d"
+  printf '{"marker":"base-marker-5520"}\n' > "$d/.claude/nightmill.json"
+  git -C "$d" add -A
+  git -C "$d" -c user.name=t -c user.email=t@example.invalid commit -qm base
+  git -C "$d" remote add origin "$d.origin.git"
+  git -C "$d" push -q origin main
+  if [ "$2" = yes ]; then git -C "$d" remote set-head origin main; fi
+  printf '{"marker":"tree-marker-9913"}\n' > "$d/.claude/nightmill.json"
+}
+mkrepo "$work/withhead" yes
+mkrepo "$work/nohead" no
 
-for name in spec next fix story check; do
+for name in workflow spec next fix story check; do
   skill="$here/skills/$name/SKILL.md"
   echo "== /$name config injection"
   if [ ! -f "$skill" ]; then bad "$name: skills/$name/SKILL.md missing"; continue; fi
@@ -62,13 +78,30 @@ for name in spec next fix story check; do
     *) bad "$name: without a config the injection does not print the /nightmill:init hint (output: $out)" ;;
   esac
 
-  # with a config: the config is printed
-  out=$(cd "$work/withcfg" && bash -c "$cmd" 2>&1)
+  # a repository whose origin/HEAD has a config: the first line names the base ref, the base config is printed, the
+  # working tree's config is not
+  out=$(cd "$work/withhead" && bash -c "$cmd" 2>&1)
   rc=$?
-  [ "$rc" -eq 0 ] || bad "$name: with a config the injection exits $rc"
+  [ "$rc" -eq 0 ] || bad "$name: with origin/HEAD the injection exits $rc"
+  [ "$(printf '%s\n' "$out" | head -n 1)" = "origin/main" ] || bad "$name: the first line is not origin/main (output: $out)"
   case "$out" in
-    *cfg-present-7431*) ;;
-    *) bad "$name: with a config the injection does not print the config" ;;
+    *base-marker-5520*) ;;
+    *) bad "$name: the base config is not printed (output: $out)" ;;
+  esac
+  case "$out" in
+    *tree-marker-9913*) bad "$name: the working tree's config is printed (output: $out)" ;;
+  esac
+
+  # a repository with origin/main but no origin/HEAD: the output says so
+  out=$(cd "$work/nohead" && bash -c "$cmd" 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || bad "$name: without origin/HEAD the injection exits $rc"
+  case "$out" in
+    *"NO origin/HEAD, but"*) ;;
+    *) bad "$name: without origin/HEAD the output lacks 'NO origin/HEAD, but' (output: $out)" ;;
+  esac
+  case "$out" in
+    *base-marker-5520*) bad "$name: without origin/HEAD a config is printed as the base (output: $out)" ;;
   esac
 
   # allowed-tools covers the injection command

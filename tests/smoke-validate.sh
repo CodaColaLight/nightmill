@@ -147,6 +147,56 @@ done
 printf '%s\n' '{"mode":"fast"}' > "$tmp/mini.json"
 bash "$V" --schema "$mini" "$tmp/mini.json" >/dev/null || fail "enum: a valid value was refused"
 
+echo "== git.mergeFlags must contain --auto and never --admin"
+MF='"mergeFlags": "--auto --squash"'
+check "merge flags without auto" "$(edit "$ex" "$MF" '"mergeFlags": "--squash"')" 1 "" \
+  'error: git.mergeFlags: must match the pattern ^(.* )?--auto( .*)?$, got "--squash"'
+check "merge flags with admin" "$(edit "$ex" "$MF" '"mergeFlags": "--auto --admin --squash"')" 1 "" \
+  'error: git.mergeFlags: must not match the pattern ^(.* )?--admin(( |=).*)?$, got "--auto --admin --squash"'
+check "merge flags admin and no auto" "$(edit "$ex" "$MF" '"mergeFlags": "--admin --squash"')" 1 "" \
+  'error: git.mergeFlags: must match the pattern ^(.* )?--auto( .*)?$, got "--admin --squash"' \
+  'error: git.mergeFlags: must not match the pattern ^(.* )?--admin(( |=).*)?$, got "--admin --squash"' "2 errors, 0 warnings"
+check "merge flags in the other order" "$(edit "$ex" "$MF" '"mergeFlags": "--squash --auto"')" 0 "" "0 errors, 0 warnings"
+check "merge flags with a longer word" "$(edit "$ex" "$MF" '"mergeFlags": "--auto --administrator"')" 0 "" "0 errors, 0 warnings"
+check "merge flags admin with a value" "$(edit "$ex" "$MF" '"mergeFlags": "--admin=true --auto"')" 1 "" \
+  'error: git.mergeFlags: must not match the pattern ^(.* )?--admin(( |=).*)?$, got "--admin=true --auto"'
+check "merge flags an integer" "$(edit "$ex" "$MF" '"mergeFlags": 3')" 1 "" "error: git.mergeFlags: expected string, got integer" "1 error, 0 warnings"
+
+echo "== pattern and not, with a schema of their own"
+pat="$tmp/pat.schema.json"
+printf '%s\n' '{"type":"object","properties":{"a":{"type":"string","pattern":"^a"},"b":{"type":"string","not":{"pattern":"b$"}}}}' > "$pat"
+printf '%s\n' '{"a":"b","b":"ab"}' > "$tmp/pat.json"
+set +e; out=$(bash "$V" --schema "$pat" "$tmp/pat.json" 2>&1); rc=$?; set -e
+[ "$rc" = 1 ] || fail "pattern: expected exit code 1, got $rc: $out"
+for l in 'error: a: must match the pattern ^a, got "b"' 'error: b: must not match the pattern b$, got "ab"' '2 errors, 0 warnings'; do
+  printf '%s\n' "$out" | grep -xF -- "$l" >/dev/null || fail "pattern: missing the line '$l' in: $out"
+done
+printf '%s\n' '{"a":"ab","b":"ba"}' > "$tmp/pat.json"
+bash "$V" --schema "$pat" "$tmp/pat.json" >/dev/null || fail "pattern: valid values were refused"
+
+echo "== --base reads the configuration on origin/HEAD"
+bgit() { git -C "$tmp/brepo" -c user.name=t -c user.email=t@example.invalid "$@"; }
+git init -q --bare "$tmp/borigin.git"
+git init -q -b main "$tmp/brepo"
+mkdir -p "$tmp/brepo/.claude"
+printf '%s\n' "$(edit "$ex" "$MF" '"mergeFlags": "--squash"')" > "$tmp/brepo/.claude/nightmill.json"
+bgit add -A; bgit commit -qm base
+bgit remote add origin "$tmp/borigin.git"; bgit push -q origin main
+bgit remote set-head origin main
+printf '%s\n' "$ex" > "$tmp/brepo/.claude/nightmill.json"
+set +e; out=$(cd "$tmp/brepo" && bash "$V" --base 2>&1); rc=$?; set -e
+[ "$rc" = 1 ] || fail "--base: expected exit code 1, got $rc: $out"
+printf '%s\n' "$out" | grep -F 'validating origin/HEAD:.claude/nightmill.json against ' >/dev/null || fail "--base: no header naming origin/HEAD: $out"
+printf '%s\n' "$out" | grep -xF 'error: git.mergeFlags: must match the pattern ^(.* )?--auto( .*)?$, got "--squash"' >/dev/null || fail "--base: the base config was not read: $out"
+set +e; out=$(cd "$tmp/brepo" && bash "$V" .claude/nightmill.json 2>&1); rc=$?; set -e
+[ "$rc" = 0 ] || fail "the file argument reads the working tree: expected exit code 0, got $rc: $out"
+set +e; out=$(cd "$tmp/brepo" && bash "$V" --base .claude/nightmill.json 2>&1); rc=$?; set -e
+[ "$rc" = 2 ] || fail "--base with a file: expected exit code 2, got $rc: $out"
+git -C "$tmp/brepo" remote set-head origin --delete >/dev/null
+set +e; out=$(cd "$tmp/brepo" && bash "$V" --base 2>&1); rc=$?; set -e
+[ "$rc" = 2 ] || fail "--base without origin/HEAD: expected exit code 2, got $rc: $out"
+case "$out" in *"run git remote set-head origin --auto once"*) ;; *) fail "--base without origin/HEAD: no set-head line: $out" ;; esac
+
 echo "== usage errors exit 2"
 set +e; err=$(bash "$V" "$tmp/does-not-exist.json" 2>&1 >/dev/null); rc=$?; set -e
 [ "$rc" = 2 ] || fail "missing file: expected exit code 2, got $rc"
@@ -160,9 +210,9 @@ bash "$V" --strict "$here/.claude/nightmill.json" >/dev/null || fail "the reposi
 echo "== the lint notices a schema keyword the validator does not support"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
 ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir" && tar -xf - )
-sed 's/^\(  "title":\)/  "pattern": "x",\n\1/' "$cp_dir/schema/nightmill.schema.json" > "$cp_dir/s.tmp" && mv "$cp_dir/s.tmp" "$cp_dir/schema/nightmill.schema.json"
-if out=$(cd "$cp_dir" && bash tests/lint.sh 2>&1); then fail "the lint accepted a schema with a pattern keyword"; fi
-case "$out" in *pattern*) ;; *) fail "the lint did not name the keyword: $out" ;; esac
+sed 's/^\(  "title":\)/  "format": "x",\n\1/' "$cp_dir/schema/nightmill.schema.json" > "$cp_dir/s.tmp" && mv "$cp_dir/s.tmp" "$cp_dir/schema/nightmill.schema.json"
+if out=$(cd "$cp_dir" && bash tests/lint.sh 2>&1); then fail "the lint accepted a schema with a format keyword"; fi
+case "$out" in *format*) ;; *) fail "the lint did not name the keyword: $out" ;; esac
 
 echo "== the lint notices a role the workflow skill does not name"
 cp_dir2="$tmp/repocopy2"; mkdir -p "$cp_dir2"
