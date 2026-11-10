@@ -86,7 +86,7 @@ exit $code
 [IO.File]::WriteAllText((Join-Path $bin "claude.ps1"), $clPs)
 [IO.File]::WriteAllText((Join-Path $bin "claude.cmd"), "@echo off`r`n`"$psExe`" -NoProfile -ExecutionPolicy Bypass -File `"%~dp0claude.ps1`" %*`r`nexit /b %ERRORLEVEL%`r`n")
 
-function Git { & git @args 2>&1 | Out-Null }
+function Git { $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"; try { & git @args 2>&1 | Out-Null } finally { $ErrorActionPreference = $ea } }
 $script:n = 0
 $script:c = ""; $script:main = ""
 # New-Case <extra json member or $null> [slots] [roomCheck]
@@ -223,7 +223,9 @@ New-Case $null 1; Use-Board "board-loop.tsv"
 Push-Location $script:main
 $oldPath = $env:PATH; $oldLog = $env:GH_LOG
 $env:PATH = $bin + ";" + $env:PATH; $env:GH_LOG = Join-Path $tmp "setup.log"
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here "scripts\slot.ps1") -Take feat/held -SkipWarmup *> $null
+$ea0 = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here "scripts\slot.ps1") -Take feat/held -SkipWarmup 2>&1 | Out-Null
+$ErrorActionPreference = $ea0
 $env:PATH = $oldPath; $env:GH_LOG = $oldLog
 Pop-Location
 Invoke-Drive
