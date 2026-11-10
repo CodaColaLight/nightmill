@@ -23,6 +23,10 @@
   not done); `/spec`'s writer writes from it, the spec reviewer checks its headings, and the lint checks the headings
   of every spec from iteration 40 on in `iterations.specDir` (earlier specs are exempt). No config key; `/init`
   installs nothing new.
+- Iteration 39 (#159): the README has a Security model section: what an agent can do under the rules `/init` writes
+  and what the deny rules and the guard refuse, who can influence it, what to restrict (who may comment, token scopes,
+  branch protection, code owners), and a table of what is enforced and what is not yet, each with its issue.
+  `SECURITY.md` points to it.
 - Iteration 37 (#148): `/story` searches open and closed issues of any label for a similar title before it files,
   shows up to 5 and, if any is similar, files only on "file anyway"; a failed search or a headless run files nothing.
   A search that hits its limit of 100 with nothing similar says older issues may not have been checked, then files.
