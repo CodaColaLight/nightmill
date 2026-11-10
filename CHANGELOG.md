@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 48 (#111): a pull request no longer changes the config that governs it. The skills, the slot script (its
+  warm-up) and the pairing check read `.claude/nightmill.json` from the base branch (`origin/HEAD`, then
+  `git.baseBranch`) with `git show`, the working tree's file only when no remote branch is known or the base has none
+  yet. `git.mergeFlags` must contain `--auto` and never `--admin` (schema `pattern` and `not`, both now supported by
+  `validate-config`, and the skills' merge step). A pull request that changes a path under `.claude/` or `.github/` is
+  never auto-merged, and a check fix round that would add one is not pushed. No config key.
 - Iteration 47 (#110): the harness refuses what the hard rules forbid. `/init` writes deny rules to
   `.claude/settings.json` for `gh pr merge --admin`, `gh issue`, `project` and `repo delete`, `gh api` `DELETE`, force
   pushes and pushes to the base branch, and the plugin ships a `PreToolUse` hook (`scripts/guard.sh`, twin
