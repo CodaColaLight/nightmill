@@ -1,14 +1,16 @@
-# Iteration 46: after its pull request opens, /next, /fix and /spec watch its checks and fix a red one within review.maxFixRounds
+# Iteration 46: after enabling auto-merge, /next, /fix and /spec watch the pull request's checks and fix a red one within review.maxFixRounds
 
 Status: draft, awaiting approval (#145)
 
 Story #145, epic #107 (Hardening from the code review), finding HI-9 of the review of 0.2.0. Today `/next`, `/fix`
 and `/spec` open the pull request, decide auto-merge and stop, so a red pull request waits until the maintainer
-notices it. After this iteration each of the three skills, once its pull request is open and auto-merge is decided,
-watches the pull request's checks for at most 30 minutes per push (a fixed bound, no config key).
+notices it. After this iteration each of the three skills, once it has enabled auto-merge on its pull request,
+watches the pull request's checks for at most 30 minutes per push (a fixed bound, no config key). A pull request
+without auto-merge is not watched, as today.
 Green ends the run with one line and nothing else. Red starts a **check fix round**: the producer of the change (the
-implementer, the fixer, the spec writer) gets the failing job's log, fixes the cause, runs the check and commits; the
-reviewer of that role reviews the round; the session pushes and watches again. At most `review.maxFixRounds` check
+implementer, the fixer, the spec writer) gets the failing job's log, fixes the cause and runs the check; the implementer
+and the fixer commit, the spec writer leaves its change uncommitted; the reviewer of that role reviews the round; in
+`/spec` the session then commits; the session pushes and watches again. At most `review.maxFixRounds` check
 fix rounds run. When they are used up, the session comments the failing job on the issue, adds the label `blocked`
 and stops; it never forces a merge. The shared rule is in `skills/workflow/SKILL.md`, the role-specific steps in
 `skills/next/SKILL.md`, `skills/fix/SKILL.md` and `skills/spec/SKILL.md`. Also changed: `README.md`,
@@ -30,7 +32,11 @@ agent, hook, schema or config change.
   letters, digits or `-`) and the previous version prints as it is.
 
 **The manual check applies**: `skills` is in `verification.manualCheckPaths`, and four skills change. Its steps are
-under Tests; because it applies, the implementation pull request does not enable auto-merge (`/next` step 7). No script in `scripts/` changes, so no smoke step is added and "Both shells" is not touched: every
+under Tests. The session does it in `/next` step 4, before the pull request opens; a manual check that was done does
+not withhold auto-merge: `/next` step 7 withholds it only for a required manual check that was skipped, and the
+specs of iterations 18 and 20, which also change `skills` and `agents`, say "the PR may auto-merge". So the
+implementation pull request of this story gets auto-merge unless one of the reasons of `/next` step 7 holds. No
+script in `scripts/` changes, so no smoke step is added and "Both shells" is not touched: every
 command the skills run here is `gh` or `git`, the same in bash and PowerShell. `skills/workflow/SKILL.md` and
 `schema/nightmill.schema.json` are in `parallel.hotFiles`: this story is not run at the same time as another story
 that changes either.
@@ -50,7 +56,7 @@ agents scripts` finds nothing; only `scripts/status.*` read `statusCheckRollup`,
   required manual check that was skipped, blocking findings or an open dispute. A pull request that changes `skills`,
   `agents` or `hooks` needs the manual check and in practice waits for the maintainer: #247 (iteration 40, changes
   `skills/spec/SKILL.md` and `agents/spec-reviewer.md`) has `autoMergeRequest` null and was merged by the maintainer.
-  So "after enabling auto-merge" alone would leave those pull requests unwatched (decision 2).
+  Criterion 1 watches after enabling auto-merge, so those pull requests stay unwatched (decision 2; Not done).
 - **How long CI takes here.** `.github/workflows/ci.yml` runs four jobs on every pull request: the lint
   (`timeout-minutes: 5`), the bash smoke tests (7), the PowerShell smoke tests on `windows-latest` (38) and
   `claude plugin validate` (`continue-on-error: true`, 5). On #247 they took 25 s, 3 min 51 s, 6 min 8 s and 11 s.
@@ -95,29 +101,45 @@ repository sees, so a queued Windows runner does not end a watch early. Why per 
 starts a new CI run, so the longest run of the skill is `(1 + review.maxFixRounds) × 30` minutes of watching (90 min
 with `review.maxFixRounds` 2) plus the fix rounds. There is no way to turn the watch off.
 
-**2. Which pull requests are watched.** Every pull request that `/next`, `/fix` (one bug) or `/spec` opened or, in a
-resumed run (iteration 44 rows N1, S1, R1), reused, whether auto-merge is on or not. Why: a pull request without
-auto-merge (a manual check, a story trigger, a partial result, blocking findings) waits for the maintainer's merge,
-and the maintainer can merge only a green one; the issue's Goal is every red pull request opened by a skill. The
-watch starts after the last step that today ends the run: `/next` after step 8, `/fix` after step 6, `/spec` after
-step 5 (before the stop of step 6). Not watched: `/fix all` (Not done; Left, item 3), and a pull request whose
-state is not `OPEN` when the watch starts (`gh pr view <pr> --json state`): `MERGED` prints the green line of
-decision 5, `CLOSED` prints `PR #<pr> is closed; checks not watched.`
+**2. Which pull requests are watched.** Only a pull request with auto-merge on is watched: one that `/next`, `/fix`
+(one bug) or `/spec` opened or, in a resumed run (iteration 44 rows N1, S1, R1), reused, and whose
+`gh pr view <pr> --json autoMergeRequest` is not empty after the skill's auto-merge step (the step enabled it, or a
+resumed run found it on). Why: criterion 1 starts the watch "after enabling auto-merge", and the issue puts anything
+else out of scope. A pull request whose auto-merge was withheld (`/next` step 7, `/spec` step 4: a story trigger, a
+partial result, a skipped manual check, blocking findings, an open dispute) ends the run as before this iteration,
+unwatched (Not done). The watch starts after the last step that today ends the run: `/next` after step 8, `/fix`
+after step 6, `/spec` after step 5 (before the stop of step 6). Not watched either: `/fix all` (Not done; Left,
+item 3), and a pull request whose state is not `OPEN` when the watch starts (`gh pr view <pr> --json state`):
+`MERGED` prints the green line of decision 5, `CLOSED` prints `PR #<pr> is closed; checks not watched.`
 
 **3. Which checks count.** All checks that `gh pr checks <pr> --json name,bucket,link,workflow` lists for the pull
 request's head, not only `--required` ones. A check whose `bucket` is `fail` or `cancel` is **red**; `pass` and
 `skipping` are **done**; `pending` is **pending**. Why all: the skill fixes what it caused, and a project without
-required checks would show none with `--required`. A non-blocking job that fails (this repository's validate job
-has `continue-on-error: true`, so it reports `pass`) is still red; the producer may answer that it is not caused by
-the change (decision 6, `failed`).
+required checks would show none with `--required`. A check counts by its `bucket` alone, whether it blocks the merge
+or not: a job that does not block (this repository's validate job, `continue-on-error: true`) is red when its
+`bucket` is `fail` and done when it is `pass`. For a red one the producer may answer that it is not caused by the
+change (decision 6, `failed`).
 
-**4. One watch, exactly.** Before it, the session checks that the pull request's head is its own last commit:
-`gh pr view <pr> --json headRefOid --jq .headRefOid` equals `git -C <checkout> rev-parse refs/heads/<branch>`, the
-ref of the pull request's branch (not `HEAD`: `/spec` has switched its checkout back to the branch it came from);
-otherwise it hands over at once (decision 8) with the reason `the branch on origin is not this run's last commit`. Then, while the
+**4. One watch, exactly.** Before it, the session runs three checks, in this order; each hand-over here starts
+before any watch call, so no check is red yet and decision 8 uses its comment without a failing check:
+
+1. `<checkout>` is the slot that holds the branch, else the session's checkout.
+2. A resumed `/next` (row N1) whose branch has no local ref first creates it, after `git fetch origin`, with
+   `git branch --no-track <branch> origin/<branch>`, as "Resuming a story" does before a take. When the fetch or the
+   `git branch` fails, it hands over at once (decision 8) with the reason `the branch could not be created: <the first
+   line of git's message>`.
+3. The pull request's head is its own last commit: `gh pr view <pr> --json headRefOid --jq .headRefOid` equals
+   `git -C <checkout> rev-parse refs/heads/<branch>`, the ref of the pull request's branch (not `HEAD`: `/spec` has
+   switched its checkout back to the branch it came from). When the two differ, it hands over at once (decision 8)
+   with the reason `the branch on origin is not this run's last commit`.
+
+Then, while the
 watch's time is not used up, one foreground shell call:
-`gh pr checks <pr> --watch --fail-fast --interval 30`, with the shell tool's timeout set to the smaller of 10 minutes
-and the minutes left. When the call returns (any exit code, or the tool's timeout), the session reads the verdict
+`gh pr checks <pr> --watch --fail-fast --interval 30`, with the shell tool's timeout set to the **call limit**: the
+smallest of 10 minutes, the time left, and, in a run that reports to a slot (decision 9), `worktrees.stalledAfterMinutes`
+minus 30 seconds (the value as `slot --status` reads it: the config's whole number of at least 1, else 30). So every
+gap between two `watch-checks` reports is below the threshold, and a slot that watches never shows `stalled` (with
+`worktrees.stalledAfterMinutes` 1 a call lasts 30 s). When the call returns (any exit code, or the tool's timeout), the session reads the verdict
 with one call `gh pr checks <pr> --json name,bucket,link,workflow` and decides only from that JSON (never from an
 exit code):
 
@@ -129,15 +151,15 @@ exit code):
 | otherwise | pending |
 
 Pending with time left: the next call. Pending with no time left: decision 7. A pending verdict whose watch call
-returned in less than 30 s (no check exists yet after a push) is followed by `sleep 30` in the next call, before
-`gh pr checks`, so the loop does not spin. Before each watch call the session reports `watch-checks` (decision 9),
-so a slot shows `running` while it watches (`worktrees.stalledAfterMinutes` is at least 1 and every call is at most
-10 minutes). The watch commits, pushes and changes nothing.
+returned in less than 30 s (no check exists yet after a push) is followed, in the next call, by a sleep of half the
+call limit, at most 30 s (`sleep <s>`, whole seconds), before `gh pr checks`, so the loop does not spin; the sleep is
+part of the call and of its limit. Before each watch call the session reports `watch-checks` (decision 9), so a slot
+shows `running` while it watches, and `/next` never resumes a watching run as `stalled` (`skills/next/SKILL.md`,
+"A run that is visibly at work is never joined"; iteration 44). The watch commits, pushes and changes nothing.
 
-**5. Green.** Print `Checks of PR #<pr> are green (<n> checks); auto-merge <is on | is off: <the reason the pull
-request gives>>.` and end the run as it ended before this iteration (`/next` and `/fix` report `done`; `/spec` goes
-on with step 6). Nothing else: no comment, no label, no status, no merge, no slot release. A pull request with
-auto-merge then merges by itself, and its `Closes #<issue>` / `Fixes #<issue>` sets Done as today (criterion 4).
+**5. Green.** Print `Checks of PR #<pr> are green (<n> <check | checks>); auto-merge is on.`, with `check` when `<n>` is 1 and `checks` otherwise, and end the run as it ended before this iteration (`/next` and `/fix` report `done`; `/spec` goes
+on with step 6). Nothing else: no comment, no label, no status, no merge, no slot release. The pull request then
+merges by itself under auto-merge, and its `Closes #<issue>` / `Fixes #<issue>` sets Done as today (criterion 4).
 
 **6. Red: one check fix round.** Check fix rounds are counted from 1 per run, apart from the review's fix rounds:
 the review's rounds were spent on the review's findings before the pull request opened, and the issue bounds the CI
@@ -147,41 +169,79 @@ round k is:
 1. **The log.** From the red check's `link`, take `<job>` (the number after `/job/`) and `<run>` (after `/runs/`).
    `gh run view <run> --job <job> --log-failed`, its last 200 lines, is `<the log>`. A link that is not an Actions
    job link (another CI) gives `<the log>` = `not available: <the link>`.
-2. **The checkout.** `/next` and `/fix` use the slot that holds the branch (it is held until the merge, as today).
-   `/spec` switches its checkout back to the spec branch (`git switch <branch>`; the tree must be clean, else the
-   hand-over of decision 8 with the reason `the checkout is not clean`) and switches back to the branch it came from
-   at the end of the round.
+2. **The checkout.** The first case that holds decides:
+   - `/next` and `/fix`, a slot holds the branch: that slot (it is held until the merge, as today).
+   - `/next` and `/fix` in a run without slots (no `worktrees`; `/next` step 2 or `/fix` step 3 switched the session's
+     checkout to the branch, and nothing switched it away): the session's checkout. Every git command of the round
+     runs there without `-C <slot path>`, as `/next` step 5 and `/fix` step 6 do without slots, and the producer's
+     prompt gets the checkout's absolute path where it says `<absolute slot path>`. Its tree must be clean (`git status
+     --porcelain --untracked-files=all` prints nothing), else the hand-over with the reason `the checkout is not clean`.
+   - A resumed `/next` (row N1) whose branch no slot holds: before the producer of round 1 the session gets a
+     checkout as "The slot" of row N6 does: with slots, `--take <branch>` (`-Take <branch>`; the local branch exists by
+     decision 4), then the report `resumed` (role `session`); the slot is then held until the merge and released as
+     today. A take that fails is the hand-over with the reason `the slot could not be taken: <the take's line>`.
+     Without slots, `git switch <branch>` in the session's checkout (the tree clean, else the hand-over with the
+     reason `the checkout is not clean`), and from there as in the case above.
+   - `/spec` switches its checkout back to the spec branch (`git switch <branch>`; the tree must be clean, else the
+     hand-over of decision 8 with the reason `the checkout is not clean`) and switches back to the branch it came from
+     at the end of the round, after the push or the hand-over.
 3. **The producer.** Count the agents, check the room on the machine and report `check-fix-<k>`, as for every
-   launch. Launch the producer of the role as a fresh agent, on its role's model, passed explicitly: in `/next` the
-   implementer, with its prompt and, at the end, the paragraph below; in `/fix` the fixer, the same; in `/spec` the
-   spec writer, with its prompt (saying "the spec file exists; change only what the failing check needs") and the
-   paragraph. The paragraph:
+   launch. In `/next` and `/fix` the round guards the tester's files as "The tester's files" does: it uses the run's
+   `<tester files>`, `<tester blobs>` and `<tester originals>` as the review rounds and disputes left them, and before
+   every launch of the producer records `<round base>` by rule 2 there. A resumed `/next` (row N1) does not know them;
+   before the producer of round 1 it builds them as row N9 does ("The tester's files in a resumed code review"):
+   `<tester files>` is every path of `git -C <checkout> diff --name-only origin/<git.baseBranch>...HEAD` that is a
+   test path by the `Test paths:` line of "The tester", and `<tester blobs>` and `<tester originals>` are recorded for
+   them by rule 1 (round 0). An empty `<tester files>` is allowed there and leaves nothing to check. In that run the
+   implementer's prompt lists those paths as its tests, committed, and gives `not known (resumed run)` for the
+   tester's `Criteria` lines. Launch the producer of the role as a fresh agent, on its role's model, passed
+   explicitly: in `/next` the implementer, with its prompt and, at the end, the paragraph below; in `/fix` the fixer,
+   the same; in `/spec` the spec writer, with its prompt (saying "the spec file exists; change only what the failing
+   check needs"; its "Do not commit" stays) and the paragraph. The paragraph, whose `<what to do>` is
+   `Fix the cause in this change, run the check, commit.` in `/next` and `/fix` and
+   `Fix the cause in the spec file and run the check; do not commit, the session commits.` in `/spec`:
 
    ```markdown
    The pull request #<pr> is open and its check <name> (<workflow>) is red (check fix round <k> of
    <review.maxFixRounds>). The log of its failed steps, last 200 lines:
    <the log>
-   Fix the cause in this change, run the check, commit. The local check may skip the step that failed in CI (it runs
+   <what to do> The local check may skip the step that failed in CI (it runs
    what the machine can run); say so under Left when it did. If the failure is not caused by this change (the base
    branch, the CI runner, a flaky check), change nothing and return `failed` with the reason under Left.
    ```
 
    Then read the result as each skill reads its producer today: in `/next` and `/fix`, the tester's files first
    ("The tester's files", rule 3; a changed tester file undoes the round by rule 4, and the round counts), then the
-   `Result:` block; in `/spec`, the form check of "The spec writer" step 4. A `Disputes:` line that is not `none` is
-   not sent to the tester in a check fix round: it is a hand-over (decision 8, reason `the producer disputes the
-   tester's test: <the Disputes line>`). `Result: failed`, no block, nothing committed, or an undone round is a
-   hand-over with the reason `<Left, or why>`.
+   `Result:` block; a round that committed nothing (`git -C <checkout> rev-parse HEAD` is still `<round base>`) is a
+   hand-over with the reason `the <role> committed nothing`. In `/spec`, the form check of "The spec writer" step 4
+   as it stands (the tree has exactly one change, the spec file, its first heading starts `# Iteration <N>:` and it
+   has the status line `Status: draft, awaiting approval (#<issue>)`); no change at all is a hand-over with the reason
+   `the specWriter changed nothing`, a wrong form one with the reason `the spec file has a wrong form: <what is
+   wrong>`. A `Disputes:` line that is not `none` is not sent to the tester in a check fix round: it is a hand-over
+   (decision 8, reason `the producer disputes the tester's test: <the Disputes line>`). `Result: failed`, no block, or
+   an undone round is a hand-over with the reason `<Left, or why>`; in `/spec`, `Result: partial` is one too.
 4. **The review.** Report `check-review-<k>`; one launch of the role's reviewer (`codeReviewer` in `/next` and `/fix`,
    `specReviewer` in `/spec`), as in "The code review" / "The spec review" step 2, with the prompt of step 3 there and
-   the change given as `git diff <the pull request's head>..HEAD` (the round's commits only). The pairing is not
-   checked again. No findings or advisory only: go on. A blocking finding: nothing is pushed; while a round is left,
-   round k + 1 starts at step 3 with the same red check and, added to the paragraph, "Fix exactly these blocking
-   findings too: <the lines>"; with no round left, the hand-over (decision 8) with the reason
-   `the fix of round <k> has blocking review findings: <the lines>`. Why a review: a fix pushed to a pull request with
-   auto-merge on merges as soon as it is green, so it must be reviewed before the push.
-5. **The push** (no force): `git -C <checkout> push origin <branch>`. A rejected push is a hand-over with the reason
+   the change given as `git diff <the pull request's head>..HEAD` in `/next` and `/fix` (the round's commits only) and
+   as `git diff <the pull request's head>` in `/spec` (the uncommitted spec file against the pull request's head; the
+   spec reviewer reads the file in the working tree, as "The spec review" does before its commit). The pairing is not
+   checked again. No findings or advisory only: go on. A blocking finding: nothing is committed by the session and
+   nothing is pushed; while a round is left, round k + 1 starts at step 3 with the same red check and, added to the
+   paragraph, "Fix exactly these blocking findings too: <the lines>" (in `/spec` the writer finds its uncommitted
+   change in place, and the form check of step 3 applies again); with no round left, the hand-over (decision 8) with
+   the reason `the fix of round <k> has blocking review findings: <the lines>`. Why a review: a fix pushed to a pull
+   request with auto-merge on merges as soon as it is green, so it must be reviewed before the push.
+5. **The commit and the push.** The commit is `/spec`'s only (the implementer and the fixer committed in step 3):
+   the session commits the spec file only, `git add <spec file>`, then
+   `git commit -m "docs: iteration <N> spec (#<issue>), check fix round <k>"`. Then the push (no force):
+   `git -C <checkout> push origin <branch>`. A rejected push is a hand-over with the reason
    `the push was rejected: <first line of git's message>`.
+
+   A hand-over in `/spec` after the switch of step 2 (from step 3, 4 or 5) first commits an uncommitted change of the
+   spec file to the local branch with `-m "docs: iteration <N> spec (#<issue>), check fix round <k>, unfinished"`
+   (no commit when the spec file has no uncommitted change), does not push it, and switches back to the branch it
+   came from, as the clean-up of "The spec writer" step 5 does; when that switch fails, the printed text of the
+   hand-over ends with `The checkout stays on <branch>.`
 6. **The record.** One comment on the pull request:
    `gh pr comment <pr> --body "<text>"` with
    `Check fix round <k> of <review.maxFixRounds>: <name> was red. Fixed by the <role> role on <model>; reviewed by the <reviewer> role on <model>: <no findings | advisory findings: <the lines>>.`
@@ -195,15 +255,22 @@ runs: decision 8 with the reason `the rounds are used up`.
 the issue `Checks of PR #<pr> were still running after 30 min (pending: <names,
 comma-separated>); <the skill> no longer watches them.` (only when no comment of the maintainer's login on the issue
 already starts with `Checks of PR #<pr> were still running`), prints the same line, and ends the run as on green
-(`done`; `/spec` step 6). Auto-merge, when on, still merges a pull request that goes green later.
+(`done`; `/spec` step 6). Auto-merge still merges a pull request that goes green later.
 
 **8. The hand-over.** In this order:
 
-1. A comment on the issue, posted once (only when no comment of the maintainer's login on the issue starts with
-   `Checks of PR #<pr> are red`):
-   `Checks of PR #<pr> are red after <r> check fix rounds (review.maxFixRounds is <m>): <name> (<workflow>), <link>. <the reason>. Labelled blocked; the pull request is left as it is for the maintainer.`
-   `<r>` is the number of rounds that ran; `<the reason>` is the reason named where the hand-over starts (decision 4
-   or 6), for used-up rounds exactly `the rounds are used up`.
+1. A comment on the issue, posted once. A hand-over with a red check (decision 6, from a watch whose verdict was
+   red) posts, only when no comment of the maintainer's login on the issue starts with `Checks of PR #<pr> are red`:
+   `Checks of PR #<pr> are red after <r> <check fix round | check fix rounds> (review.maxFixRounds is <m>): <name> (<workflow>), <link>. <the reason>. Labelled blocked; the pull request is left as it is for the maintainer.`
+   `<r>` is the number of rounds that ran, followed by `check fix round` when `<r>` is 1 and `check fix rounds`
+   otherwise; `<name>`, `<workflow>` and `<link>` are those of the red check the round fixes (the last red verdict);
+   `<the reason>` is the reason named where the hand-over starts (decision 6), for used-up rounds exactly
+   `the rounds are used up`. A hand-over from the checks of decision 4 (before a watch call, so with no red check of
+   this watch) posts, only when no comment of the maintainer's login on the issue starts with
+   `Checks of PR #<pr> are not watched`:
+   `Checks of PR #<pr> are not watched after <r> <check fix round | check fix rounds> (review.maxFixRounds is <m>): <the reason>. Labelled blocked; the pull request is left as it is for the maintainer.`
+   with `<r>` as above (0 before the first watch; after a round, the rounds that ran) and `<the reason>` the reason
+   of decision 4, check 2 or 3.
 2. `gh issue edit <issue> --add-label blocked`. When it fails (the label does not exist in the repository), print
    `The label blocked could not be added: <the first line of gh's message>; /init creates it.` and go on.
 3. Print the comment's text, report `handed-over`, and end the run. The board status stays Review; the slot stays
@@ -224,7 +291,8 @@ watch), never with `--admin`, never retries or re-runs a CI job (`gh run rerun`)
 | after the hand-over (decision 8) | `session` | `handed-over` |
 
 The row `done` moves to "after the watch ends green or out of time (decision 5, 7)". `/spec` takes no slot and
-reports nothing, as today.
+reports nothing, as today; a run without slots reports nothing either, and a resumed N1 run that takes a slot for its
+round (decision 6, step 2) reports from that take on.
 
 **10. Resumed runs.** Iteration 44's rows N1 (`/next`), S1 and R1 (`/spec`) end with the watch of decision 4, with
 round 1 and the full 30 minutes: the rounds of a dead run are not known, as for its review rounds.
@@ -250,21 +318,25 @@ Each missing text prints `FAIL: <file> does not say the watch item: <text>` and 
 
 - Criterion 1, `skills/workflow/SKILL.md` ("CI and merging"): `at most 30 minutes`,
   `gh pr checks <pr> --watch --fail-fast --interval 30`, `gh pr checks <pr> --json name,bucket,link,workflow`,
-  `whether auto-merge is on or not`, `were still running after`. `skills/next/SKILL.md`, `skills/fix/SKILL.md`,
+  `Only a pull request with auto-merge on is watched`, `` `worktrees.stalledAfterMinutes` minus 30 seconds ``,
+  `were still running after`. `skills/next/SKILL.md`, `skills/fix/SKILL.md`,
   `skills/spec/SKILL.md`: `Watching the checks`. `skills/next/SKILL.md` and
   `skills/fix/SKILL.md`: `| \`session\` | \`watch-checks\` |`.
 - Criterion 2: `skills/workflow/SKILL.md`: `check fix round`, `at most \`review.maxFixRounds\` check fix rounds`,
   `--log-failed`; each of the three skills: `Check fix round <k> of <review.maxFixRounds>`, the paragraph's
   `is red (check fix round <k> of`; `skills/next/SKILL.md` and `skills/fix/SKILL.md`: `check-fix-<k>`,
-  `check-review-<k>`.
-- Criterion 3: `skills/workflow/SKILL.md`: `Checks of PR #<pr> are red after <r> check fix rounds`,
-  `--add-label blocked`, `never with \`--admin\``; `skills/next/SKILL.md` and `skills/fix/SKILL.md`: `handed-over`.
+  `check-review-<k>`, `Fix the cause in this change, run the check, commit.`; `skills/spec/SKILL.md`:
+  `Fix the cause in the spec file and run the check; do not commit, the session commits.`,
+  `docs: iteration <N> spec (#<issue>), check fix round <k>`; `skills/next/SKILL.md`: `not known (resumed run)`.
+- Criterion 3: `skills/workflow/SKILL.md`: `Checks of PR #<pr> are red after <r> <check fix round | check fix rounds>`,
+  `Checks of PR #<pr> are not watched after <r> <check fix round | check fix rounds>`,
+  `the branch on origin is not this run's last commit`, `the branch could not be created:`, `--add-label blocked`, `never with \`--admin\``; `skills/next/SKILL.md` and `skills/fix/SKILL.md`: `handed-over`.
   `skills/workflow/SKILL.md`: `never retries or re-runs a CI job (\`gh run rerun\`)`; `skills/next/SKILL.md`,
   `skills/fix/SKILL.md` and `skills/spec/SKILL.md`: `never \`gh run rerun\``. No file in `skills/` contains
   `gh pr merge --admin`, and in each file of `skills/` the number of `gh run rerun` equals the number of those two
   "never" texts, so the command appears only where it is forbidden
   (`FAIL: <file> forces a merge or re-runs a check`).
-- Criterion 4: `skills/workflow/SKILL.md`: `Checks of PR #<pr> are green`.
+- Criterion 4: `skills/workflow/SKILL.md`: `Checks of PR #<pr> are green (<n> <check | checks>)`.
 - No key: no file of `skills/`, `schema/nightmill.schema.json`, `templates/nightmill.example.json` or `README.md`
   contains `watchChecksMinutes` (`FAIL: <file> names a watch key`).
 
@@ -282,36 +354,48 @@ workflow with one job `t` that runs `test -f ok`, a ruleset or none, and `claude
 this branch>` (0003). Each step names the criterion it shows.
 
 1. *Criteria 1 and 4*: `/next` on a story whose change keeps `ok`: the run opens the pull request, enables
-   auto-merge, prints `watch-checks` reports in `/status`, then `Checks of PR #<pr> are green (1 checks); auto-merge
+   auto-merge, prints `watch-checks` reports in `/status`, then `Checks of PR #<pr> are green (1 check); auto-merge
    is on.`, reports `done` and ends; the pull request merges by itself; no comment and no label on the issue.
 2. *Criterion 2*: a story whose change deletes `ok` (the spec says so, the job then fails): the watch ends red, check
    fix round 1 launches the implementer with the log, the code reviewer reviews, the pull request gets the comment
    `Check fix round 1 of 2: ...`, the push starts a new run, the watch goes green.
 3. *Criterion 3*: set `review.maxFixRounds` to 1 and make `t` always fail (`exit 1`): one round runs, then the issue
-   gets `Checks of PR #<pr> are red after 1 check fix rounds ...`, the label `blocked`, the slot shows `handed-over`,
+   gets `Checks of PR #<pr> are red after 1 check fix round ...`, the label `blocked`, the slot shows `handed-over`,
    the status is Review, `gh pr view <pr> --json state,autoMergeRequest` shows `OPEN` and auto-merge as before. With
-   `review.maxFixRounds` 0: no round, the comment says 0.
+   `review.maxFixRounds` 0: no round, the comment says `after 0 check fix rounds`.
 4. *Criterion 1, time*: make `t` sleep 2400 s (`timeout-minutes: 45`): after about 30 minutes the issue gets
    `Checks of PR #<pr> were still running after 30 min ...`, no label, and the run ends.
-5. *Decision 2*: a `/spec` run whose spec pull request has a blocking finding (no auto-merge) is watched too; `/fix`
-   on a bug watches its pull request the same way.
+5. *Decision 2*: a `/spec` run whose spec pull request has a blocking finding (no auto-merge) ends as before, with no
+   `watch-checks` report and no watch; `/fix` on a bug watches its pull request (auto-merge on) as `/next` does.
+   *Decision 4, the call limit*: with `worktrees.stalledAfterMinutes` 2 and `t` sleeping 300 s, `/status` shows the
+   watching slot `running` at every look, and `/next <n>` on the story in a second session is refused with the
+   `is running` line.
+6. *Criterion 2, the checkout*: a `/spec` run whose spec makes `t` fail: the spec writer's change stays uncommitted
+   until the review, the session commits it as `docs: iteration <N> spec (#<issue>), check fix round 1` and pushes,
+   and the checkout is back on the branch it came from. A `/next <n>` on a story at Review whose pull request is red
+   and whose branch no slot holds (row N1): the round takes a slot for the branch, reports `resumed`, guards the test
+   paths on the branch as tester files, and fixes the check there.
 
 ## Files touched
 
 - `skills/workflow/SKILL.md`, "CI and merging": after "A red PR is fixed, never forced." a paragraph **Watching the
-  checks** with decisions 1 to 8 in short: which pull requests (decision 2), the watch and its verdict table
-  (decisions 3, 4), green (5), the check fix round and its bound (6, without the role details), the time running out
+  checks** with decisions 1 to 8 in short: which pull requests (decision 2, auto-merge on only), the watch, its call
+  limit and its verdict table (decisions 3, 4), green (5), the check fix round and its bound (6, without the role details), the time running out
   (7), the hand-over with its comment, the label and the "never" list (8). "Findings and fix rounds", "Rounds": one
   sentence that check fix rounds are counted apart and bounded by the same key.
 - `skills/next/SKILL.md`: a new step 9 "Watch the checks" pointing to the workflow rule, with the implementer and
-  `codeReviewer` as the round's roles and the slot as the checkout; the paragraph of decision 6; the rows of decision
+  `codeReviewer` as the round's roles, the checkout of decision 6, step 2 (the slot, the single checkout, the take of
+  a resumed N1 run) and the tester's files of decision 6, step 3 (built for N1 as N9 builds them); the paragraph of
+  decision 6; the rows of decision
   9 and the `done` row's new "When"; rows N1 (watch at the end), N8 and N9 ("steps 4 to 9"); "Hard rules": never
   `--admin`, never `gh run rerun`.
-- `skills/fix/SKILL.md`: a new step 7 "Watch the checks" (the fixer and `codeReviewer`, the slot), the rows of
+- `skills/fix/SKILL.md`: a new step 7 "Watch the checks" (the fixer and `codeReviewer`, the slot or the single
+  checkout of decision 6, step 2, the run's tester's files), the rows of
   decision 9, "Batch mode": one sentence that `/fix all` watches no pull request (Not done); "Hard rules" as in
   `/next`.
 - `skills/spec/SKILL.md`: step 5 ends with "then watch the checks (**Watching the checks** in the `workflow` skill)",
-  with the spec writer and `specReviewer` as the round's roles and the checkout switch of decision 6, step 2; rows S1
+  with the spec writer and `specReviewer` as the round's roles, the checkout switch of decision 6, step 2, the form
+  check of step 3, the review of the uncommitted file of step 4 and the session's commit of step 5; rows S1
   and R1 end with the watch (S2 and R2 find a merged spec pull request and stay unchanged);
   "Hard rules" as in `/next`.
 - `README.md`: the configuration table's `review.maxFixRounds` row says it also bounds the fix rounds after a red
@@ -319,8 +403,8 @@ this branch>` (0003). Each step names the criterion it shows.
   per push) and the hand-over (label `blocked`).
 - `tests/test-watch-checks.sh` (new), `tests/check.sh` (one step line), `.github/workflows/ci.yml` (one name in the
   bash job's `--only` list): the Tests above.
-- `CHANGELOG.md`, under `Unreleased`: `- Iteration 46 (#145): after its pull request opens, /next, /fix and /spec
-  watch its checks for at most 30 minutes per push, with or without auto-merge. A red check goes back to the producer with the failing job's log, is reviewed, pushed
+- `CHANGELOG.md`, under `Unreleased`: `- Iteration 46 (#145): after enabling auto-merge, /next, /fix and /spec
+  watch the pull request's checks for at most 30 minutes per push. A red check goes back to the producer with the failing job's log, is reviewed, pushed
   and watched again, at most review.maxFixRounds times; then the issue gets a comment naming the failing job and the
   label blocked, and the run stops without forcing a merge. A green pull request needs nothing more.` Paths, keys
   and commands in backticks.
@@ -335,12 +419,15 @@ release script, `schema/nightmill.schema.json`, `templates/nightmill.example.jso
   with `review.maxFixRounds` 2) plus the fix rounds. Limits: the fixed bound and the rounds, and the reports keep the
   slot `running` while it waits.
 - **A fixed bound.** A project whose CI takes longer than 30 minutes is handed a pending pull request every time
-  (decision 7, a comment, no label). Limits: auto-merge, when on, still merges it; Left, item 1.
+  (decision 7, a comment, no label). Limits: auto-merge still merges it; Left, item 1.
 - **A fix that CI alone can test.** A ShellCheck or Windows PowerShell 5.1 failure cannot be reproduced on the
   machine; the producer fixes from the log and the next run is the test. Limits: the review before each push, and
   the rounds.
-- **A fix pushed while auto-merge is on merges unseen by the maintainer** once it is green. Limits: it was reviewed by
-  the role's reviewer (decision 6, step 4), and a story trigger or a manual check had already withheld auto-merge.
+- **A fix pushed under auto-merge merges unseen by the maintainer** once it is green. Limits: it was reviewed by
+  the role's reviewer (decision 6, step 4), and a pull request whose auto-merge a story trigger, a partial result, a
+  skipped manual check, blocking findings or an open dispute withheld (`/next` step 7) is not watched (decision 2). A manual check that was done does not
+  withhold it and ran before the first push, not on the round's fix; the round's comment on the pull request
+  (decision 6, step 6) names the fix for the maintainer.
 - **The first red check only.** Several red jobs with one cause are fixed in one round; with different causes the
   next round takes the next. Limits: the rounds.
 - **A failure not caused by the change** (a red base branch, a runner outage) is handed over after the producer says
@@ -364,6 +451,8 @@ M: about 30 lines in `skills/workflow/SKILL.md`, 35 in `skills/next/SKILL.md`, 3
   `git.mergeFlags`, no `--admin`.
 - No rebase or conflict resolution when the base branch moves; a pull request that is green but not mergeable is
   not handled.
+- No watch of a pull request without auto-merge (withheld by `/next` step 7 or `/spec` step 4): a red one still
+  waits for the maintainer, as today (criterion 1 and Out of scope).
 - No watch of pull requests the skills did not open (release pull requests, the maintainer's own).
 - No new config key: no key for the time bound (fixed at 30 minutes), no way to turn the watch off.
 - No `labels.blocked` config key (the literal `blocked`, as `/init` writes it).
