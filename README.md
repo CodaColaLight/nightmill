@@ -194,7 +194,8 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
-| `review.maxFixRounds` | How many fix rounds a producer gets after a review |
+| `review.maxFixRounds` | How many fix rounds a producer gets after a review, and how many check fix rounds a pull request gets after a red check, over every run |
+| `review.watchChecksMinutes` | Minutes a skill watches its pull request's checks after enabling auto-merge, per push (default 30) |
 | `git` | Base branch, branch prefixes, merge flags |
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5); and for `/fix all` the most bugs one run starts (`fixAllMaxBugs`, default 0: no limit) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser, and `panelRefreshSeconds` (default 15): how often the slots pane beside the chat reads the slots again |
@@ -257,7 +258,11 @@ change, as a separate agent that never sees the implementer's own account, and s
 implementer or fixer for at most `review.maxFixRounds` rounds. The findings format and the rounds are in the workflow
 skill; the reviewer is `agents/code-reviewer.md` and can only read. The pull request has a Review section with the
 reviewer's and the author's model, the rounds used and the findings fixed and still open, and a blocking finding that
-is still open keeps auto-merge off.
+is still open keeps auto-merge off. After enabling auto-merge, `/next`, `/fix` and `/spec` watch the pull request's checks for at most
+`review.watchChecksMinutes` minutes per push (default 30). A red check goes back to the producer with the failing
+job's log, is reviewed, pushed and watched again, at most `review.maxFixRounds` check fix rounds per pull request over
+every run; then the issue gets a comment naming the failing job and the label `blocked`, and the run stops without
+forcing a merge.
 
 The code reviewer also judges the tests: for every acceptance criterion a test that would fail for a wrong
 implementation, no test of the tester's removed, skipped, loosened or made conditional (compared with what the tester

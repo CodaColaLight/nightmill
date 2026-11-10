@@ -70,6 +70,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
    `Spec: <path> (PR #<pr>).`: `Spec: <path> (PR #<pr>). Waiting for approval.` When a blocking review finding is still open, the comment ends
    with a fixed tail after that sentence (the text before it, which `/next` reads, is the same):
    `Blocking review findings are still open (<b> blocking, <a> advisory): auto-merge is off, see the Review section of the pull request.`
+   Then watch the checks (**Watching the checks** in the `workflow` skill; "The checks of the spec pull request" below).
 6. **Stop.** Show the spec to the maintainer with the `Decisions` and `Left` lines of the result block. Only the
    maintainer sets Approved; then `/next` implements it. If the maintainer asks for changes, revise the spec in
    a follow-up PR and keep the status at Spec review (`/spec N` at Spec review only finishes unfinished steps; it
@@ -104,7 +105,7 @@ At **Spec**:
 
 | # | Found | Resumes at | Then |
 |---|---|---|---|
-| S1 | an open spec pull request | `the pull request` | auto-merge as in step 4, only when its `autoMergeRequest` is empty and its body does not have `Auto-merge is not enabled`; step 5; step 6 |
+| S1 | an open spec pull request | `the pull request` | auto-merge as in step 4, only when its `autoMergeRequest` is empty and its body does not have `Auto-merge is not enabled`; step 5 with its watch; step 6 |
 | S2 | a merged spec pull request, none open | `Spec review` | step 5; step 6 |
 | S3 | only closed, unmerged spec pull requests | refused: `#<n>: its spec pull request #<pr> was closed without a merge; the maintainer decides. Nothing was changed.` | |
 | S4 | the branch, the spec file on it committed with the subject `docs: iteration <N> spec (#<issue>)` (the last commit that touches it), the tree clean | `the spec review` | "The spec review" from step 1 (round 0, the full `review.maxFixRounds`), then steps 4 to 6 |
@@ -116,7 +117,7 @@ At **Spec review**:
 
 | # | Found | Resumes at | Then |
 |---|---|---|---|
-| R1 | an open spec pull request | `the pull request` | auto-merge as in S1; the comment of step 5 when it is missing; step 6 |
+| R1 | an open spec pull request | `the pull request` | auto-merge as in S1; the comment of step 5 when it is missing; the watch of step 5; step 6 |
 | R2 | a merged spec pull request, none open | `the comment` | the comment of step 5 when it is missing; step 6 |
 | R3 | anything else | refused: `#<n> is at Spec review, but no open or merged spec pull request of it exists; the maintainer decides. Nothing was changed.` | |
 
@@ -264,8 +265,56 @@ The reviewer reads the file in the working tree, so the review runs before the c
 as the last round left it. The statuses, the comment on the issue, the stop at Spec review and every hard rule stay with
 the session as before.
 
+## The checks of the spec pull request
+
+Step 5 watches the checks (**Watching the checks** in the `workflow` skill) only when the spec pull request has
+auto-merge on (`gh pr view <pr> --json autoMergeRequest` is not empty); one whose auto-merge step 4 withheld (a
+blocking review finding still open) is not watched. `/spec` takes no slot and reports nothing; its checkout is the
+session's. Green or out of time: step 6. The round's roles are the `specWriter` and the `specReviewer`. A check fix
+round k:
+
+1. **The checkout.** Switch to the spec branch (`git switch <branch>`); the tree must be clean, else the hand-over with
+   the reason `the checkout is not clean`. At the end of the round, after the push or the hand-over, switch back to
+   the branch you came from.
+2. **The writer.** Count the agents, check the room, record the round with
+   `gh pr comment <pr> --body "Check fix round <k> of <review.maxFixRounds>: <name> (<workflow>) is red; the specWriter role on <model> fixes it."`
+   (when it fails, no launch: the hand-over), then launch the spec writer as "The spec writer" step 3 does, on its
+   model, with its prompt, saying "the spec file exists; change only what the failing check needs" (its "Do not
+   commit" stays), and at its end this paragraph:
+
+   ```markdown
+   The pull request #<pr> is open and its check <name> (<workflow>) is red (check fix round <k> of
+   <review.maxFixRounds>). The last 200 lines of its job's log:
+   <the log>
+   Fix the cause in the spec file and run the check; do not commit, the session commits. The local check may skip the
+   step that failed in CI (it runs what the machine can run); say so under Left when it did. If the failure is not
+   caused by this change (the base branch, the CI runner, a flaky check), change nothing and return `failed` with the
+   reason under Left.
+   ```
+
+   Read the result with the form check of "The spec writer" step 4 as it stands (exactly one change, the spec file,
+   its first heading `# Iteration <N>:`, the line `Status: draft, awaiting approval (#<issue>)`). A hand-over (reason
+   in brackets): no change at all (`the specWriter changed nothing`); a wrong form (`the spec file has a wrong form:
+   <what is wrong>`); `Result: partial`, `Result: failed` or no block (`<Left, or why>`).
+3. **The review.** One launch of the spec reviewer, as "The spec review" step 2 does, with the prompt of step 3 there
+   and the change given as `git diff <the pull request's head>` (the uncommitted spec file against the pull request's
+   head; the reviewer reads the file in the working tree). The pairing is not checked again. A blocking finding:
+   nothing is committed or pushed; while a round is left, round k + 1 starts at step 2 with its own record, the same
+   red check and, added to the paragraph, "Fix exactly these blocking findings too: <the lines>" (the writer finds its
+   uncommitted change in place); else the hand-over.
+4. **The commit and the push.** The session commits the spec file only: `git add <spec file>`, then
+   `git commit -m "docs: iteration <N> spec (#<issue>), check fix round <k>"`, and pushes with
+   `git push -u origin <branch>`, never forced, then switches back and watches again with the full
+   `review.watchChecksMinutes`.
+
+A hand-over after the switch of step 1 first commits an uncommitted change of the spec file to the local branch with
+`-m "docs: iteration <N> spec (#<issue>), check fix round <k>, unfinished"` (no commit when it has none), does not push
+it, and switches back to the branch you came from; when that switch fails, the printed text of the hand-over ends with
+`The checkout stays on <branch>.` The status stays Spec review.
+
 ## Hard rules
 
 Never set Ready or Approved (only the maintainer does). Never close an epic. Never delete files
 without asking. Never merge any other way than `gh pr merge <pr> <git.mergeFlags>` (a plain
-`gh pr merge` would bypass the checks).
+`gh pr merge` would bypass the checks), never with `--admin`, never `gh run rerun`, and never disable a check; a red
+spec pull request is fixed within `review.maxFixRounds` check fix rounds or handed over (step 5).

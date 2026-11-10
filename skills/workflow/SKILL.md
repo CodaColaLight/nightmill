@@ -193,6 +193,8 @@ have been used, the producer fixes exactly the blocking findings (a new agent of
 fork), runs the check and commits, and the reviewer runs again. A story is reviewed at most `1 + review.maxFixRounds`
 times; with `review.maxFixRounds` at 0 it is reviewed once and nothing is sent back. A reviewer is a fresh agent every
 time and never sees the producer's own account of its work.
+The check fix rounds after a red check of the open pull request (**Watching the checks** in **CI and merging**) are
+counted apart from these, per pull request over every run, and bounded by the same `review.maxFixRounds`.
 In `/next` and `/fix` the same rounds also pay for a dispute over a tester's test (the tester answers, then a new
 producer runs) and for a round undone because the producer changed the tester's tests: each costs one of
 `review.maxFixRounds`, and `Fix rounds used` counts them. In `/next` and `/fix` a blocking finding of the code reviewer
@@ -281,6 +283,93 @@ bypass would let a red PR through) when it is a story whose spec was approved, a
 complete bug fix. Do not, and say why in the PR, when it changes one of `escalation.storyTriggers`,
 is partial, skips a required manual check, has a blocking review finding still open (a spec PR too), or the
 maintainer asked to review it. A red PR is fixed, never forced.
+
+**Watching the checks.** After its auto-merge step `/next`, `/fix` (one bug) and `/spec` watch the checks of the
+pull request they opened or, in a resumed run (`/next` row N1, `/spec` rows S1 and R1), reused; the role-specific
+steps are in each skill. Only a pull request with auto-merge on is watched: `gh pr view <pr> --json autoMergeRequest`
+is not empty after the auto-merge step. A pull request whose auto-merge was withheld, and every pull request of
+`/fix all`, ends the run unwatched, as before. A pull request whose `state` (`gh pr view <pr> --json state`) is
+`MERGED` when the watch starts prints the green line below; `CLOSED` prints `PR #<pr> is closed; checks not watched.`
+The pull request stays at Review the whole time; the watch sets no status.
+
+- **The bound.** One watch waits at most `review.watchChecksMinutes` minutes (`<w>`), counted from its start (after
+  the pull request opened, or after a check fix round pushed), read from `.claude/nightmill.json` when it starts.
+  Absent or `null` (or no `review`): 30, nothing said. Any other value that is not a whole number of at least 1:
+  print `review.watchChecksMinutes must be a whole number of at least 1; using 30` and go on with 30.
+- **Before the watch**, in this order (each failure is the hand-over below, with its reason, before any watch call):
+  `<checkout>` is the slot that holds the branch, else the session's checkout; a resumed `/next` (row N1) whose branch
+  has no local ref creates it after `git fetch origin` with `git branch --no-track <branch> origin/<branch>` (failing:
+  `the branch could not be created: <the first line of git's message>`); the pull request's head
+  (`gh pr view <pr> --json headRefOid --jq .headRefOid`) equals `git -C <slot path> rev-parse refs/heads/<branch>` in a
+  slot, `git rev-parse refs/heads/<branch>` in the session's checkout (else: `the branch on origin is not this run's last
+  commit`).
+- **One watch.** While time is left: report `watch-checks` (in a run that reports to a slot), then one foreground call
+  `gh pr checks <pr> --watch --fail-fast --interval 30` with the shell tool's timeout set to the call limit: the smallest
+  of 10 minutes, the time left and, in a run that reports to a slot, `worktrees.stalledAfterMinutes` minus 30 seconds
+  (the value as `slot --status` reads it: a whole number of at least 1, else 30), so a watching slot never shows
+  `stalled`. When the call returns (any exit code, or the timeout), read the verdict with one call
+  `gh pr checks <pr> --json name,bucket,link,workflow` and decide from that JSON only, never from an exit code. Every
+  check counts by its `bucket`, required or not: `fail` and `cancel` are red, `pass` and `skipping` are done, `pending`
+  is pending.
+
+  | JSON | Verdict |
+  |---|---|
+  | at least one red check | red: a check fix round, with the first red check in the listing's order |
+  | no check at all (`no checks reported ...` or `[]`) | pending |
+  | every check done | green |
+  | otherwise | pending |
+
+  Pending with time left: the next call at once; nothing waits between calls (no sleep command). Calls that found no
+  check at all **10 times in a row** end the watch as when the time runs out, with `no check reported` as the pending
+  names; a call that finds a check starts the count again. The watch commits, pushes and changes nothing.
+- **Green.** Print `Checks of PR #<pr> are green (<n> <check | checks>); auto-merge is on.` (`check` when `<n>` is 1)
+  and end the run as before: nothing else, no comment, no label, no status, no merge, no slot release. The pull request
+  merges by itself under auto-merge.
+- **Out of time.** Pending is not red: print
+  `Checks of PR #<pr> were still running after <w> min (pending: <names, comma-separated>); <the skill> no longer watches them.`
+  and end the run as on green. No comment, no label; auto-merge still merges it when it goes green.
+- **A check fix round** (red). Check fix rounds are counted per pull request over every run, apart from the review's
+  fix rounds, and one pull request gets at most `review.maxFixRounds` check fix rounds in total. `<done>` is the number
+  of lines `gh api repos/<owner>/<repo>/issues/<pr>/comments --paginate --jq '.[] | select(.body | startswith("Check fix round ")) | .id'`
+  prints (comments of every author count; a stray one only lowers the rounds left); `k` is `<done> + 1`. When
+  `k > review.maxFixRounds` no round runs: the hand-over with the reason `the rounds are used up`. Round k:
+  1. *The log*: from the red check's `link`, `<owner>/<repo>` and `<job>` (the number after `/job/`);
+     `gh api --allow-escape-sequences repos/<owner>/<repo>/actions/jobs/<job>/logs` prints the whole job log, and its
+     last 200 lines (read from the saved output) are `<the log>`; a link that is not an Actions job, or a failed
+     call, gives `not available: <the link>`.
+  2. *The checkout* of the skill (its slot, its single checkout, or `/spec`'s switch to the spec branch; a tree that
+     is not clean is the hand-over with the reason `the checkout is not clean`).
+  3. *The producer*: count the agents, check the room, report `check-fix-<k>`, then record the round on the pull
+     request: `gh pr comment <pr> --body "Check fix round <k> of <review.maxFixRounds>: <name> (<workflow>) is red; the <role> role on <model> fixes it."`
+     It is the watch's only pull request comment. When it fails, no producer is launched: the hand-over with the
+     reason `the round could not be recorded: <the first line of gh's message>`. Then a fresh producer of the role, on
+     its model, with the skill's paragraph and `<the log>`; its result is read as the skill reads it.
+  4. *The review*: report `check-review-<k>`, one launch of the role's reviewer on the round's change. A blocking
+     finding: nothing is pushed; while the count read again leaves a round, round k + 1 starts at step 3 with the
+     findings added; else the hand-over with the reason `the fix of round <k> has blocking review findings: <the lines>`.
+  5. *The push*, never forced: in a slot `git -C <slot path> push -u origin <branch>`, in the session's checkout
+     `git push -u origin <branch>`. Rejected: the hand-over with the reason `the push was rejected: <first line of
+     git's message>`.
+  6. *Watch again*, with the full `<w>` minutes. No comment after the round; the pull request's body stays.
+
+  A resumed run gets only the rounds the records leave, none when they are used up.
+- **The hand-over.** In this order: (1) one comment on the issue, posted once. With a red check, only when no comment
+  of the maintainer's login on the issue starts with `Checks of PR #<pr> are red`:
+  `Checks of PR #<pr> are red after <r> <check fix round | check fix rounds> (review.maxFixRounds is <m>): <name> (<workflow>), <link>. <the reason>. Labelled blocked; the pull request is left as it is for the maintainer.`
+  From the checks before the watch (no red check yet), only when no comment of the maintainer's login on the issue
+  starts with `Checks of PR #<pr> are not watched`:
+  `Checks of PR #<pr> are not watched after <r> <check fix round | check fix rounds> (review.maxFixRounds is <m>): <the reason>. Labelled blocked; the pull request is left as it is for the maintainer.`
+  `<r>` is `<done>` read again (0 when none was recorded), `check fix round` when it is 1. (2)
+  `gh issue edit <issue> --add-label blocked`; when it fails, print
+  `The label blocked could not be added: <the first line of gh's message>; /init creates it.` and go on. (3) Print the
+  comment's text, report `handed-over`, end the run. The status stays Review, the slot stays taken with the round's
+  work as it is, auto-merge is left as it is, nothing is reverted or deleted. A `blocked` label already on the issue
+  does not stop a run and is not removed.
+- **Never forced.** The skill never runs `gh pr merge` other than `gh pr merge <pr> <git.mergeFlags>`, never with
+  `--admin`, never retries or re-runs a CI job (`gh run rerun`), and never disables a check.
+- **The commands** all have a rule `/init` writes: `gh pr checks`, `gh pr view`, `gh pr comment`, `gh issue comment`,
+  `gh issue edit`, `gh api`; `git` in a slot as `git -C <absolute slot path> <subcommand> ...`, in the session's
+  checkout as `git <subcommand> ...` without `-C`. The job log comes from `gh api`, not from `gh run`; nothing sleeps.
 
 ## Hard rules
 
