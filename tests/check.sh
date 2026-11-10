@@ -103,6 +103,7 @@ add bash test-resume-stuck.sh
 add bash test-story-dedup.sh
 add bash test-interrupt-docs.sh
 add bash test-spec-template.sh
+add bash smoke-guard.sh
 add bash test-watch-checks.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
@@ -124,6 +125,7 @@ add ps test-release-resume.ps1
 add ps test-json-bom.ps1
 add ps test-render-quoting.ps1
 add ps test-status-controls.ps1
+add ps smoke-guard.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then

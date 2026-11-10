@@ -147,14 +147,57 @@ commands in exactly one form, because a rule matches only the text that is typed
 
 - **Why the personal file:** the paths are absolute and differ per machine, and letting an unattended run commit and
   push is the choice of whoever runs it.
-- **What it leaves out:** every other git command, every push that is not `-u origin <prefix>...` (so a push to the
-  base branch still prompts), a hard reset, other directories and the other scripts. Refusing the forbidden actions
-  outright (deny rules) is #110, not this line.
+- **What it leaves out:** every other git command, every push that is not `-u origin <prefix>...` (a force push and a
+  push to the base branch are refused, see The deny rules and the guard), a hard reset, other directories and the
+  other scripts. Refusing the forbidden actions outright is the deny rules and the guard (#110), not this line.
 - **Re-running:** the rules follow `worktrees.slots`, `worktrees.root`, the branch prefixes and the plugin's folder,
   which holds its version. Run `/init` again after an upgrade or after any of those changes; it adds the missing
   rules and keeps the old ones. A second run with nothing changed reports the line as exists.
 - **Taking it back:** delete the entries from `.claude/settings.local.json`.
 - **Headless runs:** how to start a run without a terminal is described in "Running unattended" (#160), not here.
+
+### The deny rules and the guard
+
+The workflow's hard rules (never set Ready or Approved, never merge any other way, never push to the base branch) are
+also enforced by the harness, in two parts.
+
+**The deny rules.** `/init`'s **Deny rules** line adds 18 rules to `permissions.deny` of the shared
+`.claude/settings.json` (`<B>` is `git.baseBranch`):
+
+- a merge through the admin bypass: `Bash(gh pr merge *--admin*)`;
+- the deletes: `Bash(gh issue delete *)`, `Bash(gh project delete *)`, `Bash(gh repo delete *)`;
+- an API `DELETE`: `Bash(gh api *-X DELETE*)`, `Bash(gh api *-XDELETE*)`, `Bash(gh api *--method DELETE*)`,
+  `Bash(gh api *--method=DELETE*)`;
+- a force push: `Bash(git push --force*)`, `Bash(git push * --force*)`, `Bash(git push -f*)`, `Bash(git push * -f*)`,
+  `Bash(git push * +*)`;
+- a push to the base branch: `Bash(git push * <B>)`, `Bash(git push * <B> *)`, `Bash(git push *:<B>)`,
+  `Bash(git push *:<B> *)`, `Bash(git push *:refs/heads/<B>*)`.
+
+They go to `settings.json` because they only take permissions away, hold no machine path, and every collaborator runs
+the `gh` allow rules of that file. Deny rules hold in every permission mode, `bypassPermissions` included. They match
+the usual spelling of a command only (`git push ...`), not every spelling: the slot form `git -C <path> push` has no
+rule, because a `*` there would also match the skills' stash and commit lines; the guard judges that form. The base
+branch's ruleset (no force push, required checks) stays the backstop. They follow `git.baseBranch`: run `/init`
+again after it changes.
+
+**The guard.** The plugin ships a `PreToolUse` hook, `scripts/guard.sh` (twin `scripts/guard.ps1`), that runs before
+every Bash and PowerShell tool call and refuses, with a one-line reason:
+
+- a board status edit to Ready or Approved (`gh project item-edit` with that option id, or the GraphQL mutation);
+  it reads the option ids with `gh project field-list` only when a command edits a status, and refuses the edit when
+  it cannot read them;
+- a merge without `--auto` or with `--admin`, and a merge through `gh api`;
+- a force push and a push to the base branch in any `git` form, the slot form included.
+
+It is off in a project without `.claude/nightmill.json`, so a plugin enabled at user scope does not judge other
+projects. `git.mergeFlags` must contain `--auto`: this narrows that key, and a project whose flags lack it has its
+merge step refused (`/init`'s report says so). A merge without `--auto` that the maintainer asks of the agent is
+refused too, so the release pull request of `docs/decisions/0002`, which is merged without auto-merge, is merged by the
+maintainer (the GitHub page or the maintainer's own terminal), not by the agent. The hook runs `bash`; on Windows it
+needs Git Bash. A PowerShell-only machine has the deny rules only; `scripts/guard.ps1` can be wired by hand in the
+user's hooks. A guard that cannot start lets the call through, as Claude Code treats any exit but 2.
+
+**Taking it back:** delete the rules from `permissions.deny`; the hook goes with the plugin.
 
 ### The template board
 
