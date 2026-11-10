@@ -6,9 +6,13 @@
 #     only for a command that edits a status, and a status edit is refused when they cannot be read
 #   - every merge that is not gh pr merge ... --auto, gh pr merge with --admin, and a merge through gh api
 #   - a force push and a push to git.baseBranch in every git form, git -C <slot path> push included
+#   - (iteration 50, #253) a remote branch delete (git push --delete, -d, --prune, --mirror or an empty source :<ref>),
+#     a forced local branch delete (git branch -D, or --delete with --force), and a GraphQL mutation (gh api graphql)
+#     with a top-level field outside the six the skills need, or a query sent from a file (--input, query=@<file>)
 # Everything else: exit 0 and no output. Off (exit 0) where the project has no .claude/nightmill.json, and for input
 # that is not valid JSON, another tool or an empty command. The rules are in
-# docs/specs/iteration-47-enforce-hard-rules.md (decision 5). Windows PowerShell 5.1 and PowerShell 7. ASCII only.
+# docs/specs/iteration-47-enforce-hard-rules.md (decision 5) and docs/specs/iteration-50-refuse-other-deletes.md
+# (decisions 3 to 5). Windows PowerShell 5.1 and PowerShell 7. ASCII only.
 #   CLAUDE_PROJECT_DIR   the project root (set by Claude Code); the current directory when unset
 $ErrorActionPreference = "Stop"
 
@@ -53,8 +57,8 @@ function Stop-Refused([string]$text) {
   exit 2
 }
 
-# The verdicts, in order: objects with Kind R (Val: the refusal), I (Val: the option id of an item-edit) or Q (Val:
-# the text of a GraphQL status edit).
+# The verdicts, in order: objects with Kind R (Val: the refusal), I (Val: the option id of an item-edit), Q (Val:
+# the text of a GraphQL status edit) or M (Val: a GraphQL mutation field not on the allow list).
 $script:verdicts = New-Object System.Collections.ArrayList
 $script:queue = New-Object System.Collections.ArrayList
 
@@ -75,6 +79,43 @@ function Test-EndsWith([string]$w, [string]$suf) { return $w.EndsWith($suf, [Str
 
 function Add-Verdict([string]$kind, [string]$val) {
   [void]$script:verdicts.Add([pscustomobject]@{ Kind = $kind; Val = $val })
+}
+
+# The GraphQL mutations the skills send (iteration 50, decision 5); every other one is refused
+$script:allow = @("addSubIssue", "createProjectV2View", "enablePullRequestAutoMerge", "updateProjectV2Field",
+  "updateProjectV2ItemFieldValue", "updateProjectV2View")
+
+# Get-GqlBad <document>: the first top-level field of a mutation in the GraphQL document that is not on the allow
+# list, or "". Strings and comments are skipped, names inside parentheses (arguments, variables) and nested
+# selections are not looked at; a name at brace depth 0 is an operation keyword (or a name), one at depth 1 a
+# top-level field.
+function Get-GqlBad([string]$s) {
+  $n = $s.Length; $p = 0; $b = 0; $inmut = $false
+  for ($i = 0; $i -lt $n; $i++) {
+    $c = $s[$i]
+    if ($c -eq [char]'"') {
+      for ($i++; $i -lt $n; $i++) {
+        if ($s[$i] -eq [char]'\') { $i++; continue }
+        if ($s[$i] -eq [char]'"') { break }
+      }
+      continue
+    }
+    if ($c -eq [char]'#') { while ($i -lt $n -and $s[$i] -ne [char]"`n") { $i++ }; continue }
+    if ($c -eq [char]'(') { $p++; continue }
+    if ($c -eq [char]')') { if ($p -gt 0) { $p-- }; continue }
+    if ($p -gt 0) { continue }
+    if ($c -eq [char]'{') { $b++; continue }
+    if ($c -eq [char]'}') { if ($b -gt 0) { $b-- }; continue }
+    if (-not ([string]$c -cmatch '^[_A-Za-z]$')) { continue }
+    $j = $i
+    while ($j + 1 -lt $n -and ([string]$s[$j + 1] -cmatch '^[_0-9A-Za-z]$')) { $j++ }
+    $nm = $s.Substring($i, $j - $i + 1); $i = $j
+    if ($b -eq 0) {
+      if ($nm -ceq "mutation") { $inmut = $true }
+      elseif ($nm -ceq "query" -or $nm -ceq "subscription" -or $nm -ceq "fragment") { $inmut = $false }
+    } elseif ($b -eq 1 -and $inmut -and -not ($script:allow -ccontains $nm)) { return $nm }
+  }
+  return ""
 }
 
 function Invoke-JudgeGh([string[]]$w, [int]$k, [string]$text) {
@@ -100,6 +141,20 @@ function Invoke-JudgeGh([string[]]$w, [int]$k, [string]$text) {
   }
   if ($api -and $rest) { Add-Verdict "R" "api"; return }
   if ($api -and $gql -and $text.Contains("mergePullRequest")) { Add-Verdict "R" "api"; return }
+  if ($api -and $gql) {
+    for ($m = $k + 1; $m -lt $w.Count; $m++) {
+      $x = $w[$m]
+      if ($x -ceq "--input" -or $x.StartsWith("--input=", [StringComparison]::Ordinal)) { Add-Verdict "R" "unread"; return }
+      $doc = $null
+      foreach ($pre in @("query=", "-fquery=", "-Fquery=", "--raw-field=query=", "--field=query=")) {
+        if ($x.StartsWith($pre, [StringComparison]::Ordinal)) { $doc = $x.Substring($pre.Length); break }
+      }
+      if ($null -eq $doc) { continue }
+      if ($doc.StartsWith("@", [StringComparison]::Ordinal)) { Add-Verdict "R" "unread"; return }
+      $bad = Get-GqlBad $doc
+      if ($bad -ne "") { Add-Verdict "M" $bad; return }
+    }
+  }
   if ($edit) { Add-Verdict "I" $opt; return }
   if ($api -and $gql -and $text.Contains("updateProjectV2ItemFieldValue")) { Add-Verdict "Q" $text }
 }
@@ -112,12 +167,32 @@ function Invoke-JudgeGit([string[]]$w, [int]$k) {
     if ($x.StartsWith("-")) { continue }
     $sc = $m; break
   }
-  if ($sc -lt 0 -or $w[$sc] -cne "push") { return }
+  if ($sc -lt 0) { return }
+  if ($w[$sc] -ceq "branch") {
+    $del = $false; $frc = $false
+    for ($m = $sc + 1; $m -lt $w.Count; $m++) {
+      $x = $w[$m]
+      if ($x -cmatch '^-[A-Za-z]*D[A-Za-z]*$') { Add-Verdict "R" "fbd"; return }
+      if ($x -ceq "--delete" -or $x -cmatch '^-[A-Za-z]*d[A-Za-z]*$') { $del = $true }
+      if ($x -ceq "--force" -or $x -cmatch '^-[A-Za-z]*f[A-Za-z]*$') { $frc = $true }
+    }
+    if ($del -and $frc) { Add-Verdict "R" "fbd" }
+    return
+  }
+  if ($w[$sc] -cne "push") { return }
   for ($m = $sc + 1; $m -lt $w.Count; $m++) {
     $x = $w[$m]
     if ($x.StartsWith("--force", [StringComparison]::Ordinal) -or $x -cmatch '^-[A-Za-z]*f[A-Za-z]*$' -or $x.StartsWith("+")) {
       Add-Verdict "R" "force"; return
     }
+  }
+  $skip = $false
+  for ($m = $sc + 1; $m -lt $w.Count; $m++) {
+    $x = $w[$m]
+    if ($skip) { $skip = $false; continue }
+    if ($x -ceq "-o" -or $x -ceq "--push-option" -or $x -ceq "--repo" -or $x -ceq "--receive-pack" -or $x -ceq "--exec") { $skip = $true; continue }
+    if ($x -ceq "--delete" -or $x -ceq "--prune" -or $x -ceq "--mirror" -or $x -cmatch '^-[A-Za-z]*d[A-Za-z]*$') { Add-Verdict "R" "delete"; return }
+    if ($x.StartsWith(":", [StringComparison]::Ordinal) -and $x.Length -gt 1) { Add-Verdict "R" "delete"; return }
   }
   $skip = $false
   for ($m = $sc + 1; $m -lt $w.Count; $m++) {
@@ -234,7 +309,12 @@ foreach ($v in $script:verdicts) {
       "api" { Stop-Refused "nightmill guard: refused: a merge through gh api. Merge only with gh pr merge <pr> <git.mergeFlags>." }
       "force" { Stop-Refused "nightmill guard: refused: a force push. Push only with git push -u origin <branch>, never forced." }
       "base" { Stop-Refused ("nightmill guard: refused: a push to " + $base + ". Never push to the base branch.") }
+      "delete" { Stop-Refused "nightmill guard: refused: deleting a remote branch. Push only with git push -u origin <branch>; never --delete, --prune, --mirror or an empty source." }
+      "fbd" { Stop-Refused "nightmill guard: refused: a forced branch delete. Delete only a merged branch, with git branch -d <branch>." }
+      "unread" { Stop-Refused "nightmill guard: refused: a GraphQL query the guard cannot read (--input or query=@<file>). Send it inline, as gh api graphql -f query='...'." }
     }
+  } elseif ($v.Kind -eq "M") {
+    Stop-Refused ("nightmill guard: refused: the GraphQL mutation " + $v.Val + ", which no skill sends.")
   } elseif ($v.Kind -eq "I") {
     if (-not (Invoke-Lookup)) { Stop-Lookup }
     if ($v.Val -ne "" -and $v.Val -ceq $script:rid) { Stop-Status $ready }

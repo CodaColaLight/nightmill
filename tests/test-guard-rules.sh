@@ -42,7 +42,13 @@ for s in scripts/guard.sh scripts/guard.ps1; do
     'nightmill guard: refused: a push to ' \
     'nightmill guard: refused: setting ' \
     'nightmill guard: refused: a status edit, because the ' \
-    'field-list'
+    'field-list' \
+    'nightmill guard: refused: deleting a remote branch.' \
+    'nightmill guard: refused: a forced branch delete.' \
+    'nightmill guard: refused: the GraphQL mutation ' \
+    'nightmill guard: refused: a GraphQL query the guard cannot read' \
+    'addSubIssue' 'createProjectV2View' 'enablePullRequestAutoMerge' \
+    'updateProjectV2Field' 'updateProjectV2ItemFieldValue' 'updateProjectV2View'
 done
 
 echo "== init: the Deny rules bullet"
@@ -65,6 +71,11 @@ RULES=(
   'Bash(git push *:<B>)'
   'Bash(git push *:<B> *)'
   'Bash(git push *:refs/heads/<B>*)'
+  'Bash(gh project item-delete *)'
+  'Bash(gh project field-delete *)'
+  'Bash(gh label delete *)'
+  'Bash(gh release delete *)'
+  'Bash(gh release delete-asset *)'
 )
 bullet=""
 if [ -f "$I" ]; then
@@ -80,8 +91,11 @@ else
   for r in "${RULES[@]}"; do
     case "$bullet" in *"$r"*) ;; *) bad "$I: the Deny rules bullet lacks the rule $r" ;; esac
   done
+  case "$bullet" in *'a board item or field, a label or a release'*) ;; *) bad "$I: the Deny rules bullet lacks: a board item or field, a label or a release" ;; esac
   case "$bullet" in *'Bash(git -C'*) bad "$I: the Deny rules bullet holds a rule with git -C" ;; esac
 fi
+need "$I" "gh api graphql -f query='mutation { ... }'"
+need skills/spec/SKILL.md 'git branch -d <branch>'
 for h in '## 4. Confirm once' '## 5. Apply'; do
   sec=$(awk -v h="$h" 'index($0, h) == 1 {on=1; next} on && /^## / {exit} on {print}' "$I" 2>/dev/null | tr '\n' ' ')
   case "$sec" in *[Dd]eny\ rules*) ;; *) bad "$I: step '$h' does not name the deny rules" ;; esac
@@ -91,7 +105,8 @@ echo "== the rules have a fixed prefix"
 for r in "${RULES[@]}"; do
   body=${r#Bash(}
   ok=0
-  for p in 'gh pr merge ' 'gh issue delete ' 'gh project delete ' 'gh repo delete ' 'gh api ' 'git push '; do
+  for p in 'gh pr merge ' 'gh issue delete ' 'gh project delete ' 'gh repo delete ' 'gh api ' 'git push ' \
+    'gh project item-delete ' 'gh project field-delete ' 'gh label delete ' 'gh release delete ' 'gh release delete-asset '; do
     case "$body" in "$p"*) ok=1 ;; esac
   done
   [ "$ok" = 1 ] || bad "tests/test-guard-rules.sh: the deny rule $r has no fixed prefix"
@@ -113,7 +128,7 @@ split_cmds() {
     print cur
   }'
 }
-FREE='x push main -f +x --force :main :refs/heads/main --admin -X DELETE --method DELETE x'
+FREE='x push main -f +x --force :main :refs/heads/main --admin -X DELETE --method DELETE --delete -d -D --prune --mirror :x x'
 # fill <branch>: the placeholders of one command line on stdin
 fill() {
   sed -E \
@@ -137,7 +152,7 @@ live=()
 if [ -n "$bullet" ]; then
   while IFS= read -r r; do live+=("${r//<B>/main}"); done < <(printf '%s\n' "$bullet" | grep -o 'Bash([^)]*)')
 fi
-[ "${#live[@]}" = 18 ] || bad "$I: the Deny rules bullet holds ${#live[@]} Bash(...) rules, not 18"
+[ "${#live[@]}" = 23 ] || bad "$I: the Deny rules bullet holds ${#live[@]} Bash(...) rules, not 23"
 unbody() { local x=${1#Bash(}; printf '%s' "${x%)}"; }
 # the matcher's own check
 matches 'git push --force origin x' "$(unbody 'Bash(git push --force*)')" || bad "tests/test-guard-rules.sh: the deny-rule matcher is wrong"
@@ -162,6 +177,63 @@ if [ "${#live[@]}" -gt 0 ]; then
   done
 fi
 
+echo "== no guard refusal matches a command the skills write"
+gtmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-guard-rules.XXXXXX")
+trap 'rm -rf "$gtmp"' EXIT
+mkdir -p "$gtmp/bin" "$gtmp/proj/.claude"
+cat > "$gtmp/proj/.claude/nightmill.json" <<'JSON'
+{ "github": { "owner": "o", "projectNumber": 7 } }
+JSON
+cat > "$gtmp/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = project ] && [ "${2:-}" = field-list ]; then
+  printf 'Ready\tRID1\n'
+  printf 'Approved\tAID2\n'
+fi
+exit 0
+STUB
+chmod +x "$gtmp/bin/gh"
+# gjesc <text>: the text as a JSON string body
+gjesc() {
+  local s=$1
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+# grun <command>: runs the guard on a Bash event; sets gcode and gerr
+grun() {
+  local ev
+  ev='{"tool_name":"Bash","tool_input":{"command":"'$(gjesc "$1")'"},"cwd":"'$gtmp'"}'
+  gerr=$(CLAUDE_PROJECT_DIR="$gtmp/proj" PATH="$gtmp/bin:$PATH" bash scripts/guard.sh <<< "$ev" 2>&1 >/dev/null)
+  gcode=$?
+}
+grun 'git branch -D x'
+[ "$gcode" = 2 ] || bad "tests/test-guard-rules.sh: the guard harness is wrong"
+grun 'git branch -d x'
+[ "$gcode" = 0 ] || bad "tests/test-guard-rules.sh: the guard harness is wrong"
+fences=$(cat skills/*/SKILL.md | grep -c '```graphql' || true)
+[ "${fences:-0}" -gt 0 ] || bad "skills/*/SKILL.md: no graphql fence found"
+while IFS=$'\t' read -r file span; do
+  [ -n "$span" ] || continue
+  [ "$span" != 'gh pr merge' ] || continue
+  [ "$span" != 'git branch -D' ] || continue
+  grun "$(printf '%s' "$span" | fill feat/47-x)"
+  [ "$gcode" = 0 ] || bad "$file: $span is refused by the guard: $gerr"
+done <<< "$spans"
+for f in skills/*/SKILL.md; do
+  docs=$(awk '
+    /^ *```graphql/ { on = 1; next }
+    on && /^ *```/ { if (d != "") print d; d = ""; on = 0; next }
+    on { if ($0 ~ /^ *mutation/) { if (d != "") print d; d = $0 } else if (d != "") d = d "\001" $0 }
+  ' "$f")
+  [ -n "$docs" ] || continue
+  while IFS= read -r doc; do
+    [ -n "$doc" ] || continue
+    doc=$(printf '%s' "$doc" | fill feat/47-x | tr '\001' '\n')
+    grun "gh api graphql -f query='$doc'"
+    [ "$gcode" = 0 ] || bad "$f: $doc is refused by the guard: $gerr"
+  done <<< "$docs"
+done
+
 echo "== the workflow skill"
 need "$W" 'A refused command is final' 'deny rules refuse a merge with `--admin`'
 for f in skills/*/SKILL.md; do
@@ -170,6 +242,33 @@ done
 
 echo "== the README"
 need README.md '### The deny rules and the guard' 'permissions.deny' 'scripts/guard.sh' 'Git Bash' '0002'
+for r in "${RULES[@]}"; do
+  case "$r" in *'<B>'*) continue ;; esac
+  need README.md "$r"
+done
+need README.md '23 rules'
+case "$(flat README.md)" in *'18 rules'*) bad "README.md still says 18 rules" ;; esac
+case "$(flat README.md)" in *'`gh project field-delete` are not refused'*) bad "README.md still says field-delete is not refused" ;; esac
+sec=$(awk '/^## Security model/ {on=1; next} on && /^## / {exit} on {print}' README.md)
+row253=$(printf '%s\n' "$sec" | grep -F 'issues/253)' | head -n 1)
+if [ -z "$row253" ]; then
+  bad "README.md: no Security model row holds issues/253)"
+else
+  state=$(printf '%s' "$row253" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+  case "$state" in 'enforced by '*) ;; *) bad "README.md: the #253 row's State does not start with 'enforced by ': $state" ;; esac
+  case "$state" in *'deny rules'*) ;; *) bad "README.md: the #253 row's State lacks 'deny rules': $state" ;; esac
+  case "$state" in *guard*) ;; *) bad "README.md: the #253 row's State lacks 'guard': $state" ;; esac
+fi
+fileRow=$(printf '%s\n' "$sec" | grep -E '^\| Deleting a local file' | head -n 1)
+if [ -z "$fileRow" ]; then
+  bad "README.md: no Security model row starts with 'Deleting a local file'"
+else
+  state=$(printf '%s' "$fileRow" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+  [ "$state" = 'not enforced yet' ] || bad "README.md: the local file delete row's State is not 'not enforced yet': $state"
+fi
+if printf '%s\n' "$sec" | grep -F 'issues/253)' | grep -F 'not enforced yet' >/dev/null; then
+  bad "README.md: a row holds both issues/253) and not enforced yet"
+fi
 case "$(flat README.md)" in *'base branch still prompts'*) bad "README.md still says: base branch still prompts" ;; esac
 
 [ "$fail" = 0 ] && echo "GUARD RULES OK"
