@@ -208,6 +208,14 @@
           "description": "Lines printed after a slot is taken. {slot} and {port.<name>} are replaced."
         }
       }
+    },
+    "unattended": {
+      "type": "object",
+      "description": "The unattended driver (scripts/drive.*, iteration 52). Read by scripts/drive.* only.",
+      "properties": {
+        "maxMinutes": { "type": "integer", "minimum": 1, "default": 240, "description": "No step of a driver run starts once this many minutes have passed since the driver started (1 to 1440); the running step is not stopped. Read by scripts/drive.* only; another value stops the driver before anything else." },
+        "summaryIssue": { "type": "integer", "minimum": 1, "description": "The issue the driver's summary is posted on as a comment (a whole number of at least 1). No default: when absent the summary is printed only. Read by scripts/drive.* only." }
+      }
     }
   }
 }

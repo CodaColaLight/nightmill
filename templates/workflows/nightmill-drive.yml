@@ -1,0 +1,57 @@
+# nightmill-drive.yml - a workflow template for a project that uses nightmill (iteration 52, #164;
+# docs/specs/iteration-52-unattended-driver.md, decision 12). It is a template, not a workflow of the nightmill
+# repository itself: copy it to .github/workflows/nightmill-drive.yml in your project, through a pull request
+# (a change under .github/ is never auto-merged).
+#
+# What it does: runs scripts/drive.sh (or drive.ps1 on Windows) of the installed nightmill plugin in the main
+# checkout, on a schedule and on demand (Actions > nightmill driver > Run workflow, or gh workflow run nightmill-drive.yml).
+# The driver runs /nightmill:fix all and /nightmill:next <N> headless until nothing is Ready or Approved, its time
+# limit (unattended.maxMinutes) is reached or its kill switch (.git/nightmill-stop) is set, and posts one summary.
+#
+# To install it (README, "The workflow template"):
+#   1. Do everything of "Before the first run" in the README on the machine of the runner (/init, the trusted
+#      workspace, the gh login with the scopes repo, read:org and project, plus workflow when a change touches
+#      .github/workflows/), as the user who will run the runner.
+#   2. Install a self-hosted runner for the repository as that user and give it the label nightmill.
+#   3. Set the repository variable NIGHTMILL_CHECKOUT to the path of the main checkout on that machine.
+#   4. Edit the cron line below to the time you want (UTC).
+# The workflow's own token gets no permission (permissions: {}) and is not used: every gh and git call uses the
+# runner user's gh login. On a public repository a self-hosted runner can be given work by a pull request from a
+# fork: require approval for outside contributors' workflow runs, or use a local scheduler instead (README).
+name: nightmill driver
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: nightmill-drive
+  cancel-in-progress: false
+jobs:
+  drive:
+    runs-on: [self-hosted, nightmill]
+    timeout-minutes: 480
+    steps:
+      - name: Run the driver (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          NIGHTMILL_CHECKOUT: ${{ vars.NIGHTMILL_CHECKOUT }}
+        run: |
+          [ -n "$NIGHTMILL_CHECKOUT" ] || { echo "Set the repository variable NIGHTMILL_CHECKOUT to the path of the main checkout on this runner." >&2; exit 2; }
+          root=$(claude plugin list --json | awk '/"id": "nightmill@nightmill"/ { f = 1 } f && /"installPath":/ { sub(/.*"installPath": *"/, ""); sub(/".*/, ""); print; exit }')
+          [ -n "$root" ] || { echo "nightmill is not installed for the runner's user (claude plugin list)." >&2; exit 2; }
+          cd "$NIGHTMILL_CHECKOUT"
+          bash "$root/scripts/drive.sh"
+      - name: Run the driver (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          NIGHTMILL_CHECKOUT: ${{ vars.NIGHTMILL_CHECKOUT }}
+        run: |
+          if (-not $env:NIGHTMILL_CHECKOUT) { Write-Error "Set the repository variable NIGHTMILL_CHECKOUT to the path of the main checkout on this runner."; exit 2 }
+          $p = claude plugin list --json | ConvertFrom-Json | Where-Object { $_.id -eq 'nightmill@nightmill' } | Select-Object -First 1
+          if (-not $p) { Write-Error "nightmill is not installed for the runner's user (claude plugin list)."; exit 2 }
+          Set-Location $env:NIGHTMILL_CHECKOUT
+          powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $p.installPath 'scripts/drive.ps1')
+          exit $LASTEXITCODE

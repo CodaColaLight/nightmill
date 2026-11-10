@@ -84,5 +84,6 @@
       "PORT={port.server} npm run server",
       "VITE_PORT={port.client} npm run dev"
     ]
-  }
+  },
+  "unattended": { "maxMinutes": 240 }
 }

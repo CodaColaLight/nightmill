@@ -53,9 +53,11 @@ not a conversation.
 | `scripts/dashboard.ps1`, `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
 | `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
 | `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
+| `scripts/drive.ps1`, `scripts/drive.sh` | Runs `/nightmill:fix all` and `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the time limit is reached or the kill switch is set, then posts one summary. Sets no status. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
+| `templates/workflows/nightmill-drive.yml` | A workflow for the project to copy: runs the driver on a schedule and on demand on a self-hosted runner. |
 | `schema/nightmill.schema.json` | Every configuration key, described. |
 
 Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugin or the project defines them.
@@ -358,8 +360,9 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 | The check, warm-ups and tests run in a sandbox without the token and with a network allowlist | not enforced yet | [#169](https://github.com/CodaColaLight/nightmill/issues/169) |
 | The plugin's own CI runs with least privilege | enforced by `.github/workflows/ci.yml`, pinned by `tests/lint.sh` | [#154](https://github.com/CodaColaLight/nightmill/issues/154) |
 
-How to run without a person is in [Running unattended](#running-unattended) ([#160](https://github.com/CodaColaLight/nightmill/issues/160)), no
-trigger that starts runs ships yet ([#164](https://github.com/CodaColaLight/nightmill/issues/164)), and an upgrade that
+How to run without a person is in [Running unattended](#running-unattended) ([#160](https://github.com/CodaColaLight/nightmill/issues/160)), the
+driver and the workflow template that start runs are in [Running on a schedule](#running-on-a-schedule)
+([#164](https://github.com/CodaColaLight/nightmill/issues/164)), and an upgrade that
 changes the script rules of the run permissions needs `/init` again until
 [#213](https://github.com/CodaColaLight/nightmill/issues/213).
 
@@ -391,6 +394,7 @@ The schema documents every key; the short version:
 | `git` | Base branch, branch prefixes, merge flags (with `--auto`, never `--admin`) |
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5); and for `/fix all` the most bugs one run starts (`fixAllMaxBugs`, default 0: no limit) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser, and `panelRefreshSeconds` (default 15): how often the slots pane beside the chat reads the slots again |
+| `unattended` | For `scripts/drive.*`: the most minutes one driver run starts steps for (`maxMinutes`, default 240) and the issue its summary is posted on (`summaryIssue`, no default: printed only) |
 
 `templates/nightmill.example.json` is a complete example.
 
@@ -727,9 +731,9 @@ agents').
 ## Running unattended
 
 A run started with `claude -p` takes one item (or, with `/fix all`, every Ready bug) to its pull request with nobody
-at the terminal. Nothing in nightmill starts runs on a schedule yet
-([#164](https://github.com/CodaColaLight/nightmill/issues/164)), and no limit or kill switch bounds a run yet
-([#165](https://github.com/CodaColaLight/nightmill/issues/165)). This section was written for Claude Code 2.1.321;
+at the terminal. To start runs on a schedule, see [Running on a schedule](#running-on-a-schedule)
+([#164](https://github.com/CodaColaLight/nightmill/issues/164)); a driver run is bounded by its time limit and kill switch, but no limit
+bounds a single run yet ([#165](https://github.com/CodaColaLight/nightmill/issues/165)). This section was written for Claude Code 2.1.321;
 after a Claude Code upgrade, a run that does not find `/nightmill:next` is the first thing to check. A headless run
 is not safe or bounded by itself: read the [Security model](#security-model) first.
 
@@ -846,8 +850,9 @@ message and `/nightmill:status`.
 ### When a run is stopped
 
 Stop a run with Ctrl+C in its terminal, or with SIGTERM (`kill <pid>`), which ends Claude Code with exit code 143,
-terminates the commands it is running and starts nothing new. There is no kill switch yet
-([#165](https://github.com/CodaColaLight/nightmill/issues/165)). What it leaves:
+terminates the commands it is running and starts nothing new. The driver's kill switch stops a driver between steps
+([Limits and the kill switch](#limits-and-the-kill-switch)); a pause flag for every run comes with
+[#165](https://github.com/CodaColaLight/nightmill/issues/165). What it leaves:
 
 - **During a take:** an interrupted take frees its slot again ("interrupted ...; slot <n> is free again"). A take
   killed without a chance to clean up (`kill -KILL`, a closed window) leaves a claim that `/nightmill:status` shows
@@ -868,6 +873,107 @@ terminates the commands it is running and starts nothing new. There is no kill s
   already freed stays free, and a bug whose pull request is open is at Review.
 - `--continue` or `--resume` reopens the stopped conversation, but they are not needed: work is continued through the
   board and the slots, as above.
+
+## Running on a schedule
+
+A driver runs the headless commands of [Running unattended](#running-unattended) one after another, with nobody at the
+keyboard, and posts one summary at the end. A workflow template starts it on a schedule and on demand. The driver
+sets no board status and adds none: the statuses a run leaves are the ones `/fix` and `/next` set themselves.
+
+### The driver
+
+Run it in the project's main checkout:
+
+```sh
+bash "<plugin>/scripts/drive.sh"
+powershell -NoProfile -ExecutionPolicy Bypass -File "<plugin>/scripts/drive.ps1"
+```
+
+`<plugin>` is `installPath` of the entry `nightmill@nightmill` in `claude plugin list --json`. The driver needs
+everything of [Before the first run](#before-the-first-run), and slots (`worktrees`): without them `/next` leaves the
+main checkout on its branch and the driver ends before the next step. What it does, round after round:
+
+1. It checks the kill switch, the time limit and that the main checkout is on the base branch with a clean tree.
+2. It reads the board. With a Ready bug it checks for a free slot and room on the machine and runs
+   `claude -p "/nightmill:fix all" --permission-mode manual --output-format json`.
+3. Otherwise it takes the Approved story with the highest priority and runs `/nightmill:next <N>` the same way. When
+   two or more Approved stories share the highest priority it does not choose: the run ends and the maintainer sets
+   one higher.
+4. Each item is tried at most once per run. The run ends when no Ready bug and no Approved story is left (or every one
+   left was tried), when the time limit is reached, the kill switch is set, a step's `claude` fails, or no slot or no
+   room is there.
+
+Ready stories are not run: they wait for `/spec`, and the summary lists them. A run that cannot start (another driver,
+the kill switch, `gh` not signed in, no `claude`, a failed fetch, a dirty main checkout, no slot, no room) prints
+`drive: cannot start: <reason>`. Exit codes: 0 the run ended for a reason of the loop (also with nothing to do), 1 it
+could not start, a step's `claude` exited non-zero or the summary could not be posted, 2 a usage error or an unusable
+configuration, 130 or 143 after Ctrl+C or SIGTERM. The run's files (each step's JSON output and stderr, the summary)
+stay in a temporary folder, named on the last line (`drive: run files in <dir>`).
+
+To start it from a local scheduler instead of the workflow, one cron line:
+
+```sh
+17 2 * * * cd <checkout> && bash <plugin>/scripts/drive.sh >> "$HOME/nightmill-drive.log" 2>&1
+```
+
+`<plugin>` changes with each upgrade of nightmill (it ends in the version folder), so update the line after one.
+
+### Limits and the kill switch
+
+- **The time limit:** `unattended.maxMinutes` (default 240). No step starts once that many minutes have passed since the
+  driver started; it is checked between steps, so a run can last that long plus one step.
+- **The kill switch:** the file `.git/nightmill-stop` in the main checkout. Set it with `touch .git/nightmill-stop`
+  (PowerShell: `New-Item .git/nightmill-stop`) and clear it by deleting the file. Only its existence counts. Set
+  before the start, the run does not start; set later, the run ends after the step that is running. It sits in the git
+  directory, so it never makes the tree dirty.
+- **One driver per repository:** a second driver started beside a running one says
+  `another driver runs for this repository` and ends; a lock left by a driver that has ended is removed.
+- **Stopping a running step:** only by stopping the driver (Ctrl+C, `kill <pid>`, cancelling the workflow run). The
+  driver ends the step's processes, starts no other step and still posts the summary. What a stopped step leaves is in
+  [When a run is stopped](#when-a-run-is-stopped).
+- `parallel.fixAllMaxBugs` is `/fix all`'s own limit of bugs per run.
+- Limits per issue, per role and per cost, and a pause flag for every run, are not there yet
+  ([#165](https://github.com/CodaColaLight/nightmill/issues/165)).
+
+### The summary
+
+At the end of every run the driver prints one summary and, when `unattended.summaryIssue` is set, posts it as a
+comment on that issue (no default: without it the summary is printed only). Use one open issue kept for the purpose.
+The summary holds the start, the end and why the run ended; a table of every item a step ran for with its status
+before and after, its outcome (merged, pull request open, blocked with the reason, not started) and its pull request;
+one count line; one line per step with its exit code, duration, cost and turns, and the total cost; the Ready stories
+the driver did not run; whether any process was left behind; and each step's final message, folded. The comment names
+no local path. The cost is `total_cost_usd` as Claude Code reports it in each step's JSON result; with a subscription
+login it is what the same use would cost through the API, not a bill.
+
+### The workflow template
+
+`templates/workflows/nightmill-drive.yml` runs the driver at 02:17 UTC every day and from the Run workflow button
+(`gh workflow run nightmill-drive.yml`). Copy it into the project:
+
+```sh
+cp "<plugin>/templates/workflows/nightmill-drive.yml" .github/workflows/
+```
+
+The change goes through a pull request and is not auto-merged (a `.github/` change). What it needs:
+
+- **The runner:** a `self-hosted` runner on the machine where `/init` ran, installed as the user who ran it, with the
+  label `nightmill`, and the repository variable `NIGHTMILL_CHECKOUT` set to the path of the main checkout there. A
+  GitHub-hosted runner has none of the trust, the untracked `.claude/settings.local.json`, the plugin or the login.
+- **The token scope:** the workflow's `GITHUB_TOKEN` gets no permission (`permissions: {}`) and is not used: pull
+  requests opened with it would start no checks, and it cannot write a board owned by a user. Every `gh` and
+  `git push` call uses the runner user's own `gh` login, which needs the scopes `repo`, `read:org` and `project`
+  (`gh auth refresh -s project`), plus `workflow` for a story or bug whose change touches `.github/workflows/`
+  (without it that push is refused).
+- **The permission settings:** those of [Before the first run](#before-the-first-run), unchanged, and
+  `--permission-mode manual`, which the driver passes.
+- **The schedule:** edit the `cron` line of your copy (UTC). GitHub may start a scheduled run late, and in a public
+  repository without activity for 60 days it turns the schedule off. A concurrency group keeps a scheduled run from
+  cancelling a running one.
+
+**Warning:** a self-hosted runner on a public repository can be given work by a pull request from a fork. A public
+repository either requires approval for every outside contributor's workflow runs, or uses a local scheduler (the
+cron line above) instead. See the [Security model](#security-model).
 
 ## Developing nightmill
 
@@ -912,6 +1018,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-stages.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-guard.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-drive.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```

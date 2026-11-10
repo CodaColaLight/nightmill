@@ -127,6 +127,7 @@ add ps test-json-bom.ps1
 add ps test-render-quoting.ps1
 add ps test-status-controls.ps1
 add ps smoke-guard.ps1
+add ps smoke-drive.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then
