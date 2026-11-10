@@ -125,6 +125,63 @@ B "graphql other ids" 'gh api graphql -f query='"'"'mutation { updateProjectV2It
 B "lookup fails" "$EDIT SID3" 2 "option ids could not be read"
 rm -f "$tmp/gh.fail"
 
+echo "== iteration 50: remote branch deletes"
+DEL="deleting a remote branch."
+B "push --delete" 'git push origin --delete feat/5-x' 2 "$DEL"
+B "push --delete slot form" 'git -C /w/slot-1 push --delete origin feat/5-x' 2 "$DEL"
+B "push -d" 'git push -d origin feat/5-x' 2 "$DEL"
+B "push -ud cluster" 'git push -ud origin feat/5-x' 2 "$DEL"
+B "push empty source" 'git push origin :feat/5-x' 2 "$DEL"
+B "push empty source full ref, slot form" 'git -C /w/slot-1 push origin :refs/heads/feat/5-x' 2 "$DEL"
+B "push empty source main gets the delete line" 'git push origin :main' 2 "$DEL"
+B "push --prune" 'git push --prune origin feat/5-x' 2 "$DEL"
+B "push --mirror" 'git push --mirror origin' 2 "$DEL"
+B "push branch with d in its name" 'git push -u origin feat/5-d' 0
+B "push branch to the same name" 'git push -u origin feat/5-x:feat/5-x' 0
+B "commit message names a delete" 'git -C /w/slot-1 commit -m "git push --delete origin x; git branch -D x"' 0
+B "stash push free text names a delete" 'git -C /w/slot-1 stash push --include-untracked -m "Unmet tests for #5: push --delete :x -D" -- t.sh' 0
+
+echo "== iteration 50: forced local branch deletes"
+FBD="a forced branch delete."
+B "branch -D" 'git branch -D feat/5-x' 2 "$FBD"
+B "branch -D slot form" 'git -C /w/slot-1 branch -D feat/5-x' 2 "$FBD"
+B "branch -df" 'git branch -df feat/5-x' 2 "$FBD"
+B "branch --delete --force" 'git branch --delete --force feat/5-x' 2 "$FBD"
+B "branch -d -f" 'git branch -d -f feat/5-x' 2 "$FBD"
+B "branch -d" 'git branch -d feat/5-x' 0
+B "branch -m" 'git branch -m feat/5-x feat/5-y' 0
+B "branch --no-track" 'git branch --no-track feat/5-x origin/feat/5-x' 0
+
+echo "== iteration 50: GraphQL mutations"
+MUT="the GraphQL mutation"
+# GQ <name> <document> <exit code> [stderr text]: the document sent as gh api graphql -f query='<doc>'
+GQ() { B "$1" "gh api graphql -f query='$2'" "$3" "${4:-}"; }
+DELISSUE='mutation { deleteIssue(input: {issueId: "x"}) { clientMutationId } }'
+GQ "delete issue" "$DELISSUE" 2 "$MUT deleteIssue"
+GQ "delete board item" 'mutation { deleteProjectV2Item(input: {projectId: "P", itemId: "I"}) { deletedItemId } }' 2 "$MUT deleteProjectV2Item"
+GQ "delete board workflow" 'mutation { deleteProjectV2Workflow(input: {workflowId: "W"}) { deletedWorkflowId } }' 2 "$MUT deleteProjectV2Workflow"
+GQ "clear field value" 'mutation { clearProjectV2ItemFieldValue(input: {projectId: "P", itemId: "I", fieldId: "F"}) { clientMutationId } }' 2 "$MUT clearProjectV2ItemFieldValue"
+GQ "named mutation update repository" 'mutation Named { updateRepository(input: {repositoryId: "R", hasIssuesEnabled: false}) { clientMutationId } }' 2 "$MUT updateRepository"
+GQ "allowed then refused field" 'mutation { addSubIssue(input: {issueId: "a", subIssueId: "b"}) { issue { number } } deleteIssue(input: {issueId: "x"}) { clientMutationId } }' 2 "$MUT deleteIssue"
+GQ "aliased delete" 'mutation { a: deleteIssue(input: {issueId: "x"}) { clientMutationId } }' 2 "$MUT"
+GQ "query then mutation" 'query { viewer { login } } mutation { deleteIssue(input: {issueId: "x"}) { clientMutationId } }' 2 "$MUT deleteIssue"
+B "query as one quoted word" "gh api graphql -f 'query=$DELISSUE'" 2 "$MUT deleteIssue"
+B "raw-field with equals" "gh api graphql --raw-field=query='$DELISSUE'" 2 "$MUT deleteIssue"
+check "powershell tool, delete issue" PowerShell "gh api graphql -f query='$DELISSUE'" 2 "$MUT deleteIssue"
+B "graphql --input" 'gh api graphql --input m.json' 2 "a GraphQL query the guard cannot read"
+B "graphql query from a file" 'gh api graphql -F query=@m.graphql' 2 "a GraphQL query the guard cannot read"
+B "graphql Approved still has the status line" 'gh api graphql -f query='"'"'mutation { updateProjectV2ItemFieldValue(input: {projectId: "P", itemId: "I", fieldId: "F", value: {singleSelectOptionId: "AID2"}}) { clientMutationId } }'"'" 2 "setting Approved on the board."
+
+echo "== iteration 50: the mutations the skills send pass"
+: > "$tmp/gh.log"
+GQ "init update field options" 'mutation { updateProjectV2Field(input: {fieldId: "F", singleSelectOptions: [{name: "Backlog", color: GRAY, description: "Filed, not reviewed"}, {name: "Ready", color: GREEN, description: "Acceptance criteria reviewed; an agent may start (maintainer only)"}]}) { projectV2Field { ... on ProjectV2SingleSelectField { id } } } }' 0
+GQ "init create view" 'mutation { createProjectV2View(input: {projectId: "P", name: "Board", layout: BOARD_LAYOUT, configuration: { visibleFieldIds: ["T", "P", "A"] }}) { projectV2View { id number layout verticalGroupByFields(first: 1) { nodes { ... on ProjectV2SingleSelectField { name } } } } } }' 0
+GQ "init update view" 'mutation { updateProjectV2View(input: { viewId: "V", filter: "-label:epic,bug" }) { projectV2View { id } } }' 0
+B "story add sub issue" "gh api graphql -f query='mutation(\$p:ID!,\$c:ID!){ addSubIssue(input:{issueId:\$p, subIssueId:\$c}){ issue { number } } }' -f p=I_1 -f c=I_1" 0
+B "next last edited query" "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { issue(number: 5) { lastEditedAt } } }'" 0
+GQ "mutation word inside a string" 'query { search(query: "mutation { deleteIssue }", type: ISSUE, first: 1) { issueCount } }' 0
+[ ! -s "$tmp/gh.log" ] || fail "the skills' own mutations: the guard called gh: $(cat "$tmp/gh.log")"
+
 echo "== everything else"
 : > "$tmp/gh.log"
 B "no status edit" 'gh pr view 5' 0

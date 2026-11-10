@@ -164,7 +164,7 @@ commands in exactly one form, because a rule matches only the text that is typed
 The workflow's hard rules (never set Ready or Approved, never merge any other way, never push to the base branch) are
 also enforced by the harness, in two parts.
 
-**The deny rules.** `/init`'s **Deny rules** line adds 18 rules to `permissions.deny` of the shared
+**The deny rules.** `/init`'s **Deny rules** line adds 23 rules to `permissions.deny` of the shared
 `.claude/settings.json` (`<B>` is `git.baseBranch`):
 
 - a merge through the admin bypass: `Bash(gh pr merge *--admin*)`;
@@ -174,14 +174,16 @@ also enforced by the harness, in two parts.
 - a force push: `Bash(git push --force*)`, `Bash(git push * --force*)`, `Bash(git push -f*)`, `Bash(git push * -f*)`,
   `Bash(git push * +*)`;
 - a push to the base branch: `Bash(git push * <B>)`, `Bash(git push * <B> *)`, `Bash(git push *:<B>)`,
-  `Bash(git push *:<B> *)`, `Bash(git push *:refs/heads/<B>*)`.
+  `Bash(git push *:<B> *)`, `Bash(git push *:refs/heads/<B>*)`;
+- the board, label and release deletes: `Bash(gh project item-delete *)`, `Bash(gh project field-delete *)`,
+  `Bash(gh label delete *)`, `Bash(gh release delete *)`, `Bash(gh release delete-asset *)`.
 
 They go to `settings.json` because they only take permissions away, hold no machine path, and every collaborator runs
 the `gh` allow rules of that file. Deny rules hold in every permission mode, `bypassPermissions` included. They match
 the usual spelling of a command only (`git push ...`), not every spelling: the slot form `git -C <path> push` has no
 rule, because a `*` there would also match the skills' stash and commit lines; the guard judges that form. The base
 branch's ruleset (no force push, required checks) stays the backstop. They follow `git.baseBranch`: run `/init`
-again after it changes.
+again after it changes. A project set up with an earlier version runs `/init` again to get the five `gh` delete rules.
 
 **The guard.** The plugin ships a `PreToolUse` hook, `scripts/guard.sh` (twin `scripts/guard.ps1`), that runs before
 every Bash and PowerShell tool call and refuses, with a one-line reason:
@@ -190,7 +192,12 @@ every Bash and PowerShell tool call and refuses, with a one-line reason:
   it reads the option ids with `gh project field-list` only when a command edits a status, and refuses the edit when
   it cannot read them;
 - a merge without `--auto` or with `--admin`, and a merge through `gh api`;
-- a force push and a push to the base branch in any `git` form, the slot form included.
+- a force push and a push to the base branch in any `git` form, the slot form included;
+- a remote branch delete (`git push --delete`, `-d`, `--prune`, `--mirror`, an empty source) and a forced branch delete
+  (`git branch -D`), in any `git` form;
+- a GraphQL mutation outside the six the skills need (`addSubIssue`, `createProjectV2View`,
+  `enablePullRequestAutoMerge`, `updateProjectV2Field`, `updateProjectV2ItemFieldValue`, `updateProjectV2View`), and
+  one sent from a file.
 
 It is off in a project without `.claude/nightmill.json`, so a plugin enabled at user scope does not judge other
 projects. `git.mergeFlags` must contain `--auto`: this narrows that key, and a project whose flags lack it has its
@@ -241,13 +248,12 @@ hold in that mode is not shown yet (see [What is enforced](#what-is-enforced)). 
 can do this without a prompt:
 
 - `Bash(gh project:*)`: any `gh project` command on the board, `item-edit` to any status among them. The guard refuses
-  a status edit to Ready or Approved and a deny rule refuses `gh project delete`; `gh project item-delete` and
-  `gh project field-delete` are not refused.
+  a status edit to Ready or Approved and a deny rule refuses `gh project delete`, `item-delete` and `field-delete`.
 - `Bash(gh issue:*)`: create, edit, comment on, close, reopen and transfer issues; `gh issue delete` is refused.
 - `Bash(gh pr:*)`: create, comment on, review, close and merge pull requests. A merge without `--auto` or with
   `--admin` is refused.
 - `Bash(gh api:*)`: any REST or GraphQL call the token's scopes and the login's role allow, apart from a REST
-  `DELETE`, a merge and the Ready or Approved status edit, which are refused. When the login is an admin of the
+  `DELETE`, a merge, the Ready or Approved status edit and a GraphQL mutation no skill sends, which are refused. When the login is an admin of the
   repository, that includes its settings and rulesets.
 - `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`: read only.
 - `Bash(<the check command>)`: run the project's check (`verification.check`).
@@ -337,7 +343,8 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 | A merge without `--auto`, with `--admin` or through `gh api` is refused | enforced by the guard hook, where it runs; `--admin` also by a deny rule | [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
 | Deleting an issue, a board or the repository, and a REST `DELETE`, are refused | enforced by `/init`'s deny rules, when the line was applied | [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
 | A force push and a push to the base branch are refused | enforced by the deny rules (`git push ...`) and the guard (every `git` form); the ruleset, where the project sets it | [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
-| Other deletes and mutations (other GraphQL mutations, `gh project item-delete`, `gh project field-delete`, `gh label delete`, `gh release delete`, `git push --delete`, `git branch -D`, file deletes) | not enforced yet | [#253](https://github.com/CodaColaLight/nightmill/issues/253) |
+| Deleting a board item or field, a label or a release, a remote branch delete, a forced branch delete, and a GraphQL mutation no skill sends, are refused | enforced by `/init`'s deny rules (the `gh` deletes, when the line was applied) and the guard hook (the branch deletes and the mutations, where it runs) | [#253](https://github.com/CodaColaLight/nightmill/issues/253) |
+| Deleting a local file without asking (the Edit and Write tools, a shell rm) | not enforced yet | none filed |
 | A command the guard cannot see: another spelling (`sh -c`, `eval`, an alias), another tool than Bash or PowerShell, a machine without bash, a guard that does not start | not enforced yet | [#254](https://github.com/CodaColaLight/nightmill/issues/254) |
 | `git.mergeFlags` contains `--auto` and never `--admin` | enforced by the schema and `scripts/validate-config.*`, and at run time by the guard hook, where it runs | [#111](https://github.com/CodaColaLight/nightmill/issues/111), [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
 | The skills, the slot script's warm-up and the pairing check use the config on the base branch, not the working tree | enforced by the skills' config injection, `scripts/slot.*` and `scripts/validate-config.*` `--base`; the working tree's file only without a remote branch or before the base has one | [#111](https://github.com/CodaColaLight/nightmill/issues/111) |

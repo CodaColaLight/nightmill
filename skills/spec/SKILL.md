@@ -168,8 +168,8 @@ rule. The spec file is the writer's.
      `partial`, and the line names what is wrong), say that the story stays at Spec, and do the clean-up.
 5. **Clean-up after a stop.** When the spec file exists and is the only change, commit it to the local branch
    with `-m "docs: iteration <N> spec (#<issue>), unfinished"` and do not push. Switch back to the branch you came
-   from (`git switch <branch>`). When nothing was committed, delete the branch you created (it is empty and you made it; this is not
-   the deletion of a file). The clean-up never deletes a branch the run did not create (a resumed run's found branch stays). Never set Ready; a story left at Spec goes back to Ready only by the maintainer.
+   from (`git switch <branch>`). When nothing was committed, delete the branch you created with `git branch -d <branch>` (it is empty and you made it; this is not
+   the deletion of a file); if git refuses, leave it and say so, never force it. The clean-up never deletes a branch the run did not create (a resumed run's found branch stays). Never set Ready; a story left at Spec goes back to Ready only by the maintainer.
 
 The prompt, with the placeholders filled in (the story and the epic verbatim):
 

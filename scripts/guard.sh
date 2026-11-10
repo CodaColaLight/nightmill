@@ -7,11 +7,15 @@
 #     only for a command that edits a status, and a status edit is refused when they cannot be read
 #   - every merge that is not gh pr merge ... --auto, gh pr merge with --admin, and a merge through gh api
 #   - a force push and a push to git.baseBranch in every git form, git -C <slot path> push included
+#   - (iteration 50, #253) a remote branch delete (git push --delete, -d, --prune, --mirror or an empty source :<ref>),
+#     a forced local branch delete (git branch -D, or --delete with --force), and a GraphQL mutation (gh api graphql)
+#     with a top-level field outside the six the skills need, or a query sent from a file (--input, query=@<file>)
 # Everything else: exit 0 and no output, so the normal permission flow decides. Off (exit 0) where the project has no
 # .claude/nightmill.json, and for input that is not valid JSON, another tool or an empty command.
 # The command is split into segments at && || ; | & and newlines outside quotes and each segment into words; a
 # command substitution $(...) or `...` is judged as a command of its own. No other shell parsing. The rules are in
-# docs/specs/iteration-47-enforce-hard-rules.md (decision 5); scripts/guard.ps1 is the same in PowerShell.
+# docs/specs/iteration-47-enforce-hard-rules.md (decision 5) and
+# docs/specs/iteration-50-refuse-other-deletes.md (decisions 3 to 5); scripts/guard.ps1 is the same in PowerShell.
 #   CLAUDE_PROJECT_DIR   the project root (set by Claude Code); the current directory when unset
 # Needs bash and awk, no jq (lib/json.sh reads the event and the config); gh only for a status edit.
 set -uo pipefail
@@ -44,7 +48,7 @@ base=$(json_get git.baseBranch main)
 refuse() { printf '%s\n' "$1" >&2; exit 2; }
 
 # The verdicts, one line per judged segment, in order: R<TAB><kind> (refused), I<TAB><option id> (an item-edit),
-# Q<TAB><segment text> (a GraphQL status edit). Tabs and newlines inside a word or text become spaces.
+# Q<TAB><segment text> (a GraphQL status edit), M<TAB><field> (a GraphQL mutation not on the allow list). Tabs and newlines inside a word or text become spaces.
 verdicts=$(G_CMD=$cmd G_PS=$([ "$tool" = PowerShell ] && echo 1 || echo 0) G_BASE=$base LC_ALL=C awk '
 function clean(x) { gsub(/[\t\n\r]/, " ", x); return x }
 function ends(w, suf) { return length(w) >= length(suf) && substr(w, length(w) - length(suf) + 1) == suf }
@@ -93,7 +97,36 @@ function judge(   k, first) {
   if (first == "gh" || first ~ /\/gh$/ || first == "gh.exe") judge_gh(k)
   else if (first == "git" || first ~ /\/git$/ || first == "git.exe") judge_git(k)
 }
-function judge_gh(k,   m, w, merge, api, gql, auto, admin, disable, rest, edit, opt) {
+# gql_bad <document>: the first top-level field of a mutation in the GraphQL document that is not on the allow list,
+# or "". Strings and comments are skipped, names inside parentheses (arguments, variables) and nested selections are
+# not looked at; the first name of a definition at brace depth 0 is its keyword (a later one its name, which may be
+# a keyword too), a name at depth 1 a top-level field; a definition without a keyword is a query.
+function gql_bad(s,   n, i, j, c, p, b, inmut, st, nm) {
+  n = length(s); p = 0; b = 0; inmut = 0; st = 1
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "\"") {
+      for (i++; i <= n; i++) { c = substr(s, i, 1); if (c == "\\") { i++; continue }; if (c == "\"") break }
+      continue
+    }
+    if (c == "#") { while (i <= n && substr(s, i, 1) != "\n") i++; continue }
+    if (c == "(") { p++; continue }
+    if (c == ")") { if (p > 0) p--; continue }
+    if (p > 0) continue
+    if (c == "{") { if (b == 0 && st) inmut = 0; st = 0; b++; continue }
+    if (c == "}") { if (b > 0) b--; if (b == 0) st = 1; continue }
+    if (c !~ /[_A-Za-z]/) continue
+    j = i
+    while (j < n && substr(s, j + 1, 1) ~ /[_0-9A-Za-z]/) j++
+    nm = substr(s, i, j - i + 1); i = j
+    if (b == 0) {
+      if (st) inmut = (nm == "mutation")
+      st = 0
+    } else if (b == 1 && inmut && !(nm in ALLOW)) return nm
+  }
+  return ""
+}
+function judge_gh(k,   m, w, merge, api, gql, auto, admin, disable, rest, edit, opt, doc, isdoc, bad) {
   merge = 0; api = 0; gql = 0; auto = 0; admin = 0; disable = 0; rest = 0; edit = 0; opt = ""
   for (m = k + 1; m <= nw; m++) {
     w = W[m]
@@ -114,10 +147,26 @@ function judge_gh(k,   m, w, merge, api, gql, auto, admin, disable, rest, edit, 
   }
   if (api && rest) { verdict("R", "api"); return }
   if (api && gql && index(segtext, "mergePullRequest")) { verdict("R", "api"); return }
+  if (api && gql) {
+    for (m = k + 1; m <= nw; m++) {
+      w = W[m]
+      if (w == "--input" || substr(w, 1, 8) == "--input=") { verdict("R", "unread"); return }
+      doc = ""; isdoc = 1
+      if (substr(w, 1, 6) == "query=") doc = substr(w, 7)
+      else if (substr(w, 1, 8) == "-fquery=" || substr(w, 1, 8) == "-Fquery=") doc = substr(w, 9)
+      else if (substr(w, 1, 18) == "--raw-field=query=") doc = substr(w, 19)
+      else if (substr(w, 1, 14) == "--field=query=") doc = substr(w, 15)
+      else isdoc = 0
+      if (!isdoc) continue
+      if (substr(doc, 1, 1) == "@") { verdict("R", "unread"); return }
+      bad = gql_bad(doc)
+      if (bad != "") { verdict("M", bad); return }
+    }
+  }
   if (edit) { verdict("I", opt); return }
   if (api && gql && index(segtext, "updateProjectV2ItemFieldValue")) verdict("Q", segtext)
 }
-function judge_git(k,   m, w, sc, skip, b) {
+function judge_git(k,   m, w, sc, skip, b, del, frc) {
   b = ENVIRON["G_BASE"]; sc = 0
   for (m = k + 1; m <= nw; m++) {
     w = W[m]
@@ -125,10 +174,30 @@ function judge_git(k,   m, w, sc, skip, b) {
     if (substr(w, 1, 1) == "-") continue
     sc = m; break
   }
-  if (!sc || W[sc] != "push") return
+  if (!sc) return
+  if (W[sc] == "branch") {
+    del = 0; frc = 0
+    for (m = sc + 1; m <= nw; m++) {
+      w = W[m]
+      if (w ~ /^-[A-Za-z]*D[A-Za-z]*$/) { verdict("R", "fbd"); return }
+      if (w == "--delete" || w ~ /^-[A-Za-z]*d[A-Za-z]*$/) del = 1
+      if (w == "--force" || w ~ /^-[A-Za-z]*f[A-Za-z]*$/) frc = 1
+    }
+    if (del && frc) verdict("R", "fbd")
+    return
+  }
+  if (W[sc] != "push") return
   for (m = sc + 1; m <= nw; m++) {
     w = W[m]
     if (substr(w, 1, 7) == "--force" || w ~ /^-[A-Za-z]*f[A-Za-z]*$/ || substr(w, 1, 1) == "+") { verdict("R", "force"); return }
+  }
+  skip = 0
+  for (m = sc + 1; m <= nw; m++) {
+    w = W[m]
+    if (skip) { skip = 0; continue }
+    if (w == "-o" || w == "--push-option" || w == "--repo" || w == "--receive-pack" || w == "--exec") { skip = 1; continue }
+    if (w == "--delete" || w == "--prune" || w == "--mirror" || w ~ /^-[A-Za-z]*d[A-Za-z]*$/) { verdict("R", "delete"); return }
+    if (substr(w, 1, 1) == ":" && length(w) > 1) { verdict("R", "delete"); return }
   }
   skip = 0
   for (m = sc + 1; m <= nw; m++) {
@@ -140,6 +209,9 @@ function judge_git(k,   m, w, sc, skip, b) {
   }
 }
 BEGIN {
+  # the GraphQL mutations the skills send (iteration 50, decision 5); every other one is refused
+  split("addSubIssue createProjectV2View enablePullRequestAutoMerge updateProjectV2Field updateProjectV2ItemFieldValue updateProjectV2View", AL, " ")
+  for (ai in AL) ALLOW[AL[ai]] = 1
   nq = 0
   scan(ENVIRON["G_CMD"])
   for (qi = 1; qi <= nq && qi <= 64; qi++) scan(QUEUE[qi])
@@ -194,7 +266,11 @@ while IFS=$'\t' read -r kind val; do
         api) refuse "nightmill guard: refused: a merge through gh api. Merge only with gh pr merge <pr> <git.mergeFlags>." ;;
         force) refuse "nightmill guard: refused: a force push. Push only with git push -u origin <branch>, never forced." ;;
         base) refuse "nightmill guard: refused: a push to $base. Never push to the base branch." ;;
+        delete) refuse "nightmill guard: refused: deleting a remote branch. Push only with git push -u origin <branch>; never --delete, --prune, --mirror or an empty source." ;;
+        fbd) refuse "nightmill guard: refused: a forced branch delete. Delete only a merged branch, with git branch -d <branch>." ;;
+        unread) refuse "nightmill guard: refused: a GraphQL query the guard cannot read (--input or query=@<file>). Send it inline, as gh api graphql -f query='...'." ;;
       esac ;;
+    M) refuse "nightmill guard: refused: the GraphQL mutation $val, which no skill sends." ;;
     I)
       lookup || lookup_refuse
       if [ -n "$val" ] && [ "$val" = "$rid" ]; then status_refuse "$ready"; fi

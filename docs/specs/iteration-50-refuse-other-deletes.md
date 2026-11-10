@@ -1,6 +1,6 @@
 # Iteration 50: the harness refuses the other deletes: deny rules for board item, field, label and release deletes, and the guard refuses branch deletes and every GraphQL mutation no skill sends
 
-Status: draft, awaiting approval (#253)
+Status: delivered in iteration 50 (PR #262)
 
 Story #253, epic #107 (Hardening from the code review). It closes the gap that iteration 47's "Not done" left and
 iteration 39's security model lists as "not enforced yet" (#253). Today `Bash(gh project:*)` and `Bash(gh api:*)` let

@@ -86,7 +86,9 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   `Priority` field gets `board.priorities`, the `Area` field gets `areas`, both single select
   (`gh project field-create <n> --owner <owner> --name <field> --data-type SINGLE_SELECT --single-select-options "a,b,c"`
   for a new field; `updateProjectV2Field` with every existing option and its id for a field that only misses options).
-  Read ids with `gh project field-list <n> --owner <owner> --format json`.
+  Read ids with `gh project field-list <n> --owner <owner> --format json`. Send each mutation of this line and of
+  **Board views** inline, one per call, as `gh api graphql -f query='mutation { ... }'`; never from a file or with
+  `--input`, which the guard refuses.
 
   ```graphql
   mutation { updateProjectV2Field(input: { fieldId: "<status field id>", singleSelectOptions: [
@@ -165,7 +167,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   plus the array when it is missing: `Bash(gh project:*)`, `Bash(gh issue:*)`, `Bash(gh pr:*)`,
   `Bash(gh api:*)`, `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, and one rule for
   `verification.check` (`Bash(<the exact check command>)`). A rule already present is **exists**.
-- **Deny rules**: so that the harness, not only the skills' text, refuses what the hard rules forbid, add 18 rules
+- **Deny rules**: so that the harness, not only the skills' text, refuses what the hard rules forbid, add 23 rules
   to `permissions.deny` of the project's `.claude/settings.json` (shared: they only take permissions away, hold no
   machine path, and every collaborator runs the `gh` allow rules of that file). `<B>` is `git.baseBranch` (default
   `main`). In this order:
@@ -173,23 +175,25 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   `Bash(gh api *-X DELETE*)`, `Bash(gh api *-XDELETE*)`, `Bash(gh api *--method DELETE*)`,
   `Bash(gh api *--method=DELETE*)`; `Bash(git push --force*)`, `Bash(git push * --force*)`, `Bash(git push -f*)`,
   `Bash(git push * -f*)`, `Bash(git push * +*)`; `Bash(git push * <B>)`, `Bash(git push * <B> *)`,
-  `Bash(git push *:<B>)`, `Bash(git push *:<B> *)`, `Bash(git push *:refs/heads/<B>*)`.
-  - **Why these.** They refuse a merge with `--admin`, deleting an issue, a board or the repository, an API
-    `DELETE`, a force push and a push to `<B>`, in every permission mode (deny rules hold in `bypassPermissions`
-    too, and an allow rule cannot carve an exception out of them). Each begins with a fixed command prefix and has
+  `Bash(git push *:<B>)`, `Bash(git push *:<B> *)`, `Bash(git push *:refs/heads/<B>*)`;
+  `Bash(gh project item-delete *)`, `Bash(gh project field-delete *)`, `Bash(gh label delete *)`,
+  `Bash(gh release delete *)`, `Bash(gh release delete-asset *)`.
+  - **Why these.** They refuse a merge with `--admin`, deleting an issue, a board or the repository, a board item
+    or field, a label or a release, an API `DELETE`, a force push and a push to `<B>`, in every permission mode
+    (deny rules hold in `bypassPermissions` too, and an allow rule cannot carve an exception out of them). Each begins with a fixed command prefix and has
     no `*` before its end, and the git rules' variable part follows a space or a colon, which a branch name cannot
     hold, so no command the skills write matches one, whatever its title or message. There is no rule for the slot
     form (`-C <slot path>` before `push`): a `*` there would also match the skills' stash and commit lines; the
     plugin's guard hook refuses that form instead.
   - **Detect.** A rule is present when it is in `permissions.deny` of `.claude/settings.json` or of
-    `.claude/settings.local.json` (string equality). The line is **exists** when all 18 are present, else
-    **create** (no `settings.json`) or **change**. `defaultMode` does not make it **exists**: deny rules hold in
-    every mode.
+    `.claude/settings.local.json` (string equality). The line is **exists** when all 23 are present, else
+    **create** (no `settings.json`) or **change** (a project set up with the 18 rules of iteration 47 gets the five new
+    ones appended). `defaultMode` does not make it **exists**: deny rules hold in every mode.
   - **Show the exact text** in the plan message, with the other settings texts: for a missing file the whole file
     (2-space indentation, LF), for a present file the diff (the missing rules appended to `permissions.deny` in the
     order above, the array created when missing, every other byte unchanged). Above it one sentence: these rules
-    refuse, in every permission mode, a merge with `--admin`, deleting an issue, a board or the repository, an API
-    `DELETE`, a force push and a push to `<B>`; they match the usual spelling of a command, not every spelling, and
+    refuse, in every permission mode, a merge with `--admin`, deleting an issue, a board or the repository, a board
+    item or field, a label or a release, an API `DELETE`, a force push and a push to `<B>`; they match the usual spelling of a command, not every spelling, and
     the base branch's ruleset stays the backstop.
   - **Apply** with the other settings changes, after **Permissions** and before **Edit permission**, merging into
     `permissions.deny` without removing or reordering an entry. Read the file back; a read-back that lacks a rule
