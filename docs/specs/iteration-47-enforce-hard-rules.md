@@ -1,6 +1,6 @@
 # Iteration 47: the harness refuses what the hard rules forbid: /init writes deny rules, and a PreToolUse hook refuses Ready, Approved and a merge without --auto
 
-Status: draft, awaiting approval (#110)
+Status: delivered in iteration 47 (PR #251)
 
 Story #110, no epic (it comes from the code review of 0.2.0, finding HI-2, like the stories of epic #107). Today the
 allow rules `/init` writes (`Bash(gh pr:*)`, `Bash(gh api:*)`, `Bash(gh issue:*)`, `Bash(gh project:*)`) let an agent run
