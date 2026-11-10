@@ -61,13 +61,14 @@ which this repository's token scopes do not govern, so it needs no extra scope. 
 | Job | Longest | × 3 | `timeout-minutes` |
 |---|---|---|---|
 | `lint` | 16 s | 48 s | 5 |
-| `smoke-bash` | 130 s | 390 s | 7 |
+| `smoke-bash` | 435 s | 1305 s | 22 |
 | `smoke-powershell` | 752 s | 2256 s | 38 |
 | `validate` | 17 s | 51 s | 5 |
 
 The floor of 5 is for the two jobs under a minute: 1 minute would cut a slow checkout or npm install, and 5 is still
-a small fraction of the default of 360. A job that hits its timeout is cancelled; for a required job
-the check does not pass and the PR does not merge until it is re-run or the cause is fixed. A spec that adds enough
+a small fraction of the default of 360. The `smoke-bash` row was 130 s and 7 until bug #264 (a 435 s run cancelled
+at 7 minutes). A job that hits its timeout is cancelled; for a required job the check does not pass and
+the PR does not merge until it is re-run or the cause is fixed. A spec that adds enough
 smoke steps to bring a job near its timeout raises the number.
 
 **3. Concurrency: pull request runs share a group per ref and cancel; every push run is alone in its group.**

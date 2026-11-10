@@ -1396,6 +1396,11 @@ echo "== the config comes from the base branch"
 # --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in
 # tests/test-config-from-base.sh.
 bash tests/test-config-from-base.sh "$PWD" || fail=1
+
+echo "== the bash smoke job has room for the suite"
+# Bug #264: the smoke-bash job's timeout-minutes is about 3 times the longest run (435 s -> 22), at most 60. The pin
+# lives in tests/test-ci-smoke-bash-timeout.sh.
+bash tests/test-ci-smoke-bash-timeout.sh "$PWD" || fail=1
 # criterion 4: the finding was confirmed against the code when the fix was specified (the spec's Facts)
 spec48=docs/specs/iteration-48-config-from-base.md
 if [ -f "$spec48" ]; then
