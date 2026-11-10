@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 47 (#110): the harness refuses what the hard rules forbid. `/init` writes deny rules to
+  `.claude/settings.json` for `gh pr merge --admin`, `gh issue`, `project` and `repo delete`, `gh api` `DELETE`, force
+  pushes and pushes to the base branch, and the plugin ships a `PreToolUse` hook (`scripts/guard.sh`, twin
+  `guard.ps1`) that refuses a board status edit to Ready or Approved, any merge without `--auto`, and a force push or a
+  push to the base branch in any `git` form. `git.mergeFlags` must contain `--auto`. No config key.
 - Iteration 46 (#145): after enabling auto-merge, `/next`, `/fix` and `/spec` watch the pull request's checks for at
   most `review.watchChecksMinutes` minutes per push (new key, default 30). A red check goes back to the producer with
   the failing job's log, is reviewed, pushed and watched again, at most `review.maxFixRounds` times per pull request

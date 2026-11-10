@@ -165,6 +165,40 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   plus the array when it is missing: `Bash(gh project:*)`, `Bash(gh issue:*)`, `Bash(gh pr:*)`,
   `Bash(gh api:*)`, `Bash(git status:*)`, `Bash(git diff:*)`, `Bash(git log:*)`, and one rule for
   `verification.check` (`Bash(<the exact check command>)`). A rule already present is **exists**.
+- **Deny rules**: so that the harness, not only the skills' text, refuses what the hard rules forbid, add 18 rules
+  to `permissions.deny` of the project's `.claude/settings.json` (shared: they only take permissions away, hold no
+  machine path, and every collaborator runs the `gh` allow rules of that file). `<B>` is `git.baseBranch` (default
+  `main`). In this order:
+  `Bash(gh pr merge *--admin*)`; `Bash(gh issue delete *)`, `Bash(gh project delete *)`, `Bash(gh repo delete *)`;
+  `Bash(gh api *-X DELETE*)`, `Bash(gh api *-XDELETE*)`, `Bash(gh api *--method DELETE*)`,
+  `Bash(gh api *--method=DELETE*)`; `Bash(git push --force*)`, `Bash(git push * --force*)`, `Bash(git push -f*)`,
+  `Bash(git push * -f*)`, `Bash(git push * +*)`; `Bash(git push * <B>)`, `Bash(git push * <B> *)`,
+  `Bash(git push *:<B>)`, `Bash(git push *:<B> *)`, `Bash(git push *:refs/heads/<B>*)`.
+  - **Why these.** They refuse a merge with `--admin`, deleting an issue, a board or the repository, an API
+    `DELETE`, a force push and a push to `<B>`, in every permission mode (deny rules hold in `bypassPermissions`
+    too, and an allow rule cannot carve an exception out of them). Each begins with a fixed command prefix and has
+    no `*` before its end, and the git rules' variable part follows a space or a colon, which a branch name cannot
+    hold, so no command the skills write matches one, whatever its title or message. There is no rule for the slot
+    form (`-C <slot path>` before `push`): a `*` there would also match the skills' stash and commit lines; the
+    plugin's guard hook refuses that form instead.
+  - **Detect.** A rule is present when it is in `permissions.deny` of `.claude/settings.json` or of
+    `.claude/settings.local.json` (string equality). The line is **exists** when all 18 are present, else
+    **create** (no `settings.json`) or **change**. `defaultMode` does not make it **exists**: deny rules hold in
+    every mode.
+  - **Show the exact text** in the plan message, with the other settings texts: for a missing file the whole file
+    (2-space indentation, LF), for a present file the diff (the missing rules appended to `permissions.deny` in the
+    order above, the array created when missing, every other byte unchanged). Above it one sentence: these rules
+    refuse, in every permission mode, a merge with `--admin`, deleting an issue, a board or the repository, an API
+    `DELETE`, a force push and a push to `<B>`; they match the usual spelling of a command, not every spelling, and
+    the base branch's ruleset stays the backstop.
+  - **Apply** with the other settings changes, after **Permissions** and before **Edit permission**, merging into
+    `permissions.deny` without removing or reordering an entry. Read the file back; a read-back that lacks a rule
+    is **failed**, naming the first missing one.
+  - **Declined.** `settings.json` gets none of them; the report says
+    `Deny rules: declined (the forbidden actions are refused only by the plugin's guard hook and the skills' text)`.
+  - **Report row**, one of: `added to .claude/settings.json (<k> rules)`, `exists`, `declined (...)`,
+    `failed: <reason>`. After an add the report says that the rules follow `git.baseBranch` and that `/init` is
+    run again after it changes (old rules are kept).
 - **Edit permission**: so that `/spec`, `/next` and `/fix` write files without a prompt, add the one rule
   `Edit(**)` to `permissions.allow` of the project's `.claude/settings.local.json` (personal, not committed:
   letting an unattended run edit is the choice of whoever runs it, so it stays out of the committed
@@ -234,7 +268,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   - **Count.** `24 + 21 × worktrees.slots` rules and one directory: 66 rules for 2 slots, 108 for 4.
   - **Never broader.** Each rule names its subcommand before the first `*`. No bare `git push` rule, no wildcard
     for git as a whole or for `git -C` in any directory, no hard reset, no `git stash drop`, `git branch -D`,
-    `git clean` or `git checkout`. Refusing the forbidden actions is the deny rules' job (#110), not this line's.
+    `git clean` or `git checkout`. Refusing the forbidden actions is the job of **Deny rules** and the plugin's guard hook (#110), not this line's.
   - **Unmatchable root.** When `<R>` contains a space, a quote or (in the bash form) a backslash, the line is
     **failed**: `worktrees.root resolves to <R>, which a rule cannot match unquoted; slot commands will prompt`;
     A and D are still written.
@@ -274,7 +308,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
 ## 4. Confirm once
 
 Print the plan as one table (line, action) and ask a single question: apply all, or name the lines to
-skip. The CLAUDE.md edit, the `settings.json` edit and the `.claude/settings.local.json` edits (the edit
+skip. The CLAUDE.md edit, the `settings.json` edits (the permissions and the deny rules) and the `.claude/settings.local.json` edits (the edit
 permission and the **Run permissions**) are shown in the same message as the exact text or diff that will be
 written, so that the one answer covers them. A skipped line is **declined** and is
 not asked about again in this run.
@@ -285,7 +319,7 @@ to the report.
 ## 5. Apply
 
 Apply the kept lines in this order: board and fields, view, link, labels, config, forms, CLAUDE.md,
-settings (the permissions, the edit permission, then the run permissions); then read the board workflows (read-only, see the plan). After each GitHub change read it back (`gh project field-list`, `gh label list`,
+settings (the permissions, the deny rules, the edit permission, then the run permissions); then read the board workflows (read-only, see the plan). After each GitHub change read it back (`gh project field-list`, `gh label list`,
 the `repositories` and `views` queries); a line whose read-back does not show the change is **failed**, with
 the command's error, and the run goes on with the lines that do not depend on it (the view, the field options and the link depend on the board, the forms on the config; nothing else does).
 
@@ -320,6 +354,11 @@ Every line is idempotent, so re-running is safe: a second run finds each line **
 End with one table: line, result (**created**, **changed**, **already there**, **declined**, **failed**,
 **by hand**). Below it, "Still to do by hand:" with exactly the declined, failed and by-hand lines, or
 "nothing". Do not print instructions for lines that were applied.
+
+Below that, always, with no plan line and nothing asked (the hook comes with the plugin), print
+`Guard hook: refuses a status edit to <ready> or <approved> and any merge without --auto (scripts/guard.sh)`, with
+`board.statuses.ready` and `board.statuses.approved` for the names. When `git.mergeFlags` does not contain the word
+`--auto`, add `git.mergeFlags is "<value>", without --auto: the guard refuses the skills' merge step; add --auto`.
 
 **A board copied from the template** (the Board row says **created (copy of the template)**): when the read
 back of step 5 matches (the views with grouping and sorting present, the ten workflows enabled), do not print

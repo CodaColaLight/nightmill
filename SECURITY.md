@@ -12,12 +12,12 @@ fixed response time.
 
 ## What is in scope
 
-nightmill is a plugin made of skills (instructions for an agent), shell scripts, one hook and templates.
+nightmill is a plugin made of skills (instructions for an agent), shell scripts, two hooks and templates.
 These are in scope:
 
 - the scripts in `scripts/` and `tests/`, which run on a user's machine with the user's permissions,
   for example command injection through a value in `.claude/nightmill.json` or through a branch name;
-- the `SessionStart` hook in `hooks/`;
+- the `SessionStart` hook and the `PreToolUse` guard (`scripts/guard.*`) in `hooks/`;
 - skill text that would make an agent run a destructive command, leak a credential or act on content
   from an issue or pull request as if it were an instruction from the maintainer;
 - the CI workflows in `.github/workflows/`.
