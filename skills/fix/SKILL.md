@@ -101,6 +101,49 @@ milestone, iteration number or CHANGELOG entry.
    that has blocking review findings left, or one that touches `escalation.storyTriggers` (that is a story), or one
    with a dispute over the tester's test still open; then say
    `Auto-merge is not enabled: a dispute over the tester's tests is still open (see Disputed tests).`
+7. **Watch the checks** (**Watching the checks** in the `workflow` skill), after step 6, only when the pull request
+   has auto-merge on (`gh pr view <pr> --json autoMergeRequest` is not empty); a pull request whose auto-merge step 6
+   withheld ends the run as before, unwatched. The watch, its bound, its verdict, green, the time running out, the
+   count of the check fix rounds and the hand-over are there; the round's roles here are the `fixer` and the
+   `codeReviewer`. Green or out of time: report `done` and end the run. A check fix round k here:
+   - **The checkout.** The slot that holds the branch (held until the merge, as today). Without slots, the session's
+     checkout that step 3 switched to the branch: every git command of the round runs there without `-C <slot path>`,
+     the fixer's prompt gets the checkout's absolute path for `<absolute slot path>`, and its tree must be clean
+     (`git status --porcelain --untracked-files=all` prints nothing), else the hand-over with the reason
+     `the checkout is not clean`.
+   - **The tester's files.** The round guards them as "The tester's files" does, with this run's `<tester files>`,
+     `<tester blobs>` and `<tester originals>` as the review rounds and disputes left them, and records `<round base>`
+     by rule 2 there before every launch of the fixer.
+   - **The producer.** Count the agents, check the room, report `check-fix-<k>` (role `fixer`), record the round
+     with `gh pr comment <pr> --body "Check fix round <k> of <review.maxFixRounds>: <name> (<workflow>) is red; the fixer role on <model> fixes it."`
+     (when it fails, no launch: the hand-over), then launch the fixer as "The fixer" does, on its model,
+     with its prompt and, at its end, this paragraph:
+
+     ```markdown
+     The pull request #<pr> is open and its check <name> (<workflow>) is red (check fix round <k> of
+     <review.maxFixRounds>). The last 200 lines of its job's log:
+     <the log>
+     Fix the cause in this change, run the check, commit. The local check may skip the step that failed in CI (it runs
+     what the machine can run); say so under Left when it did. If the failure is not caused by this change (the base
+     branch, the CI runner, a flaky check), change nothing and return `failed` with the reason under Left.
+     ```
+
+     Read the result: the tester's files first (rule 3; a changed tester file undoes the round by rule 4, and the round
+     counts), then the `Result:` block. A hand-over (with the reason in brackets): nothing committed
+     (`git -C <slot path> rev-parse HEAD`, in the session's checkout `git rev-parse HEAD`, is still `<round base>`:
+     `the fixer committed nothing`); a `Disputes:` line that is not `none`, not sent to the tester here
+     (`the producer disputes the tester's test: <the Disputes line>`); `Result: failed`, no block, or an undone round
+     (`<Left, or why>`).
+   - **The review.** Report `check-review-<k>` (role `codeReviewer`) and launch the code reviewer once, as "The code
+     review" step 2 does, with the prompt of step 3 there and the change given as
+     `git -C <slot path> diff <the pull request's head>..HEAD` (the round's commits only; in the session's checkout
+     `git diff <the pull request's head>..HEAD`). The pairing is not checked again. A blocking finding: nothing is
+     pushed; while a round is left, round k + 1 starts at the producer with its own record, the same red check and,
+     added to the paragraph, "Fix exactly these blocking findings too: <the lines>"; else the hand-over.
+   - **The push**: `git -C <slot path> push -u origin <branch>` (in the session's checkout `git push -u origin <branch>`),
+     never forced, then watch again with the full `review.watchChecksMinutes`.
+   - **The hand-over** is the workflow rule's: the issue comment, the label `blocked`, then report `handed-over` and
+     end the run; the status stays Review and the slot stays taken.
 
 ## Reporting the steps
 
@@ -126,7 +169,11 @@ reports nothing. In batch mode each bug reports to its own slot.
 | just before the launch of fix round k | `fixer` | `fix-round-<k>` |
 | the manual check (step 5), when it applies | `session` | `manual-check` |
 | opening the pull request (step 6) | `session` | `pull-request` |
-| after step 6 | `session` | `done` |
+| before each watch call (step 7) | `session` | `watch-checks` |
+| just before the producer's launch of check fix round k (step 7) | `fixer` | `check-fix-<k>` |
+| just before the reviewer's launch of check fix round k (step 7) | `codeReviewer` | `check-review-<k>` |
+| after the hand-over (step 7) | `session` | `handed-over` |
+| after the watch ends green or out of time (step 7), or after step 6 when the pull request is not watched | `session` | `done` |
 | on any `Stopped:` line, or a bug skipped in batch mode, after the take | `session` | `stopped` |
 
 The fixer reports its own steps (the paragraph in its prompt); the session reports the others, the tester's and the
@@ -621,7 +668,7 @@ A `partial` result is reviewed like a complete one.
 Fixes every Ready bug without asking the maintainer anything, several at the same time, one per slot, as far as the
 free slots, the live agent limit and the room on the machine allow, and ends only when every Ready bug has a pull
 request, was skipped with a reason, or is listed as not started. Steps 1 to 6 are the same for each bug, with these
-differences:
+differences (step 7 does not run: `/fix all` watches no pull request):
 
 - **In parallel, one slot per bug.** The session holds four lists: **waiting** (in order), **in flight** (bug, slot,
   next step), **ended** (pull request, skipped, stopped) and **not started**. It runs one pass of the loop below at the
@@ -768,4 +815,5 @@ are the same.
 ## Hard rules
 
 Never set Ready or Approved (only the maintainer does). Never close an epic. Never delete files without
-asking. Never run a plain `gh pr merge` (it would bypass the checks).
+asking. Never run a plain `gh pr merge` (it would bypass the checks), never with `--admin`, never `gh run rerun`, and
+never disable a check; a red pull request is fixed within `review.maxFixRounds` check fix rounds or handed over (step 7).

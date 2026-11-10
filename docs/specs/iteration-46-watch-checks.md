@@ -1,6 +1,6 @@
 # Iteration 46: after enabling auto-merge, /next, /fix and /spec watch the pull request's checks and fix a red one within review.maxFixRounds
 
-Status: draft, awaiting approval (#145)
+Status: delivered in iteration 46 (PR #249)
 
 Story #145, epic #107 (Hardening from the code review), finding HI-9 of the review of 0.2.0. Today `/next`, `/fix`
 and `/spec` open the pull request, decide auto-merge and stop, so a red pull request waits until the maintainer

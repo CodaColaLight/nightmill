@@ -141,6 +141,58 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    When tests of unmet criteria were set aside in step 5, the new story's body lists their paths, the stash's message
    `Unmet tests for #<issue>: <title>` and the text copied in step 5, so the tests are not lost; a disputed test also
    carries the producer's reason and the tester's last answer.
+9. **Watch the checks** (**Watching the checks** in the `workflow` skill), after step 8, only when the pull request
+   has auto-merge on (`gh pr view <pr> --json autoMergeRequest` is not empty); a pull request whose auto-merge step 7
+   withheld ends the run as before, unwatched. The watch, its bound, its verdict, green, the time running out, the
+   count of the check fix rounds and the hand-over are there; the round's roles here are the `implementer` and the
+   `codeReviewer`. Green or out of time: report `done` and end the run. A check fix round k here:
+   - **The checkout.** The slot that holds the branch (held until the merge, as today). Without slots, the session's
+     checkout that step 2 switched to the branch: every git command of the round runs there without `-C <slot path>`,
+     the producer's prompt gets the checkout's absolute path for `<absolute slot path>`, and its tree must be clean
+     (`git status --porcelain --untracked-files=all` prints nothing), else the hand-over with the reason
+     `the checkout is not clean`. A resumed run (row N1) whose branch no slot holds gets a checkout before the
+     producer of its first round as "The slot" (N6) does: with slots `--take <branch>` (`-Take <branch>`), then the
+     report `resumed` (role `session`), the slot held until the merge; a take that fails is the hand-over with the
+     reason `the slot could not be taken: <the take's line>`; without slots `git switch <branch>` (the tree clean,
+     else the hand-over with the reason `the checkout is not clean`).
+   - **The tester's files.** The round guards them as "The tester's files" does, with this run's `<tester files>`,
+     `<tester blobs>` and `<tester originals>` as the review rounds and disputes left them, and records `<round base>`
+     by rule 2 there before every launch of the implementer. A resumed run (row N1) builds them before the producer of
+     its first round as N9 does: every path of `git -C <slot path> diff --name-only origin/<git.baseBranch>...HEAD`
+     (in the session's checkout `git diff --name-only origin/<git.baseBranch>...HEAD`) that is a test path by
+     the `Test paths:` line of "The tester", recorded by rule 1 (round 0); an empty list leaves nothing to check. Its
+     implementer's prompt lists those paths as its tests, committed, and gives `not known (resumed run)` for the
+     tester's `Criteria` lines.
+   - **The producer.** Count the agents, check the room, report `check-fix-<k>` (role `implementer`), record the round
+     with `gh pr comment <pr> --body "Check fix round <k> of <review.maxFixRounds>: <name> (<workflow>) is red; the implementer role on <model> fixes it."`
+     (when it fails, no launch: the hand-over), then launch the implementer as "The implementer" does, on its model,
+     with its prompt and, at its end, this paragraph:
+
+     ```markdown
+     The pull request #<pr> is open and its check <name> (<workflow>) is red (check fix round <k> of
+     <review.maxFixRounds>). The last 200 lines of its job's log:
+     <the log>
+     Fix the cause in this change, run the check, commit. The local check may skip the step that failed in CI (it runs
+     what the machine can run); say so under Left when it did. If the failure is not caused by this change (the base
+     branch, the CI runner, a flaky check), change nothing and return `failed` with the reason under Left.
+     ```
+
+     Read the result: the tester's files first (rule 3; a changed tester file undoes the round by rule 4, and the round
+     counts), then the `Result:` block. A hand-over (with the reason in brackets): nothing committed
+     (`git -C <slot path> rev-parse HEAD`, in the session's checkout `git rev-parse HEAD`, is still `<round base>`:
+     `the implementer committed nothing`); a `Disputes:` line that is not `none`, not sent to the tester here
+     (`the producer disputes the tester's test: <the Disputes line>`); `Result: failed`, no block, or an undone round
+     (`<Left, or why>`).
+   - **The review.** Report `check-review-<k>` (role `codeReviewer`) and launch the code reviewer once, as "The code
+     review" step 2 does, with the prompt of step 3 there and the change given as
+     `git -C <slot path> diff <the pull request's head>..HEAD` (the round's commits only; in the session's checkout
+     `git diff <the pull request's head>..HEAD`). The pairing is not checked again. A blocking finding: nothing is
+     pushed; while a round is left, round k + 1 starts at the producer with its own record, the same red check and,
+     added to the paragraph, "Fix exactly these blocking findings too: <the lines>"; else the hand-over.
+   - **The push**: `git -C <slot path> push -u origin <branch>` (in the session's checkout `git push -u origin <branch>`),
+     never forced, then watch again with the full `review.watchChecksMinutes`.
+   - **The hand-over** is the workflow rule's: the issue comment, the label `blocked`, then report `handed-over` and
+     end the run; the status stays Review and the slot stays taken.
 
 ## Reporting the steps
 
@@ -168,7 +220,11 @@ reports nothing.
 | the manual check (step 4), when it applies | `session` | `manual-check` |
 | the CHANGELOG entry and the rebase (step 5) | `session` | `changelog` |
 | opening the pull request (step 6) | `session` | `pull-request` |
-| after step 7 (and step 8 when it applies) | `session` | `done` |
+| before each watch call (step 9) | `session` | `watch-checks` |
+| just before the producer's launch of check fix round k (step 9) | `implementer` | `check-fix-<k>` |
+| just before the reviewer's launch of check fix round k (step 9) | `codeReviewer` | `check-review-<k>` |
+| after the hand-over (step 9) | `session` | `handed-over` |
+| after the watch ends green or out of time (step 9), or after step 8 when the pull request is not watched | `session` | `done` |
 | on any `Stopped:` line after the take | `session` | `stopped` |
 
 The implementer reports its own steps (the paragraph in its prompt); the session reports the others, the code review
@@ -212,15 +268,15 @@ The table is read top to bottom; the first row that matches decides.
 
 | # | Found | Resumes at | Then |
 |---|---|---|---|
-| N1 | an open pull request that closes the issue | `Review` | set Review when it is not, read it back, again after a minute; step 7 only when its `autoMergeRequest` is empty and its body does not have `Auto-merge is not enabled`; report `done` to the slot that holds its branch, if any |
+| N1 | an open pull request that closes the issue | `Review` | set Review when it is not, read it back, again after a minute; step 7 only when its `autoMergeRequest` is empty and its body does not have `Auto-merge is not enabled`; then step 9 (Watching the checks), with the full `review.watchChecksMinutes` and the check fix rounds the pull request's records leave; report `done` to the slot that holds its branch, if any, when the watch ends green or out of time |
 | N2 | a merged one, none open | refused: `#<n>: its pull request #<pr> has merged; its Closes sets Done. Nothing was changed.` | |
 | N3 | only closed, unmerged ones | refused: `#<n>: its pull request #<pr> was closed without a merge; the maintainer decides. Nothing was changed.` | |
 | N4 | at Review, none of the above | refused: `#<n> is at Review, but no pull request of it is open; the maintainer decides. Nothing was changed.` | |
 | N5 | the branch in a slot that is visibly at work (above) | refused (the table above) | |
 | N6 | the branch, in a stalled, unknown or `done` slot, or in no slot | `the slot` | the slot (below), then N7 to N9 on what the branch holds |
 | N7 | the slot's tree not clean | refused: `Stopped: slot <s> (<branch>) of #<n> has uncommitted files from an earlier run: <paths, at most 10, then "and <k> more">. Nothing else was changed; commit, stash or discard them and run /next <n> again.` (report `stopped`) | |
-| N8 | no commit on the branch (`git -C <slot> log origin/<git.baseBranch>..HEAD` empty) | `the tester` | step 3 as today, then steps 4 to 8 |
-| N9 | commits on the branch | `the code review` | the tester's files (below), then "The code review" from step 1 (round 0, the full `review.maxFixRounds`), steps 4 to 8 |
+| N8 | no commit on the branch (`git -C <slot> log origin/<git.baseBranch>..HEAD` empty) | `the tester` | step 3 as today, then steps 4 to 9 |
+| N9 | commits on the branch | `the code review` | the tester's files (below), then "The code review" from step 1 (round 0, the full `review.maxFixRounds`), steps 4 to 9 |
 | N10 | no artefact | refused (no artefact, above) | |
 
 **The slot** (N6). A slot that holds the branch (stalled, unknown or `done`) is reused as it is: no take. Otherwise the
@@ -710,4 +766,5 @@ A `partial` result is reviewed like a complete one.
 
 Never set Ready or Approved (only the maintainer does). Never close an epic. Never delete files
 without asking. Never merge any other way than `gh pr merge <pr> <git.mergeFlags>` (a plain
-`gh pr merge` would bypass the checks).
+`gh pr merge` would bypass the checks), never with `--admin`, never `gh run rerun`, and never disable a check; a red
+pull request is fixed within `review.maxFixRounds` check fix rounds or handed over (step 9).

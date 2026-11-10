@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 46 (#145): after enabling auto-merge, `/next`, `/fix` and `/spec` watch the pull request's checks for at
+  most `review.watchChecksMinutes` minutes per push (new key, default 30). A red check goes back to the producer with
+  the failing job's log, is reviewed, pushed and watched again, at most `review.maxFixRounds` times per pull request
+  over every run; then the issue gets a comment naming the failing job and the label `blocked`, and the run stops
+  without forcing a merge. A green pull request needs nothing more.
 - Iteration 44 (#112): `/spec N` and `/next N` finish a story that an earlier run left at Spec, Spec review, In
   progress or Review. With a number, `/spec` also takes Spec and Spec review and `/next` also takes In progress and
   Review when the story's own branch, slot or pull request exists; they print where they resume and go on from the

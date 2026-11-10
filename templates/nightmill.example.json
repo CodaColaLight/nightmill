@@ -51,7 +51,7 @@
     "worker": { "model": "haiku" }
   },
   "models": { "ranking": ["haiku", "sonnet", "opus", "fable"] },
-  "review": { "maxFixRounds": 2 },
+  "review": { "maxFixRounds": 2, "watchChecksMinutes": 30 },
   "git": { "baseBranch": "main", "featurePrefix": "feat/", "fixPrefix": "fix/", "specPrefix": "spec/", "mergeFlags": "--auto --squash" },
   "parallel": {
     "maxAgents": 2,
