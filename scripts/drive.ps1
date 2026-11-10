@@ -12,7 +12,8 @@
 # room.ps1 and claude -p "<prompt>" --permission-mode manual --output-format json in the main checkout. It sets no
 # board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
 # switch <git common dir>/nightmill-stop (only its existence counts; the driver never creates or removes it).
-# Each step's processes are followed (Windows: its process tree by ParentProcessId; macOS and Linux: its process group,
+# Each step's processes are followed (Windows: its process tree by ParentProcessId, and the job object the driver
+# puts itself into, which also holds a descendant whose parent ended unseen; macOS and Linux: its process group,
 # started through /bin/sh with job control); whatever is left after the step is ended (Windows: Stop-Process -Force;
 # elsewhere TERM, after 5 seconds KILL). The run's files (each step's .json and .err, summary.md) are kept in a folder
 # named on the last line.
@@ -179,6 +180,61 @@ function Test-GhAuth {
 function Get-ProcTable {
   try { return @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, CreationDate, Name -ErrorAction Stop) } catch { return @() }
 }
+# Windows: the driver puts itself into a job object once, so every process a step starts (and theirs, through a .cmd
+# shim or a parent that ended before a poll saw it) is in the job; the polled tree stays as the fallback
+$script:jobOk = $false
+$script:jobTried = $false
+function Enter-Job {
+  if ($script:jobOk -or $script:jobTried) { return }
+  $script:jobTried = $true
+  try {
+    if (-not ("NightmillDriveJob" -as [type])) {
+      Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class NightmillDriveJob {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool QueryInformationJobObject(IntPtr job, int infoClass, IntPtr info, int length, IntPtr returned);
+  [DllImport("kernel32.dll")]
+  static extern IntPtr GetCurrentProcess();
+  static IntPtr job = IntPtr.Zero;
+  public static bool Enter() {
+    IntPtr j = CreateJobObject(IntPtr.Zero, null);
+    if (j == IntPtr.Zero) { return false; }
+    if (!AssignProcessToJobObject(j, GetCurrentProcess())) { return false; }
+    job = j;
+    return true;
+  }
+  public static int[] Pids() {
+    if (job == IntPtr.Zero) { return null; }
+    int max = 8192;
+    int size = 8 + IntPtr.Size * max;
+    IntPtr buf = Marshal.AllocHGlobal(size);
+    try {
+      if (!QueryInformationJobObject(job, 3, buf, size, IntPtr.Zero)) { return null; }
+      int n = Marshal.ReadInt32(buf, 4);
+      int[] ids = new int[n];
+      for (int i = 0; i < n; i++) { ids[i] = (int)Marshal.ReadIntPtr(buf, 8 + i * IntPtr.Size).ToInt64(); }
+      return ids;
+    } finally { Marshal.FreeHGlobal(buf); }
+  }
+}
+'@
+    }
+    $script:jobOk = [NightmillDriveJob]::Enter()
+  } catch { $script:jobOk = $false }
+}
+# Get-JobPids: the live processes of the job, $null without one
+function Get-JobPids {
+  if (-not $script:jobOk) { return $null }
+  try { $ids = [NightmillDriveJob]::Pids() } catch { return $null }
+  if ($null -eq $ids) { return $null }
+  return , @($ids | ForEach-Object { [int]$_ })
+}
 # Update-Tree <known pids> <since>: adds every process started since <since> whose parent is known; returns the table
 function Update-Tree($known, [datetime]$since) {
   $all = Get-ProcTable
@@ -212,6 +268,16 @@ function End-Step {
     $all = Update-Tree $c.Known $c.Since
     # only processes of the tree that still run and were started since the step began (a reused pid is not one)
     $left = @($all | Where-Object { $c.Known.Contains([int]$_.ProcessId) -and $null -ne $_.CreationDate -and $_.CreationDate -ge $c.Since } | ForEach-Object { [int]$_.ProcessId })
+    # and every process of the job that was not there before the step (the driver itself and a console host aside)
+    $inJob = Get-JobPids
+    if ($null -ne $inJob) {
+      foreach ($id in $inJob) {
+        if ($id -eq $PID -or $c.Before.Contains($id) -or $left -contains $id) { continue }
+        $gp = Get-Process -Id $id -ErrorAction SilentlyContinue
+        if ($null -eq $gp -or $gp.ProcessName -eq "conhost") { continue }
+        $left += $id
+      }
+    }
     $script:leftTotal += $left.Count
     foreach ($id in $left) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
     if ($left.Count -gt 0) {
@@ -482,22 +548,29 @@ function Invoke-Step([string]$prompt) {
   $psi.RedirectStandardError = $true
   $psi.StandardOutputEncoding = $utf8
   $psi.StandardErrorEncoding = $utf8
+  $before = New-Object 'System.Collections.Generic.HashSet[int]'
+  if ($onWindows) {
+    Enter-Job
+    $inJob = Get-JobPids
+    if ($null -ne $inJob) { foreach ($id in $inJob) { [void]$before.Add($id) } }
+  }
   $since = (Get-Date).AddSeconds(-2)
   $p = [System.Diagnostics.Process]::Start($psi)
   $known = New-Object 'System.Collections.Generic.HashSet[int]'
   [void]$known.Add($p.Id)
-  $script:cur = [pscustomobject]@{ Process = $p; Root = $p.Id; Known = $known; Since = $since; PgFile = $pgFile; T0 = $t0; Rec = $rec }
+  $script:cur = [pscustomobject]@{ Process = $p; Root = $p.Id; Known = $known; Before = $before; Since = $since; PgFile = $pgFile; T0 = $t0; Rec = $rec }
   $outTask = $p.StandardOutput.ReadToEndAsync()
   $errTask = $p.StandardError.ReadToEndAsync()
   while (-not $p.WaitForExit(500)) {
     if ($onWindows) { $null = Update-Tree $known $since }
   }
   $p.WaitForExit()
+  $rc = $p.ExitCode
+  # leftovers first: one that holds the step's stdout or stderr would keep the reads below open
+  End-Step
   $out = $outTask.Result
   [IO.File]::WriteAllText($jsonPath, $out, $utf8)
   [IO.File]::WriteAllText($errPath, $errTask.Result, $utf8)
-  $rc = $p.ExitCode
-  End-Step
   $rec.Rc = [string]$rc
   $rec.Dur = Format-LedgerDuration ((Get-LedgerClock) - $t0)
   try {

@@ -30,7 +30,7 @@ if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
   [ "$mode" = "100755" ] || fail "scripts/drive.sh: mode '$mode' in the index, 100755 expected"
 fi
 if [ -f "$schema" ]; then
-  for k in backlog ready spec specReview approved inProgress review done; do
+  for k in backlog ready spec specReview approved inProgress review "done"; do
     grep -qE "^[[:space:]]*\"$k\": \{" "$schema" || fail "schema/nightmill.schema.json: board.statuses has no key $k"
   done
   st=$(awk '/"statuses": \{/ { s = 1; next } s && /"properties": \{/ { p = 1; next } s && p && /^ *"[A-Za-z]+": \{ *"type"/ { n++ } s && p && /^ *\}/ { exit } END { print n + 0 }' "$schema")

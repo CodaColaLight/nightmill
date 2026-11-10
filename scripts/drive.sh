@@ -106,7 +106,6 @@ gh_ok=""           # "", yes or no: gh auth status was run
 gh_why=""
 left_total=0
 not_ended=""
-limit_hit=0
 cleaning=0
 : > "$run/tried.tsv"
 step_prompt=(); step_rc=(); step_dur=(); step_cost=(); step_turns=()
