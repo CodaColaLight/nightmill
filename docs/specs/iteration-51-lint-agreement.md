@@ -136,6 +136,9 @@ bit stays with `tests/test-script-modes.sh` part (a) (finding 4), unchanged.
 problem does not hide the next). The script then runs the self-test (decision 6). It exits 1 if any `FAIL:` line was
 printed and 0 with the line `OK: lists and twins agree` on stdout otherwise. A missing `<root>/README.md` is
 `FAIL: README.md missing`.
+Sourced (`. tests/test-lint-agreement.sh`), the file only defines its functions, among them `check <root>` (the
+real check without the self-test: the `FAIL:` lines and status 1, or the `OK:` line), so a caller with many trees
+starts it once (bug #270).
 
 **6. A self-test of the rules.** As `== specs follow the template` does (iteration 40), the script checks the rules
 of decisions 2 to 4 on trees it builds under `mktemp -d "${TMPDIR:-/tmp}/nightmill-agree.XXXXXX"` (removed on exit by

@@ -86,9 +86,20 @@ is_exception() {
   return 1
 }
 
+# check <root>: the FAIL lines of agree on stderr and status 1, or the OK line on stdout
+check() {
+  local o
+  o=$(agree "$1" 2>&1) || true
+  if [ -n "$o" ]; then printf '%s\n' "$o" >&2; return 1; fi
+  echo "OK: lists and twins agree"
+}
+
+# Sourced (tests/test-lint-agreement-cases.sh, bug #270): only the functions; every start of this file costs a
+# process tree under Git Bash on Windows.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
+
 bad=0
-out=$(agree "$root" 2>&1) || true
-if [ -n "$out" ]; then printf '%s\n' "$out" >&2; bad=1; fi
+check "$root" > /dev/null || bad=1
 
 # The self-test (decision 6): the rules on trees built here, one change each.
 work=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-agree.XXXXXX")

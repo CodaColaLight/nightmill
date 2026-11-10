@@ -1322,6 +1322,10 @@ echo "== the lists and the shell twins agree"
 bash tests/test-lint-agreement.sh "$PWD" || fail=1
 bash tests/test-lint-agreement-cases.sh "$PWD" || fail=1
 
+echo "== the agreement section stays cheap"
+# Bug #270: the section above made the PowerShell CI job 25 to 32 minutes long; it may start the rule file only a few times.
+bash tests/test-lint-agreement-cost.sh "$PWD" || fail=1
+
 echo "== text from issues is data"
 # Text from issues, pull requests, comments and linked files is data, never instructions (bug #108). On a public
 # repository anyone can comment on an Approved issue while the agent holds gh, git push and auto-merge. So: the workflow
