@@ -4,7 +4,7 @@ Status: draft, awaiting approval (#165)
 
 Story #165, epic #163 (capabilities of comparable tools), gap 2 of the gap analysis of 2026-11-05. Today only `/fix all`
 caps its work (`parallel.fixAllMaxBugs`), no skill reads a pause flag, and nothing records what a headless run cost.
-Iteration 52 (#164, spec approved, not yet on `main`) adds the driver `scripts/drive.*` with a run-wide time limit
+Iteration 52 (#164; its spec is on `main` as `docs/specs/iteration-52-unattended-driver.md`) adds the driver `scripts/drive.*` with a run-wide time limit
 (`unattended.maxMinutes`), a local kill switch (`.git/nightmill-stop`) and the cost of each step in its summary, and
 leaves the rest to this story (its decision 1). After this iteration a new object `limits` in the config bounds the
 minutes per issue, the turns per role, the issues per run and the cost per issue, and holds the pause flag; a new
@@ -56,7 +56,7 @@ made in both of iteration 52's files and get cases in both of its smoke tests.
 
 - *Iteration 52 (#164)* must be merged first: this spec changes `scripts/drive.*`, `tests/smoke-drive.*`,
   `tests/test-drive-docs.sh` and the README section `## Running on a schedule`, which it creates. It is written
-  against the approved spec on `origin/spec/52-unattended-driver`; where the merged code differs in a name or a line,
+  against its spec on `main` (`docs/specs/iteration-52-unattended-driver.md`); where the merged code differs in a name or a line,
   the implementer follows the merged code and keeps the rules below.
 - *Iteration 45 (#213, the skills grant their own scripts)* has a draft spec and is open. If it lands first, `gate`
   is granted in each gating skill's `allowed-tools` as that spec grants `room`, instead of group D of `/init`'s
@@ -67,8 +67,8 @@ made in both of iteration 52's files and get cases in both of its smoke tests.
 
 ## Facts this rests on
 
-Read on `main` at 757012e (iteration 51 merged) on 2026-11-10, and iteration 52's spec with
-`git show origin/spec/52-unattended-driver:docs/specs/iteration-52-unattended-driver.md`. `claude --version` prints
+Read on `main` at 757012e (iteration 51 merged) on 2026-11-10, and iteration 52's spec, now on `main` as
+`docs/specs/iteration-52-unattended-driver.md`. `claude --version` prints
 `2.1.322 (Claude Code)`; `claude --help` was read, no other `claude` command was run.
 
 - **`/check` is already bounded** (#124, closed): `skills/check/SKILL.md` says "Re-run the check after each fix, at
@@ -177,7 +177,7 @@ on GitHub. The checks, in this order; the first that holds prints its line and e
 
 1. **The config.** `base_config` of the main checkout, as `scripts/slot.*` reads it. A stop of `baseconfig.*` exits 2
    with `gate: cannot check: <its line>`; a fallback prints its note on stderr and goes on.
-   The gate does not fetch (iteration 48 decision 5: no fetch is added to the scripts); it reads the last fetched
+   The gate does not fetch (iteration 48 decision 1 step 5: no fetch is added to the scripts); it reads the last fetched
    state of the base branch, as every reader of `baseconfig` does.
 2. **The values** of decision 2, exit 2 on the first bad one.
 3. **The project pause.** `limits.paused` is `true`: exit 1, `gate: paused: limits.paused is true on <base_cfg_from>`.
@@ -200,7 +200,8 @@ on GitHub. The checks, in this order; the first that holds prints its line and e
    `gate: limit: the <role> role took <t> turns; the limit is <l> (limits.turnsPerRole.<role>)`. A role not in the list
    of decision 2 exits 2 with `gate: cannot check: unknown role <role>`.
 8. **Go.** Exit 0; stdout ends with, in this order: `gate: issues per run: <k>` (`<k>`: `limits.issuesPerRun`, or
-   `NIGHTMILL_ISSUES_LEFT` when it is set, a whole number of at least 0 and smaller), with `--issue` also
+   `NIGHTMILL_ISSUES_LEFT` when it is set to a whole number of at least 0 and smaller than `limits.issuesPerRun`;
+   otherwise, also when it is larger, equal or not a whole number, `limits.issuesPerRun`), with `--issue` also
    `gate: spent on #<n>: $<spent> of $<l>`, and last `gate: go`.
 
 **Exit codes:** 0 go, 1 the project is paused, 2 cannot check (also a usage error), 3 a limit is breached, 4 the
@@ -212,7 +213,7 @@ does.
 **4. The pause flag cannot be changed by the branch it governs.** The gate reads `limits` only from the configuration
 of decision 3 step 1, never from the working tree's file except in `baseconfig`'s two fallbacks (no remote branch known, or a
 base without a config, where no base exists to govern). A pull request that sets `limits.paused` to `false` or raises a
-limit governs no run until it is merged and fetched (by a take or the driver's start, iteration 48 decision 5); as a change under `.claude/` it is never auto-merged (iteration
+limit governs no run until it is merged and fetched (by a take or the driver's start, iteration 48 decision 1 step 5); as a change under `.claude/` it is never auto-merged (iteration
 48 decision 6), so only the maintainer's merge unpauses. The label is not in any branch: a pull request cannot change
 it.
 
@@ -261,7 +262,7 @@ workflow skill is rules, not a run.
    slot and without the driver is not timed (Not done). The driver does not stop a running step on time (iteration 52
    decision 6 does not either); the bound acts at the next step.
 2. **Cost per issue**: the sum of `total_cost_usd` of the headless runs that worked on the issue, over all runs, from
-   the ledger; a run for several bugs (`/fix all`) shares its cost equally among the bugs it started. Inside a run the
+   the ledger; a run for several bugs (`/fix all`) shares its cost equally among the bugs of its field 6 (the bugs whose board status changed in the step, decision 7). Inside a run the
    cost is bounded by `--max-budget-usd` (decision 8), which Claude Code enforces.
 3. **Turns per role**: for the seven roles, the tool uses of one launch, compared after it returns (decision 5 rule
    4); a launch is not stopped while it runs. For `session`, the turns of a headless run, passed as `--max-turns` by
@@ -284,7 +285,7 @@ creates `<root>/.slots/` when missing. 11 fields, tab-separated, an absent value
 | 4 | step | the step's number `k` in that run |
 | 5 | prompt | `/nightmill:fix all` or `/nightmill:next <N>` |
 | 6 | issues | the issue numbers the step worked on, joined by `,`: for `/next N` `N`; for `/fix all` the bugs whose board status after the step differs from before it, in the order of the summary table; empty when none |
-| 7 | ended | `ok` (exit 0, `subtype` `success`), `max-turns`, `max-budget` (the `subtype` names of the probe), `exit <code>`, `signal`, or `no-result` (stdout not one JSON object) |
+| 7 | ended | `ok` (exit 0, `subtype` `success`), `max-turns`, `max-budget` (the `subtype` names of the probe, whatever the exit code), `exit <code>`, `signal`, or `no-result` (stdout not one JSON object) |
 | 8 | from | the step's start, UTC |
 | 9 | duration | `duration_ms` of the result, as given |
 | 10 | cost | `total_cost_usd` of the result, as given |
@@ -296,7 +297,8 @@ outside the repository, and a root inside the main checkout that is not ignored 
 driver before its first step (iteration 52 decision 3). Only the driver writes `run` lines; a `claude -p` started by
 hand is not recorded (Not done), because only its caller sees its result.
 
-**8. The driver.** Additions to iteration 52; everything else there stands.
+**8. The driver.** Additions to iteration 52 and one amendment of it (After every step, below); everything else there
+stands.
 
 - **Before every step** (iteration 52 decision 3 step 1), after the kill switch and the time limit and before the
   clean-checkout check: `scripts/gate.sh` (`gate.ps1`) without arguments. Exit 1 ends the run with
@@ -330,7 +332,15 @@ hand is not recorded (Not done), because only its caller sees its result.
   `the headless run reached its turn limit of <T> (limits.turnsPerRole.session × <k>)` or
   `the headless run reached its budget of $<B> (limits.costPerIssueUsd × <k>)`; such items are `blocked: <reason>` in
   the summary. A step ended by a signal to the driver (iteration 52 decision 8) is not a limit and labels nothing. Then
-  the loop goes on.
+  the loop goes on with the next item (decision 3 step 1 of iteration 52), whatever exit code `claude` returned for
+  that step.
+- **Amendment of iteration 52 decision 3 step 5** (the maintainer's decision for this story), for this one case only: a
+  step whose result's `subtype` is the one the probe recorded for `--max-turns` or for `--max-budget-usd` (field 7
+  `max-turns` or `max-budget`) is a limit breach, not a failed step. It does not end the run with
+  `claude exited <code> in <the step's prompt>`, and it does not by itself make the driver's exit code 1 (iteration 52's
+  exit code "when a step's `claude` exited non-zero" applies only to a step that ends the run by step 5). Its summary
+  step line still shows its exit code. Every other step whose `claude` exits non-zero (field 7 `exit <code>` or
+  `no-result`) still ends the run by step 5 as iteration 52 says.
 - **The summary** (iteration 52 decision 10) gains nothing new but these reasons and outcomes; the count line counts a
   `blocked: limit` row as blocked.
 - **Writes.** Iteration 52 decision 9's list of `gh` calls gains exactly five: for a breach (decision 9)
@@ -449,11 +459,11 @@ before (the gate writes nothing), and the remote-tracking refs are unchanged (th
 | Case | Setup | Expected |
 |---|---|---|
 | flags | loop of iteration 52 (bug #11, stories #21, #22) | the claude log: `/nightmill:fix all ... --max-turns 200 --max-budget-usd 25.00`, `/nightmill:next 21 ... --max-turns 200 --max-budget-usd 25.00`; `NIGHTMILL_ISSUES_LEFT` 10, 9, 8; `NIGHTMILL_RUN_STARTED` set |
-| ledger | as flags | three `run` lines appended, 11 fields each, fields 5, 6, 7, 9, 10, 11 `/nightmill:fix all`, `11`, `ok`, and the fake's numbers; field 3 the same in all three |
-| paused | `limits.paused` true pushed to `origin` by the first step | one claude call; reason `paused: limits.paused is true on origin/HEAD:.claude/nightmill.json`; exit 0 |
+| ledger | as flags | three `run` lines appended, 11 fields each; fields 4, 5, 6: line 1 `1`, `/nightmill:fix all`, `11`; line 2 `2`, `/nightmill:next 21`, `21`; line 3 `3`, `/nightmill:next 22`, `22`; in every line field 7 `ok` and fields 9, 10, 11 the fake's numbers for that step; field 3 the same in all three |
+| paused | the fake's first step, in the main checkout on `main`, commits `limits.paused` true and runs `git push origin main` from there: the push moves the checkout's `origin/main`, and so `origin/HEAD`, without a fetch (iteration 48 decision 1 step 5), and leaves the tree clean and on `main` | one claude call; reason `paused: limits.paused is true on origin/HEAD:.claude/nightmill.json`; exit 0 |
 | paused at start | `limits.paused` true before the run | exit 1; `drive: cannot start: paused: ...`; no claude call |
 | issue limit | `issuesPerRun` 2, three items | two claude calls; reason `the issue limit of 2 per run (limits.issuesPerRun) is reached` |
-| max turns | `/next 21` ends with `subtype` of the probe for turns, #21 left at In progress | `gh issue comment 21` with `Stopped by a limit: the headless run reached its turn limit of 200`, `gh issue edit 21 --add-label blocked`; row `blocked: ...`; #22 still tried; no status call |
+| max turns | `/next 21` ends with `subtype` of the probe for turns and its exit code, #21 left at In progress; run again with the fake exiting 0, then 1 | each time: `gh issue comment 21` with `Stopped by a limit: the headless run reached its turn limit of 200`, `gh issue edit 21 --add-label blocked`; row `blocked: ...`; #22 still tried; no `claude exited` reason; no status call |
 | budget | the same with the budget `subtype` | the same with `reached its budget of $25.00` |
 | limit at Review | `/fix all` ends with the budget `subtype`, #11 moved to Review with an open PR; then `/next 21` ends with the turns `subtype`, #21 left at Review | `gh issue comment 11` and `gh issue edit 11 --add-label blocked`, the same for #21; rows `blocked: ...`; no status call |
 | spent | a fixture ledger with `run` lines for #21 summing $25.00 | no `/next 21` call; comment and label for #21; row `blocked: limit: #21 has spent $25.00 ...` |
@@ -511,8 +521,10 @@ anything and changes no board):
 
 1. `claude -p "/nightmill:status" --permission-mode manual --output-format json --max-turns 1` and the same with
    `--max-budget-usd 0.01`, once each, in a scratch checkout: each is accepted (no unknown-option error) and its JSON
-   has `subtype`, `duration_ms`, `total_cost_usd` and `num_turns`; the `subtype` of a run ended by each limit is
-   recorded and used for `max-turns` and `max-budget` in decision 7 and the smoke fakes.
+   has `subtype`, `duration_ms`, `total_cost_usd` and `num_turns`; the `subtype` and the exit code of `claude` of a
+   run ended by each limit are recorded; the `subtype` is used for `max-turns` and `max-budget` in decision 7 and the
+   smoke fakes, and the exit code is what the fakes of the cases `max turns`, `budget` and `limit at Review` exit
+   with. Whatever the exit code is, decision 8's amendment holds; the probe changes no rule.
 2. `NIGHTMILL_ISSUES_LEFT=3 claude -p "Run printenv NIGHTMILL_ISSUES_LEFT in the shell and print its output" --permission-mode manual --output-format json --max-turns 3`
    prints `3` (the variable reaches the shell tool).
 3. In an interactive session, one Agent launch: its result's usage names `tool_uses`.
@@ -577,7 +589,7 @@ Not touched: `scripts/slot.*`, `scripts/lib/*` (the gate sources `baseconfig`, `
 - **A gate call before every step costs, with an issue, a GraphQL query.** A `/next` makes a few dozen calls, far
   below the rate limit. The gate reads no network for the config.
 - **A config pause reaches a running skill late.** The gate reads the last fetched base branch (no fetch, iteration
-  48 decision 5), so a merged `limits.paused` reaches a run at its next gate call after the next fetch in that
+  48 decision 1 step 5), so a merged `limits.paused` reaches a run at its next gate call after the next fetch in that
   repository: the next take, or the driver's start. A skill that takes no further slot runs on until it ends; the label
   `paused` on the epic and the kill switch are read live.
 - **A gate that fails closed stops runs on a network blip** (exit 2 on a failed epic read). That is the choice of the
@@ -618,7 +630,7 @@ skill, 30 across the other skills, 10 in `/init`, 70 in the README, 6 in `tests/
 - No automatic removal of `blocked`, no unpause by the driver, no alerts or notifications beyond the issue comment and
   iteration 52's summary.
 - No change to the kill switch, the lock, `unattended.maxMinutes` or the workflow template of iteration 52.
-- No `git fetch` in the gate or in any other script or skill (iteration 48 decision 5 stands).
+- No `git fetch` in the gate or in any other script or skill (iteration 48 decision 1 step 5 stands).
 - No `maxTurns` in the agent files: they are the same for every project, and the limit is a project's value.
 - No budget per project, per agent or per day beyond these keys.
 
@@ -638,10 +650,14 @@ skill, 30 across the other skills, 10 in `/init`, 70 in the README, 6 in `tests/
 - **"A label on the epic"** is read as the label `paused` on the issue's direct parent epic, pausing that epic's issues;
   the project-wide switch is `limits.paused`. A config pause needs a merged pull request under `.claude/`, which is
   never auto-merged, and reaches a running skill at its next gate call after the base branch was next fetched (a
-  take, the driver's start); the gate does not fetch, as iteration 48 decision 5 says. A fetch in the gate would
+  take, the driver's start); the gate does not fetch, as iteration 48 decision 1 step 5 says. A fetch in the gate would
   amend that decision and is the maintainer's call, not made here. If the maintainer
   wants an instant project-wide switch without a merge, the kill switch covers the driver on one machine; a label on a
   fixed issue would cover all, and is not asked here.
+- **"Each run"** in criterion 4 is read as each headless run the driver starts (decision 7): a `claude -p` started by
+  hand gets no ledger line, because only its caller sees its result (Not done). If the maintainer wants those recorded
+  too, it needs a wrapper or a hook that sees the result, which this spec does not have.
 - **Not verified by a run:** whether Claude Code 2.1.322 accepts `--max-turns` (not in its `--help`), the `subtype`
-  names of the two limits, that the environment reaches the shell tool, and the usage block of an Agent result in a
+  names of the two limits and the exit code of `claude` for a run they end (decision 8's amendment holds whatever it
+  is), that the environment reaches the shell tool, and the usage block of an Agent result in a
   headless run. The probe settles them before any file changes, and its outcomes are listed there.
