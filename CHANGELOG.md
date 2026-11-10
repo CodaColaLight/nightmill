@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Iteration 49 (#160): the README has a Running unattended section: the `claude -p` commands for `/nightmill:next`
+  and `/nightmill:fix` (one issue, or `all`) in Manual mode, the settings a headless run needs (the four lines `/init`
+  writes, the workspace trusted once, no `--bare` and no bypass), how runs share the slots and the agent limit and how
+  to watch them with `/nightmill:status`, and what a stopped run leaves and how it is continued. No config key.
 - Iteration 48 (#111): a pull request no longer changes the config that governs it. The skills, the slot script (its
   warm-up) and the pairing check read `.claude/nightmill.json` from the base branch (`origin/HEAD`, then
   `git.baseBranch`) with `git show`, the working tree's file only when no remote branch is known or the base has none
