@@ -6,6 +6,8 @@ $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
 $D = Join-Path $here "scripts\drive.ps1"
 $psExe = (Get-Command powershell).Source
+# the Git helper below has the name of the program: resolve the program itself, a function would call itself
+$script:gitExe = (Get-Command git -CommandType Application | Select-Object -First 1).Source
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("nightmill-smoke-drive-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $fx = Join-Path $PSScriptRoot "fixtures\drive"
@@ -86,7 +88,7 @@ exit $code
 [IO.File]::WriteAllText((Join-Path $bin "claude.ps1"), $clPs)
 [IO.File]::WriteAllText((Join-Path $bin "claude.cmd"), "@echo off`r`n`"$psExe`" -NoProfile -ExecutionPolicy Bypass -File `"%~dp0claude.ps1`" %*`r`nexit /b %ERRORLEVEL%`r`n")
 
-function Git { $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"; try { & git @args 2>&1 | Out-Null } finally { $ErrorActionPreference = $ea } }
+function Git { $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"; try { & $script:gitExe @args 2>&1 | Out-Null } finally { $ErrorActionPreference = $ea } }
 $script:n = 0
 $script:c = ""; $script:main = ""
 # New-Case <extra json member or $null> [slots] [roomCheck]
