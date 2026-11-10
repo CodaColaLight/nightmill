@@ -892,8 +892,10 @@ bash tests/smoke-room.sh   # room.sh against a fixture of readings
 bash tests/smoke-control.sh # control.sh against fixtures of readings and a fixed clock
 bash tests/smoke-dashboard.sh # dashboard.sh against fixtures and a fake gh
 bash tests/smoke-panel.sh   # panel.sh against fixtures
+bash tests/smoke-stages.sh  # stages.sh: the stage record against a fixture ledger
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 bash tests/smoke-check.sh   # tests/check.sh: the parallel steps, the order, the verdict, --quick
+bash tests/smoke-guard.sh   # guard.sh: what the PreToolUse guard refuses
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
@@ -907,7 +909,9 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-control.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-stages.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-guard.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```
