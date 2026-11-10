@@ -1,6 +1,6 @@
 # Iteration 39: the README has a security model section
 
-Status: draft, awaiting approval (#159)
+Status: delivered in iteration 39 (PR #255)
 
 Story #159, epic #107 (Hardening from the code review), finding MD-T12. This is a respec: the first version (PR #197,
 2026-11-07) was written before iteration 43 (#109, the run permissions) and iteration 47 (#110, the deny rules and the
