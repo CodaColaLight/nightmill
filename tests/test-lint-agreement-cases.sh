@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # tests/test-lint-agreement-cases.sh [<root>] - the cases of iteration 51 (#157): runs
-# tests/test-lint-agreement.sh against scratch trees, one broken rule each, and against this checkout.
+# tests/test-lint-agreement.sh against scratch trees, one broken rule each, and against this checkout. The rule file
+# is sourced once and its check runs in this shell; one case also starts it as a process, for its exit code (bug #270:
+# a start per case made the PowerShell CI job slow).
 set -euo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 rule="$root/tests/test-lint-agreement.sh"
+# shellcheck source=tests/test-lint-agreement.sh
+. "$rule"
 work=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-agree-cases.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 bad=0
@@ -22,7 +26,11 @@ mkbase() { # <dir>
 }
 
 out=""; rc=0
-run() { # <dir>: sets out (stdout+stderr) and rc
+run() { # <dir>: sets out (stdout+stderr) and rc, from the rule file's check in this shell
+  rc=0
+  out=$(check "$1" 2>&1) || rc=$?
+}
+runfile() { # <dir>: the same, from a start of the rule file (its exit code and its self-test)
   rc=0
   out=$(bash "$rule" "$1" 2>&1) || rc=$?
 }
@@ -96,7 +104,7 @@ newcase; rm "$d/README.md"; run "$d"
 expect "no readme" "README.md missing"
 
 # one problem does not hide the next
-newcase; : > "$d/scripts/b.sh"; echo "bash tests/smoke-nope.sh" >> "$d/README.md"; run "$d"
+newcase; : > "$d/scripts/b.sh"; echo "bash tests/smoke-nope.sh" >> "$d/README.md"; runfile "$d"
 expect "all rules run" "scripts/b.sh has no PowerShell twin scripts/b.ps1"
 expect "all rules run" "README.md lists tests/smoke-nope.sh, which does not exist"
 
