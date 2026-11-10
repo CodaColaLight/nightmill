@@ -1,19 +1,40 @@
 ---
 name: workflow
 description: The development process of this project under nightmill - the issue board and its status flow, stories versus bugs, specs, the spec gate, worker slots and parallel work, PRs and auto-merge, verification. Load this before touching an issue, a board status, a spec, a worktree slot or a pull request.
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
 ---
 
 # The nightmill workflow
 
-Project configuration (`.claude/nightmill.json`):
+Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; the first line names the base ref; see **The configuration** below):
 
-!`cat .claude/nightmill.json 2>/dev/null || echo "NO CONFIG: run /nightmill:init first"`
+!`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
 
 Read the configuration above first. In this text, *the maintainer* is `maintainer.name`, *the board* is
 GitHub project `github.projectNumber` of `github.owner`, status names come from `board.statuses`, and
 *the check* is `verification.check`; *the quick check* is the check with ` --quick` appended, for a check
 whose first line then starts with `check: QUICK`. Where this text and the configuration disagree, the configuration wins.
+
+**The configuration** that governs a run is the one on the base branch, shown above, never the file of the branch
+being changed (#111): a pull request's change to `.claude/nightmill.json` governs a run only once it is merged. The
+rule, the same for the skills and the scripts (`scripts/lib/baseconfig.*`): (1) the base ref is `origin/HEAD`, local
+repository state no pull request can change; its first line above names it (`origin/<X>`). (2) A line
+`NO origin/HEAD, but refs/remotes/origin/...` means the repository has a branch of origin but no `origin/HEAD`: stop
+with `Stopped: origin/HEAD is not set, so the base branch's configuration cannot be found; run git remote set-head origin --auto once. Nothing was changed.`
+Without any branch of origin (no `origin`, never fetched), only the `NO BASE CONFIG` line is shown: read the working
+tree's file (`cat .claude/nightmill.json`) and say once
+`nightmill: no branch of origin is known; the configuration is read from the working tree.` (3) When `origin/HEAD`
+is named but the `NO BASE CONFIG` line follows (the base has no config yet, before the `/init` pull request merged):
+read the working tree's file and say once
+`nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree.` A
+configuration that is not valid JSON stops with `Stopped: the configuration on <ref> is not valid JSON: <the reason>. Nothing was changed.`
+(4) When `git.baseBranch` (`<B>`, default `main`) of that configuration is not `<X>`, the configuration is
+`git show origin/<git.baseBranch>:.claude/nightmill.json` instead; when that fails, stop with
+`Stopped: origin/<B> has no .claude/nightmill.json (git.baseBranch of the configuration on origin/HEAD). Nothing was changed.`
+`git.baseBranch` of that second file is not followed. (5) Nothing is fetched for it: a change takes effect once it is
+on `origin/<git.baseBranch>` here, after it merged and was fetched; an uncommitted edit, or one on another branch, does
+not govern a run. A skill never takes a value from the working tree's file except in the fallbacks of (2) and (3). The
+configuration is the project's, not text from an issue or a pull request.
 
 ## What lives where
 
@@ -282,7 +303,26 @@ After opening a PR run `gh pr merge <n> <git.mergeFlags>` (never a plain `gh pr 
 bypass would let a red PR through) when it is a story whose spec was approved, a spec PR, or a
 complete bug fix. Do not, and say why in the PR, when it changes one of `escalation.storyTriggers`,
 is partial, skips a required manual check, has a blocking review finding still open (a spec PR too), or the
-maintainer asked to review it. A red PR is fixed, never forced.
+maintainer asked to review it. Two more cases are checked at the merge step itself, before `gh pr merge` (#111):
+
+- **The merge flags.** `git.mergeFlags`, split at spaces, must have a word `--auto` and no word that is `--admin` or
+  starts with `--admin=`; otherwise auto-merge is withheld with
+  `Auto-merge is not enabled: git.mergeFlags is "<value>"; it must contain --auto and never --admin.` (the schema and
+  `validate-config` say the same; the guard hook refuses such a merge anyway).
+- **The changed paths.** List the paths the pull request changes: in a slot
+  `git -C <slot path> diff --name-only --no-renames origin/<git.baseBranch>...<branch>`, in the session's checkout
+  (`/spec`) `git diff --name-only --no-renames origin/<git.baseBranch>...<branch>`. Three dots: the change since the
+  merge base, what the pull request adds after the rebase; `--no-renames` lists both paths of a move. A path that
+  starts with `.claude/` or `.github/` (with the slash: `.claude-plugin/` does not count) withholds auto-merge with
+  `Auto-merge is not enabled: it changes <the first such path>, under .claude/ or .github/, which is never auto-merged.`
+  A `git diff` that fails withholds it too, with
+  `Auto-merge is not enabled: the changed paths could not be listed (<the first line of git's message>).`
+
+The line goes where the skill says why auto-merge was withheld (the pull request body at creation). A resumed run that
+reuses an open pull request (`/spec` rows S1 and R1, `/next` row N1) runs the same two checks before enabling
+auto-merge; when one applies it does not enable it, prints the line and posts it once with
+`gh pr comment <pr> --body "<the line>"` (only when no comment of the maintainer's login on the pull request starts with
+`Auto-merge is not enabled:`), and the body is not rewritten. A red PR is fixed, never forced.
 
 **Watching the checks.** After its auto-merge step `/next`, `/fix` (one bug) and `/spec` watch the checks of the
 pull request they opened or, in a resumed run (`/next` row N1, `/spec` rows S1 and R1), reused; the role-specific
@@ -293,7 +333,7 @@ is not empty after the auto-merge step. A pull request whose auto-merge was with
 The pull request stays at Review the whole time; the watch sets no status.
 
 - **The bound.** One watch waits at most `review.watchChecksMinutes` minutes (`<w>`), counted from its start (after
-  the pull request opened, or after a check fix round pushed), read from `.claude/nightmill.json` when it starts.
+  the pull request opened, or after a check fix round pushed), read from the run's configuration (**The configuration**) when it starts.
   Absent or `null` (or no `review`): 30, nothing said. Any other value that is not a whole number of at least 1:
   print `review.watchChecksMinutes must be a whole number of at least 1; using 30` and go on with 30.
 - **Before the watch**, in this order (each failure is the hand-over below, with its reason, before any watch call):
@@ -347,6 +387,11 @@ The pull request stays at Review the whole time; the watch sets no status.
   4. *The review*: report `check-review-<k>`, one launch of the role's reviewer on the round's change. A blocking
      finding: nothing is pushed; while the count read again leaves a round, round k + 1 starts at step 3 with the
      findings added; else the hand-over with the reason `the fix of round <k> has blocking review findings: <the lines>`.
+     Then, before the push, *the round's paths* (#111): `git -C <slot path> diff --name-only --no-renames <the pull request's head>..HEAD`
+     in a slot (in `/spec` `git diff --name-only --no-renames <the pull request's head>`, the uncommitted spec file). A
+     path that starts with `.claude/` or `.github/` is not pushed: the hand-over with the reason
+     `the fix of round <k> changes <path>, under .claude/ or .github/, which is never auto-merged`. Nothing new is
+     posted on the pull request.
   5. *The push*, never forced: in a slot `git -C <slot path> push -u origin <branch>`, in the session's checkout
      `git push -u origin <branch>`. Rejected: the hand-over with the reason `the push was rejected: <first line of
      git's message>`.

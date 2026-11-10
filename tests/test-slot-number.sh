@@ -48,6 +48,8 @@ git add -A
 git -c user.name=t -c user.email=t@example.invalid commit -qm init
 git remote add origin "$tmp/origin.git"
 git push -q origin main
+# iteration 48: the config comes from the base branch (origin/HEAD)
+git remote set-head origin main
 
 slots="$tmp/wt/.slots"
 rep() { set +e; out=$(bash "$S" "$@" 2>"$tmp/err.txt"); rc=$?; set -e; err=$(cat "$tmp/err.txt"); }

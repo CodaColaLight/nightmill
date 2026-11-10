@@ -158,12 +158,37 @@ rm -f "$pair_cfg"
 
 echo "== schema keywords are supported"
 # scripts/validate-config.* understand type, properties, required, items, minimum, minItems,
-# additionalProperties and enum. A schema that gains another constraint would be silently ignored by them.
-for kw in '$ref' anyOf oneOf allOf not if pattern format const maxItems uniqueItems minLength maxLength maximum dependencies; do
+# additionalProperties, enum, pattern and not (iteration 48). A schema that gains another constraint would be silently
+# ignored by them.
+for kw in '$ref' anyOf oneOf allOf if format const maxItems uniqueItems minLength maxLength maximum dependencies; do
   if grep -qF "\"$kw\"" schema/nightmill.schema.json; then
     echo "FAIL: schema/nightmill.schema.json uses \"$kw\", which scripts/validate-config.* does not support"; fail=1
   fi
 done
+# not is supported only as an object whose one key is pattern, and a pattern holds only characters that ECMA-262, POSIX
+# ERE (awk) and .NET read the same way: letters, digits, space and -=_.*()?|^$ (no backslash, no class). A key named
+# pattern or not directly under properties is a property, not the keyword.
+schema_flat=$(JSON_MODE=flat JSON_FILE=schema/nightmill.schema.json LC_ALL=C awk -f scripts/lib/json.awk) || schema_flat=""
+while IFS="$(printf '\t')" read -r sk_path sk_kind sk_val; do
+  case "$sk_path" in *properties.not|*properties.pattern) continue ;; esac
+  case "$sk_path" in
+    not|*.not)
+      if [ "$sk_kind" != object ]; then
+        echo "FAIL: schema/nightmill.schema.json: $sk_path is not an object with the one key pattern"; fail=1
+      else
+        sk_keys=$(printf '%s\n' "$schema_flat" | SK_P="$sk_path." LC_ALL=C awk -F '\t' 'index($1, ENVIRON["SK_P"]) == 1 { r = substr($1, length(ENVIRON["SK_P"]) + 1); if (r !~ /[.[]/) print r }')
+        [ "$sk_keys" = pattern ] || { echo "FAIL: schema/nightmill.schema.json: $sk_path has a key other than pattern (only not: { pattern } is supported)"; fail=1; }
+      fi ;;
+    pattern|*.pattern)
+      if [ "$sk_kind" != string ]; then
+        echo "FAIL: schema/nightmill.schema.json: $sk_path is not a string"; fail=1
+      elif printf '%s\n' "$sk_val" | LC_ALL=C grep '[^A-Za-z0-9 =_.*()?|^$-]' >/dev/null; then
+        echo "FAIL: schema/nightmill.schema.json: $sk_path holds a character outside letters, digits, space and -=_.*()?|^\$: $sk_val"; fail=1
+      fi ;;
+  esac
+done <<SKEOF
+$schema_flat
+SKEOF
 
 echo "== roles and models are described"
 # The agent roles, the model ranking and the fix rounds (iteration 10): all optional, each with a type, a default
@@ -430,8 +455,13 @@ for f in skills/*/SKILL.md; do
   if ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -F 'Bash(cat .claude/nightmill.json *)' >/dev/null; then
     echo "FAIL: $f: the injection has no matching allowed-tools"; fail=1
   fi
-  if grep '^!`' "$f" | grep -v '^!`cat \.claude/nightmill\.json' >/dev/null; then
-    echo "FAIL: $f: the injection has no matching allowed-tools (an injection line does not start !\`cat .claude/nightmill.json)"; fail=1
+  # an injection line is the working tree's cat (/init) or the base configuration's git line (iteration 48), whose
+  # every part tests/test-skill-config-fallback.sh checks against allowed-tools
+  if grep '^!`' "$f" | grep -v -e '^!`cat \.claude/nightmill\.json' -e '^!`git symbolic-ref -q --short refs/remotes/origin/HEAD ' >/dev/null; then
+    echo "FAIL: $f: the injection has no matching allowed-tools (an injection line does not start !\`cat .claude/nightmill.json or !\`git symbolic-ref)"; fail=1
+  fi
+  if grep '^!`git symbolic-ref' "$f" >/dev/null && ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -F 'Bash(git show origin/*:.claude/nightmill.json *)' >/dev/null; then
+    echo "FAIL: $f: the base configuration's injection has no matching allowed-tools"; fail=1
   fi
 done
 # README
@@ -1354,6 +1384,21 @@ echo "== running unattended is documented"
 # needs, how runs share the slots, how to watch them and what a stopped run leaves. The pins live in
 # tests/test-unattended-docs.sh.
 bash tests/test-unattended-docs.sh "$PWD" || fail=1
+
+echo "== the config comes from the base branch"
+# Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
+# --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in
+# tests/test-config-from-base.sh.
+bash tests/test-config-from-base.sh "$PWD" || fail=1
+# criterion 4: the finding was confirmed against the code when the fix was specified (the spec's Facts)
+spec48=docs/specs/iteration-48-config-from-base.md
+if [ -f "$spec48" ]; then
+  for w in '## Facts this rests on' '**The finding still holds**, part by part:'; do
+    grep -qF -- "$w" "$spec48" || { echo "FAIL: $spec48: the finding is not confirmed in the Facts (lacks: $w)"; fail=1; }
+  done
+else
+  echo "FAIL: $spec48: missing (it records that finding HI-3 still held when the fix was specified)"; fail=1
+fi
 
 echo "== CI runs with least privilege"
 # The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level

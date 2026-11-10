@@ -91,8 +91,35 @@ exit 0
     }
   }
 
+  # Base-Sync <dir> (iteration 48): slot.ps1 reads the config on origin/HEAD, not the working tree's file, so before a
+  # run origin/HEAD of the test repository is made to hold the working tree's config: a commit of that one file, built
+  # with a temporary index and no remote (refs/remotes/origin/main and origin/HEAD are set directly). Without the file
+  # nothing changes.
+  function Base-Sync([string]$dir) {
+    $f = Join-Path $dir ".claude\nightmill.json"
+    if (-not (Test-Path -LiteralPath $f)) { return }
+    $idx = Join-Path $dir ".git\nightmill-base-sync.index"
+    $eap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $prevIdx = $env:GIT_INDEX_FILE
+    try {
+      Remove-Item -LiteralPath $idx -Force -ErrorAction SilentlyContinue
+      $blob = ((& git -C $dir hash-object -w -- $f 2>$null) | Out-String).Trim()
+      $env:GIT_INDEX_FILE = $idx
+      & git -C $dir update-index --add --cacheinfo "100644,$blob,.claude/nightmill.json" 2>$null | Out-Null
+      $tree = ((& git -C $dir write-tree 2>$null) | Out-String).Trim()
+      $env:GIT_INDEX_FILE = $prevIdx
+      $commit = ((& git -C $dir -c user.name=t -c user.email=t@example.invalid commit-tree -m base $tree 2>$null) | Out-String).Trim()
+      & git -C $dir update-ref refs/remotes/origin/main $commit 2>$null | Out-Null
+      & git -C $dir symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>$null | Out-Null
+    } finally {
+      $env:GIT_INDEX_FILE = $prevIdx
+      Remove-Item -LiteralPath $idx -Force -ErrorAction SilentlyContinue
+      $ErrorActionPreference = $eap
+    }
+  }
   # Run-Child <script> <dir> <gh fixture> <temp folder> <arguments> [gh fails]: Out (bytes decoded), Err, Code
   function Run-Child([string]$script, [string]$dir, [string]$fix, [string]$tdir, [string]$extra = "", [bool]$ghFails = $false) {
+    Base-Sync $dir
     $log = Join-Path $tmp "gh.log"
     Write-Utf8 $log ""
     $psi = New-Object System.Diagnostics.ProcessStartInfo

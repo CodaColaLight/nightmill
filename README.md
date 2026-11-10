@@ -291,10 +291,11 @@ maintainer asked to review it. A red check is fixed within `review.maxFixRounds`
 - **Anyone with write access to the board**: the board keeps no record of who set a status, so an approval cannot be
   traced to the maintainer ([#177](https://github.com/CodaColaLight/nightmill/issues/177)).
 - **The files in the repository**: specs, decisions, `CLAUDE.md` and `.claude/nightmill.json`, whose
-  `worktrees.warmup` and `verification.check` commands run on the machine. A pull request can change them, the config
-  of its own run included, and it auto-merges when none of the withholding cases applies
-  ([#111](https://github.com/CodaColaLight/nightmill/issues/111)). The guard refuses a merge without `--auto` or with
-  `--admin` whatever `git.mergeFlags` says.
+  `worktrees.warmup` and `verification.check` commands run on the machine. A pull request's change to
+  `.claude/nightmill.json` no longer governs a run before it merges: the skills and the slot script read the config from
+  the base branch, and a pull request that changes a path under `.claude/` or `.github/` is not auto-merged
+  ([#111](https://github.com/CodaColaLight/nightmill/issues/111)). The specs, decisions, `CLAUDE.md` and the code the check runs can still steer a run. The
+  guard refuses a merge without `--auto` or with `--admin` whatever `git.mergeFlags` says.
 - **The installed plugin**: its skills, hooks and scripts run with the same rights. Pin it by version (the version in
   its `plugin.json`) and read the changelog before an upgrade.
 
@@ -345,7 +346,10 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 | Deleting a board item or field, a label or a release, a remote branch delete, a forced branch delete, and a GraphQL mutation no skill sends, are refused | enforced by `/init`'s deny rules (the `gh` deletes, when the line was applied) and the guard hook (the branch deletes and the mutations, where it runs) | [#253](https://github.com/CodaColaLight/nightmill/issues/253) |
 | Deleting a local file without asking (the Edit and Write tools, a shell rm) | not enforced yet | none filed |
 | A command the guard cannot see: another spelling (`sh -c`, `eval`, an alias), another tool than Bash or PowerShell, a machine without bash, a guard that does not start | not enforced yet | [#254](https://github.com/CodaColaLight/nightmill/issues/254) |
-| A pull request cannot change the config, warm-ups or check that govern its own run, and a change under `.claude/` or `.github/` is not auto-merged | not enforced yet | [#111](https://github.com/CodaColaLight/nightmill/issues/111) |
+| `git.mergeFlags` contains `--auto` and never `--admin` | enforced by the schema and `scripts/validate-config.*`, and at run time by the guard hook, where it runs | [#111](https://github.com/CodaColaLight/nightmill/issues/111), [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
+| The skills, the slot script's warm-up and the pairing check use the config on the base branch, not the working tree | enforced by the skills' config injection, `scripts/slot.*` and `scripts/validate-config.*` `--base`; the working tree's file only without a remote branch or before the base has one | [#111](https://github.com/CodaColaLight/nightmill/issues/111) |
+| A change under `.claude/` or `.github/` is not auto-merged | enforced by `tests/lint.sh` for the skills' text only; no mechanism checks it at run time | [#111](https://github.com/CodaColaLight/nightmill/issues/111) |
+| The guard hook and the other scripts (status, room, control, models, the dashboard and the pane) read the config from the base branch | not enforced yet | none filed |
 | The `worker` agent has a limited set of tools | not enforced yet | [#142](https://github.com/CodaColaLight/nightmill/issues/142) |
 | `/next` checks who set Approved | not enforced yet | [#177](https://github.com/CodaColaLight/nightmill/issues/177) |
 | An agent claims an issue before it changes anything | not enforced yet | [#176](https://github.com/CodaColaLight/nightmill/issues/176) |
@@ -361,7 +365,15 @@ changes the script rules of the run permissions needs `/init` again until
 
 ## Configuration
 
-One file in the project, `.claude/nightmill.json`. The schema documents every key; the short version:
+One file in the project, `.claude/nightmill.json`. The skills, the slot script and the pairing check read the file from
+the base branch (`origin/HEAD`, then the branch `git.baseBranch` names there) with `git show`, not from the working
+tree, so a branch or a pull request does not change the config of its own run
+([#111](https://github.com/CodaColaLight/nightmill/issues/111)). A change takes effect once it is merged and fetched.
+The working tree's file is used only when no branch of `origin` is known or before the base branch has the file (the run
+says so). When `origin/HEAD` is missing (a repository made with `git init` and `git remote add`), run
+`git remote set-head origin --auto` once.
+
+The schema documents every key; the short version:
 
 | Key | What it holds |
 |---|---|
@@ -376,7 +388,7 @@ One file in the project, `.claude/nightmill.json`. The schema documents every ke
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review, and how many check fix rounds a pull request gets after a red check, over every run |
 | `review.watchChecksMinutes` | Minutes a skill watches its pull request's checks after enabling auto-merge, per push (default 30) |
-| `git` | Base branch, branch prefixes, merge flags |
+| `git` | Base branch, branch prefixes, merge flags (with `--auto`, never `--admin`) |
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5); and for `/fix all` the most bugs one run starts (`fixAllMaxBugs`, default 0: no limit) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser, and `panelRefreshSeconds` (default 15): how often the slots pane beside the chat reads the slots again |
 

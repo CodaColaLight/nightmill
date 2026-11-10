@@ -9,7 +9,8 @@
 #   slot.sh --capacity --clear          # back to the configuration's numbers
 #   slot.sh --report <step> --slot N --skill <skill> --role <role>   # record what the slot's agent is doing
 # Needs git and (for --release and --reap) gh. Run it from inside the project: any checkout or worktree of
-# it. Configuration comes from .claude/nightmill.json in the main checkout, keys under "worktrees"
+# it. Configuration comes from .claude/nightmill.json on the base branch (origin/HEAD, then git.baseBranch; lib/baseconfig.sh,
+# iteration 48), the working tree's file of the main checkout only without a remote branch, keys under "worktrees"
 # (see schema/nightmill.schema.json); WORKER_SLOTS overrides worktrees.slots. A slot is never removed:
 # a new task only switches it to a new branch from the base branch, so build output stays warm.
 # A slot is busy from --take to --release, --abandon or an automatic release (a marker file in
@@ -89,12 +90,26 @@ fi
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/lib/ledger.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/lib/baseconfig.sh"
 
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "run slot.sh from inside a git checkout of the project" >&2; exit 1; }
 main=$(dirname "$gitdir")
-cfg="$main/.claude/nightmill.json"
-[ -f "$cfg" ] || { echo "no $cfg (run /nightmill:init)" >&2; exit 1; }
-json_load "$cfg" || exit 1
+# The configuration is the one on the base branch (iteration 48, lib/baseconfig.sh): origin/HEAD, then git.baseBranch;
+# the working tree's file only without a remote-tracking branch or before the base branch has one.
+# base_cfg_* are set by base_config (lib/baseconfig.sh)
+# shellcheck disable=SC2154
+{
+  base_config "$main" || { echo "$base_cfg_stop" >&2; exit 1; }
+  [ -z "$base_cfg_note" ] || echo "$base_cfg_note" >&2
+  cfg=$base_cfg_file
+  [ -f "$cfg" ] || { echo "no $cfg (run /nightmill:init)" >&2; exit 1; }
+  if [ -n "$base_cfg_tmp" ]; then
+    json_load "$cfg" || { rm -f "$base_cfg_tmp"; exit 1; }
+    rm -f "$base_cfg_tmp"
+  else
+    json_load "$cfg" || exit 1
+  fi
+}
 
 q() { json_get "$1"; }
 
