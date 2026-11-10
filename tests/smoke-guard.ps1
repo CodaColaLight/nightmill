@@ -181,7 +181,7 @@ try {
   GQ "init create view" 'mutation { createProjectV2View(input: {projectId: "P", name: "Board", layout: BOARD_LAYOUT, configuration: { visibleFieldIds: ["T", "P", "A"] }}) { projectV2View { id number layout verticalGroupByFields(first: 1) { nodes { ... on ProjectV2SingleSelectField { name } } } } } }' 0
   GQ "init update view" 'mutation { updateProjectV2View(input: { viewId: "V", filter: "-label:epic,bug" }) { projectV2View { id } } }' 0
   B "story add sub issue" 'gh api graphql -f query=''mutation($p:ID!,$c:ID!){ addSubIssue(input:{issueId:$p, subIssueId:$c}){ issue { number } } }'' -f p=I_1 -f c=I_1' 0
-  B "next last edited query" 'gh api graphql -f query=''query { repository(owner: "o", name: "r") { issue(number: 5) { lastEditedAt } } }'' --jq .data.repository.issue.lastEditedAt' 0
+  B "next last edited query" 'gh api graphql -f query=''query { repository(owner: "o", name: "r") { issue(number: 5) { lastEditedAt } } }''' 0
   GQ "mutation word inside a string" 'query { search(query: "mutation { deleteIssue }", type: ISSUE, first: 1) { issueCount } }' 0
   if (Test-Path $log) { Fail "the skills' own mutations: the guard called gh" }
 
