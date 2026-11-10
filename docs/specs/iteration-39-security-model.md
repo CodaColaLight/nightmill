@@ -100,7 +100,7 @@ each take.
 | 108 | Text from issues read as instructions | closed, completed (PR #184) |
 | 109 | `/init`'s permissions cannot run the skills without prompts | closed, completed (iteration 43, PR #216) |
 | 110 | Allow rules permit what the skills forbid | closed, completed (iteration 47, PR #251) |
-| 111 | A pull request can change the config that governs it | open |
+| 111 | A pull request can change the config that governs it | open, labelled story (relabelled from bug; the title still starts `[Bug]`). Its third part, `git.mergeFlags` with `--auto` and never `--admin`, is refused at run time by iteration 47's guard and deny rule R1; the schema pattern and the validator remain |
 | 127 | Config injection has no fallback and no `allowed-tools` | closed, completed (PR #238) |
 | 134 | Control characters in titles reach the terminal and the agent | closed, completed (PR #231: `scripts/status.*` strip C0 controls and DEL from every value they print; no skill change) |
 | 142 | Low-severity gaps in the skills (one item: `agents/worker.md` has no `tools:` line, still true) | open |
@@ -114,6 +114,8 @@ each take.
 | 177 | Approval can be verified | open |
 | 178 | Bot identity | open |
 | 213 | The skills grant their own plugin scripts (iteration 45, draft) | open |
+| 253 | The harness refuses the deletes and board mutations the skills never run (epic #107) | open |
+| 254 | A forbidden command the guard cannot see is refused, or the gap is stated (epic #107) | open |
 
 **This repository**, as an example and not as the section's content: public; no interaction limit
 (`GET repos/CodaColaLight/nightmill/interaction-limits` returns `{}`); private vulnerability reporting enabled. Its
@@ -154,7 +156,9 @@ is. No list or table is copied. The other sections do not change.
   with its limit when it has one (`where the hook runs`, `when the line was applied`);
 - `not enforced yet`, with the issue in the Issue cell;
 - `not enforced yet`, with `none filed` in the Issue cell, for a gap that iteration 47 or another spec names but no
-  issue tracks.
+  issue tracks. No row of the table uses this form today: the two gaps that had no issue are now #253 and #254. The
+  form stays defined, and the lint keeps allowing it (Tests, pins 9 and 10), so that a gap found while writing or
+  later can be listed before its issue is filed.
 
 The other sub-sections may say that a rule exists and point to the table, and say "refused" for what the table lists
 as enforced. They never call a part enforced that the table lists as not enforced yet.
@@ -283,8 +287,8 @@ replace them if they claim no more.
 | A merge without `--auto`, with `--admin` or through `gh api` is refused | enforced by the guard hook, where it runs; `--admin` also by a deny rule | #110 |
 | Deleting an issue, a board or the repository, and a REST `DELETE`, are refused | enforced by `/init`'s deny rules, when the line was applied | #110 |
 | A force push and a push to the base branch are refused | enforced by the deny rules (`git push`) and the guard (every `git` form); the ruleset, where the project sets it | #110 |
-| Other deletes and mutations (other GraphQL mutations, `gh project item-delete`, `gh label delete`, `gh release delete`, `git push --delete`, `git branch -D`, file deletes) | not enforced yet | none filed |
-| A command the guard cannot see: another spelling (`sh -c`, `eval`, an alias), another tool than Bash or PowerShell, a machine without bash, a guard that does not start | not enforced yet | none filed |
+| Other deletes and mutations (other GraphQL mutations, `gh project item-delete`, `gh label delete`, `gh release delete`, `git push --delete`, `git branch -D`, file deletes) | not enforced yet | #253 |
+| A command the guard cannot see: another spelling (`sh -c`, `eval`, an alias), another tool than Bash or PowerShell, a machine without bash, a guard that does not start | not enforced yet | #254 |
 | A pull request cannot change the config, warm-ups or check that govern its own run, and a change under `.claude/` or `.github/` is not auto-merged | not enforced yet | #111 |
 | The `worker` agent has a limited set of tools | not enforced yet | #142 |
 | `/next` checks who set Approved | not enforced yet | #177 |
@@ -331,12 +335,12 @@ A documentation change is tested by pins on its text. **`tests/lint.sh`**, new s
 - Criterion 3:
   9. `sec` has the line `| Part | State | Issue |`. Every table row after it, up to the first line that does not
      start with `|`, has a State cell that starts with `enforced by ` or is `not enforced yet`. Its Issue cell is
-     exactly `none filed`, or holds only links of the form `[#<n>](https://github.com/<repo>/issues/<n>)`, at least
+     exactly `none filed` (decision 5's third form, used by no row today), or holds only links of the form `[#<n>](https://github.com/<repo>/issues/<n>)`, at least
      one, separated by `, `.
   10. A row whose State starts with `enforced by ` has no `none filed`.
   11. Every link in `sec` that starts with `[#<digits>](` is `[#<n>](https://github.com/<repo>/issues/<n>)` with the
       same number twice.
-  12. The Issue cells together hold 108, 110, 111, 127, 134, 142, 154, 162, 165, 169, 176, 177 and 178, and `sec`
+  12. The Issue cells together hold 108, 110, 111, 127, 134, 142, 154, 162, 165, 169, 176, 177, 178, 253 and 254, and `sec`
       links 160, 164 and 213.
   13. Decision 4: `SECURITY.md` has the line `## Security model`, contains `README.md#security-model`, and has no
       line `| Part | State | Issue |`.
@@ -380,7 +384,8 @@ repository's settings, rulesets and `.claude/` files.
 
 ## Risks
 
-- **The table goes stale.** A fix of #111, #142, #176, #177, #178, #162, #165 or #169 that does not touch its row
+- **The table goes stale.** A fix of #111, #142, #176, #177, #178, #162, #165, #169, #253 or
+  #254 that does not touch its row
   leaves the README saying "not enforced yet" for a protection that exists, or the reverse after a regression. The
   issue number in the row, and the lint's set of required issue numbers, make the row visible to the fixer and the
   code reviewer. Nothing checks the state against GitHub, because the lint runs offline.
@@ -401,25 +406,28 @@ lines in four files.
 
 ## Not done
 
-- None of #111, #142, #160, #162, #164, #165, #169, #176, #177, #178 or #213 is fixed. No skill, agent, hook, template,
+- None of #111, #142, #160, #162, #164, #165, #169, #176, #177, #178, #213, #253 or #254 is fixed. No skill, agent, hook, template,
   permission rule, script or CI file changes.
 - No `CODEOWNERS`, ruleset, interaction limit or repository setting is changed, here or in projects. The section
   recommends; `/init` applies nothing new and checks nothing new.
 - No "Running unattended" section (#160). No headless command or permission mode is documented beyond the first
   paragraph of `### What an agent can do`.
-- No issue is filed for the two `none filed` rows; that is the maintainer's choice (Left).
+- This iteration files no issue. #253 and #254, the issues of the two rows that had none, were filed by the
+  maintainer under epic #107.
 - No lint pin on the truth of a row's state, and no check against GitHub at lint time.
 - The README's existing bare `(#110)` and `(#160)` outside the section are not turned into links.
 
 ## Left
 
-- **Two rows have no issue.** The other deletes and mutations, and the commands the guard cannot see, are gaps that
-  iteration 47 names under Not done and Risks, but no open issue tracks them. The spec lists them as `not enforced yet`
-  with `none filed` (decision 5). Whether to file stories for them, or to drop the rows as accepted limits, is for the
-  maintainer; this run files nothing.
+- **Two rows had no issue (settled).** The maintainer filed #253 (the other deletes and mutations) and #254 (the
+  commands the guard cannot see) under epic #107. Both rows now link them; decision 5's `none filed` form stays
+  defined for a later gap.
 - **The guard in other modes.** Iteration 47's manual check (bypass, auto mode, a subagent) is not recorded on `main`
   or in PR #251. Decision 8 has the README say so. If the maintainer has the result, the implementer writes it instead.
-- **The story's wait.** The story asks for the section after the injection bug and the permission bugs are decided.
-  #108, #109, #110 and #127 are now closed as completed. #111 (the config a pull request can change) and #213 (draft
-  spec) are still open. The spec handles both with the table and the order note. Whether #111 should be decided first
-  is for the maintainer.
+- **The story's wait (settled).** The story asks for the section after the injection bug and the permission bugs are
+  decided. #108, #109, #110 and #127 are closed as completed. The maintainer relabelled #111 from bug to story, as it
+  needs a design choice (reading the config from the base branch, and never auto-merging a change under `.claude/` or
+  `.github/`), and decided that #159 does not wait for it; its row stays `not enforced yet`. #213 (draft spec) is
+  handled by the order note.
+- **#111's title.** It still starts `[Bug]` although the issue is labelled story. The table quotes a short title
+  without the prefix, so nothing here depends on it.
