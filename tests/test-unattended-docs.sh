@@ -96,6 +96,8 @@ done
 
 # 5. the settings a run needs
 before=$(part '### Before the first run' | flatten)
+# The README must contain the literal text ~/.claude.json; the tilde is not meant to expand.
+# shellcheck disable=SC2088
 for w in '**Permissions**' '**Deny rules**' '**Edit permission**' '**Run permissions**' '.claude/settings.json' '.claude/settings.local.json' \
   '(#the-edit-permission)' '(#the-run-permissions)' '(#the-deny-rules-and-the-guard)' '/nightmill:init' 'hasTrustDialogAccepted' \
   '~/.claude.json' 'this workspace has not been trusted' 'defaultMode' '.claude/'; do
