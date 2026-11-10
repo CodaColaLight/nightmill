@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 50 (#253): the harness refuses the deletes and board mutations the skills never run. `/init` writes five
+  more deny rules (`gh project item-delete` and `field-delete`, `gh label delete`, `gh release delete` and
+  `delete-asset`; 23 in all, run `/init` again to add them), and the guard refuses a remote branch delete
+  (`git push --delete`, `-d`, `--prune`, `--mirror` or an empty source), a forced branch delete (`git branch -D`) and
+  every GraphQL mutation outside the six the skills need. No config key.
 - Iteration 49 (#160): the README has a Running unattended section: the `claude -p` commands for `/nightmill:next`
   and `/nightmill:fix` (one issue, or `all`) in Manual mode, the settings a headless run needs (the four lines `/init`
   writes, the workspace trusted once, no `--bare` and no bypass), how runs share the slots and the agent limit and how
