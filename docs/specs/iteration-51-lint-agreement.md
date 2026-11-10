@@ -1,6 +1,6 @@
 # Iteration 51: the lint keeps the README's list of smoke tests and the shell twins in agreement with the files
 
-Status: draft, awaiting approval (#157)
+Status: delivered in iteration 51 (PR #263)
 
 Story #157, epic #107 (Hardening from the code review), finding MD-T6. Of the four criteria, two already hold on main
 and one holds in part: CI and `tests/check.sh` are tied to the smoke files by the lint since iteration 42, the

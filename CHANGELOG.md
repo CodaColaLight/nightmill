@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Iteration 51 (#157): the lint keeps the README's list of smoke tests and the shell twins in agreement with the
+  files: every `tests/smoke-*` file is listed in the README, every `tests/smoke-*.sh` has a `.ps1` twin
+  (`smoke-json.sh` is the one listed exception) and every `scripts/*.sh` has a `.ps1` twin
+  (`tests/test-lint-agreement.sh`, called from the lint). The README lists `smoke-stages` and `smoke-guard` in both
+  shells. No config key.
 - Iteration 50 (#253): the harness refuses the deletes and board mutations the skills never run. `/init` writes five
   more deny rules (`gh project item-delete` and `field-delete`, `gh label delete`, `gh release delete` and
   `delete-asset`; 23 in all, run `/init` again to add them), and the guard refuses a remote branch delete
