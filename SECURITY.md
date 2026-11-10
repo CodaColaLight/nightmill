@@ -22,6 +22,12 @@ These are in scope:
   from an issue or pull request as if it were an instruction from the maintainer;
 - the CI workflows in `.github/workflows/`.
 
+## Security model
+
+What an agent trusts and can do, and what a project should restrict, are described in the README's
+[Security model](README.md#security-model). A protection listed there as not enforced yet is a known gap, not a
+vulnerability to report privately; a way past one listed as enforced is.
+
 ## What is out of scope
 
 - Claude Code itself: report that to Anthropic.
