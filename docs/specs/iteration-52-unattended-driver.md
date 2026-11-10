@@ -1,6 +1,6 @@
 # Iteration 52: a driver runs /fix all and /next headless in a loop and posts one summary, and a workflow template runs it on a schedule
 
-Status: draft, awaiting approval (#164)
+Status: delivered in iteration 52 (PR #269)
 
 Story #164, epic #163 (capabilities of comparable tools), gap 1 of the gap analysis of 2026-11-05. Today every run
 starts with a person typing a command; the README's `## Running unattended` (iteration 49) gives the `claude -p` lines
