@@ -1002,6 +1002,7 @@ bash tests/smoke-stages.sh  # stages.sh: the stage record against a fixture ledg
 bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked against jq when it is installed)
 bash tests/smoke-check.sh   # tests/check.sh: the parallel steps, the order, the verdict, --quick
 bash tests/smoke-guard.sh   # guard.sh: what the PreToolUse guard refuses
+bash tests/smoke-drive.sh   # drive.sh against a fake claude, a fake gh and throwaway slots
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
