@@ -1338,6 +1338,11 @@ for pair in "spec:2" "next:5" "fix:5"; do
   [ "$found" = "$want" ] || { echo "FAIL: $f has $found prompts to subagents, $want expected (the data rule is pinned in each)"; fail=1; }
 done
 
+echo "== the security model is documented"
+# Iteration 39 (#159): the README has a Security model section and SECURITY.md points to it. The pins live in
+# tests/test-security-model.sh, which reads the data rule from the skill as the section above does.
+bash tests/test-security-model.sh "$PWD" || fail=1
+
 echo "== CI runs with least privilege"
 # The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level
 # permissions (1), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on

@@ -106,7 +106,6 @@ add bash test-spec-template.sh
 add bash smoke-guard.sh
 add bash test-watch-checks.sh
 add bash test-guard-rules.sh
-add bash test-security-model.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
