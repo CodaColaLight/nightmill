@@ -1343,6 +1343,12 @@ echo "== the security model is documented"
 # tests/test-security-model.sh, which reads the data rule from the skill as the section above does.
 bash tests/test-security-model.sh "$PWD" || fail=1
 
+echo "== the guard reads a GraphQL keyword only as a definition's first name"
+# Iteration 50 (#253): an operation named query, subscription or fragment stays the kind its first name says, in
+# scripts/guard.sh and, where a PowerShell is on the PATH, scripts/guard.ps1. The cases live in
+# tests/test-guard-gql-keyword.sh.
+bash tests/test-guard-gql-keyword.sh "$PWD" || fail=1
+
 echo "== running unattended is documented"
 # Iteration 49 (#160): the README has a Running unattended section with the headless commands, the settings a run
 # needs, how runs share the slots, how to watch them and what a stopped run leaves. The pins live in

@@ -99,9 +99,10 @@ function judge(   k, first) {
 }
 # gql_bad <document>: the first top-level field of a mutation in the GraphQL document that is not on the allow list,
 # or "". Strings and comments are skipped, names inside parentheses (arguments, variables) and nested selections are
-# not looked at; a name at brace depth 0 is an operation keyword (or a name), one at depth 1 a top-level field.
-function gql_bad(s,   n, i, j, c, p, b, inmut, nm) {
-  n = length(s); p = 0; b = 0; inmut = 0
+# not looked at; the first name of a definition at brace depth 0 is its keyword (a later one its name, which may be
+# a keyword too), a name at depth 1 a top-level field; a definition without a keyword is a query.
+function gql_bad(s,   n, i, j, c, p, b, inmut, st, nm) {
+  n = length(s); p = 0; b = 0; inmut = 0; st = 1
   for (i = 1; i <= n; i++) {
     c = substr(s, i, 1)
     if (c == "\"") {
@@ -112,15 +113,15 @@ function gql_bad(s,   n, i, j, c, p, b, inmut, nm) {
     if (c == "(") { p++; continue }
     if (c == ")") { if (p > 0) p--; continue }
     if (p > 0) continue
-    if (c == "{") { b++; continue }
-    if (c == "}") { if (b > 0) b--; continue }
+    if (c == "{") { if (b == 0 && st) inmut = 0; st = 0; b++; continue }
+    if (c == "}") { if (b > 0) b--; if (b == 0) st = 1; continue }
     if (c !~ /[_A-Za-z]/) continue
     j = i
     while (j < n && substr(s, j + 1, 1) ~ /[_0-9A-Za-z]/) j++
     nm = substr(s, i, j - i + 1); i = j
     if (b == 0) {
-      if (nm == "mutation") inmut = 1
-      else if (nm == "query" || nm == "subscription" || nm == "fragment") inmut = 0
+      if (st) inmut = (nm == "mutation")
+      st = 0
     } else if (b == 1 && inmut && !(nm in ALLOW)) return nm
   }
   return ""

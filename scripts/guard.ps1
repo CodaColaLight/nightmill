@@ -87,10 +87,10 @@ $script:allow = @("addSubIssue", "createProjectV2View", "enablePullRequestAutoMe
 
 # Get-GqlBad <document>: the first top-level field of a mutation in the GraphQL document that is not on the allow
 # list, or "". Strings and comments are skipped, names inside parentheses (arguments, variables) and nested
-# selections are not looked at; a name at brace depth 0 is an operation keyword (or a name), one at depth 1 a
-# top-level field.
+# selections are not looked at; the first name of a definition at brace depth 0 is its keyword (a later one its
+# name, which may be a keyword too), a name at depth 1 a top-level field; a definition without a keyword is a query.
 function Get-GqlBad([string]$s) {
-  $n = $s.Length; $p = 0; $b = 0; $inmut = $false
+  $n = $s.Length; $p = 0; $b = 0; $inmut = $false; $st = $true
   for ($i = 0; $i -lt $n; $i++) {
     $c = $s[$i]
     if ($c -eq [char]'"') {
@@ -104,15 +104,15 @@ function Get-GqlBad([string]$s) {
     if ($c -eq [char]'(') { $p++; continue }
     if ($c -eq [char]')') { if ($p -gt 0) { $p-- }; continue }
     if ($p -gt 0) { continue }
-    if ($c -eq [char]'{') { $b++; continue }
-    if ($c -eq [char]'}') { if ($b -gt 0) { $b-- }; continue }
+    if ($c -eq [char]'{') { if ($b -eq 0 -and $st) { $inmut = $false }; $st = $false; $b++; continue }
+    if ($c -eq [char]'}') { if ($b -gt 0) { $b-- }; if ($b -eq 0) { $st = $true }; continue }
     if (-not ([string]$c -cmatch '^[_A-Za-z]$')) { continue }
     $j = $i
     while ($j + 1 -lt $n -and ([string]$s[$j + 1] -cmatch '^[_0-9A-Za-z]$')) { $j++ }
     $nm = $s.Substring($i, $j - $i + 1); $i = $j
     if ($b -eq 0) {
-      if ($nm -ceq "mutation") { $inmut = $true }
-      elseif ($nm -ceq "query" -or $nm -ceq "subscription" -or $nm -ceq "fragment") { $inmut = $false }
+      if ($st) { $inmut = ($nm -ceq "mutation") }
+      $st = $false
     } elseif ($b -eq 1 -and $inmut -and -not ($script:allow -ccontains $nm)) { return $nm }
   }
   return ""
