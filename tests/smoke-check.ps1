@@ -13,7 +13,7 @@ $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("nm-chk-" + [guid]::NewGuid(
 New-Item -ItemType Directory $tmp | Out-Null
 $tf = $tmp -replace '\\', '/'
 $clockF = "$tf/clock"
-$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh]'
+$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 $env:NIGHTMILL_CLOCK_FILE = $clockF
 foreach ($v in "UPDATE_STATUS_FIXTURES", "UPDATE_DASHBOARD_FIXTURES", "UPDATE_PANEL_FIXTURES", "NIGHTMILL_CHECK_STEPS") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
 
@@ -227,6 +227,54 @@ try {
     if (@(Get-ChildItem -Force "$tmp\tmp$x").Count -ne 0) { Fail "two checks: run $x left files in its temp folder: $((Get-ChildItem -Force "$tmp\tmp$x" | ForEach-Object Name) -join ' ')" }
   }
 
+  Write-Host "== summary"
+  # -Summary <file> (--summary) appends the wall time and the five slowest steps (iteration 55, decision 6). The steps move the clock.
+  $sclock = "$tf/sclock"
+  $sumSteps = ""
+  foreach ($pair in "a:5", "b:30", "c:1", "d:30", "e:12", "f:7") {
+    $nm, $sec = $pair -split ":"
+    $extra = ""
+    if ($nm -ceq "e") { $extra = "; exit 1" }
+    $sumSteps += "$nm`tc=`$(cat `"$sclock`"); echo `$((c+$sec)) > `"$sclock`"$extra`n"
+  }
+  Write-Lf "$tmp\sum-steps.txt" $sumSteps
+  Write-Lf "$tmp\sclock" "1794038400`n"
+  $plain = Check "$tf/sum-steps.txt" "-Jobs 1" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+  Write-Lf "$tmp\sclock" "1794038400`n"
+  if (Test-Path "$tmp\summary.md") { Remove-Item "$tmp\summary.md" }
+  $r = Check "$tf/sum-steps.txt" "-Jobs 1 -Summary `"$tf/summary.md`"" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+  if ($r.Code -ne 1) { Fail "summary: exit $($r.Code), wanted 1 (e fails): $($r.Out)" }
+  if ($plain.Code -ne 1) { Fail "summary: the run without -Summary exited $($plain.Code)" }
+  if ($r.Out -cne $plain.Out) { Fail "summary: the standard output differs from a run without -Summary: [$($r.Out)] vs [$($plain.Out)]" }
+  if (-not (Test-Path "$tmp\summary.md")) { Fail "summary: no summary file was written" }
+  $wantSum = @('### tests/check.sh', '', 'Wall time: 1m25s for 6 steps, 1 at a time: FAILED', '', '| Slowest step | Time |', '|---|---|',
+    '| `b` | 30s |', '| `d` | 30s |', '| `e` | 12s |', '| `f` | 7s |', '| `a` | 5s |', '') -join "`n"
+  $gotSum = (Read-Lf "$tmp\summary.md").TrimEnd("`n")
+  if ($gotSum -cne $wantSum.TrimEnd("`n")) { Fail "summary: the summary file is not as wanted; got: [$gotSum] wanted: [$wantSum]" }
+  if (-not (Read-Lf "$tmp\summary.md").EndsWith("| ``a`` | 5s |`n`n")) { Fail "summary: the section does not end with one empty line" }
+  if ((Last-Line $r.Out) -cne "CHECK FAILED: e") { Fail "summary: the last line: $($r.Out)" }
+  # a passing run appends a second section: the file is appended to, not replaced
+  Write-Lf "$tmp\sum2.txt" "x`ttrue`ny`ttrue`n"
+  if (Test-Path "$tmp\summary2.md") { Remove-Item "$tmp\summary2.md" }
+  foreach ($i in 1, 2) {
+    $r = Check "$tf/sum2.txt" "-Jobs 1 -Summary `"$tf/summary2.md`"" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+    if ($r.Code -ne 0) { Fail "summary twice: run $i exit $($r.Code): $($r.Out)" }
+  }
+  $s2 = Read-Lf "$tmp\summary2.md"
+  if (@($s2 -split "`n" | Where-Object { $_ -ceq "### tests/check.sh" }).Count -ne 2) { Fail "summary twice: not two sections: $s2" }
+  if (@($s2 -split "`n" | Where-Object { $_ -ceq "Wall time: 0s for 2 steps, 1 at a time: passed" }).Count -ne 2) { Fail "summary twice: the wall time lines: $s2" }
+  # an empty value is the usage error (twice and without a value cannot be given through PowerShell parameters; tests/smoke-check.sh has them)
+  $r = Check "$tf/sum2.txt" "-Summary `"`""
+  if ($r.Code -ne 2) { Fail "summary usage (empty value): exit $($r.Code): $($r.Out)" }
+  if (-not (Has-Line $r.Err $USAGE)) { Fail "summary usage (empty value): no usage line: $($r.Err)" }
+  # a file that cannot be written: the note, and the exit code of the steps
+  New-Item -ItemType Directory "$tmp\sumdir" | Out-Null
+  Write-Lf "$tmp\sclock" "1794038400`n"
+  $r = Check "$tf/sum-steps.txt" "-Jobs 1 -Summary `"$tf/sumdir`"" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+  if ($r.Code -ne 1) { Fail "summary to a directory: exit $($r.Code), wanted 1: $($r.Out)" }
+  if (-not (Has-Line $r.Err "check: cannot write the summary to $tf/sumdir")) { Fail "summary to a directory: no 'cannot write' line: $($r.Err)" }
+  if ((Last-Line $r.Out) -cne "CHECK FAILED: e") { Fail "summary to a directory: the last line: $($r.Out)" }
+
   Write-Host "== the slowest steps of the real list start first"
   # The real step list of tests/check.sh (between '# steps: begin' and '# steps: end'): the steps measured slowest in CI
   # (issue 279) carry the 'first' mark. Only these are pinned; more steps may be marked later.
@@ -291,10 +339,10 @@ try {
   Lint-Break "twice" "tests\check.sh" { param($ls) foreach ($l in $ls) { $l; if ($l -match '^add bash smoke-hook\.sh') { $l } } } "FAIL: tests/check.sh runs tests/smoke-hook.sh more than once"
   Lint-Break "nofile" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# steps: end") { "add bash smoke-nope.sh" }; $l } } "FAIL: tests/check.sh runs tests/smoke-nope.sh, which does not exist"
   Lint-Break "twopassed" "tests\check.sh" { param($ls) $ls; 'echo "ALL CHECKS PASSED"' } "FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place"
-  Lint-Break "cibash" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --only*') { $l.Replace("smoke-hook.sh,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh"
-  Lint-Break "cips" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*--powershell powershell --only*') { $l.Replace("smoke-hook.ps1,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.ps1"
-  Lint-Break "cijson" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --only*') { $l.Replace("--only ", "--only smoke-json.sh,") } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice"
-  Lint-Break "ciswap" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --only*') { $l.Replace("smoke-hook.sh,smoke-release.sh", "smoke-release.sh,smoke-hook.sh") } else { $l } } } "FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list"
+  Lint-Break "cibash" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("smoke-hook.sh,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh"
+  Lint-Break "cips" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*only: smoke-hook.ps1,*') { $l.Replace("smoke-hook.ps1,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-hook.ps1 runs in no PowerShell part"
+  Lint-Break "cijson" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("--only ", "--only smoke-json.sh,") } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice"
+  Lint-Break "ciswap" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("smoke-hook.sh,smoke-release.sh", "smoke-release.sh,smoke-hook.sh") } else { $l } } } "FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list"
   Lint-Break "cidirect" $CI { param($ls) $ls; "      - run: bash tests/smoke-render.sh" } "FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh"
   Lint-Break "cirename" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: bash scripts smoke tests", "name: bash scripts smoke") } } "the required job bash scripts smoke tests is missing"
 

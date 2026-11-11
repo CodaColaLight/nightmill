@@ -1285,7 +1285,8 @@ echo "== the check runs every smoke script"
 # Iteration 42, decision 11: the step list of tests/check.sh (between '# steps: begin' and '# steps: end') runs every
 # smoke script once, in its own shell; the check has one place that prints the all-passed line; the key and the quick
 # mode are wired in the schema, the example, the README, the contributor guide and the skills; and CI runs its smoke
-# jobs through tests/check.sh --only with lists equal to the step list.
+# jobs through tests/check.sh --only: the bash job with a list equal to the step list's bash steps, the PowerShell job
+# in parts (iteration 55; the parts are checked in the next section), and no other job name begins with a required one.
 chk_block=""
 chk_nb=$(grep -cx '# steps: begin' tests/check.sh || true)
 chk_ne=$(grep -cx '# steps: end' tests/check.sh || true)
@@ -1339,15 +1340,12 @@ chk_only() {
     echo "FAIL: $chk_ci: the --only list is not in the order of the step list"; fail=1
   fi
 }
-chk_bash_lines=$(grep -E '^[[:space:]]*(- )?run: bash tests/check\.sh --only ' "$chk_ci" || true)
-chk_ps_lines=$(grep -E '^[[:space:]]*(- )?run: bash tests/check\.sh --powershell powershell --only ' "$chk_ci" || true)
-if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 1 ] || [ "$(printf '%s' "$chk_ps_lines" | grep -c . || true)" != 1 ]; then
-  echo "FAIL: $chk_ci: the smoke jobs do not run tests/check.sh --only"; fail=1
+chk_bash_lines=$(grep -E '^[[:space:]]*(- )?run: bash tests/check\.sh --summary "\$GITHUB_STEP_SUMMARY" --only ' "$chk_ci" || true)
+if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 1 ]; then
+  echo "FAIL: $chk_ci: the bash smoke job does not run tests/check.sh --summary \"\$GITHUB_STEP_SUMMARY\" --only"; fail=1
 elif [ -n "$chk_block" ]; then
   chk_want_bash=$(printf '%s\n' "$chk_block" | awk '$2 == "bash" && $3 != "smoke-json.sh" { print $3 }' | tr '\n' ' ')
-  chk_want_ps=$(printf '%s\n' "$chk_block" | awk '$2 == "ps" { print $3 }' | tr '\n' ' ')
   chk_only "$chk_want_bash" "${chk_bash_lines##*--only }"
-  chk_only "$chk_want_ps" "${chk_ps_lines##*--only }"
 fi
 [ "$(grep -cE '^[[:space:]]*(- )?run: bash tests/smoke-json\.sh$' "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci runs tests/smoke-json.sh outside tests/check.sh"; fail=1; }
 while IFS= read -r l; do
@@ -1358,6 +1356,21 @@ done < <(grep -E 'run: bash tests/smoke-|-File tests/smoke-' "$chk_ci" || true)
 for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'PowerShell scripts smoke tests'; do
   [ "$(grep -cxF -- "    name: $req" "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci: the required job $req is missing"; fail=1; }
 done
+# a job name that begins with a required name would add a check such as 'PowerShell scripts smoke tests (1)' (iteration 55, decision 5)
+while IFS= read -r l; do
+  l=${l%$'\r'}; t="${l#"${l%%[![:space:]]*}"}"; t=${t#- }; t=${t#name: }
+  for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'PowerShell scripts smoke tests'; do
+    [ "$l" != "    name: $req" ] || continue
+    case $t in "$req"*) echo "FAIL: $chk_ci: the job name '$t' begins with the required name '$req'"; fail=1 ;; esac
+  done
+done < <(grep -E '^[[:space:]]*(- )?name: ' "$chk_ci" || true)
+
+echo "== the PowerShell job runs in parts"
+# Iteration 55, decisions 3 and 5: every ps step of the step list runs in exactly one part of the matrix of the job
+# smoke-powershell-part, in list order, smoke-slot.ps1 alone; the job smoke-powershell (the required name) fails unless
+# every part succeeded; only it has a job-level permissions block. The rules and their cases live in
+# tests/test-ci-parts.sh, started once (bug #270: each process costs time in the lint copies of the PowerShell steps).
+bash tests/test-ci-parts.sh "$PWD" || fail=1
 
 echo "== the lists and the shell twins agree"
 # Iteration 51 (#157): the README lists every smoke file, every tests/smoke-*.sh has a .ps1 twin (except the listed
@@ -1473,7 +1486,7 @@ fi
 
 echo "== CI runs with least privilege"
 # The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level
-# permissions (1), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on
+# permissions but those of smoke-powershell (1, amended by iteration 55), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on
 # the three job names the ruleset on main requires (4), every action pinned by its full commit SHA with the release in a
 # trailing comment (5), and Dependabot's github-actions entry kept (6). It reads the files with grep and awk only and
 # assumes the block style ci.yml uses (jobs at 2 spaces, job keys at 4); anything it cannot match fails. It cannot check
@@ -1487,7 +1500,9 @@ ci_conc_group='  group: ci-${{ github.event_name == '\''pull_request'\'' && gith
 ci_conc_cancel='  cancel-in-progress: ${{ github.event_name == '\''pull_request'\'' }}'
 ci_pin_re='^[[:space:]]*(- )?uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
 if [ -f "$ci_yml" ]; then
-  # 1. permissions: contents: read at column 0 and nothing else; no job-level block; no write scope
+  # 1. permissions: contents: read at column 0 and nothing else; no write scope. The job-level rule (only
+  # smoke-powershell, with contents: read and actions: read; iteration 55, decision 11) lives in tests/test-ci-parts.sh
+  # (rule 8), as the smoke-bash timeout pin lives in tests/test-ci-smoke-bash-timeout.sh.
   perm=$(LC_ALL=C awk '
     { L[NR] = $0 }
     END {
@@ -1503,9 +1518,6 @@ if [ -f "$ci_yml" ]; then
     contents) echo "FAIL: $ci_yml: the line after 'permissions:' is not exactly '  contents: read'"; fail=1 ;;
     *) echo "FAIL: $ci_yml: 'permissions:' grants a scope besides 'contents: read'"; fail=1 ;;
   esac
-  if grep -qE '^[[:space:]]+permissions:' "$ci_yml"; then
-    echo "FAIL: $ci_yml has a job-level 'permissions:' block (only the top-level 'contents: read')"; fail=1
-  fi
   if grep -qF ': write' "$ci_yml"; then
     echo "FAIL: $ci_yml grants a write permission (': write')"; fail=1
   fi
