@@ -28,7 +28,7 @@ rules() {
   pblock=$(block smoke-powershell-part)
   fblock=$(block smoke-powershell)
 
-  local names=() onlys=() ks=() nameM="" ff=0 ro=0 runs=0 runok=0 shellprev=0 bad=""
+  local onlys=() ks=() nameM="" ff=0 ro=0 runs=0 runok=0 bad=""
   prev=""
   while IFS= read -r l; do
     t="${l#"${l%%[![:space:]]*}"}"
@@ -72,7 +72,7 @@ rules() {
   [ "${#ps[@]}" -gt 0 ] || fl "tests/check.sh has no ps steps"
 
   # rules 3 to 6, per part and per step
-  local list parr cnt slotpart
+  local parr cnt
   if [ "$m" -ge 1 ] && [ "$m" = "${#onlys[@]}" ]; then
     for x in "${ps[@]}"; do
       cnt=0; i=0

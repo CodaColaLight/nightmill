@@ -271,7 +271,7 @@ times_block() {
 # write_summary <file>: appends the wall time and the five slowest steps that ran (most seconds first, a tie in list
 # order) as Markdown (iteration 55, decision 6); a file that cannot be written gets a note on standard error
 write_summary() {
-  local f=$1 text verdict=passed k=${#t_names[@]} i row
+  local sum_file=$1 text verdict=passed k=${#t_names[@]} i row
   [ ${#failed[@]} -eq 0 ] || verdict=FAILED
   text="### tests/check.sh"$'\n\n'"Wall time: $(ledger_duration $((check_end - check_start))) for $k steps, $L at a time: $verdict"$'\n\n'
   if [ "$k" -gt 0 ]; then
@@ -282,7 +282,7 @@ write_summary() {
     done < <(for ((i = 0; i < k; i++)); do printf '%s\t%s\n' "${t_secs[i]}" "$i"; done | sort -t$'\t' -k1,1nr -k2,2n | head -n 5)
     text="$text"$'\n'
   fi
-  printf '%s' "$text" 2>/dev/null >> "$f" || echo "check: cannot write the summary to $f" >&2
+  printf '%s' "$text" 2>/dev/null >> "$sum_file" || echo "check: cannot write the summary to $sum_file" >&2
 }
 
 # The steps that run, in list order (prints), and the jobs, in start order (starts: the steps marked first, then the

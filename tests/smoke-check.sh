@@ -193,7 +193,7 @@ echo "== summary"
 # --summary <file> appends the wall time and the five slowest steps (iteration 55, decision 6). The clock is moved by the steps.
 sclock="$tmp/sclock"
 mk_sum() { # mk_sum: six steps a to f, each advancing the clock by 5, 30, 1, 30, 12, 7 seconds; e exits 1
-  local n=0 name sec extra
+  local name sec extra
   : > "$tmp/sum-steps.txt"
   for pair in a:5 b:30 c:1 d:30 e:12 f:7; do
     name=${pair%%:*}; sec=${pair##*:}; extra=""
