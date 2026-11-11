@@ -2,7 +2,7 @@
 name: init
 description: Set a project up for nightmill in one conversation - detect what gh and the repository can tell, ask the rest one question at a time, show one plan, then create the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. Use when installing nightmill in a repository, when the config is missing, or to complete a half-done setup.
 disable-model-invocation: true
-allowed-tools: Bash(cat .claude/nightmill.json *)
+allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "*no .claude/nightmill.json yet*")
 ---
 
 Set this repository up for the nightmill workflow.
