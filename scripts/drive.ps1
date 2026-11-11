@@ -12,7 +12,8 @@
 # gh pr list, gh issue comment (the summary, and the comment of a breached limit), gh api user, gh issue view (the
 # comments of an issue whose limit is breached), gh issue edit <n> --add-label blocked (a breached limit), git rev-parse /
 # fetch origin / symbolic-ref / status, slot.ps1 -Reap, slot.ps1 -Status -Porcelain, room.ps1, gate.ps1 (the pause
-# flag and the limits, before every step; its gh api graphql query) and claude -p "<prompt>" --permission-mode manual
+# flag and the limits, before every step; its gh api graphql query), history.ps1 -Run <its start> (for the summary,
+# docs/specs/iteration-54-history-metrics.md decision 9; its gh api graphql query) and claude -p "<prompt>" --permission-mode manual
 # --output-format json --max-turns <T> --max-budget-usd <B> with NIGHTMILL_RUN_STARTED and NIGHTMILL_ISSUES_LEFT in
 # its environment, in the main checkout. After every step it appends one run line to
 # <worktrees.root>\.slots\ledger.tsv (Add-LedgerLine of lib\ledger.ps1). It sets no board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
@@ -382,6 +383,36 @@ function Get-ProcessesLine {
   if ($script:leftTotal -gt 0) { return "Processes: $($script:leftTotal) left behind by a step were ended; none left running." }
   return "Processes: none left running."
 }
+# Get-HistoryItem: the history of this run (iteration 54 decision 9), computed by history.ps1 of this folder into the
+# run files; the block is history.txt as printed but for the two notes that name a local path or the text of another
+# program. The text ends without a line end.
+function Get-HistoryItem {
+  $stamp = Get-LedgerStamp $script:startS
+  $h = Invoke-Sibling "history.ps1" @("-Run", $stamp)
+  $hout = ([string]$h.Out) -replace "`r`n", "`n"
+  $herr = ([string]$h.Err) -replace "`r`n", "`n"
+  try { [IO.File]::WriteAllText((Join-Path $run "history.txt"), $hout, $utf8) } catch { }
+  try { [IO.File]::WriteAllText((Join-Path $run "history.err"), $herr, $utf8) } catch { }
+  if ($h.Code -ne 0) {
+    $first = @($herr -split "`n")[0]
+    if ($null -eq $first) { $first = "" }
+    $first = $first.TrimEnd()
+    if ($first -cmatch '^history: skipped [0-9]+ malformed lines of ') { $first = $first.Substring(0, $first.IndexOf(" of ")) }
+    if (-not $first) { $first = "history.ps1 exited with $($h.Code)" }
+    return "History: not computed: $first."
+  }
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add("History of this run (scripts/history.sh --run ${stamp}):") | Out-Null
+  $lines.Add("") | Out-Null
+  $lines.Add('```text') | Out-Null
+  foreach ($l in @($hout.TrimEnd("`n") -split "`n")) {
+    if ($l.StartsWith("note: no record yet: ", [StringComparison]::Ordinal)) { $l = "note: no record yet" }
+    elseif ($l.StartsWith("note: the board was not read: ", [StringComparison]::Ordinal)) { $l = "note: the board was not read (the reason is in history.txt in the run files)" }
+    $lines.Add($l) | Out-Null
+  }
+  $lines.Add('```') | Out-Null
+  return ($lines -join "`n")
+}
 function Build-Summary([string]$kind, [string]$reason) {
   $endS = Get-LedgerClock
   $sb = New-Object System.Text.StringBuilder
@@ -455,6 +486,7 @@ function Build-Summary([string]$kind, [string]$reason) {
     }
     if ($noCost -eq 0) { [void]$sb.Append('Cost: $' + (Format-Money $sum) + " in all, as Claude Code reports it (total_cost_usd).`n") }
     else { [void]$sb.Append('Cost: at least $' + (Format-Money $sum) + " ($noCost steps without a cost).`n") }
+    [void]$sb.Append("`n" + (Get-HistoryItem) + "`n")
     $rs = @($script:lastBoard | Where-Object { $_.Type -eq "Issue" -and $_.Status -eq $stReady -and ($_.Labels -notcontains $lbBug) -and ($_.Labels -notcontains $lbEpic) } | ForEach-Object { "#" + $_.Num })
     if ($rs.Count -gt 0) { [void]$sb.Append("`nNot run by the driver: Ready stories wait for /spec: $($rs -join ', ').`n") }
     else { [void]$sb.Append("`nNot run by the driver: none.`n") }

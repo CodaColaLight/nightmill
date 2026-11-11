@@ -670,6 +670,33 @@ if grep -rqF 'ledger.tsv' skills; then
   echo "FAIL: a file in skills/ mentions ledger.tsv (no skill gets longer for the record): $(grep -rlF 'ledger.tsv' skills | tr '\n' ' ')"; fail=1
 fi
 
+echo "== history is wired"
+# How the work went (iteration 54, #166): the history scripts, the page renderer, both smoke tests and the expected page
+# exist; the three history files only read (no board edit, merge, comment, mutation, slot action, browser opener or
+# listener) and the page they write links, loads and runs nothing; the README names the command, the page and the JSON
+# form of /status; the status skill says how to ask for JSON; no skill names the history script (the maintainer runs it).
+for f in scripts/history.sh scripts/history.ps1 scripts/lib/history.awk tests/smoke-history.sh tests/smoke-history.ps1 tests/fixtures/history/expected.html; do
+  [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
+done
+for f in scripts/history.sh scripts/history.ps1 scripts/lib/history.awk; do
+  [ -f "$f" ] || continue
+  if grep -nE -- 'item-edit|item-add|item-delete|pr merge|issue edit|issue comment|mutation|--take|--release|--abandon|--reap|--report|--capacity|-Take|-Release|-Abandon|-Reap|-Report|-Capacity|Start-Process|xdg-open|HttpListener' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
+    echo "FAIL: $f changes, serves or opens something; the history only reads"; fail=1
+  fi
+  if grep -nE -- '<script|<link|href|src=|url\(|@import|http-equiv' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
+    echo "FAIL: $f writes a page that links, loads or runs something; the page needs no network"; fail=1
+  fi
+done
+for w in 'history.sh' 'history.ps1' '--html' 'status.sh --json'; do
+  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
+done
+for w in '--json' '-Json'; do
+  grep -qF -- "$w" skills/status/SKILL.md || { echo "FAIL: skills/status/SKILL.md does not mention $w"; fail=1; }
+done
+if grep -rqF 'history.sh' skills; then
+  echo "FAIL: a file in skills/ names history.sh (the history is a script the maintainer runs, not a skill): $(grep -rlF 'history.sh' skills | tr '\n' ' ')"; fail=1
+fi
+
 echo "== a tester writes the failing tests first"
 # /next has a tester subagent write the failing tests for every acceptance criterion before the implementer (iteration
 # 25): an agent file whose tool list has no Agent, the same test path rule in the agent and in the skill, and /next that

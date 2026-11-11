@@ -13,6 +13,10 @@ Run the script of the shell in use, from inside the project (any checkout or wor
 Add `-All` (PowerShell) or `--all` (bash) to include the items at Backlog and Done. If it exits with 2, show
 its message and stop: it is a missing config, a missing or logged-out `gh`, or a failed `gh` call.
 
+When the maintainer asks for JSON (or passes `json`), add `-Json` (PowerShell) or `--json` (bash), combinable with
+the option for all items: the script prints one JSON object on one line. Show that output exactly as printed and add
+none of the three lines below.
+
 Show the table as the script printed it, then add at most three lines:
 
 1. What waits for the maintainer: the issue numbers at **Spec review** (spec to read and approve) and

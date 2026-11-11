@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "PVTI_40",
+      "content": {
+        "number": 40,
+        "title": "[Story] Say \"hi\" at C:\\dir café\tend",
+        "type": "Issue",
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/40"
+      },
+      "labels": [
+        "story"
+      ],
+      "status": "Ready",
+      "title": "[Story] Say \"hi\" at C:\\dir café\tend"
+    }
+  ],
+  "totalCount": 1
+}

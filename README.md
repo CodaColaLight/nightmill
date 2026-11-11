@@ -38,7 +38,7 @@ not a conversation.
 | `/nightmill:next [N]` | Takes an Approved story and implements it: slot, tests, code, check, PR, auto-merge. With nothing Approved it lists the Ready stories and points to `/spec`. With a number it also continues a story that a run left at In progress or Review, from the first step that left nothing behind. |
 | `/nightmill:fix [N\|all]` | Fixes a bug: failing test first, smallest fix, one PR. `all` fixes every Ready bug, several at once (one per free slot, within the agent limit and the room), and ends with one table. |
 | `/nightmill:story <idea>` | Turns a one-line idea into a story issue under the right epic, in Backlog, after it has shown any open or closed issue with a similar title and asked. |
-| `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. |
+| `/nightmill:status` | One table of what waits for the maintainer and what is stuck: board items with their PR and CI state, every slot with what its agent is doing (running, stalled), stale states flagged. Read-only. `--json` prints it as JSON. |
 | `/nightmill:models` | One table of each agent role's model, where it comes from (the config or the default), its rank and whether the reviewer pairings hold. Read-only. |
 | `/nightmill-slots [off]` | Opens a read-only pane beside the chat with every slot and its agent (running, stalled, unknown), rereading them every `panelRefreshSeconds`; `off` closes it. Needs Claude Code 2.1.287 or later (see "Watching the run beside the chat"). |
 | `/nightmill:control` | One pass of the opt-in load controller: measures the load and, in `apply` mode, raises or lowers the agent limit within the configured bounds; `/loop 5m /nightmill:control` runs it in a session. |
@@ -48,6 +48,7 @@ not a conversation.
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
 | `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
 | `scripts/stages.ps1`, `scripts/stages.sh` | Read-only: the time a story spent in each stage, from the slots' record `ledger.tsv`, for one issue (`-Issue N`) or the last N takes (`-Last N`). |
+| `scripts/history.ps1`, `scripts/history.sh` | Read-only: how the work went in a window - time per board status, fix rounds and check fix rounds, cost per issue, slot utilisation - from `ledger.tsv` and the board's status changes, as text, JSON (`-Json`) or one static page (`-Html <dir>`). |
 | `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
 | `scripts/panel.ps1`, `scripts/panel.sh` | Read-only: the slot lines the pane draws, from `slot --status --porcelain`. |
 | `scripts/dashboard.ps1`, `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
@@ -564,6 +565,48 @@ that cannot be known is **unknown**, never `0s`, and its share `-`: a take by an
 unknown `not-reported` row and an unknown total. An issue no slot took, or that an older version freed, prints
 `#N: no record`. `/spec` takes no slot and is not recorded. `tests/check.sh` prints the time of each of its steps and
 a `Times:` block with the total.
+For totals across issues and takes over a night or a month, see [How the work went](#how-the-work-went).
+
+### How the work went
+
+`scripts/history.sh` (`history.ps1`) prints, for a time window, how the work went. Read-only: it changes nothing on
+GitHub and writes no file but the page of `--html`. Where things stand now is `/nightmill:status`; for a program,
+`scripts/status.sh --json` (`status.ps1 -Json`, combinable with `--all`) prints its cells as one JSON object on one line
+(`items`, `notes`, `slots` and `capacity`, the last two `null` without `worktrees`).
+
+```sh
+bash scripts/history.sh [--from <t>] [--to <t>] | [--run <stamp>]   [--json | --html <dir>]
+powershell -File scripts/history.ps1 [-From <t>] [-To <t>] | [-Run <stamp>]   [-Json | -Html <dir>]
+```
+
+`<t>` is a day (`2026-11-09`, read as its 00:00:00 UTC) or a UTC time (`2026-11-09T01:00:00Z`); both ends of the window
+are included. Without `--to` the window ends now; without `--from` it starts at the earliest line of `ledger.tsv`, or a
+week before its end when there is none. `--run <stamp>` is the window of one driver run: from its start (field 3 of its
+`run` lines) to its last `run` line, and only that run's headless runs count for the cost.
+
+- **Time per status** (from the board, the one network call: a read-only `gh api graphql` query of the board's status
+  changes): a stay at a status runs from the change to it to the item's next change, and is counted when it ends in
+  the window, with its whole length. Per status, Backlog to Review, the number of stays, the median (the lower middle),
+  the longest and the total; per issue the total at each status from Ready to Review. The current status of an item
+  has no end and is not counted (`/nightmill:status` shows its age); epics and other projects' changes are left out.
+- **Fix rounds** (from the ledger): `rounds` is the highest `k` of the reported steps `fix-round-<k>`, `dispute-<k>`
+  and `test-finding-<k>` of the issue's takes freed in the window, 0 when a `code-review` was reported and no round;
+  `checks` the highest `k` of `check-fix-<k>`.
+- **Cost per issue** (from the ledger): the driver's `run` lines in the window, each line's `total_cost_usd` split
+  evenly over the issues it names, the rule of the gate, so both give the same spend; then the total, the headless
+  runs, the cost on no issue and the runs without a cost.
+- **Slot utilisation** (from the ledger): per slot the takes in the window, the time they held the slot (from the
+  claim to the freeing, a running take to the window's end, clipped to the window) and its share of the window; the
+  utilisation is the held time over the slot count (`worktrees.slots`, raised to the highest slot in the record) times
+  the window.
+
+`-` means the source has nothing (no stay, no review recorded, no take, no headless run); `?` means the board could
+not be read, never 0. The `note:` lines at the end say what was not counted or not read (a status not in
+`board.statuses`, the board, a take without a take line, no record yet). `--json` prints the same numbers as one JSON
+object on one line (durations in seconds, money with two decimals, `null` for `-` and `?`). `--html <dir>` writes one
+file, `<dir>/index.html`, with the same tables and a bar per status and per slot: one `<style>` block, no script, no
+link, nothing loaded, so it opens without a network or a server; open it yourself, the script opens no browser.
+Spec review rounds (`/spec` takes no slot) and headless runs started by hand (no `run` line) are not in it.
 
 ### Watching the run in a browser
 
@@ -990,6 +1033,9 @@ one count line; one line per step with its exit code, duration, cost and turns, 
 the driver did not run; whether any process was left behind; and each step's final message, folded. The comment names
 no local path. The cost is `total_cost_usd` as Claude Code reports it in each step's JSON result; with a subscription
 login it is what the same use would cost through the API, not a bill.
+After the cost lines the summary carries the history of the run, the text of `scripts/history.sh --run <its start>`
+([How the work went](#how-the-work-went)), so the night report and the command show the same numbers; the two notes
+that would name a local path or another program's message are shortened, and `history.txt` in the run files keeps them.
 
 ### The workflow template
 
@@ -1049,6 +1095,7 @@ bash tests/smoke-check.sh   # tests/check.sh: the parallel steps, the order, the
 bash tests/smoke-guard.sh   # guard.sh: what the PreToolUse guard refuses
 bash tests/smoke-drive.sh   # drive.sh against a fake claude, a fake gh and throwaway slots
 bash tests/smoke-gate.sh    # gate.sh: the pause flag and the limits against a throwaway repository
+bash tests/smoke-history.sh # history.sh: metrics from a fixture ledger and a fake gh
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
@@ -1067,6 +1114,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-guard.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-drive.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-gate.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-history.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```

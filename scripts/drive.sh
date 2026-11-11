@@ -13,7 +13,8 @@
 # gh pr list, gh issue comment (the summary, and the comment of a breached limit), gh api user, gh issue view (the
 # comments of an issue whose limit is breached), gh issue edit <n> --add-label blocked (a breached limit), git rev-parse /
 # fetch origin / symbolic-ref / status, slot.sh --reap, slot.sh --status --porcelain, room.sh, gate.sh (the pause
-# flag and the limits, before every step; its gh api graphql query) and
+# flag and the limits, before every step; its gh api graphql query), history.sh --run <its start> (for the summary,
+# docs/specs/iteration-54-history-metrics.md decision 9; its gh api graphql query) and
 # NIGHTMILL_RUN_STARTED=<s> NIGHTMILL_ISSUES_LEFT=<k> claude -p "<prompt>" --permission-mode manual
 # --output-format json --max-turns <T> --max-budget-usd <B> in the main checkout. After every step it appends one
 # run line to <worktrees.root>/.slots/ledger.tsv (lib/ledger.sh). It sets no board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
@@ -287,6 +288,7 @@ build_summary() { # build_summary <start|end> <reason>
     done
     if [ "$nocost" = 0 ]; then text="${text}Cost: \$$(money "$sum") in all, as Claude Code reports it (total_cost_usd)."$'\n'
     else text="${text}Cost: at least \$$(money "$sum") ($nocost steps without a cost)."$'\n'; fi
+    text="$text"$'\n'"$(history_item)"$'\n'
     rest=$(LC_ALL=C awk -F '\t' -v r="$st_ready" -v bug=",$lb_bug," -v epic=",$lb_epic," \
       '$2 == "Issue" && $3 == r && index($5, bug) == 0 && index($5, epic) == 0 { printf "%s#%s", (c++ ? ", " : ""), $1 }' "$run/last.tsv" 2>/dev/null)
     if [ -n "$rest" ]; then text="$text"$'\n'"Not run by the driver: Ready stories wait for /spec: $rest."$'\n'
@@ -314,6 +316,26 @@ build_summary() { # build_summary <start|end> <reason>
       more=1
     fi
   done
+}
+
+# history_item: the history of this run (iteration 54 decision 9), computed by history.sh of this folder into the run
+# files; the block is history.txt as printed but for the two notes that name a local path or the text of another program
+history_item() {
+  local stamp hrc=0 first
+  stamp=$(ledger_stamp "$start_s")
+  (cd "$main" && bash "$here/history.sh" --run "$stamp") > "$run/history.txt" 2> "$run/history.err" || hrc=$?
+  if [ "$hrc" != 0 ]; then
+    first=$(sed -n 1p "$run/history.err" | tr -d '\r')
+    case "$first" in "history: skipped "*" malformed lines of "*) first=${first%% of *} ;; esac
+    printf 'History: not computed: %s.\n' "${first:-history.sh exited with $hrc}"
+    return 0
+  fi
+  printf 'History of this run (scripts/history.sh --run %s):\n\n```text\n' "$stamp"
+  LC_ALL=C awk '
+    index($0, "note: no record yet: ") == 1 { print "note: no record yet"; next }
+    index($0, "note: the board was not read: ") == 1 { print "note: the board was not read (the reason is in history.txt in the run files)"; next }
+    { print }' "$run/history.txt"
+  printf '```\n'
 }
 
 processes_line() {

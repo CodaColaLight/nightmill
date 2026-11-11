@@ -1,10 +1,12 @@
 # scripts/status.ps1 - one table of what waits for the maintainer and what is stuck (nightmill).
 #
-#   status.ps1 [-All] [-Porcelain]
+#   status.ps1 [-All] [-Porcelain | -Json]
 #
 # -Porcelain prints the same cells for a program, tab separated, one record per line ending with LF, as UTF-8:
 # item (#, Status, Who, PR, Age, Flag, Title), note, slot (the ten cells of the Slots section) and capacity
-# (docs/specs/iteration-31-dashboard.md); the text form does not change.
+# (docs/specs/iteration-31-dashboard.md); the text form does not change. -Json prints the same cells as one JSON
+# object on one line: {"items":[...],"notes":[...],"slots":[...]|null,"capacity":"..."|null}, built here, not by
+# ConvertTo-Json (docs/specs/iteration-54-history-metrics.md decision 10).
 # Joins the board items, the pull requests and the slots and prints them as one table, Spec review and
 # Approved first, with stale states flagged, then the Slots section: every slot with what its agent is doing
 # (running, stalled or unknown, as slot.ps1 decides it; iteration 23). -All also lists the items at Backlog and Done. It only reads:
@@ -19,12 +21,16 @@
 param(
   [switch]$All,
   [switch]$Porcelain,
+  [switch]$Json,
   [Parameter(ValueFromRemainingArguments = $true)]$Rest
 )
 $ErrorActionPreference = "Stop"
 
 function Die([string]$msg) { [Console]::Error.WriteLine("status.ps1: $msg"); exit 2 }
-if ($Rest) { [Console]::Error.WriteLine("usage: status.ps1 [-All] [-Porcelain]"); exit 2 }
+if ($Rest -or ($Porcelain -and $Json)) { [Console]::Error.WriteLine("usage: status.ps1 [-All] [-Porcelain | -Json]"); exit 2 }
+# -Json takes the porcelain path; the records are turned into the JSON object at the end
+$asJson = [bool]$Json
+if ($asJson) { $Porcelain = [switch]$true }
 
 # -Porcelain: gh's output is decoded as UTF-8 and the records are written as UTF-8 (no byte order mark); the previous
 # encoding is put back in the finally at the end
@@ -372,7 +378,43 @@ if ($hasSlots) {
     Write-Output $capLine
   }
 }
-if ($Porcelain) {
+# a JSON string: " and \ escaped, every character below 0x20 as \u00xx, the rest as is (iteration 54 decision 10)
+function Get-JsonString([string]$v) {
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  foreach ($ch in $v.ToCharArray()) {
+    if ($ch -eq [char]34 -or $ch -eq [char]92) { [void]$sb.Append([char]92).Append($ch) }
+    elseif ([int]$ch -lt 32) { [void]$sb.Append(('\u{0:x4}' -f [int]$ch)) }
+    else { [void]$sb.Append($ch) }
+  }
+  [void]$sb.Append('"')
+  return $sb.ToString()
+}
+if ($asJson) {
+  $jItems = @(); $jNotes = @(); $jSlots = @(); $jCap = "null"
+  $itemKeys = @("number", "status", "who", "pr", "age", "flag", "title")
+  $slotKeys = @("slot", "state", "agent", "branch", "skill", "step", "report", "since", "pr", "flag")
+  foreach ($l in $porc) {
+    $f = $l -split "`t"
+    if ($f[0] -eq "item" -or $f[0] -eq "slot") {
+      $keys = if ($f[0] -eq "item") { $itemKeys } else { $slotKeys }
+      $parts = @()
+      for ($c = 0; $c -lt $keys.Count; $c++) {
+        $cell = if ($c + 1 -lt $f.Count) { $f[$c + 1] } else { "" }
+        if ($c -eq 0) { $parts += ('"' + $keys[$c] + '":' + [string]([long]$cell)) }
+        else { $parts += ('"' + $keys[$c] + '":' + (Get-JsonString $cell)) }
+      }
+      $obj = "{" + ($parts -join ",") + "}"
+      if ($f[0] -eq "item") { $jItems += $obj } else { $jSlots += $obj }
+    } elseif ($f[0] -eq "note") { $jNotes += (Get-JsonString $f[1]) }
+    elseif ($f[0] -eq "capacity") { $jCap = Get-JsonString $f[1] }
+  }
+  $slotsText = "null"
+  if ($hasSlots) { $slotsText = "[" + ($jSlots -join ",") + "]" } else { $jCap = "null" }
+  $text = '{"items":[' + ($jItems -join ",") + '],"notes":[' + ($jNotes -join ",") + '],"slots":' + $slotsText + ',"capacity":' + $jCap + "}`n"
+  [Console]::Out.Write($text)
+  [Console]::Out.Flush()
+} elseif ($Porcelain) {
   # every record ends with one LF, written once: Write-Output would end the lines with CRLF on Windows
   $text = ""
   foreach ($l in $porc) { $text += $l + "`n" }

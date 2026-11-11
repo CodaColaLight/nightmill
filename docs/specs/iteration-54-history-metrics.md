@@ -1,6 +1,6 @@
 # Iteration 54: /status prints JSON, and a history command computes cycle time per status, fix rounds, cost per issue and slot utilisation as text, JSON and a static page, which the driver's summary uses
 
-Status: draft, awaiting approval (#166)
+Status: delivered in iteration 54 (PR #288)
 
 Story #166, epic #163 (capabilities of comparable tools), gap 3 of the gap analysis of 2026-11-05. Today `/status`
 shows where things stand now (iteration 8), as a table or as tab-separated porcelain lines (iteration 31), and

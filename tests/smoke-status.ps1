@@ -276,6 +276,119 @@ exit 0
   Run-S $work "a" "" $true
   if ($Code -ne 2 -or $Err -notmatch "bad credentials") { Fail "a failing gh must exit 2 with its message: $Code $Err" }
 
+  Write-Host "== json"
+  # status.ps1 -Json (iteration 54, #166): the cells of the text tables as one JSON object on one line, the same cells as
+  # -Porcelain, byte for byte the expected.json files that smoke-status.sh uses (d: a title with a quote, a backslash, a
+  # letter outside ASCII and a tab; it has no porcelain file, its cells are compared with a live -Porcelain run)
+  function Check-Json-One-Line([string]$name) {
+    if ($script:OutBytes -contains [byte]13) { Fail "$name`: a carriage return in the JSON output" }
+    $nb = $script:OutBytes.Length
+    if ($nb -lt 2 -or $script:OutBytes[$nb - 1] -ne 10) { Fail "$name`: the JSON output does not end with LF" }
+    if (@($script:OutRaw.TrimEnd("`n") -split "`n").Count -ne 1) { Fail "$name`: the JSON output is not one line" }
+    if ($script:OutBytes.Length -ge 3 -and $script:OutBytes[0] -eq 0xEF -and $script:OutBytes[1] -eq 0xBB -and $script:OutBytes[2] -eq 0xBF) { Fail "$name`: a byte order mark" }
+  }
+  function Cells-Match([string]$name, [string]$jsonText, [string]$porcelainText) {
+    try { $j = $jsonText | ConvertFrom-Json } catch { Fail "$name`: the output is not valid JSON: $_" }
+    $rows = @($porcelainText.TrimEnd("`n") -split "`n" | Where-Object { $_ })
+    $items = @($rows | Where-Object { $_.StartsWith("item`t") })
+    $slots = @($rows | Where-Object { $_.StartsWith("slot`t") })
+    if (@($j.items).Count -ne $items.Count) { Fail "$name`: $(@($j.items).Count) items in the JSON, $($items.Count) in the porcelain" }
+    for ($i = 0; $i -lt $items.Count; $i++) {
+      $f = $items[$i] -split "`t"
+      $it = @($j.items)[$i]
+      $got = @("$($it.number)", $it.status, $it.who, $it.pr, $it.age, $it.flag, $it.title)
+      for ($k = 0; $k -lt 7; $k++) { if ($got[$k] -cne $f[$k + 1]) { Fail "$name`: item $i cell $k is [$($got[$k])] in the JSON and [$($f[$k + 1])] in the porcelain" } }
+    }
+    if ($slots.Count -eq 0) { if ($null -ne $j.slots -and @($j.slots).Count -ne 0) { Fail "$name`: slots in the JSON, none in the porcelain" } }
+    else {
+      if (@($j.slots).Count -ne $slots.Count) { Fail "$name`: $(@($j.slots).Count) slots in the JSON, $($slots.Count) in the porcelain" }
+      for ($i = 0; $i -lt $slots.Count; $i++) {
+        $f = $slots[$i] -split "`t"
+        $s1 = @($j.slots)[$i]
+        $got = @("$($s1.slot)", $s1.state, $s1.agent, $s1.branch, $s1.skill, $s1.step, $s1.report, $s1.since, $s1.pr, $s1.flag)
+        for ($k = 0; $k -lt 10; $k++) { if ($got[$k] -cne $f[$k + 1]) { Fail "$name`: slot $i cell $k is [$($got[$k])] in the JSON and [$($f[$k + 1])] in the porcelain" } }
+      }
+    }
+    $cap = @($rows | Where-Object { $_.StartsWith("capacity`t") })
+    if ($cap.Count -eq 1 -and $j.capacity -cne ($cap[0] -split "`t")[1]) { Fail "$name`: capacity is [$($j.capacity)] in the JSON and [$(($cap[0] -split "`t")[1])] in the porcelain" }
+  }
+  foreach ($scn in "a", "b", "c", "d") {
+    Set-Markers $scn
+    Run-S $work $scn "-Json"
+    if ($Code -ne 0) { Fail "json $scn`: exit code $Code`: $Err" }
+    $want = Read-Lf (Join-Path $FIX "$scn\expected.json")
+    if ($OutRaw -cne $want) {
+      Write-Host "--- expected"; Write-Host $want; Write-Host "--- got"; Write-Host $OutRaw
+      Fail "json $scn`: the output differs from expected.json"
+    }
+    Check-Json-One-Line "json $scn"
+    if ($Err) { Fail "json $scn`: status printed on standard error: $Err" }
+    $jsonText = $OutRaw
+    $porcFile = Join-Path $FIX "$scn\expected-porcelain.txt"
+    if (Test-Path $porcFile) { $porc = Read-Lf $porcFile }
+    else { Run-S $work $scn "-Porcelain"; $porc = $OutRaw }
+    Cells-Match "json $scn" $jsonText $porc
+  }
+  Write-Host "== json -All"
+  Set-Markers "a"
+  Run-S $work "a" "-All -Json"
+  if ($Code -ne 0) { Fail "json -All: exit code $Code`: $Err" }
+  Check-Json-One-Line "json -All"
+  if (-not $OutRaw.Contains('"status":"Backlog"') -or -not $OutRaw.Contains('"status":"Done"')) { Fail "json -All does not list Backlog and Done" }
+  if ($OutRaw.Contains("not shown")) { Fail "json -All prints 'not shown'" }
+  $jsonText = $OutRaw
+  Run-S $work "a" "-All -Porcelain"
+  Cells-Match "json -All" $jsonText $OutRaw
+  Run-S $work "a" "-Json"
+  if ($OutRaw.Contains('"status":"Backlog"') -or $OutRaw.Contains('"status":"Done"')) { Fail "json: the Backlog or Done items are listed without -All" }
+
+  Write-Host "== json: the title of scenario d is escaped"
+  Set-Markers "d"
+  Run-S $work "d" "-Json"
+  $wantTitle = 'Say \"hi\" at C:\\dir caf' + [char]0xE9 + ' end'
+  if (-not $OutRaw.Contains($wantTitle)) { Fail "json d: the title is not escaped as $wantTitle`: $OutRaw" }
+  $hasE9 = $false
+  for ($i = 0; $i -lt ($OutBytes.Length - 1); $i++) { if ($OutBytes[$i] -eq 0xC3 -and $OutBytes[$i + 1] -eq 0xA9) { $hasE9 = $true } }
+  if (-not $hasE9) { Fail "json d: the letter is not written as its UTF-8 bytes (c3 a9)" }
+  foreach ($b in $OutBytes) { if (($b -lt 0x20 -and $b -ne 0x0A) -or $b -eq 0x7F) { Fail "json d: a control byte in the output" } }
+
+  Write-Host "== json without worktrees: slots and capacity are null"
+  Write-Utf8 $cfgFile $noSlots
+  Set-Markers "b"
+  Run-S $work "b" "-Json"
+  if ($Code -ne 0) { Fail "json without worktrees: exit code $Code" }
+  if (-not $OutRaw.TrimEnd("`n").EndsWith('"slots":null,"capacity":null}')) { Fail "json without worktrees: slots and capacity are not null: $OutRaw" }
+  Write-Utf8 $cfgFile $withSlots
+
+  Write-Host "== json: usage and a failing gh"
+  Set-Markers "a"
+  $usage = 'usage: status.ps1 [-All] [-Porcelain | -Json]'
+  foreach ($a in "-Porcelain -Json", "-Json -Porcelain", "-All -Porcelain -Json") {
+    Run-S $work "a" $a
+    if ($Code -ne 2) { Fail "$a`: exit code $Code, 2 expected" }
+    if (-not (@($Err -split "`n" | ForEach-Object { $_.TrimEnd("`r") }) -contains $usage)) { Fail "$a`: no usage line: $Err" }
+    if ($OutBytes.Length -ne 0) { Fail "$a`: printed on standard output: $OutRaw" }
+  }
+  Run-S $work "a" "-Json" $true
+  if ($Code -ne 2 -or $Err -notmatch "bad credentials") { Fail "json with a failing gh must exit 2 with its message: $Code $Err" }
+  if ($OutBytes.Length -ne 0) { Fail "json with a failing gh printed on standard output: $OutRaw" }
+  $log = Join-Path $tmp "gh.log"
+  Run-S $work "a" "-Json"
+  $ghLog = [IO.File]::ReadAllText($log)
+  foreach ($c in @("project item-list", "project view", "pr list", "api graphql")) {
+    if (-not $ghLog.Contains($c)) { Fail "json: gh $c was never called" }
+  }
+  if ($ghLog -match 'item-edit|item-add|item-archive|pr merge|issue edit|issue comment|issue close|mutation') { Fail "status.ps1 -Json changed something: $ghLog" }
+
+  Write-Host "== the text form and the porcelain form are unchanged"
+  foreach ($scn in "a", "b", "c") {
+    Set-Markers $scn
+    Run-S $work $scn
+    Expect "text $scn" (Join-Path $FIX "$scn\expected.txt")
+    Run-S $work $scn "-Porcelain"
+    Expect "porcelain $scn" (Join-Path $FIX "$scn\expected-porcelain.txt")
+  }
+
   Write-Host "STATUS OK" -ForegroundColor Green
 } finally {
   Set-Location $here

@@ -1,0 +1,8 @@
+{"data":{"repositoryOwner":{"projectV2":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":"cur2"},"nodes":[
+{"content":{}},
+{"content":{"number":14,"labels":{"nodes":[{"name":"bug"}]},"timelineItems":{"nodes":[
+{"createdAt":"2026-11-08T23:00:00Z","status":"Ready","project":{"number":1}},
+{"createdAt":"2026-11-09T02:00:00Z","status":"In progress","project":{"number":1}},
+{"createdAt":"2026-11-09T03:20:00Z","status":"Review","project":{"number":1}},
+{"createdAt":"2026-11-09T07:00:00Z","status":"Done","project":{"number":1}}]}}}
+]}}}}}

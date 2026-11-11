@@ -5,7 +5,8 @@
 #   ST_AGEFILES  space separated; the pages of the GraphQL query that gives the time of each item's last status change
 #   ST_SLOTS     slot.sh --status --porcelain (plain lines, not flat records)
 # and the settings in ST_* environment variables (see BEGIN). Prints the table of what waits and what is stuck,
-# or with ST_PORCELAIN=1 the same cells as tab separated records (item, note, slot; iteration 31).
+# or with ST_PORCELAIN=1 the same cells as tab separated records (item, note, slot; iteration 31), or with ST_JSON=1
+# the same cells as one JSON object on one line (iteration 54; ST_CAPACITY holds the capacity cell, or is unset).
 # The rules are in docs/specs/iteration-8-status.md; scripts/status.ps1 does the same.
 
 function days(y, m, d,   era, yoe, doy, doe) {
@@ -229,8 +230,35 @@ function unflat(s,   out, i, n, c, d) {
   return out
 }
 
-# porcelain: one record, the kind and the fields joined with tabs
+# a JSON string: " and \\ escaped, every byte 0x00 to 0x1F as \\u00xx, the rest as is (iteration 54 decision 10)
+function jstr(s,   out, i, n, c) {
+  if (s !~ /[\001-\037"\\]/) return "\"" s "\""
+  out = ""; n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "\"" || c == "\\") out = out "\\" c
+    else if (c ~ /[\001-\037]/) out = out sprintf("\\u%04x", index(CTRL, c))
+    else out = out c
+  }
+  return "\"" out "\""
+}
+
+# porcelain: one record, the kind and the fields joined with tabs; with ST_JSON=1 one object of the JSON form
 function record(kind, nf, F,   i, line) {
+  if (json) {
+    for (i = 1; i <= nf; i++) F[i] = clean(F[i])
+    if (kind == "item") {
+      j_items = j_items (j_items == "" ? "" : ",") "{\"number\":" (F[1] + 0) ",\"status\":" jstr(F[2]) ",\"who\":" jstr(F[3]) \
+        ",\"pr\":" jstr(F[4]) ",\"age\":" jstr(F[5]) ",\"flag\":" jstr(F[6]) ",\"title\":" jstr(F[7]) "}"
+    } else if (kind == "note") {
+      j_notes = j_notes (j_notes == "" ? "" : ",") jstr(F[1])
+    } else if (kind == "slot") {
+      j_slots = j_slots (j_slots == "" ? "" : ",") "{\"slot\":" (F[1] + 0) ",\"state\":" jstr(F[2]) ",\"agent\":" jstr(F[3]) \
+        ",\"branch\":" jstr(F[4]) ",\"skill\":" jstr(F[5]) ",\"step\":" jstr(F[6]) ",\"report\":" jstr(F[7]) \
+        ",\"since\":" jstr(F[8]) ",\"pr\":" jstr(F[9]) ",\"flag\":" jstr(F[10]) "}"
+    }
+    return
+  }
   line = kind
   for (i = 1; i <= nf; i++) line = line "\t" clean(F[i])
   printf "%s\n", line
@@ -244,6 +272,11 @@ function before(a, b) { # does shown item a come before b
 BEGIN {
   all = (ENVIRON["ST_ALL"] == "1")
   porcelain = (ENVIRON["ST_PORCELAIN"] == "1")
+  # the JSON form takes the porcelain path; record() collects the objects and the END of BEGIN prints them
+  json = (ENVIRON["ST_JSON"] == "1")
+  if (json) porcelain = 1
+  CTRL = ""
+  for (i = 1; i < 32; i++) CTRL = CTRL sprintf("%c", i)
   now = ENVIRON["ST_NOW"] + 0
   nowl = now
   if (ENVIRON["ST_NOWL"] != "") nowl = stamp(ENVIRON["ST_NOWL"])
@@ -402,6 +435,11 @@ BEGIN {
         record("slot", 10, F)
       }
     } else table(nslots, 10)
+  }
+  if (json) {
+    printf "{\"items\":[%s],\"notes\":[%s],", j_items, j_notes
+    if (ENVIRON["ST_SLOTS_CONFIGURED"] == "1") printf "\"slots\":[%s],\"capacity\":%s}\n", j_slots, jstr(clean(ENVIRON["ST_CAPACITY"]))
+    else printf "\"slots\":null,\"capacity\":null}\n"
   }
   exit 0
 }

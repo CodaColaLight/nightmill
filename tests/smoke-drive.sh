@@ -50,6 +50,14 @@ case "${1:-} ${2:-}" in
     exit 0 ;;
   "api user") echo agent; exit 0 ;;
   "api graphql")
+    # the history of the run (iteration 54, #166): its board query holds repositoryOwner; the board is empty, or the
+    # call fails with a message that names a path (HIST_GH_FAIL)
+    case "$*" in
+      *repositoryOwner*)
+        if [ -n "${HIST_GH_FAIL:-}" ]; then echo "fake gh: cannot read /nowhere/board-cache/page.json" >&2; exit 1; fi
+        echo '{"data":{"repositoryOwner":{"projectV2":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+        exit 0 ;;
+    esac
     if [ -n "${EPIC_FOR:-}" ] && case "$*" in *"issue(number: $EPIC_FOR)"*) true ;; *) false ;; esac; then
       cat "$EPIC_FILE"
     else
@@ -132,7 +140,7 @@ new_case() {
   export COMMENT="$c/comment.md" STEPFILE="$c/step.n" BGPID="$c/bg.pid" STEPPID="$c/step.pid"
   export NIGHTMILL_CLOCK_FILE="$c/clock" STOPFILE="$main/.git/nightmill-stop"
   : > "$PRS"; : > "$SCRIPT"; echo 1800000000 > "$NIGHTMILL_CLOCK_FILE"
-  unset GH_AUTH_FAIL GH_COMMENT_FAIL EPIC_FOR ISSUE_COMMENTS
+  unset GH_AUTH_FAIL GH_COMMENT_FAIL EPIC_FOR ISSUE_COMMENTS HIST_GH_FAIL
 }
 board() { cp "$fx/$1" "$BOARD"; }
 script() { printf '%s\n' "$@" > "$SCRIPT"; }
@@ -507,5 +515,86 @@ hasnt "$GH_LOG" "issue edit" "epic paused"
 has "$COMMENT" "not started: paused: epic #5 has the label paused" "epic paused"
 audit "epic paused"
 unset EPIC_FOR
+
+# ---------- iteration 54 (#166): the summary carries the history of the run ----------
+
+# hist_block <comment file>: the lines of the fenced text block that follows the heading of the history item
+hist_block() { awk '/^History of this run \(scripts\/history\.sh --run /{ h = 1; next } h && /^```text$/ { b = 1; next } b && /^```$/ { exit } b { print }' "$1"; }
+# in_order <file> <name> <text>...: the first lines that start with each text are in this order
+in_order() {
+  local f=$1 what=$2 prev=0 t n
+  shift 2
+  for t in "$@"; do
+    n=$(grep -n -m1 -- "$t" "$f" | cut -d: -f1)
+    [ -n "$n" ] || fail "$what: no line matches $t in $(basename "$f")"
+    [ "$n" -gt "$prev" ] || fail "$what: the line of $t (line $n) is not after the previous one (line $prev)"
+    prev=$n
+  done
+}
+run_dir() { sed -n 's/^drive: run files in //p' "$c/out.txt" | tail -n 1; }
+
+# history
+new_case; board board-loop.tsv; loop_script; drive
+want_code 0 history
+stamp=$(field "$(run_lines | sed -n 1p)" 3)
+[[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "history: the run's start stamp is [$stamp]"
+has "$COMMENT" "History of this run (scripts/history.sh --run $stamp):" history
+block=$(hist_block "$COMMENT")
+case "$(printf '%s\n' "$block" | sed -n 1p)" in "history "*"driver run $stamp"*) ;; *) fail "history: the first line of the block is [$(printf '%s\n' "$block" | sed -n 1p)]" ;; esac
+# after the Cost line and before the first details block; between the step lines and the line on what the driver did not run
+in_order "$COMMENT" history '^Cost: ' '^History of this run (scripts/history.sh --run ' '^Not run by the driver' '<details>'
+# the same numbers as the Cost line
+has "$COMMENT" 'Cost: $3.00 in all' history
+case "$block" in *'cost: $3.00 in 3 headless runs'*) ;; *) fail "history: the block has no 'cost: \$3.00 in 3 headless runs': $block" ;; esac
+# the block is history.txt as printed (no note to shorten here); history.err is kept beside it
+rd=$(run_dir)
+[ -n "$rd" ] && [ -f "$rd/history.txt" ] && [ -f "$rd/history.err" ] || fail "history: history.txt or history.err is missing in the run files ($rd)"
+[ "$block" = "$(cat "$rd/history.txt")" ] || fail "history: the block is not history.txt: [$block] and [$(cat "$rd/history.txt")]"
+[ "$(sed -n 1p "$rd/history.txt" | cut -d' ' -f1)" = history ] || fail "history: history.txt does not start with history"
+hasnt "$COMMENT" "$tmp" "history: the comment names a local path"
+audit history
+
+# history no path
+new_case; board board-loop.tsv; loop_script
+cp -R "$here/scripts" "$c/scripts"
+printf '#!/usr/bin/env bash\nrm -f "%s"\nexec bash "%s/history.sh" "$@"\n' "$LEDGER" "$here/scripts" > "$c/scripts/history.sh"
+chmod +x "$c/scripts/history.sh"
+export HIST_GH_FAIL=1
+drive "$c/scripts/drive.sh"
+unset HIST_GH_FAIL
+want_code 0 "history no path"
+grep -qxF 'note: no record yet' "$COMMENT" || fail "history no path: the block has no line 'note: no record yet'"
+grep -qxF 'note: the board was not read (the reason is in history.txt in the run files)' "$COMMENT" || fail "history no path: the block has no shortened board note"
+hasnt "$COMMENT" "$tmp" "history no path: the comment names a local path (the run files, the checkout or the ledger)"
+hasnt "$COMMENT" "nowhere" "history no path: the comment holds text of the fake gh"
+hasnt "$COMMENT" "fake gh: cannot read" "history no path: the comment holds the stderr of the fake gh"
+rd=$(run_dir)
+[ -f "$rd/history.txt" ] || fail "history no path: history.txt is missing in the run files ($rd)"
+grep -qE '^note: no record yet: .*ledger\.tsv$' "$rd/history.txt" || fail "history no path: history.txt does not keep the note as printed: $(cat "$rd/history.txt")"
+grep -qxF 'note: the board was not read: fake gh: cannot read /nowhere/board-cache/page.json' "$rd/history.txt" || fail "history no path: history.txt does not keep the board note as printed: $(cat "$rd/history.txt")"
+audit "history no path"
+
+# history fails: a copy of scripts/ whose history.sh prints boom on standard error and exits 1
+new_case; board board-loop.tsv; loop_script
+cp -R "$here/scripts" "$c/scripts"
+printf '#!/usr/bin/env bash\necho boom >&2\nexit 1\n' > "$c/scripts/history.sh"
+chmod +x "$c/scripts/history.sh"
+drive "$c/scripts/drive.sh"
+want_code 0 "history fails"
+has "$COMMENT" "History: not computed: boom." "history fails"
+hasnt "$COMMENT" "History of this run" "history fails"
+in_order "$COMMENT" "history fails" '^Cost: ' '^History: not computed: boom\.$' '^Not run by the driver' '<details>'
+# every other line as in the loop case
+[ "$(sed -n 1p "$CLAUDE_LOG")" = "$FIX" ] && [ "$(calls)" = 3 ] || fail "history fails: the calls are not those of the loop"
+has "$COMMENT" "| #11 Crash on start | /fix all | Ready | Review | pull request open | #101 |" "history fails"
+has "$COMMENT" "| #21 Add export | /next | Approved | Done | merged | #121 |" "history fails"
+has "$COMMENT" "| #22 Add import | /next | Approved | Done | merged | #122 |" "history fails"
+has "$COMMENT" "Picked 3, merged 2, pull request open 1, blocked 0, not started 0." "history fails"
+has "$COMMENT" 'Cost: $3.00 in all' "history fails"
+n=$(grep -c '<details><summary>Final message of ' "$COMMENT" || true)
+[ "$n" = 3 ] || fail "history fails: $n details blocks, 3 expected"
+has "$COMMENT" "Processes: none left running." "history fails"
+has "$c/out.txt" "drive: summary posted to #9" "history fails"
+audit "history fails"
 
 echo "smoke-drive.sh: ok"
