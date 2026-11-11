@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tests/test-drive-docs.sh - the driver, its keys, the workflow template and the README section (iteration 52, #164).
 # Iteration 53 (#165): the driver also passes --max-turns and --max-budget-usd and edits an issue only to add blocked.
+# Iteration 54 (#166): the driver also calls history.sh --run (history.ps1) for its summary.
 # Parts S (the driver sets no status), K (the config keys), T (the template), R (the README).
 #   tests/test-drive-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
@@ -23,6 +24,12 @@ for f in scripts/drive.sh scripts/drive.ps1; do
   for w in "/nightmill:fix all" "/nightmill:next" "--permission-mode manual" "--output-format json" "--max-turns" "--max-budget-usd" "issue comment" "nightmill-stop" "nightmill-drive.lock"; do
     grep -qF -- "$w" "$p" || fail "$f: does not contain '$w'"
   done
+  # iteration 54 (#166): the summary carries the history of the run, computed by the history script of the same folder
+  case "$f" in
+    *.sh) hw='history.sh" --run' ;;
+    *) hw='history.ps1' ;;
+  esac
+  grep -qF -- "$hw" "$p" || fail "$f: does not contain '$hw'"
   for w in "${nostatus[@]}" "${forbidden[@]}"; do
     if grep -qF -- "$w" "$p"; then fail "$f: contains '$w'"; fi
   done

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tests/test-status-controls.sh - regression for #134: an issue title with terminal control characters (ESC, BEL,
-# DEL, written as JSON \u escapes) must not reach the output of status.sh, in the table or with --porcelain.
+# DEL, written as JSON \u escapes) must not reach the output of status.sh, in the table, with --porcelain or (iteration 54,
+# #166) with --json.
 # Same approach as smoke-status.sh: a fake gh answers from tests/fixtures/status-controls/. No network.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -50,4 +51,6 @@ echo "== table: controls removed from the title"
 check "table"
 echo "== --porcelain: controls removed from the title"
 check "porcelain" --porcelain
+echo "== --json: controls removed from the title"
+check "json" --json
 echo "ok"

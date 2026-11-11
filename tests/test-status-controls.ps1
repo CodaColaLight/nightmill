@@ -1,6 +1,6 @@
 # tests/test-status-controls.ps1 - regression for #134, PowerShell twin of test-status-controls.sh: an issue title
 # with terminal control characters (ESC, BEL, DEL, written as JSON \u escapes) must not reach the output of
-# status.ps1, in the table or with -Porcelain. Not run on the machine where it was written (no PowerShell there).
+# status.ps1, in the table, with -Porcelain or (iteration 54, #166) with -Json. Not run on the machine where it was written (no PowerShell there).
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
 $psExe = (Get-Command powershell).Source
@@ -45,11 +45,12 @@ exit 0
   $env:NIGHTMILL_NOW = "1793880000"
   $env:PATH = "$bin;$env:PATH"
 
-  foreach ($mode in @("table", "porcelain")) {
+  foreach ($mode in @("table", "porcelain", "json")) {
     Write-Host "== ${mode}: controls removed from the title"
     Push-Location $work
     try {
       if ($mode -eq "porcelain") { $out = & $psExe -NoProfile -ExecutionPolicy Bypass -File $S -Porcelain 2>&1 | Out-String }
+      elseif ($mode -eq "json") { $out = & $psExe -NoProfile -ExecutionPolicy Bypass -File $S -Json 2>&1 | Out-String }
       else { $out = & $psExe -NoProfile -ExecutionPolicy Bypass -File $S 2>&1 | Out-String }
       $code = $LASTEXITCODE
     } finally { Pop-Location }

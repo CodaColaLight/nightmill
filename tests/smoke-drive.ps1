@@ -57,6 +57,13 @@ if ($k -eq 'issue view') {
 if ($k -eq 'api user') { Write-Output 'agent'; exit 0 }
 if ($k -eq 'api graphql') {
   $q = $a -join ' '
+  # the history of the run (iteration 54, #166): its board query holds repositoryOwner; the board is empty, or the call
+  # fails with a message that names a path (HIST_GH_FAIL)
+  if ($q.Contains('repositoryOwner')) {
+    if ($env:HIST_GH_FAIL) { [Console]::Error.WriteLine('fake gh: cannot read /nowhere/board-cache/page.json'); exit 1 }
+    Write-Output '{"data":{"repositoryOwner":{"projectV2":{"items":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    exit 0
+  }
   if ($env:EPIC_FOR -and $q.Contains("issue(number: $($env:EPIC_FOR))")) { Write-Output (Get-Content $env:EPIC_FILE -Raw) }
   else { Write-Output '{"data":{"repository":{"issue":{"parent":null}}}}' }
   exit 0
@@ -138,7 +145,7 @@ function New-Case($extra = '"unattended": { "summaryIssue": 9, "maxMinutes": 60 
   $env:ENV_LOG = Join-Path $c "env.log"; $env:MAIN = $m; $env:EPIC_FILE = Join-Path $fx "..\gate\epic-paused.json"; $env:LEDGER = Join-Path $c "wt\.slots\ledger.tsv"
   $env:NIGHTMILL_CLOCK_FILE = Join-Path $c "clock"; $env:STOPFILE = Join-Path $m ".git\nightmill-stop"
   Set-Content $env:PRS ""; Set-Content $env:SCRIPT ""; Set-Content $env:NIGHTMILL_CLOCK_FILE "1800000000"
-  Remove-Item Env:GH_AUTH_FAIL, Env:GH_COMMENT_FAIL, Env:EPIC_FOR, Env:ISSUE_COMMENTS -ErrorAction SilentlyContinue
+  Remove-Item Env:GH_AUTH_FAIL, Env:GH_COMMENT_FAIL, Env:EPIC_FOR, Env:ISSUE_COMMENTS, Env:HIST_GH_FAIL -ErrorAction SilentlyContinue
 }
 function Use-Board($name) { Copy-Item (Join-Path $fx $name) $env:BOARD -Force }
 function Set-Script([string[]]$lines) { Set-Content -Path $env:SCRIPT -Value $lines }
@@ -493,6 +500,97 @@ Hasnt (Gh-Log) "issue edit" "epic paused"
 Has (Comment) "not started: paused: epic #5 has the label paused" "epic paused"
 Audit "epic paused"
 Remove-Item Env:EPIC_FOR
+
+# ---------- iteration 54 (#166): the summary carries the history of the run ----------
+
+# Hist-Block <comment>: the lines of the fenced text block that follows the heading of the history item
+function Hist-Block([string]$comment) {
+  $lines = @($comment -replace "`r`n", "`n" -split "`n")
+  $h = -1
+  for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].StartsWith("History of this run (scripts/history.sh --run ")) { $h = $i; break } }
+  if ($h -lt 0) { return $null }
+  $i = $h + 1
+  while ($i -lt $lines.Count -and $lines[$i] -ne '```text') { $i++ }
+  $block = New-Object System.Collections.Generic.List[string]
+  for ($i = $i + 1; $i -lt $lines.Count -and $lines[$i] -ne '```'; $i++) { $block.Add($lines[$i]) }
+  return ($block -join "`n")
+}
+# In-Order <text> <what> <regex>...: the first line that matches each pattern is after the one of the previous pattern
+function In-Order([string]$text, [string]$what, [string[]]$patterns) {
+  $prev = -1
+  foreach ($p in $patterns) {
+    $m = [regex]::Match($text, "(?m)$p")
+    if (-not $m.Success) { Fail "${what}: no line matches $p" }
+    if ($m.Index -le $prev) { Fail "${what}: the line of $p (at $($m.Index)) is not after the previous one (at $prev)" }
+    $prev = $m.Index
+  }
+}
+function Run-Dir { $m = [regex]::Matches($script:out, '(?m)^drive: run files in (.+?)\r?$'); if ($m.Count -gt 0) { return $m[$m.Count - 1].Groups[1].Value } else { return "" } }
+function Read-Lf([string]$path) { ([IO.File]::ReadAllText($path)) -replace "`r`n", "`n" }
+
+# history
+New-Case; Use-Board "board-loop.tsv"; Loop-Script; Invoke-Drive
+Want-Code 0 "history"
+$stamp = ((Run-Lines)[0] -split "`t")[2]
+if ($stamp -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$') { Fail "history: the run's start stamp is [$stamp]" }
+Need-Comment "history"; $cm = (Comment) -replace "`r`n", "`n"
+Has $cm "History of this run (scripts/history.sh --run ${stamp}):" "history"
+$block = Hist-Block $cm
+$first = ($block -split "`n")[0]
+if (-not ($first.StartsWith("history ") -and $first.Contains("driver run $stamp"))) { Fail "history: the first line of the block is [$first]" }
+In-Order $cm "history" @('^Cost: ', '^History of this run \(scripts/history\.sh --run ', '^Not run by the driver', '<details>')
+Has $cm 'Cost: $3.00 in all' "history"
+Has $block 'cost: $3.00 in 3 headless runs' "history"
+$rd = Run-Dir
+if (-not $rd -or -not (Test-Path (Join-Path $rd "history.txt")) -or -not (Test-Path (Join-Path $rd "history.err"))) { Fail "history: history.txt or history.err is missing in the run files ($rd)" }
+if ($block.TrimEnd("`n") -cne (Read-Lf (Join-Path $rd "history.txt")).TrimEnd("`n")) { Fail "history: the block is not history.txt: [$block]" }
+Hasnt $cm $tmp "history: the comment names a local path"
+Audit "history"
+
+# history no path
+New-Case; Use-Board "board-loop.tsv"; Loop-Script
+Copy-Item (Join-Path $here "scripts") (Join-Path $script:c "scripts") -Recurse
+$wrapper = "Remove-Item -Force -ErrorAction SilentlyContinue '$($env:LEDGER)'`r`n& powershell -NoProfile -ExecutionPolicy Bypass -File '$(Join-Path $here 'scripts\history.ps1')' @args`r`nexit `$LASTEXITCODE`r`n"
+[IO.File]::WriteAllText((Join-Path $script:c "scripts\history.ps1"), $wrapper)
+$env:HIST_GH_FAIL = "1"
+Invoke-Drive (Join-Path $script:c "scripts\drive.ps1")
+Remove-Item Env:HIST_GH_FAIL
+Want-Code 0 "history no path"
+Need-Comment "history no path"; $cm = (Comment) -replace "`r`n", "`n"
+if (-not (@($cm -split "`n") -ccontains 'note: no record yet')) { Fail "history no path: the block has no line 'note: no record yet'" }
+if (-not (@($cm -split "`n") -ccontains 'note: the board was not read (the reason is in history.txt in the run files)')) { Fail "history no path: the block has no shortened board note" }
+Hasnt $cm $tmp "history no path: the comment names a local path (the run files, the checkout or the ledger)"
+Hasnt $cm "nowhere" "history no path: the comment holds text of the fake gh"
+Hasnt $cm "fake gh: cannot read" "history no path: the comment holds the stderr of the fake gh"
+$rd = Run-Dir
+if (-not $rd -or -not (Test-Path (Join-Path $rd "history.txt"))) { Fail "history no path: history.txt is missing in the run files ($rd)" }
+$ht = Read-Lf (Join-Path $rd "history.txt")
+if (-not [regex]::IsMatch($ht, '(?m)^note: no record yet: .*ledger\.tsv$')) { Fail "history no path: history.txt does not keep the note as printed: $ht" }
+if (-not (@($ht -split "`n") -ccontains 'note: the board was not read: fake gh: cannot read /nowhere/board-cache/page.json')) { Fail "history no path: history.txt does not keep the board note as printed: $ht" }
+Audit "history no path"
+
+# history fails: a copy of scripts\ whose history.ps1 prints boom on standard error and exits 1
+New-Case; Use-Board "board-loop.tsv"; Loop-Script
+Copy-Item (Join-Path $here "scripts") (Join-Path $script:c "scripts") -Recurse
+[IO.File]::WriteAllText((Join-Path $script:c "scripts\history.ps1"), "[Console]::Error.WriteLine('boom')`r`nexit 1`r`n")
+Invoke-Drive (Join-Path $script:c "scripts\drive.ps1")
+Want-Code 0 "history fails"
+Need-Comment "history fails"; $cm = (Comment) -replace "`r`n", "`n"
+Has $cm "History: not computed: boom." "history fails"
+Hasnt $cm "History of this run" "history fails"
+In-Order $cm "history fails" @('^Cost: ', '^History: not computed: boom\.$', '^Not run by the driver', '<details>')
+# every other line as in the loop case
+if ((Calls) -ne 3 -or (Call-Line 1) -ne $FIX) { Fail "history fails: the calls are not those of the loop" }
+Has $cm "| #11 Crash on start | /fix all | Ready | Review | pull request open | #101 |" "history fails"
+Has $cm "| #21 Add export | /next | Approved | Done | merged | #121 |" "history fails"
+Has $cm "| #22 Add import | /next | Approved | Done | merged | #122 |" "history fails"
+Has $cm "Picked 3, merged 2, pull request open 1, blocked 0, not started 0." "history fails"
+Has $cm 'Cost: $3.00 in all' "history fails"
+$nd = ([regex]::Matches($cm, '<details><summary>Final message of ')).Count
+if ($nd -ne 3) { Fail "history fails: $nd details blocks, 3 expected" }
+Has $cm "Processes: none left running." "history fails"
+Has $script:out "drive: summary posted to #9" "history fails"
+Audit "history fails"
 
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 Write-Host "smoke-drive.ps1: ok"

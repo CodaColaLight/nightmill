@@ -258,6 +258,123 @@ code=$?
 set -e
 [ "$code" = 2 ] && grep -q 'bad credentials' "$tmp/err.txt" || fail "a failing gh must exit 2 with its message: $code $(cat "$tmp/err.txt")"
 
+echo "== json"
+# status.sh --json (iteration 54, #166): the cells of the text tables as one JSON object on one line, the same cells as
+# --porcelain; the expected files are tests/fixtures/status/<scenario>/expected.json (d: a title with a quote, a
+# backslash, a letter outside ASCII and a tab; it has no porcelain file, its cells are compared with a live --porcelain)
+# shellcheck source=../scripts/lib/json.sh
+. "$here/scripts/lib/json.sh"
+cells_match() { # cells_match <name> <json file> <porcelain file>: the items and slots of the JSON hold the cells of the porcelain, in order
+  local name=$1 jf=$2 pf=$3 i n key col want got
+  json_load "$jf" || fail "$name: cannot load the JSON"
+  n=$(awk -F '\t' '$1 == "item" { c++ } END { print c + 0 }' "$pf")
+  [ "$(json_len items)" = "$n" ] || fail "$name: $(json_len items) items in the JSON, $n in the porcelain"
+  for ((i = 0; i < n; i++)); do
+    for pair in number:2 status:3 who:4 pr:5 age:6 flag:7 title:8; do
+      key=${pair%%:*}; col=${pair##*:}
+      want=$(awk -F '\t' -v i="$i" -v c="$col" '$1 == "item" { if (k++ == i) { print $c; exit } }' "$pf")
+      got=$(json_get "items[$i].$key")
+      [ "$got" = "$want" ] || fail "$name: item $i $key is [$got] in the JSON and [$want] in the porcelain"
+    done
+  done
+  n=$(awk -F '\t' '$1 == "slot" { c++ } END { print c + 0 }' "$pf")
+  if [ "$n" = 0 ]; then
+    [ "$(json_len slots)" = 0 ] || fail "$name: slots in the JSON, none in the porcelain"
+  else
+    [ "$(json_len slots)" = "$n" ] || fail "$name: $(json_len slots) slots in the JSON, $n in the porcelain"
+  fi
+  for ((i = 0; i < n; i++)); do
+    for pair in slot:2 state:3 agent:4 branch:5 skill:6 step:7 report:8 since:9 pr:10 flag:11; do
+      key=${pair%%:*}; col=${pair##*:}
+      want=$(awk -F '\t' -v i="$i" -v c="$col" '$1 == "slot" { if (k++ == i) { print $c; exit } }' "$pf")
+      got=$(json_get "slots[$i].$key")
+      [ "$got" = "$want" ] || fail "$name: slot $i $key is [$got] in the JSON and [$want] in the porcelain"
+    done
+  done
+  want=$(awk -F '\t' '$1 == "capacity" { print $2 }' "$pf")
+  [ "$(json_get capacity)" = "$want" ] || fail "$name: capacity is [$(json_get capacity)] in the JSON and [$want] in the porcelain"
+}
+for scn in a b c d; do
+  markers "$scn"
+  run_in "$tmp/work" "$scn" --json
+  [ "$code" = 0 ] || fail "json $scn: exit code $code: $(cat "$tmp/err.txt")"
+  expect "json $scn" "$FIX/$scn/expected.json"
+  no_cr_one_lf "json $scn"
+  [ "$(wc -l < "$tmp/out.txt" | tr -d ' ')" = 1 ] || fail "json $scn: the output is not one line"
+  json_check "$tmp/out.txt" || fail "json $scn: the output is not valid JSON"
+  [ ! -s "$tmp/err.txt" ] || fail "json $scn: status printed on standard error: $(cat "$tmp/err.txt")"
+  cp "$tmp/out.txt" "$tmp/json.out"
+  if [ -f "$FIX/$scn/expected-porcelain.txt" ]; then
+    cells_match "json $scn" "$tmp/json.out" "$FIX/$scn/expected-porcelain.txt"
+  else
+    run_in "$tmp/work" "$scn" --porcelain
+    cp "$tmp/out.txt" "$tmp/porcelain.out"
+    cells_match "json $scn" "$tmp/json.out" "$tmp/porcelain.out"
+  fi
+done
+echo "== json --all"
+markers a
+run_in "$tmp/work" a --all --json
+[ "$code" = 0 ] || fail "json --all: exit code $code: $(cat "$tmp/err.txt")"
+no_cr_one_lf "json --all"
+json_check "$tmp/out.txt" || fail "json --all: the output is not valid JSON"
+grep -q '"status":"Backlog"' "$tmp/out.txt" && grep -q '"status":"Done"' "$tmp/out.txt" || fail "json --all does not list Backlog and Done"
+if grep -q 'not shown' "$tmp/out.txt"; then fail "json --all prints 'not shown'"; fi
+cp "$tmp/out.txt" "$tmp/json.out"
+run_in "$tmp/work" a --all --porcelain
+cp "$tmp/out.txt" "$tmp/porcelain.out"
+cells_match "json --all" "$tmp/json.out" "$tmp/porcelain.out"
+# without --all the Backlog and Done items are not there
+run_in "$tmp/work" a --json
+if grep -q '"status":"Backlog"\|"status":"Done"' "$tmp/out.txt"; then fail "json: the Backlog or Done items are listed without --all"; fi
+echo "== json: the title of scenario d is escaped"
+markers d
+run_in "$tmp/work" d --json
+grep -qF 'Say \"hi\" at C:\\dir café end' "$tmp/out.txt" || fail "json d: the title is not Say \\\"hi\\\" at C:\\\\dir café end: $(cat "$tmp/out.txt")"
+grep -q "$(printf 'caf\303\251 end')" "$tmp/out.txt" || fail "json d: the letter is not written as its UTF-8 bytes"
+if LC_ALL=C grep -q "[$(printf '\001-\037\177')]" "$tmp/out.txt"; then fail "json d: a control byte in the output"; fi
+echo "== json without worktrees: slots and capacity are null"
+cp "$tmp/no-slots.json" "$tmp/work/.claude/nightmill.json"
+markers b
+run_in "$tmp/work" b --json
+[ "$code" = 0 ] || fail "json without worktrees: exit code $code"
+case "$(cat "$tmp/out.txt")" in *'"slots":null,"capacity":null}') ;; *) fail "json without worktrees: slots and capacity are not null: $(tail -c 120 "$tmp/out.txt")" ;; esac
+json_check "$tmp/out.txt" || fail "json without worktrees: the output is not valid JSON"
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
+echo "== json: usage and a failing gh"
+markers a
+for args in "--porcelain --json" "--json --porcelain" "--all --porcelain --json"; do
+  # shellcheck disable=SC2086
+  run_in "$tmp/work" a $args
+  [ "$code" = 2 ] || fail "$args: exit code $code, 2 expected"
+  grep -qxF 'usage: status.sh [--all] [--porcelain | --json]' "$tmp/err.txt" || fail "$args: no usage line: $(cat "$tmp/err.txt")"
+  [ ! -s "$tmp/out.txt" ] || fail "$args: printed on standard output: $(cat "$tmp/out.txt")"
+done
+run_in "$tmp/work" a --nope
+[ "$code" = 2 ] && grep -qxF 'usage: status.sh [--all] [--porcelain | --json]' "$tmp/err.txt" || fail "--nope: the usage line names --json: $(cat "$tmp/err.txt")"
+set +e
+base_sync "$tmp/work"
+(cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/a" GH_LOG="$tmp/gh.log" GH_FAIL=1 NIGHTMILL_NOW=$NOW bash "$S" --json) > "$tmp/out.txt" 2> "$tmp/err.txt"
+code=$?
+set -e
+[ "$code" = 2 ] && grep -q 'bad credentials' "$tmp/err.txt" || fail "json with a failing gh must exit 2 with its message: $code $(cat "$tmp/err.txt")"
+[ ! -s "$tmp/out.txt" ] || fail "json with a failing gh printed on standard output: $(cat "$tmp/out.txt")"
+# --json makes the same gh calls as the text form and changes nothing
+: > "$tmp/gh.log"
+run_in "$tmp/work" a --json
+for c in 'project item-list' 'project view' 'pr list' 'api graphql'; do
+  grep -q "$c" "$tmp/gh.log" || fail "json: gh $c was never called"
+done
+if grep -E 'item-edit|item-add|item-archive|pr merge|issue edit|issue comment|issue close|mutation' "$tmp/gh.log"; then fail "status.sh --json changed something"; fi
+echo "== the text form and the porcelain form are unchanged"
+for scn in a b c; do
+  markers "$scn"
+  run_in "$tmp/work" "$scn"
+  expect "text $scn" "$FIX/$scn/expected.txt"
+  run_in "$tmp/work" "$scn" --porcelain
+  expect "porcelain $scn" "$FIX/$scn/expected-porcelain.txt"
+done
+
 echo "== the lint notices a status script that changes the board"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
 ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir" && tar -xf - )
