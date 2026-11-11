@@ -29,5 +29,35 @@ check_script() { # check_script <smoke script name>
 
 check_script smoke-status.sh
 check_script smoke-release.sh
+
+# Regression test for #280: tests/test-spec-template.sh took 5m16s in CI because its lint cases ran the whole
+# tests/lint.sh once per scenario (a filled-in template, three faults, the exempt specs, ...). The cost is counted, not
+# timed: a shim named bash, first on the PATH, logs every call of tests/lint.sh with its arguments and passes every
+# call, logged or not, to the real bash unchanged. A call without an argument is a full lint run; the test may make at
+# most one for all its cases (a call with an argument, or another script, runs only a part). It must still end well.
+real_bash=$(command -v bash)
+shim="$tmp/shim"; lintlog="$tmp/lint-calls.log"
+mkdir -p "$shim"; : > "$lintlog"
+cat > "$shim/bash" <<'SHIM'
+#!@REAL@
+case "${1:-}" in
+  tests/lint.sh|*/tests/lint.sh) echo "lint.sh ${*:2}" >> "@LOG@" ;;
+esac
+exec "@REAL@" "$@"
+SHIM
+sed -e "s|@REAL@|$real_bash|g" -e "s|@LOG@|$lintlog|g" "$shim/bash" > "$shim/bash.new" && mv "$shim/bash.new" "$shim/bash"
+chmod +x "$shim/bash"
+set +e
+spec_out=$(cd "$here" && PATH="$shim:$PATH" bash tests/test-spec-template.sh 2>&1); spec_rc=$?
+set -e
+full_runs=$(awk '$0 == "lint.sh " { n++ } END { print n + 0 }' "$lintlog")
+if [ "$spec_rc" != 0 ] || [ "$(printf '%s\n' "$spec_out" | tail -n 1)" != "SPEC TEMPLATE OK" ]; then
+  echo "FAIL: tests/test-spec-template.sh did not end with SPEC TEMPLATE OK (exit $spec_rc), so its lint calls prove nothing: $(printf '%s\n' "$spec_out" | tail -n 5)"
+  bad=1
+fi
+if [ "$full_runs" -gt 1 ]; then
+  echo "FAIL: tests/test-spec-template.sh runs the whole lint $full_runs times; at most 1 for all its cases (#280)"
+  bad=1
+fi
 [ "$bad" = 0 ] || exit 1
 echo "LINTCOPY OUTPUT OK"
