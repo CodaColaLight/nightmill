@@ -35,7 +35,8 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
 - Otherwise list the board: `gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .["<board.statusField, lower case>"], .["<board.priorityField, lower case>"], ((.labels // []) | join(",")), .content.title] | @tsv'`
   and take the highest-priority Ready story that is not an epic and not a bug (bugs go through `/fix`).
   The two keys are the configured `board.statusField` and `board.priorityField`, lower-cased with spaces kept
-  (`gh` names each key after its field). When the listing returns 200 items, as many as `--limit`, warn visibly
+  (`gh` names each key after its field). Escape the name inside the bracket: a `"` becomes `\"` and a `\` becomes `\\`; because the filter sits in a single-quoted shell argument, a `'` is written `'\''` (`Owner's prio` gives `.["owner'\''s prio"]`), and the listing stays one `gh project item-list ... --jq '...'` command with no pipe.
+  When the listing returns 200 items, as many as `--limit`, warn visibly
   that the page is full and items past it may be missing.
 - Nothing Ready: print `Nothing is Ready.`, add `Approved: #N ... Run /next to implement.` when Approved
   stories exist, change nothing and stop.

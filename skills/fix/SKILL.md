@@ -30,7 +30,8 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
    Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .["<board.statusField, lower case>"], .["<board.priorityField, lower case>"], ((.labels // []) | join(",")), .content.title] | @tsv'`), keep
    open issues labelled `labels.bug`, take the highest `board.priorityField` and ask the maintainer on a
    tie. The two keys of the filter are the configured `board.statusField` and `board.priorityField`, lower-cased
-   with spaces kept; when the listing returns 200 items, as many as `--limit`, warn visibly that the page is full
+   with spaces kept. Escape the name inside the bracket: a `"` becomes `\"` and a `\` becomes `\\`; because the filter sits in a single-quoted shell argument, a `'` is written `'\''` (`Owner's prio` gives `.["owner'\''s prio"]`), and the listing stays one `gh project item-list ... --jq '...'` command with no pipe.
+   When the listing returns 200 items, as many as `--limit`, warn visibly that the page is full
    and items past it may be missing. Nothing Ready: say so and stop. Read it with `gh issue view N --json number,title,labels,body`.
    With a number, read its labels there and its board status from the item list above. An issue whose status
    is not Ready is refused with one line that names the status found and the skill that takes it, for example
