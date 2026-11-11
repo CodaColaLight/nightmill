@@ -369,16 +369,16 @@ if ($rl.Count -ne 3) { Fail "ledger: $($rl.Count) run lines, 3 expected" }
 $wants = @(@("1", "/nightmill:fix all", "11", "1234", 0.5, "4"), @("2", "/nightmill:next 21", "21", "2345", 1.25, "5"), @("3", "/nightmill:next 22", "22", "3456", 1.25, "6"))
 for ($i = 0; $i -lt 3; $i++) {
   $f = $rl[$i] -split "`t"
-  $w = $wants[$i]; $n = $i + 1
-  if ($f.Count -ne 11) { Fail "ledger: line $n has $($f.Count) fields, 11 expected: $($rl[$i])" }
-  if ($f[3] -ne $w[0]) { Fail "ledger: line $n field 4: $($f[3]), $($w[0]) expected" }
-  if ($f[4] -ne $w[1]) { Fail "ledger: line $n field 5: $($f[4]), $($w[1]) expected" }
-  if ($f[5] -ne $w[2]) { Fail "ledger: line $n field 6: $($f[5]), $($w[2]) expected" }
-  if ($f[6] -ne "ok") { Fail "ledger: line $n field 7: $($f[6]), ok expected" }
-  if ($f[8] -ne $w[3]) { Fail "ledger: line $n field 9: $($f[8]), $($w[3]) expected" }
-  if (-not $f[9] -or [math]::Abs([double]::Parse($f[9], [Globalization.CultureInfo]::InvariantCulture) - $w[4]) -gt 0.0001) { Fail "ledger: line $n field 10: $($f[9]), $($w[4]) expected" }
-  if ($f[10] -ne $w[5]) { Fail "ledger: line $n field 11: $($f[10]), $($w[5]) expected" }
-  foreach ($ix in 1, 2, 7) { if ($f[$ix] -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') { Fail "ledger: line $n field $($ix + 1) is not a UTC stamp: $($f[$ix])" } }
+  $w = $wants[$i]; $ln = $i + 1
+  if ($f.Count -ne 11) { Fail "ledger: line $ln has $($f.Count) fields, 11 expected: $($rl[$i])" }
+  if ($f[3] -ne $w[0]) { Fail "ledger: line $ln field 4: $($f[3]), $($w[0]) expected" }
+  if ($f[4] -ne $w[1]) { Fail "ledger: line $ln field 5: $($f[4]), $($w[1]) expected" }
+  if ($f[5] -ne $w[2]) { Fail "ledger: line $ln field 6: $($f[5]), $($w[2]) expected" }
+  if ($f[6] -ne "ok") { Fail "ledger: line $ln field 7: $($f[6]), ok expected" }
+  if ($f[8] -ne $w[3]) { Fail "ledger: line $ln field 9: $($f[8]), $($w[3]) expected" }
+  if (-not $f[9] -or [math]::Abs([double]::Parse($f[9], [Globalization.CultureInfo]::InvariantCulture) - $w[4]) -gt 0.0001) { Fail "ledger: line $ln field 10: $($f[9]), $($w[4]) expected" }
+  if ($f[10] -ne $w[5]) { Fail "ledger: line $ln field 11: $($f[10]), $($w[5]) expected" }
+  foreach ($ix in 1, 2, 7) { if ($f[$ix] -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') { Fail "ledger: line $ln field $($ix + 1) is not a UTC stamp: $($f[$ix])" } }
 }
 if ((@($rl | ForEach-Object { ($_ -split "`t")[2] } | Select-Object -Unique)).Count -ne 1) { Fail "ledger: field 3 differs between the lines of one driver run" }
 Audit "ledger"
@@ -422,21 +422,21 @@ function Breach-Check([string]$what, [string]$reason, [string]$ended) {
   if ($f[6] -ne $ended) { Fail "${what}: ledger field 7 of step 2 is $($f[6]), $ended expected" }
   Audit $what
 }
-foreach ($code in 0, 1) {
+foreach ($ec in 0, 1) {
   New-Case; Use-Board "board-loop.tsv"
-  Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress subtype:error_max_turns exit:$code", "status:22:Done pr:122:MERGED:22"
+  Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress subtype:error_max_turns exit:$ec", "status:22:Done pr:122:MERGED:22"
   Invoke-Drive
-  Breach-Check "max turns (exit $code)" "the headless run reached its turn limit of 200" "max-turns"
-  Has (Comment) "(limits.turnsPerRole.session" "max turns (exit $code)"
-  Has (Comment) "2. /nightmill:next 21: exit $code, " "max turns (exit $code): the step line shows the exit code"
-  Has (Comment) "Picked 3, merged 1, pull request open 1, blocked 1" "max turns (exit $code)"
+  Breach-Check "max turns (exit $ec)" "the headless run reached its turn limit of 200" "max-turns"
+  Has (Comment) "(limits.turnsPerRole.session" "max turns (exit $ec)"
+  Has (Comment) "2. /nightmill:next 21: exit $ec, " "max turns (exit $ec): the step line shows the exit code"
+  Has (Comment) "Picked 3, merged 1, pull request open 1, blocked 1" "max turns (exit $ec)"
 }
-foreach ($code in 0, 1) {
+foreach ($ec in 0, 1) {
   New-Case; Use-Board "board-loop.tsv"
-  Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress subtype:error_max_budget_usd exit:$code", "status:22:Done pr:122:MERGED:22"
+  Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress subtype:error_max_budget_usd exit:$ec", "status:22:Done pr:122:MERGED:22"
   Invoke-Drive
-  Breach-Check "budget (exit $code)" 'the headless run reached its budget of $25.00' "max-budget"
-  Has (Comment) "(limits.costPerIssueUsd" "budget (exit $code)"
+  Breach-Check "budget (exit $ec)" 'the headless run reached its budget of $25.00' "max-budget"
+  Has (Comment) "(limits.costPerIssueUsd" "budget (exit $ec)"
 }
 
 # limit at Review

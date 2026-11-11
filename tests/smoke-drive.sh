@@ -435,23 +435,23 @@ breach_check() { # breach_check <name> <reason start> <ledger ended>
   [ "$(field "$(run_lines | sed -n 2p)" 7)" = "$3" ] || fail "$1: ledger field 7 of step 2 is $(field "$(run_lines | sed -n 2p)" 7), $3 expected"
   audit "$1"
 }
-for code in 0 1; do
+for ec in 0 1; do
   new_case; board board-loop.tsv
-  script "status:11:Review pr:101:OPEN:11" "status:21:In_progress subtype:error_max_turns exit:$code" "status:22:Done pr:122:MERGED:22"
+  script "status:11:Review pr:101:OPEN:11" "status:21:In_progress subtype:error_max_turns exit:$ec" "status:22:Done pr:122:MERGED:22"
   drive
-  breach_check "max turns (exit $code)" "the headless run reached its turn limit of 200" max-turns
-  has "$COMMENT" "(limits.turnsPerRole.session" "max turns (exit $code)"
-  has "$COMMENT" "2. /nightmill:next 21: exit $code, " "max turns (exit $code): the step line shows the exit code"
-  has "$COMMENT" "Picked 3, merged 1, pull request open 1, blocked 1" "max turns (exit $code)"
+  breach_check "max turns (exit $ec)" "the headless run reached its turn limit of 200" max-turns
+  has "$COMMENT" "(limits.turnsPerRole.session" "max turns (exit $ec)"
+  has "$COMMENT" "2. /nightmill:next 21: exit $ec, " "max turns (exit $ec): the step line shows the exit code"
+  has "$COMMENT" "Picked 3, merged 1, pull request open 1, blocked 1" "max turns (exit $ec)"
 done
 
 # budget
-for code in 0 1; do
+for ec in 0 1; do
   new_case; board board-loop.tsv
-  script "status:11:Review pr:101:OPEN:11" "status:21:In_progress subtype:error_max_budget_usd exit:$code" "status:22:Done pr:122:MERGED:22"
+  script "status:11:Review pr:101:OPEN:11" "status:21:In_progress subtype:error_max_budget_usd exit:$ec" "status:22:Done pr:122:MERGED:22"
   drive
-  breach_check "budget (exit $code)" 'the headless run reached its budget of $25.00' max-budget
-  has "$COMMENT" "(limits.costPerIssueUsd" "budget (exit $code)"
+  breach_check "budget (exit $ec)" 'the headless run reached its budget of $25.00' max-budget
+  has "$COMMENT" "(limits.costPerIssueUsd" "budget (exit $ec)"
 done
 
 # limit at Review: a step ended by a limit labels an item that is at Review too
