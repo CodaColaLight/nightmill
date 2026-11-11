@@ -171,7 +171,10 @@ steps are printed in list order; the order of output never depends on which step
 started before all others, in list order; then the rest, in list order. Exactly two lines carry it,
 `add bash smoke-slot.sh first` and `add ps smoke-slot.ps1 first`, because `smoke-slot.sh` alone took 2243 s of a
 sequential run on this machine (Facts): started fourth in today's order behind steps that the other lanes could
-take, it would end last and set the total. The mark changes when a step starts, never where its output is printed.
+take, it would end last and set the total. (Since #279 the mark also sits on the steps that took longest in a CI
+run (PR #274): `test-spec-template.sh` in the bash list, and `smoke-release.ps1`, `smoke-validate.ps1`,
+`smoke-check.ps1`, `test-lintcopy-output.ps1` and `smoke-drive.ps1` in the PowerShell list. `--only` selects steps
+but keeps this start order, so the marks also hold in CI.) The mark changes when a step starts, never where its output is printed.
 With L = 1 it is ignored: the steps run in list order, as today.
 
 **2. The limit.** The check runs at most L steps at the same time, where L is, in this order of precedence:
