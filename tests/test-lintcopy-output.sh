@@ -121,5 +121,19 @@ if [ "$one_run" -ge 5 ] && [ "$check_runs" -gt "$one_run" ]; then
   echo "FAIL: tests/smoke-check.sh runs the cases of tests/test-ci-parts.sh $check_runs case copies in all; at most $one_run (one run of the cases, #293)"
   bad=1
 fi
+# No PowerShell runs here, so the .ps1 half is a text check: a code line (not a comment) of tests/smoke-check.ps1 that
+# writes run-section.sh must export NIGHTMILL_CI_PARTS_RULES_ONLY=1 before the lint section text ($secText) is appended,
+# as smoke-check.sh does. Whitespace around the line is free.
+ps1_ok=$(awk '
+  /^[[:space:]]*#/ { next }
+  /run-section\.sh/ && /export[[:space:]]+NIGHTMILL_CI_PARTS_RULES_ONLY=1/ {
+    e = index($0, "NIGHTMILL_CI_PARTS_RULES_ONLY=1"); s = index($0, "$secText")
+    if (s > e) ok = 1
+  }
+  END { print ok + 0 }' "$here/tests/smoke-check.ps1")
+if [ "$ps1_ok" != 1 ]; then
+  echo "FAIL: tests/smoke-check.ps1 does not export NIGHTMILL_CI_PARTS_RULES_ONLY=1 in the run-section.sh its Lint-In writes, before the lint section; the PowerShell job would run the cases of tests/test-ci-parts.sh on every lint copy (#293)"
+  bad=1
+fi
 [ "$bad" = 0 ] || exit 1
 echo "LINTCOPY OUTPUT OK"
