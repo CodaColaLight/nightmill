@@ -1095,6 +1095,7 @@ bash tests/smoke-check.sh   # tests/check.sh: the parallel steps, the order, the
 bash tests/smoke-guard.sh   # guard.sh: what the PreToolUse guard refuses
 bash tests/smoke-drive.sh   # drive.sh against a fake claude, a fake gh and throwaway slots
 bash tests/smoke-gate.sh    # gate.sh: the pause flag and the limits against a throwaway repository
+bash tests/smoke-history.sh # history.sh: metrics from a fixture ledger and a fake gh
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
@@ -1113,6 +1114,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-guard.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-drive.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-gate.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-history.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```

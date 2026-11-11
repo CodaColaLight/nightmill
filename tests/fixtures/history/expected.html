@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>nightmill history acme/widgets</title>
+<style>
+body { font-family: sans-serif; margin: 1.5em; }
+table { border-collapse: collapse; margin-bottom: 1em; }
+th, td { padding: 0.2em 0.8em; text-align: right; border-bottom: 1px solid #ccc; }
+th:first-child, td:first-child { text-align: left; }
+.bar { background: #48a; height: 0.8em; }
+</style>
+</head>
+<body>
+<h1>nightmill history acme/widgets</h1>
+<p>history 2026-11-09T00:00:00Z to 2026-11-09T12:00:00Z (12h00m)</p>
+<table>
+<tr><th>status</th><th>stays</th><th>median</th><th>max</th><th>total</th><th></th></tr>
+<tr><td>Backlog</td><td>2</td><td>2h10m</td><td>15h05m</td><td>17h15m</td><td><div class="bar" style="width:47%"></div></td></tr>
+<tr><td>Ready</td><td>3</td><td>30m00s</td><td>3h00m</td><td>3h40m</td><td><div class="bar" style="width:10%"></div></td></tr>
+<tr><td>Spec</td><td>2</td><td>10m00s</td><td>30m00s</td><td>40m00s</td><td><div class="bar" style="width:2%"></div></td></tr>
+<tr><td>Spec review</td><td>2</td><td>20m00s</td><td>30m00s</td><td>50m00s</td><td><div class="bar" style="width:2%"></div></td></tr>
+<tr><td>Approved</td><td>2</td><td>10m00s</td><td>2h25m</td><td>2h35m</td><td><div class="bar" style="width:7%"></div></td></tr>
+<tr><td>In progress</td><td>3</td><td>1h20m</td><td>2h40m</td><td>4h30m</td><td><div class="bar" style="width:12%"></div></td></tr>
+<tr><td>Review</td><td>3</td><td>3h00m</td><td>3h40m</td><td>7h10m</td><td><div class="bar" style="width:20%"></div></td></tr>
+</table>
+<table>
+<tr><th>issue</th><th>ready</th><th>spec</th><th>specReview</th><th>approved</th><th>inProgress</th><th>review</th><th>rounds</th><th>checks</th><th>runs</th><th>cost</th></tr>
+<tr><td>#12</td><td>10m00s</td><td>10m00s</td><td>20m00s</td><td>10m00s</td><td>2h40m</td><td>30m00s</td><td>2</td><td>1</td><td>1</td><td>$3.00</td></tr>
+<tr><td>#13</td><td>30m00s</td><td>30m00s</td><td>30m00s</td><td>2h25m</td><td>30m00s</td><td>3h00m</td><td>0</td><td>0</td><td>2</td><td>$2.50</td></tr>
+<tr><td>#14</td><td>3h00m</td><td>-</td><td>-</td><td>-</td><td>1h20m</td><td>3h40m</td><td>-</td><td>0</td><td>1</td><td>$3.00</td></tr>
+</table>
+<p>cost: $8.90 in 4 headless runs; $0.40 on no issue; 1 runs without a cost</p>
+<p>slots: 3 (record), utilisation 32%</p>
+<table>
+<tr><th>slot</th><th>takes</th><th>held</th><th>share</th><th></th></tr>
+<tr><td>1</td><td>2</td><td>3h40m</td><td>31%</td><td><div class="bar" style="width:31%"></div></td></tr>
+<tr><td>2</td><td>2</td><td>7h20m</td><td>61%</td><td><div class="bar" style="width:61%"></div></td></tr>
+<tr><td>3</td><td>1</td><td>30m00s</td><td>4%</td><td><div class="bar" style="width:4%"></div></td></tr>
+</table>
+<ul>
+<li>1 stays at a status not in board.statuses were not counted</li>
+<li>1 takes have no take line; their held time starts at their first line</li>
+</ul>
+</body>
+</html>

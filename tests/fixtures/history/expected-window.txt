@@ -1,0 +1,20 @@
+history 2026-11-09T04:30:00Z to 2026-11-09T05:15:00Z (45m00s)
+
+status          stays    median       max     total
+Backlog             0         -         -        0s
+Ready               0         -         -        0s
+Spec                0         -         -        0s
+Spec review         0         -         -        0s
+Approved            0         -         -        0s
+In progress         1    30m00s    30m00s    30m00s
+Review              0         -         -        0s
+
+issue       ready       spec specReview   approved inProgress     review rounds checks runs     cost
+#13             -          -          -          -     30m00s          -      0      0    1    $2.50
+cost: $2.50 in 1 headless runs; $0.00 on no issue; 0 runs without a cost
+
+slots: 2 (config), utilisation 33%
+  slot  takes      held  share
+     1      1    30m00s    67%
+     2      0        0s     0%
+note: 1 stays at a status not in board.statuses were not counted

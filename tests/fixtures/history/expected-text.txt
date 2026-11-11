@@ -1,0 +1,24 @@
+history 2026-11-09T00:00:00Z to 2026-11-09T12:00:00Z (12h00m)
+
+status          stays    median       max     total
+Backlog             2     2h10m    15h05m    17h15m
+Ready               3    30m00s     3h00m     3h40m
+Spec                2    10m00s    30m00s    40m00s
+Spec review         2    20m00s    30m00s    50m00s
+Approved            2    10m00s     2h25m     2h35m
+In progress         3     1h20m     2h40m     4h30m
+Review              3     3h00m     3h40m     7h10m
+
+issue       ready       spec specReview   approved inProgress     review rounds checks runs     cost
+#12        10m00s     10m00s     20m00s     10m00s      2h40m     30m00s      2      1    1    $3.00
+#13        30m00s     30m00s     30m00s      2h25m     30m00s      3h00m      0      0    2    $2.50
+#14         3h00m          -          -          -      1h20m      3h40m      -      0    1    $3.00
+cost: $8.90 in 4 headless runs; $0.40 on no issue; 1 runs without a cost
+
+slots: 3 (record), utilisation 32%
+  slot  takes      held  share
+     1      2     3h40m    31%
+     2      2     7h20m    61%
+     3      1    30m00s     4%
+note: 1 stays at a status not in board.statuses were not counted
+note: 1 takes have no take line; their held time starts at their first line
