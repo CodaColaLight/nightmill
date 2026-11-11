@@ -207,32 +207,50 @@ function Get-EventStamp($v) {
 }
 $board = $true; $boardNote = ""; $more = $false
 $nodes = New-Object System.Collections.ArrayList
+# gh is run as a program in its own process (as gate.ps1 and drive.ps1 do), never as a gh.ps1 found first on the PATH
+# in this process, and its standard output and standard error are read apart
+$ghExe = Get-Command gh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+function Quote-Arg([string]$v) {
+  if ($v -cmatch '^[A-Za-z0-9_./:=@,+-]+\z') { return $v }
+  $s = $v -replace '(\\*)"', '$1$1\"'
+  $s = $s -replace '(\\+)$', '$1$1'
+  return '"' + $s + '"'
+}
 if (-not $owner -or -not $number) { $board = $false; $boardNote = "github.owner and github.projectNumber are not set" }
-elseif (-not (Get-Command gh -ErrorAction SilentlyContinue)) { $board = $false; $boardNote = "gh is not installed or not on the PATH" }
+elseif (-not $ghExe) { $board = $false; $boardNote = "gh is not installed or not on the PATH" }
 else {
   $after = ""
+  $utf8 = New-Object System.Text.UTF8Encoding $false
   for ($page = 1; $page -le 20; $page++) {
     $ga = @("api", "graphql", "-f", "query=$query", "-f", "o=$owner", "-F", "n=$number")
     if ($after) { $ga += @("-f", "after=$after") }
-    $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $outLines = New-Object System.Collections.Generic.List[string]
-    $errLines = New-Object System.Collections.Generic.List[string]
+    $gout = ""; $gerr = ""; $ghCode = 1
     try {
-      & gh @ga 2>&1 | ForEach-Object {
-        if ($_ -is [System.Management.Automation.ErrorRecord]) { $errLines.Add([string]$_.Exception.Message) | Out-Null }
-        else { $outLines.Add([string]$_) | Out-Null }
-      }
-      $ghCode = $LASTEXITCODE
-    } catch { $errLines.Add([string]$_.Exception.Message) | Out-Null; $ghCode = 1 }
-    $ErrorActionPreference = $ea
+      $psi = New-Object System.Diagnostics.ProcessStartInfo
+      $psi.FileName = [string]$ghExe.Path
+      $psi.Arguments = (@($ga | ForEach-Object { Quote-Arg ([string]$_) }) -join " ")
+      $psi.UseShellExecute = $false
+      $psi.CreateNoWindow = $true
+      $psi.RedirectStandardOutput = $true
+      $psi.RedirectStandardError = $true
+      $psi.StandardOutputEncoding = $utf8
+      $psi.StandardErrorEncoding = $utf8
+      $p = [System.Diagnostics.Process]::Start($psi)
+      $errTask = $p.StandardError.ReadToEndAsync()
+      $gout = $p.StandardOutput.ReadToEnd()
+      $p.WaitForExit()
+      $gerr = [string]$errTask.Result
+      $ghCode = $p.ExitCode
+      $p.Dispose()
+    } catch { $gerr = [string]$_.Exception.Message; $ghCode = 1 }
     if ($ghCode -ne 0) {
       $board = $false
-      $boardNote = ((@($errLines) -join " ") -replace "[`r`n]", " ").TrimEnd()
+      $boardNote = ($gerr -replace "[`r`n]", " ").TrimEnd()
       if (-not $boardNote) { $boardNote = "gh api graphql failed" }
       break
     }
     $doc = $null
-    try { $doc = (@($outLines) -join "`n") | ConvertFrom-Json } catch { $doc = $null }
+    try { $doc = ConvertFrom-Json -InputObject $gout } catch { $doc = $null }
     $conn = $null
     if ($null -ne $doc -and $doc.data -and $doc.data.repositoryOwner -and $doc.data.repositoryOwner.projectV2) { $conn = $doc.data.repositoryOwner.projectV2.items }
     if ($null -eq $conn) { $board = $false; $boardNote = "gh api graphql gave no board items"; break }
@@ -583,7 +601,8 @@ $suffix = -join (1..6 | ForEach-Object { $chars[$rng.Next($chars.Length)] })
 $part = Join-Path $dir (".index.html." + $suffix)
 try {
   [System.IO.File]::WriteAllText($part, $out.ToString(), (New-Object System.Text.UTF8Encoding $false))
-  if (Test-Path -LiteralPath $pagePath -PathType Leaf) { [System.IO.File]::Replace($part, $pagePath, $null) }
+  # no backup: [NullString]::Value, since Windows PowerShell passes $null to a string parameter as "", not a legal path
+  if (Test-Path -LiteralPath $pagePath -PathType Leaf) { [System.IO.File]::Replace($part, $pagePath, [NullString]::Value) }
   else { [System.IO.File]::Move($part, $pagePath) }
 } catch {
   $why = $_.Exception.Message
