@@ -65,8 +65,8 @@ copy() { # copy <dir>
   mkdir -p "$1"
   ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$1" && tar -xf - )
 }
-runlint() { # runlint <dir>: the lint's output, whatever its status
-  ( cd "$1" && bash tests/lint.sh 2>&1 ) || true
+runlint() { # runlint <dir> [--specs]: the lint's output, whatever its status; --specs runs only its spec section (#280)
+  ( cd "$1" && bash tests/lint.sh ${2:+"$2"} 2>&1 ) || true
 }
 if [ ! -f "$tpl" ]; then
   fail "no template to fill in, the lint cases are not run"
@@ -84,29 +84,29 @@ else
     printf '%s' "$d"
   }
   d=$(mk ok '')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *'FAIL: '*'iteration-99-case.md'*) fail "the lint rejects a spec filled in from the template: $out" ;; esac
 
   d=$(mk norisks '/^## Risks$/d')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *"missing heading '## Risks'"*) ;; *) fail "the lint accepts a spec without '## Risks': $out" ;; esac
 
   d=$(mk nostatus '/^Status: /d')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *"no 'Status: ' line"*) ;; *) fail "the lint accepts a spec without a Status line: $out" ;; esac
 
   d=$(mk badtitle '1s/.*/# Something else/')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *"the first heading is not '# Iteration"*) ;; *) fail "the lint accepts a spec whose first heading is not '# Iteration <N>:': $out" ;; esac
 
   d=$(mk twice '/^## Tests$/a\
 \
 ## Tests')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *"heading '## Tests' appears 2 times"*) ;; *) fail "the lint accepts a spec with '## Tests' twice: $out" ;; esac
 
   d=$(mk swapped 's/^## Tests$/## @@A@@/; s/^## Files touched$/## Tests/; s/^## @@A@@$/## Files touched/')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *'comes before'*) ;; *) fail "the lint accepts a spec with '## Tests' and '## Files touched' exchanged: $out" ;; esac
 
   d=$(mk fenced '/^## Not done$/{i\
@@ -114,19 +114,19 @@ else
 a\
 ```
 }')
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *"missing heading '## Not done'"*) ;; *) fail "the lint counts a heading inside a fence: $out" ;; esac
 
   # a spec below iteration 40 is exempt, whatever its headings
   d="$tmp/exempt"; copy "$d"
   printf '# Iteration 3: old\n\nStatus: delivered\n\n## Goal\n' >"$d/docs/specs/iteration-3-old.md"
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *'FAIL: '*'iteration-3-old.md'*) fail "the lint checks a spec below iteration 40: $out" ;; esac
 
   # a file in the folder that does not match iteration-*.md is ignored
   d="$tmp/other"; copy "$d"
   printf 'notes\n' >"$d/docs/specs/notes.md"
-  out=$(runlint "$d")
+  out=$(runlint "$d" --specs)
   case "$out" in *'FAIL: '*'notes.md'*) fail "the lint checks a file that is not iteration-*.md: $out" ;; esac
 fi
 
