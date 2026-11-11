@@ -311,6 +311,39 @@ exit 1
   try { $null = $Out | ConvertFrom-Json } catch { Fail "no ledger json: not valid JSON: $_" }
   Copy-Item (Join-Path $FIX "ledger.tsv") $L -Force
 
+  Write-Host "== fix rounds are the highest step number"
+  # tests/fixtures/history/ledger-rounds.tsv: #31 repeats its steps (code-review, fix-round-1 twice, dispute-3, test-finding-2,
+  # check-fix-1 twice): the highest k is 3 and 1, a count of lines would be 7 or 4 and 2; #32 has only test-finding-2; #33 a
+  # code-review and no round; #34 a take without code-review and check-fix-2 before check-fix-1; #35 has a run line and no
+  # take; #25 has one counted board stay and nothing else. The board page is the one of board-rounds\.
+  Copy-Item (Join-Path $FIX "ledger-rounds.tsv") $L -Force
+  $env:BOARD_DIR = Join-Path $FIX "board-rounds"
+  Invoke-Hist
+  Want-Code 0 "fix rounds"
+  if ($Err) { Fail "fix rounds: standard error is [$Err]" }
+  $rw = @{
+    "31" = @('3 1 0 -', "#31 (dispute-3 and test-finding-2 among repeated steps) is not rounds 3, checks 1, runs 0, cost -")
+    "32" = @('2 0 0 -', "#32 (test-finding-2 alone) is not rounds 2, checks 0")
+    "33" = @('0 0 0 -', "#33 (a code-review and no round) is not rounds 0, checks 0")
+    "34" = @('- 2 0 -', "#34 (no code-review; check-fix-2 then check-fix-1) is not rounds -, checks 2")
+    "35" = @('- - 1 $1.50', "#35 (a run line, no take) is not rounds -, checks - (not 0), runs 1, `$1.50")
+  }
+  foreach ($n in 31, 32, 33, 34, 35) {
+    if ("$(Cell $Out $n 8) $(Cell $Out $n 9) $(Cell $Out $n 10) $(Cell $Out $n 11)" -cne $rw["$n"][0]) { Fail "fix rounds: $($rw["$n"][1]): $((@($Out -split "`n") | Where-Object { $_.StartsWith("#$n ") }) -join '')" }
+  }
+  if ("$(Cell $Out 25 2) $(Cell $Out 25 8) $(Cell $Out 25 9) $(Cell $Out 25 10) $(Cell $Out 25 11)" -cne '10m00s - - 0 -') { Fail "fix rounds: #25 (a board stay, no take) is not ready 10m00s, rounds -, checks - (not 0): $Out" }
+  Invoke-Hist "-Json"
+  Want-Code 0 "fix rounds json"
+  try { $jr = $Out | ConvertFrom-Json } catch { Fail "fix rounds json: not valid JSON: $_" }
+  Has $Out '"rounds":3,"checks":1,"runs":0,"cost":null},{"number":32,' "fix rounds json: #31 is rounds 3, checks 1"
+  Has $Out '"rounds":2,"checks":0,"runs":0,"cost":null},{"number":33,' "fix rounds json: #32 is rounds 2, checks 0"
+  Has $Out '"rounds":0,"checks":0,"runs":0,"cost":null},{"number":34,' "fix rounds json: #33 is rounds 0, checks 0"
+  Has $Out '"rounds":null,"checks":2,"runs":0,"cost":null},{"number":35,' "fix rounds json: #34 is rounds null, checks 2"
+  Has $Out '"rounds":null,"checks":null,"runs":1,"cost":1.50}' "fix rounds json: #35 (no take) is rounds null, checks null"
+  Has $Out '{"number":25,"times":{"ready":600,"spec":null,"specReview":null,"approved":null,"inProgress":null,"review":null},"rounds":null,"checks":null,"runs":0,"cost":null},{"number":31,' "fix rounds json: #25 (a stay, no take) is checks null"
+  $env:BOARD_DIR = $FIX
+  Copy-Item (Join-Path $FIX "ledger.tsv") $L -Force
+
   Write-Host "== usage"
   foreach ($a in "-Json -Html `"$tmp\x`"", "-Run 2026-11-09T01:00:00Z -From 2026-01-01", "-Run 2026-11-09T01:00:00Z -To 2026-11-10", "-From 2026-13-01",
       "-From 2026-11-09 -To 2026-11-08", "-Html", "-Json -Json", "-Bogus", "-Run 2026-11-09", "-From", "-From 2026-11-09 -From 2026-11-09", "extra") {

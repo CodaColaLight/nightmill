@@ -1,0 +1,23 @@
+take	2026-11-09T01:00:30Z	1	fix/31-a	take				2026-11-09T01:00:00Z	2026-11-09T01:00:30Z	
+step	2026-11-09T01:11:00Z	1	fix/31-a	code-review	next	session				
+step	2026-11-09T01:12:00Z	1	fix/31-a	fix-round-1	next	session				
+step	2026-11-09T01:13:00Z	1	fix/31-a	code-review	next	session				
+step	2026-11-09T01:14:00Z	1	fix/31-a	fix-round-1	next	session				
+step	2026-11-09T01:15:00Z	1	fix/31-a	dispute-3	next	session				
+step	2026-11-09T01:16:00Z	1	fix/31-a	test-finding-2	next	session				
+step	2026-11-09T01:17:00Z	1	fix/31-a	check-fix-1	next	session				
+step	2026-11-09T01:18:00Z	1	fix/31-a	check-fix-1	next	session				
+free	2026-11-09T02:00:00Z	1	fix/31-a	released			81	2026-11-09T01:50:00Z	2026-11-09T01:59:00Z	31
+take	2026-11-09T02:10:30Z	1	fix/32-b	take				2026-11-09T02:10:00Z	2026-11-09T02:10:30Z	
+step	2026-11-09T02:20:00Z	1	fix/32-b	code-review	next	session				
+step	2026-11-09T02:30:00Z	1	fix/32-b	test-finding-2	next	session				
+free	2026-11-09T02:40:00Z	1	fix/32-b	released			82	2026-11-09T02:35:00Z	2026-11-09T02:39:00Z	32
+take	2026-11-09T03:00:30Z	1	fix/33-c	take				2026-11-09T03:00:00Z	2026-11-09T03:00:30Z	
+step	2026-11-09T03:10:00Z	1	fix/33-c	code-review	next	session				
+free	2026-11-09T03:30:00Z	1	fix/33-c	released			83	2026-11-09T03:20:00Z	2026-11-09T03:29:00Z	33
+take	2026-11-09T04:00:30Z	1	fix/34-d	take				2026-11-09T04:00:00Z	2026-11-09T04:00:30Z	
+step	2026-11-09T04:10:00Z	1	fix/34-d	implement	next	session				
+step	2026-11-09T04:15:00Z	1	fix/34-d	check-fix-2	next	session				
+step	2026-11-09T04:20:00Z	1	fix/34-d	check-fix-1	next	session				
+free	2026-11-09T04:30:00Z	1	fix/34-d	released			84	2026-11-09T04:25:00Z	2026-11-09T04:29:00Z	34
+run	2026-11-09T05:00:00Z	2026-11-09T04:50:00Z	1	/nightmill:fix 35	35	ok	2026-11-09T04:50:10Z	600000	1.50	10

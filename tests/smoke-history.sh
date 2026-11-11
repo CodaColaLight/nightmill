@@ -293,6 +293,33 @@ want_code 0 "no ledger json"
 json_check "$tmp/out.txt" || fail "no ledger json: not valid JSON"
 cp "$FIX/ledger.tsv" "$L"
 
+echo "== fix rounds are the highest step number"
+# tests/fixtures/history/ledger-rounds.tsv: #31 repeats its steps (code-review, fix-round-1 twice, dispute-3, test-finding-2,
+# check-fix-1 twice): the highest k is 3 and 1, a count of lines would be 7 or 4 and 2; #32 has only test-finding-2; #33 a
+# code-review and no round; #34 a take without code-review and check-fix-2 before check-fix-1; #35 has a run line and no
+# take; #25 has one counted board stay and nothing else. The board page is the one of board-rounds/.
+cp "$FIX/ledger-rounds.tsv" "$L"
+BOARD_DIR="$FIX/board-rounds" hist
+want_code 0 "fix rounds"
+[ -z "$err" ] || fail "fix rounds: standard error is [$err]"
+[ "$(cell 31 8) $(cell 31 9) $(cell 31 10) $(cell 31 11)" = '3 1 0 -' ] || fail "fix rounds: #31 (dispute-3 and test-finding-2 among repeated steps) is not rounds 3, checks 1, runs 0, cost -: $(grep '^#31 ' "$tmp/out.txt")"
+[ "$(cell 32 8) $(cell 32 9) $(cell 32 10) $(cell 32 11)" = '2 0 0 -' ] || fail "fix rounds: #32 (test-finding-2 alone) is not rounds 2, checks 0: $(grep '^#32 ' "$tmp/out.txt")"
+[ "$(cell 33 8) $(cell 33 9) $(cell 33 10) $(cell 33 11)" = '0 0 0 -' ] || fail "fix rounds: #33 (a code-review and no round) is not rounds 0, checks 0: $(grep '^#33 ' "$tmp/out.txt")"
+[ "$(cell 34 8) $(cell 34 9) $(cell 34 10) $(cell 34 11)" = '- 2 0 -' ] || fail "fix rounds: #34 (no code-review; check-fix-2 then check-fix-1) is not rounds -, checks 2: $(grep '^#34 ' "$tmp/out.txt")"
+[ "$(cell 35 8) $(cell 35 9) $(cell 35 10) $(cell 35 11)" = '- - 1 $1.50' ] || fail "fix rounds: #35 (a run line, no take) is not rounds -, checks - (not 0), runs 1, \$1.50: $(grep '^#35 ' "$tmp/out.txt")"
+[ "$(cell 25 2) $(cell 25 8) $(cell 25 9) $(cell 25 10) $(cell 25 11)" = '10m00s - - 0 -' ] || fail "fix rounds: #25 (a board stay, no take) is not ready 10m00s, rounds -, checks - (not 0): $(grep '^#25 ' "$tmp/out.txt")"
+BOARD_DIR="$FIX/board-rounds" hist --json
+want_code 0 "fix rounds json"
+json_check "$tmp/out.txt" || fail "fix rounds json: not valid JSON"
+has "$out" '"number":31,' "fix rounds json"
+has "$out" '"rounds":3,"checks":1,"runs":0,"cost":null},{"number":32,' "fix rounds json: #31 is rounds 3, checks 1"
+has "$out" '"rounds":2,"checks":0,"runs":0,"cost":null},{"number":33,' "fix rounds json: #32 is rounds 2, checks 0"
+has "$out" '"rounds":0,"checks":0,"runs":0,"cost":null},{"number":34,' "fix rounds json: #33 is rounds 0, checks 0"
+has "$out" '"rounds":null,"checks":2,"runs":0,"cost":null},{"number":35,' "fix rounds json: #34 is rounds null, checks 2"
+has "$out" '"rounds":null,"checks":null,"runs":1,"cost":1.50}' "fix rounds json: #35 (no take) is rounds null, checks null"
+has "$out" '{"number":25,"times":{"ready":600,"spec":null,"specReview":null,"approved":null,"inProgress":null,"review":null},"rounds":null,"checks":null,"runs":0,"cost":null},{"number":31,' "fix rounds json: #25 (a stay, no take) is checks null"
+cp "$FIX/ledger.tsv" "$L"
+
 echo "== usage"
 for args in "--json --html $tmp/x" "--run 2026-11-09T01:00:00Z --from 2026-01-01" "--run 2026-11-09T01:00:00Z --to 2026-11-10" "--from 2026-13-01" \
   "--from 2026-11-09 --to 2026-11-08" "--html" "--json --json" "--bogus" "--run 2026-11-09" "--from" "--from 2026-11-09 --from 2026-11-09" "extra"; do
