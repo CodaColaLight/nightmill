@@ -101,6 +101,15 @@ try {
   Check "role key wrong case" $roleCase 0 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)')
   Check "role key wrong case strict" $roleCase 1 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)') @("-Strict")
   Check "unknown key in a role" (Edit $ex '"implementer": { "model": "opus" }' '"implementer": { "model": "opus", "effort": "high" }') 0 @("warning: roles.implementer.effort: unknown key")
+  # the Agent tool takes only the aliases, so a full model id in a role is an error the validator reports
+  $fullPath = Join-Path $tmp "fullid.json"
+  Write-Utf8 $fullPath ((Edit $ex '"codeReviewer": { "model": "opus" }' '"codeReviewer": { "model": "claude-opus-5-5" }') + "`n")
+  $fullRun = Run-V $fullPath
+  if ($fullRun.Code -ne 1) { Fail "a full model id in a role: expected exit code 1, got $($fullRun.Code): $($fullRun.Out)$($fullRun.Err)" }
+  if ($fullRun.Out -notmatch '(?m)^error: roles\.codeReviewer\.model:') { Fail "a full model id in a role: no error on roles.codeReviewer.model in: $($fullRun.Out)" }
+  foreach ($alias in @("sonnet", "opus", "haiku", "fable")) {
+    Check "alias $alias in a role" (Edit $ex '"tester": { "model": "sonnet" }' ('"tester": { "model": "' + $alias + '" }')) 0 @("0 errors, 0 warnings")
+  }
 
   Write-Host "== the reviewer pairing"
   $SW = '"specWriter": { "model": "opus" }'; $SR = '"specReviewer": { "model": "opus" }'
@@ -108,7 +117,7 @@ try {
   $bare = '{"github":{"owner":"o","repo":"r","projectNumber":1},"maintainer":{"name":"M"},"verification":{"check":"true"}'
   Check "reviewer stronger" (Edit $ex $SW '"specWriter": { "model": "sonnet" }') 0 @("0 errors, 0 warnings")
   Check "code reviewer stronger" (Edit $ex $CR '"codeReviewer": { "model": "fable" }') 0 @("0 errors, 0 warnings")
-  $same = Edit (Edit $ex $RK '"ranking": ["haiku", "sonnet", "opus=claude-opus-5-5", "fable"]') $SW '"specWriter": { "model": "claude-opus-5-5" }'
+  $same = Edit (Edit $ex $RK '"ranking": ["haiku", "sonnet=opus", "fable"]') $SR '"specReviewer": { "model": "sonnet" }'
   Check "same level in one entry" $same 0 @("0 errors, 0 warnings")
   Check "spec reviewer below spec writer" (Edit $ex $SR '"specReviewer": { "model": "sonnet" }') 1 @(
     'error: roles.specReviewer.model: specReviewer on "sonnet" ranks below specWriter on "opus"', "1 error, 0 warnings")
@@ -120,13 +129,14 @@ try {
   $want = "error: roles.codeReviewer.model: codeReviewer on `"haiku`" ranks below fixer on `"opus`"`nerror: roles.codeReviewer.model: codeReviewer on `"haiku`" ranks below implementer on `"opus`"`n2 errors, 0 warnings"
   $got = (@($r.Out -split "`r?`n" | Where-Object { $_ -ne "" }) | Select-Object -Skip 1) -join "`n"
   if ($got -ne $want) { Fail "code reviewer below two producers: wrong lines or order. Got:`n$got`nWanted:`n$want" }
-  $unr = Edit $ex $SR '"specReviewer": { "model": "mystery" }'
-  $unrLine = 'warning: roles.specReviewer.model: model "mystery" is not in models.ranking, so specReviewer cannot be compared'
+  $nosonnet = '"ranking": ["haiku", "opus", "fable"]'
+  $unr = Edit (Edit $ex $RK $nosonnet) $SR '"specReviewer": { "model": "sonnet" }'
+  $unrLine = 'warning: roles.specReviewer.model: model "sonnet" is not in models.ranking, so specReviewer cannot be compared'
   Check "unranked reviewer" $unr 0 @($unrLine, "0 errors, 1 warning")
   Check "unranked reviewer strict" $unr 1 @($unrLine) @("-Strict")
-  Check "unranked producer" (Edit $ex '"implementer": { "model": "opus" }' '"implementer": { "model": "mystery" }') 0 @(
-    'warning: roles.implementer.model: model "mystery" is not in models.ranking, so implementer cannot be compared', "0 errors, 1 warning")
-  Check "tester and worker are not compared" (Edit (Edit $ex '"tester": { "model": "sonnet" }' '"tester": { "model": "haiku" }') '"worker": { "model": "haiku" }' '"worker": { "model": "mystery" }') 0 @("0 errors, 0 warnings")
+  Check "unranked producer" (Edit (Edit $ex $RK $nosonnet) '"implementer": { "model": "opus" }' '"implementer": { "model": "sonnet" }') 0 @(
+    'warning: roles.implementer.model: model "sonnet" is not in models.ranking, so implementer cannot be compared', "0 errors, 1 warning")
+  Check "tester and worker are not compared" (Edit (Edit $ex $RK '"ranking": ["sonnet", "opus", "fable"]') '"tester": { "model": "sonnet" }' '"tester": { "model": "haiku" }') 0 @("0 errors, 0 warnings")
   Check "defaults fill a missing role" ($bare + ',"roles":{"specReviewer":{"model":"sonnet"}}}') 1 @(
     'error: roles.specReviewer.model: specReviewer on "sonnet" ranks below specWriter on "opus"', "1 error, 0 warnings")
   Check "an empty model takes the default" (Edit $ex $SR '"specReviewer": { "model": "" }') 0 @("0 errors, 0 warnings")

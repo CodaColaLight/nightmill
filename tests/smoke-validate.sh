@@ -93,6 +93,14 @@ rolecase=$(edit "$ex" '"codeReviewer"' '"codereviewer"')
 check "role key wrong case" "$rolecase" 0 "" 'warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)'
 check "role key wrong case strict" "$rolecase" 1 "--strict" 'warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)'
 check "unknown key in a role" "$(edit "$ex" '"implementer": { "model": "opus" }' '"implementer": { "model": "opus", "effort": "high" }')" 0 "" "warning: roles.implementer.effort: unknown key"
+# the Agent tool takes only the aliases, so a full model id in a role is an error the validator reports
+printf '%s\n' "$(edit "$ex" '"codeReviewer": { "model": "opus" }' '"codeReviewer": { "model": "claude-opus-5-5" }')" > "$tmp/fullid.json"
+set +e; out=$(bash "$V" "$tmp/fullid.json" 2>&1); rc=$?; set -e
+[ "$rc" = 1 ] || fail "a full model id in a role: expected exit code 1, got $rc: $out"
+printf '%s\n' "$out" | grep -E '^error: roles\.codeReviewer\.model:' >/dev/null || fail "a full model id in a role: no error on roles.codeReviewer.model in: $out"
+for alias in sonnet opus haiku fable; do
+  check "alias $alias in a role" "$(edit "$ex" '"tester": { "model": "sonnet" }' "\"tester\": { \"model\": \"$alias\" }")" 0 "" "0 errors, 0 warnings"
+done
 
 echo "== the reviewer pairing"
 SW='"specWriter": { "model": "opus" }'; SR='"specReviewer": { "model": "opus" }'
@@ -100,7 +108,7 @@ CR='"codeReviewer": { "model": "opus" }'; RK='"ranking": ["haiku", "sonnet", "op
 bare='{"github":{"owner":"o","repo":"r","projectNumber":1},"maintainer":{"name":"M"},"verification":{"check":"true"}'
 check "reviewer stronger" "$(edit "$ex" "$SW" '"specWriter": { "model": "sonnet" }')" 0 "" "0 errors, 0 warnings"
 check "code reviewer stronger" "$(edit "$ex" "$CR" '"codeReviewer": { "model": "fable" }')" 0 "" "0 errors, 0 warnings"
-same=$(edit "$(edit "$ex" "$RK" '"ranking": ["haiku", "sonnet", "opus=claude-opus-5-5", "fable"]')" "$SW" '"specWriter": { "model": "claude-opus-5-5" }')
+same=$(edit "$(edit "$ex" "$RK" '"ranking": ["haiku", "sonnet=opus", "fable"]')" "$SR" '"specReviewer": { "model": "sonnet" }')
 check "same level in one entry" "$same" 0 "" "0 errors, 0 warnings"
 check "spec reviewer below spec writer" "$(edit "$ex" "$SR" '"specReviewer": { "model": "sonnet" }')" 1 "" \
   'error: roles.specReviewer.model: specReviewer on "sonnet" ranks below specWriter on "opus"' "1 error, 0 warnings"
@@ -114,12 +122,13 @@ got=$(printf '%s\n' "$out" | tail -n +2)
 $got
 Wanted:
 $want"
-unr=$(edit "$ex" "$SR" '"specReviewer": { "model": "mystery" }')
-check "unranked reviewer" "$unr" 0 "" 'warning: roles.specReviewer.model: model "mystery" is not in models.ranking, so specReviewer cannot be compared' "0 errors, 1 warning"
-check "unranked reviewer strict" "$unr" 1 "--strict" 'warning: roles.specReviewer.model: model "mystery" is not in models.ranking, so specReviewer cannot be compared'
-check "unranked producer" "$(edit "$ex" '"implementer": { "model": "opus" }' '"implementer": { "model": "mystery" }')" 0 "" \
-  'warning: roles.implementer.model: model "mystery" is not in models.ranking, so implementer cannot be compared' "0 errors, 1 warning"
-check "tester and worker are not compared" "$(edit "$(edit "$ex" '"tester": { "model": "sonnet" }' '"tester": { "model": "haiku" }')" '"worker": { "model": "haiku" }' '"worker": { "model": "mystery" }')" 0 "" "0 errors, 0 warnings"
+nosonnet='"ranking": ["haiku", "opus", "fable"]'
+unr=$(edit "$(edit "$ex" "$RK" "$nosonnet")" "$SR" '"specReviewer": { "model": "sonnet" }')
+check "unranked reviewer" "$unr" 0 "" 'warning: roles.specReviewer.model: model "sonnet" is not in models.ranking, so specReviewer cannot be compared' "0 errors, 1 warning"
+check "unranked reviewer strict" "$unr" 1 "--strict" 'warning: roles.specReviewer.model: model "sonnet" is not in models.ranking, so specReviewer cannot be compared'
+check "unranked producer" "$(edit "$(edit "$ex" "$RK" "$nosonnet")" '"implementer": { "model": "opus" }' '"implementer": { "model": "sonnet" }')" 0 "" \
+  'warning: roles.implementer.model: model "sonnet" is not in models.ranking, so implementer cannot be compared' "0 errors, 1 warning"
+check "tester and worker are not compared" "$(edit "$(edit "$ex" "$RK" '"ranking": ["sonnet", "opus", "fable"]')" '"tester": { "model": "sonnet" }' '"tester": { "model": "haiku" }')" 0 "" "0 errors, 0 warnings"
 check "defaults fill a missing role" "$bare"',"roles":{"specReviewer":{"model":"sonnet"}}}' 1 "" \
   'error: roles.specReviewer.model: specReviewer on "sonnet" ranks below specWriter on "opus"' "1 error, 0 warnings"
 check "an empty model takes the default" "$(edit "$ex" "$SR" '"specReviewer": { "model": "" }')" 0 "" "0 errors, 0 warnings"

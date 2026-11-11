@@ -186,7 +186,8 @@ pairings: 1 below, 0 not ranked
   if ((Get-ChildItem -LiteralPath $ro -Force | ForEach-Object { "$($_.Name) $($_.Length)" }) -join "`n" -cne $beforeLs) { Fail "the folder changed" }
 
   Write-Host "== it agrees with validate-config"
-  # the number of errors the validator gives for the pairing rule is B and the number of warnings is U
+  # the number of errors the validator gives for the pairing rule is B and the number of warnings is U (a role model
+  # that is not an alias is an error of its own, which the table does not count)
   function Test-Agree([string]$name, [string]$text) {
     $f = Join-Path $tmp "agree.json"
     Write-Utf8 $f $text
@@ -196,7 +197,7 @@ pairings: 1 below, 0 not ranked
     if ($summary -match '^pairings: (\d+) below, (\d+) not ranked$') { $b = [int]$Matches[1]; $u = [int]$Matches[2] }
     $v = Run-P $V "-Config `"$f`""
     $lines = @($v.Out -split "`n")
-    $e = @($lines | Where-Object { $_ -like "error: *" }).Count
+    $e = @($lines | Where-Object { $_ -like "error: * ranks below *" }).Count
     $w = @($lines | Where-Object { $_ -like "warning: *" }).Count
     if ($e -ne $b) { Fail "$name : the table counts $b below, the validator $e errors: $($v.Out)" }
     if ($w -ne $u) { Fail "$name : the table counts $u not ranked, the validator $w warnings: $($v.Out)" }

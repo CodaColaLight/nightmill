@@ -19,8 +19,8 @@ sets none of it works exactly as before.
 - Models are chosen in scattered places today: `agents/worker.md` has `model: haiku` in its frontmatter, the
   workflow skill says "a strong model for specs and implementation" (Parallel work), and every other agent
   runs on the model of the session. There is no config key for any of it.
-- The Agent tool takes the model aliases `haiku`, `sonnet`, `opus` and `fable`; a full model id is also a
-  model name. Which of them a machine can use is not known to nightmill and is not checked here.
+- The Agent tool takes the model aliases `haiku`, `sonnet`, `opus` and `fable`, and only those: a full model id
+  is refused at launch (#126). Which of them a machine can use is not known to nightmill and is not checked here.
 - `scripts/validate-config.*` walks the schema and supports `type`, `properties`, `required`, `items`,
   `minimum`, `minItems`, `additionalProperties` and `enum`; the lint fails on any other keyword. Everything
   below is expressed with those, so the validator checks the new keys without a change to its code. An unknown
@@ -39,7 +39,7 @@ All three top-level keys are optional, and so is every key inside them. `require
 ### `roles`
 
 An object with one optional entry per role. Each entry is an object with one key, `model`, a string: a model
-alias or a full model id. The entry is an object, not a bare string, so that a later story can add a key to a
+alias (`sonnet`, `opus`, `haiku`, `fable`; a full model id is a validator error since #126). The entry is an object, not a bare string, so that a later story can add a key to a
 role without renaming anything.
 
 | Role key | Does | Reviews | Default model |

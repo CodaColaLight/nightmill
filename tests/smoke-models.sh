@@ -171,7 +171,8 @@ bash "$M" --config "$ro/nightmill.json" >/dev/null
 [ "$(ls -la "$ro" | sed 1d | awk '{ print $1, $5, $9 }')" = "$before_ls" ] || fail "the folder changed"
 
 echo "== it agrees with validate-config"
-# the number of errors the validator gives for the pairing rule is B and the number of warnings is U
+# the number of errors the validator gives for the pairing rule is B and the number of warnings is U (a role model
+# that is not an alias is an error of its own, which the table does not count)
 agree() {
   local name=$1 text=$2 f="$tmp/agree.json" out summary b u e w
   printf '%s\n' "$text" > "$f"
@@ -183,7 +184,7 @@ agree() {
     *) b=${summary#pairings: }; b=${b%% below*}; u=${summary#*below, }; u=${u%% not ranked*} ;;
   esac
   set +e; vout=$(bash "$V" "$f" 2>&1); set -e
-  e=$(printf '%s\n' "$vout" | grep -c '^error: ' || true)
+  e=$(printf '%s\n' "$vout" | grep -c '^error: .* ranks below ' || true)
   w=$(printf '%s\n' "$vout" | grep -c '^warning: ' || true)
   [ "$e" = "$b" ] || fail "$name: the table counts $b below, the validator $e errors: $vout"
   [ "$w" = "$u" ] || fail "$name: the table counts $u not ranked, the validator $w warnings: $vout"
