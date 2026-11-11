@@ -68,5 +68,42 @@ else
   fi
 fi
 
+# A field name with a quote or a backslash (#242): the filter sits inside a single-quoted argument, so
+# the repository must give a working answer. Either (a) all three listing skills tell the model how to
+# escape the name (text next to the listing line), or (b) validate-config refuses such a name for
+# board.statusField and for board.priorityField. The test passes when (a) or (b) holds completely.
+(
+  # (a) every listing window mentions escaping and holds all three escapes, each as a fixed string:
+  # \" (double quote), \\ (backslash) and '\'' (single quote inside the single-quoted argument)
+  esc_ok=1
+  for s in spec next fix; do
+    win=$(awk '/gh project item-list <project>/{n=8} n>0{print; n--}' "skills/$s/SKILL.md")
+    if ! grep -i -E 'escap' <<<"$win" >/dev/null \
+       || ! grep -F -e '\"' <<<"$win" >/dev/null \
+       || ! grep -F -e '\\' <<<"$win" >/dev/null \
+       || ! grep -F -e "'\\''" <<<"$win" >/dev/null; then esc_ok=0; fi
+  done
+  # (b) the validator reports an error on the key, exit code 1, for each name and each field
+  val_ok=1
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-board-quote.XXXXXX")
+  trap 'rm -rf "$tmp"' EXIT
+  n=0
+  for fld in statusField priorityField; do
+    for name in 'Prio \"A\"' "Owner's prio" 'Prio\\A'; do
+      n=$((n + 1))
+      cfg="$tmp/c$n.json"
+      sed "s/\"$fld\": \"[^\"]*\"/\"$fld\": \"${name//\\/\\\\}\"/" templates/nightmill.example.json > "$cfg"
+      grep -F -e "\"$fld\"" "$cfg" >/dev/null || { val_ok=0; continue; }
+      out=$(bash scripts/validate-config.sh "$cfg" 2>&1); rc=$?
+      if [ "$rc" != 1 ] || ! grep -F "error: board.$fld" <<<"$out" >/dev/null; then val_ok=0; fi
+    done
+  done
+  if [ "$esc_ok" = 0 ] && [ "$val_ok" = 0 ]; then
+    echo "FAIL: a board field name with a quote or backslash neither is escaped by the listing skills nor refused by validate-config"
+    exit 1
+  fi
+  exit 0
+) || fail=1
+
 [ "$fail" = 0 ] && echo "ok: the board listing uses the configured field names and warns on a full page"
 exit "$fail"
