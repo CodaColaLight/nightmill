@@ -1404,6 +1404,11 @@ echo "== the pause flag and the limits are wired"
 # Iteration 53 (#165): the limits keys, the gate in the skills, the driver's flags and ledger, the README rows.
 bash tests/test-limits-docs.sh "$PWD" || fail=1
 
+echo "== an agent can file a story with /story"
+# Bug #119: /next and the workflow send the agent to /story to file the rest of a partial story, so story must not set
+# disable-model-invocation: true while they do. The pin lives in tests/test-story-invocable.sh.
+bash tests/test-story-invocable.sh "$PWD" || fail=1
+
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
 # --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in

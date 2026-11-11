@@ -2,7 +2,6 @@
 name: story
 description: Turn the maintainer's one-line idea into a story issue on the board, filed from the story form under the right epic. Use when asked to file, write or create a story.
 argument-hint: <one-line idea>
-disable-model-invocation: true
 allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
 ---
 

@@ -49,7 +49,8 @@ again on 2026-11-08 with WebFetch: `https://code.claude.com/docs/en/skills`, `..
   `/init` must run again after an upgrade.
 - The `allowed-tools` lines of the seven skills that inject the config (`init`, `check`, `next`, `fix`, `story`,
   `spec`, `workflow`) are all `allowed-tools: Bash(cat .claude/nightmill.json *)`. `status`, `models` and `control`
-  have no `allowed-tools`. `init`, `next`, `fix`, `spec` and `story` have `disable-model-invocation: true`.
+  have no `allowed-tools`. `init`, `next`, `fix` and `spec` have `disable-model-invocation: true` (`story` had it
+  too until bug #119 removed it, so that `/next` and the workflow can file the rest of a partial story with it).
 - **Who runs which of the four scripts**, as the skill text writes it (every full call already has one of the two
   forms of iteration 43's decision 5):
   - `spec`: `validate-config` in full form; `slot` through the short reference `slot.sh --capacity --porcelain`;
