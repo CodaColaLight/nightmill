@@ -37,11 +37,17 @@ check_script smoke-release.sh
 # most one for all its cases (a call with an argument, or another script, runs only a part). It must still end well.
 real_bash=$(command -v bash)
 shim="$tmp/shim"; lintlog="$tmp/lint-calls.log"
-mkdir -p "$shim"; : > "$lintlog"
+mkdir -p "$shim"; : > "$lintlog"; : > "$lintlog.out"
 cat > "$shim/bash" <<'SHIM'
 #!@REAL@
 case "${1:-}" in
-  tests/lint.sh|*/tests/lint.sh) echo "lint.sh ${*:2}" >> "@LOG@" ;;
+  tests/lint.sh|*/tests/lint.sh)
+    echo "lint.sh ${*:2}" >> "@LOG@"
+    if [ "$#" -gt 1 ]; then
+      # a call with an argument: keep its stdout in a log too (the status is the real call's), stderr untouched
+      "@REAL@" "$@" | tee -a "@LOG@.out"
+      exit "${PIPESTATUS[0]}"
+    fi ;;
 esac
 exec "@REAL@" "$@"
 SHIM
@@ -57,6 +63,21 @@ if [ "$spec_rc" != 0 ] || [ "$(printf '%s\n' "$spec_out" | tail -n 1)" != "SPEC 
 fi
 if [ "$full_runs" -gt 1 ]; then
   echo "FAIL: tests/test-spec-template.sh runs the whole lint $full_runs times; at most 1 for all its cases (#280)"
+  bad=1
+fi
+# A call with an argument must run only the part it names: no section header but the spec one may appear in its output
+# (a lint that ignores --specs and runs every section would print "== forbidden words" and the others).
+part_runs=$(awk '$0 != "lint.sh " { n++ } END { print n + 0 }' "$lintlog")
+other_sections=$(grep '^== ' "$lintlog.out" | grep -vxF '== specs follow the template' || true)
+if [ "$part_runs" -lt 1 ]; then
+  echo "FAIL: tests/test-spec-template.sh makes no call of tests/lint.sh with an argument, so the spec cases do not run the spec section alone (#280)"
+  bad=1
+elif ! grep -qxF '== specs follow the template' "$lintlog.out"; then
+  echo "FAIL: no call of tests/lint.sh with an argument ran the spec section (#280)"
+  bad=1
+fi
+if [ -n "$other_sections" ]; then
+  echo "FAIL: a call of tests/lint.sh with an argument ran more than the spec section (#280): $(printf '%s\n' "$other_sections" | sort -u | head -n 3 | tr '\n' ';') ...)"
   bad=1
 fi
 [ "$bad" = 0 ] || exit 1
