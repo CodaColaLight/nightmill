@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/test-skill-config-fallback.sh - regression for #127 and #111: the config injection of workflow, spec, next, fix,
-# story and check reads the configuration from the base branch (origin/HEAD) and must fall back to the "run /nightmill:init" hint when there is no config, and each skill must declare allowed-tools
+# tests/test-skill-config-fallback.sh - regression for #127, #111 and #241: the config injection of workflow, spec, next, fix,
+# story and check reads the configuration from the base branch (origin/HEAD) and must fall back to the "run /nightmill:init" hint when there is no config, and each skill (init too, for this part only) must declare allowed-tools
 # that cover its own injection command. A skill is text plus an injection the harness runs, so the test runs the
 # injection command itself.
 set -uo pipefail
@@ -60,6 +60,37 @@ mkrepo() {
 mkrepo "$work/withhead" yes
 mkrepo "$work/nohead" no
 
+# check_allowed_tools <name> <skill file> <injection command>: allowed-tools covers the injection command
+check_allowed_tools() {
+  local name=$1 skill=$2 cmd=$3 allowed rules rule part covered uncovered pat base
+  allowed=$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} /^allowed-tools:/{print}' "$skill")
+  if [ -z "$allowed" ]; then bad "$name: no allowed-tools in the frontmatter"; return 0; fi
+  rules=()
+  while IFS= read -r rule; do
+    rules+=("$rule")
+  done < <(printf '%s\n' "${allowed#allowed-tools:}" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep '^Bash(' || true)
+  # Claude Code splits a compound command at && || ; | |& & and newlines; every part needs its own rule
+  uncovered=""
+  while IFS= read -r part; do
+    part=${part#"${part%%[![:space:]]*}"}
+    part=${part%"${part##*[![:space:]]}"}
+    [ -n "${part}" ] || continue
+    covered=0
+    for rule in "${rules[@]+"${rules[@]}"}"; do
+      pat=${rule#Bash(}
+      pat=${pat%)}
+      base=${pat% \*}
+      # shellcheck disable=SC2254
+      case "$part" in
+        $pat) covered=1 ;;
+        "$base") covered=1 ;;
+      esac
+    done
+    [ "$covered" -eq 1 ] || uncovered="${uncovered}[${part}] "
+  done < <(split_parts "$cmd")
+  [ -z "$uncovered" ] || bad "$name: allowed-tools has no rule for part(s) of the injection command: $uncovered"
+}
+
 for name in workflow spec next fix story check; do
   skill="$here/skills/$name/SKILL.md"
   echo "== /$name config injection"
@@ -104,34 +135,20 @@ for name in workflow spec next fix story check; do
     *base-marker-5520*) bad "$name: without origin/HEAD a config is printed as the base (output: $out)" ;;
   esac
 
-  # allowed-tools covers the injection command
-  allowed=$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} /^allowed-tools:/{print}' "$skill")
-  if [ -z "$allowed" ]; then bad "$name: no allowed-tools in the frontmatter"; continue; fi
-  rules=()
-  while IFS= read -r rule; do
-    rules+=("$rule")
-  done < <(printf '%s\n' "${allowed#allowed-tools:}" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep '^Bash(' || true)
-  # Claude Code splits a compound command at && || ; | |& & and newlines; every part needs its own rule
-  uncovered=""
-  while IFS= read -r part; do
-    part=${part#"${part%%[![:space:]]*}"}
-    part=${part%"${part##*[![:space:]]}"}
-    [ -n "${part}" ] || continue
-    covered=0
-    for rule in "${rules[@]+"${rules[@]}"}"; do
-      pat=${rule#Bash(}
-      pat=${pat%)}
-      base=${pat% \*}
-      # shellcheck disable=SC2254
-      case "$part" in
-        $pat) covered=1 ;;
-        "$base") covered=1 ;;
-      esac
-    done
-    [ "$covered" -eq 1 ] || uncovered="${uncovered}[${part}] "
-  done < <(split_parts "$cmd")
-  [ -z "$uncovered" ] || bad "$name: allowed-tools has no rule for part(s) of the injection command: $uncovered"
+  check_allowed_tools "$name" "$skill" "$cmd"
 done
+
+# init has no base-branch injection (it reads the working tree's file), so only its allowed-tools are checked
+echo "== /init config injection"
+skill="$here/skills/init/SKILL.md"
+line=$(grep -m1 '^!`.*nightmill\.json' "$skill" || true)
+if [ -z "$line" ]; then
+  bad "init: no config injection line"
+else
+  cmd=${line#'!`'}
+  cmd=${cmd%'`'}
+  check_allowed_tools init "$skill" "$cmd"
+fi
 
 if [ "$errors" -ne 0 ]; then echo "$errors failure(s)" >&2; exit 1; fi
 echo "OK"

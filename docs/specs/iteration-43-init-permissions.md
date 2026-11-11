@@ -76,8 +76,10 @@ skill has `allowed-tools` in its frontmatter.
 - Seven skills inject the config, all with `` !`cat .claude/nightmill.json 2>/dev/null || echo ...` `` (`spec`, `next`,
   `fix`, `check` and `story` got the fallback with #127). Their `allowed-tools` have `Bash(cat .claude/nightmill.json *)`
   for the `cat` part; `spec`, `next`, `fix`, `check` and `story` also have `Bash(echo "NO CONFIG* run /nightmill:init
-  first")` for the `echo` part (the `*` stands for the `: `, which YAML does not allow unquoted); `init` and
-  `workflow` have no rule for their `echo` part.
+  first")` for the `echo` part (the `*` stands for the `: `, which YAML does not allow unquoted). Since iteration 48
+  `workflow` and those five read the base branch's config and have `Bash(echo "NO BASE CONFIG*")` for the `echo`
+  part; `init` has `Bash(echo "*no .claude/nightmill.json yet*")` for its own (#241; the `*` stand for the
+  parentheses of its message, so the rule holds none inside `Bash(...)`).
 
 **Where the slots are.** `scripts/slot.sh` takes the main checkout as the parent of
 `git rev-parse --path-format=absolute --git-common-dir`, the root as `<main>/<worktrees.root>` (default
