@@ -8,6 +8,12 @@ Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; 
 
 !`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
 
+**The pause and the limits** (the `workflow` skill): before each run of the check (at most three, as below) run the
+gate, `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`
+(with `--issue <n>` and `--slot <s>` when the check runs for an issue in a slot). Exit 0: go on. Exit 1, 2 or 4: stop
+with its `Stopped:` line and run nothing. Exit 3: stop with `Stopped: limit: <reason>.` and leave the breach to the
+skill that runs the check (in a run of its own, run nothing more).
+
 Run `verification.check` from the repository root (in a slot worktree:
 `cd <absolute slot path> && <verification.check>`, and `cd <absolute slot path> && <verification.check> --quick` for
 the quick check), as one command, and wait for it to finish.

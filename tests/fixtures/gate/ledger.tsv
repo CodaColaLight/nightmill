@@ -1,0 +1,7 @@
+take	2026-11-10T07:00:30Z	2	feat/old	take				2026-11-10T07:00:00Z	2026-11-10T07:00:30Z	
+step	2026-11-10T07:05:00Z	2	feat/old	implement	next	implementer				
+free	2026-11-10T07:30:00Z	2	feat/old	released			7	2026-11-10T07:20:00Z	2026-11-10T07:25:00Z	12
+take	2026-11-10T08:00:30Z	1	feat/work	take				2026-11-10T08:00:00Z	2026-11-10T08:00:30Z	
+step	2026-11-10T08:01:00Z	1	feat/work	slot-taken	next	session				
+run	2026-11-10T06:30:00Z	2026-11-10T06:00:00Z	1	/nightmill:next 21	21	ok	2026-11-10T06:00:10Z	1800000	4.00	30
+run	2026-11-10T06:50:00Z	2026-11-10T06:00:00Z	2	/nightmill:fix all	11,12	ok	2026-11-10T06:31:00Z	1200000	6.00	45

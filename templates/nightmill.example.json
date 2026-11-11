@@ -85,5 +85,21 @@
       "VITE_PORT={port.client} npm run dev"
     ]
   },
-  "unattended": { "maxMinutes": 240 }
+  "unattended": { "maxMinutes": 240 },
+  "limits": {
+    "paused": false,
+    "minutesPerIssue": 180,
+    "turnsPerRole": {
+      "session": 200,
+      "specWriter": 150,
+      "specReviewer": 80,
+      "tester": 150,
+      "implementer": 300,
+      "codeReviewer": 80,
+      "fixer": 200,
+      "worker": 40
+    },
+    "issuesPerRun": 10,
+    "costPerIssueUsd": 25
+  }
 }

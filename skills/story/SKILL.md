@@ -78,6 +78,9 @@ disagree, the configuration wins.
    sentence a user would understand), Acceptance criteria (testable checkboxes, **no numbers**: numbers go in
    the spec), Invariants (tick the ones that apply), Out of scope, Verification, Agent notes (files likely
    touched, known gotchas, related issues). Show the draft to the maintainer and adjust.
+   **The pause and the limits** (the `workflow` skill): right before step 4 run the gate, `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"`
+   or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`. Exit 0: go on. Exit 1 or 2: stop with
+   its `Stopped:` line and create nothing.
 4. **Create it:** first run the second search of step 1 on the accepted draft's title, then
    `gh issue create --title "[Story] <title>" --label <labels.story>,<labels.needsSpec>,<labels.areaPrefix><area>,<labels.priorityPrefix><prio> --body-file <file>`.
    Priority is one of `board.priorities`, lower-cased for the label.

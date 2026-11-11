@@ -107,6 +107,7 @@ add bash smoke-guard.sh
 add bash test-watch-checks.sh
 add bash test-guard-rules.sh
 add bash smoke-drive.sh
+add bash smoke-gate.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
@@ -129,6 +130,7 @@ add ps test-render-quoting.ps1
 add ps test-status-controls.ps1
 add ps smoke-guard.ps1
 add ps smoke-drive.ps1
+add ps smoke-gate.ps1
 # steps: end
   local i
   if [ -z "$ps" ]; then

@@ -296,6 +296,65 @@ has no "How verified"); when a blocking finding is still open the comment on the
   and models** gives it.
 - Do not launch agents just to wait on a dependency; start them when it has merged.
 
+**The pause and the limits** (#165). The pause flag and the limits of every run are checked by the gate,
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh" [--issue <n>] [--slot <s>] [--role <role> --turns <t>]` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1" [-Issue <n>] [-Slot <s>] [-Role <role> -Turns <t>]`
+(`scripts/gate.sh`, `scripts/gate.ps1`). It reads `limits` only from the base branch's configuration (a branch cannot
+unpause or raise the limits of its own run), the label `paused` on the issue's epic, and the driver's run lines in the slots'
+record; it changes nothing. `/next`, `/fix`, `/spec`, `/check`, `/story` and `/control` run it before every
+step, that is exactly:
+
+1. at the start of the run, before the first change (before the picking line), without `--issue`;
+2. once the issue is known (`/spec`, `/next`, `/fix`; each bug of `/fix all`), right after the picking line and before
+   the first change, with `--issue <n>`;
+3. at every point where **Room on the machine** says to check the room (every launch of a role, every take, the manual
+   check, the session's own check), right before that check and whether or not `parallel.roomCheck` is on, with
+   `--issue` and, once a slot is taken, `--slot`;
+4. right after every launch of a role returns, with `--role <role> --turns <t>` added, `<t>` the `tool_uses` of the
+   Agent result's usage; when the result names none, the check is not made and the skill says once per run
+   `the turns of a launch are not reported; limits.turnsPerRole is not checked`;
+5. before every push, before every pull request is opened, and before every watch call of **Watching the checks**;
+6. in `/check`, before each run of the check (at most three, unchanged); in `/story`, before step 4 (create); in
+   `/control`, before the pass.
+
+`/status`, `/models` and `/init` do not run it. What the skill does with the exit code:
+
+- **0** (go): go on. `/fix all` takes `<k>` of the `gate: issues per run: <k>` line of its first gate call as part of
+  its run limit: the smallest of `parallel.fixAllMaxBugs` (when not 0) and `<k>`.
+- **1** (the project is paused): stop the run with `Stopped: paused: <the gate's reason>. Nothing more was started.`
+  No label, no comment, no status; the slot, branch and files stay as they are and the slot reports `stopped`. In
+  `/fix all` it stops the whole run: no new start, no further step of any bug; agents already running are waited for
+  and their results checked by that bug's rules.
+- **4** (the issue's epic is paused): as 1 for `/spec`, `/next` and `/fix <n>`; in `/fix all` it ends that bug only:
+  a bug not yet started is listed as `not started` with the reason `paused: epic #<e> has the label paused`, a bug in
+  flight stops where it is and is listed as `stopped` with that reason. The run goes on.
+- **2** (cannot check): as 1, with
+  `Stopped: the gate could not check the pause and the limits: <the reason>. Nothing more was started.` A gate that
+  cannot run (a missing script, a shell error) is the same: a pause that cannot be read is never taken as no pause.
+- **3** (a limit is breached): the breach below for that issue. `/spec`, `/next` and `/fix <n>` then end the run; in
+  `/fix all` it ends that bug only (a skip, with its slot held), and the run goes on.
+
+**A breach** of issue `<n>` with the gate's reason `<reason>` (its line without `gate: limit: `), in this order:
+
+1. One comment, `gh issue comment <n> --body-file <file>`, unless a comment of the agent's login
+   (`gh api user --jq .login`) among the issue's comments (`gh issue view <n> --json comments`) already starts with
+   `Stopped by a limit: ` and names the same config key:
+   `Stopped by a limit: <reason>. Labelled blocked; the board status (<status>) and the work (<the slot and branch | the branch | nothing>) are left as they are for the maintainer.`
+2. The label: `gh issue edit <n> --add-label blocked`; on failure print
+   `The label blocked could not be added: <the first line of gh's message>; /init creates it.` and go on.
+3. Stop: print `Stopped: limit: <reason>. Labelled blocked.`, report `stopped` to the slot when the run has one, and
+   end the issue's work as above.
+
+No status is set or added: the item stays at Spec, In progress or Review, the slot stays taken with its files, and
+nothing is reverted, pushed or deleted. A `blocked` label already on the issue does not stop a run and is not removed.
+The issue limit, `unattended.maxMinutes`, the kill switch and a pause breach no issue and label nothing.
+
+What each limit counts: `limits.minutesPerIssue` the wall-clock minutes from the later of the slot's take and the
+driver's step start (`NIGHTMILL_RUN_STARTED`); `limits.costPerIssueUsd` the cost of the driver's headless runs of the
+issue, from the ledger; `limits.turnsPerRole.<role>` the tool uses of one launch (checked after it returns), and for
+`session` the driver's `--max-turns` per issue; `limits.issuesPerRun` the issues one `/fix all` run or one driver run
+starts (in a driver step, `NIGHTMILL_ISSUES_LEFT` lowers it to what the driver run has left).
+
 ## CI and merging
 
 CI runs on every push and PR to `git.baseBranch`; a PR merges only when its blocking jobs pass.

@@ -144,6 +144,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   | `labels.bug` (`bug`) | `D73A4A` | Defect in shipped behaviour |
   | `labels.needsSpec` (`needs-spec`) | `E99695` | Story accepted but the spec is not written yet |
   | `blocked` | `000000` | Waiting on another issue (name it in the body) |
+  | `paused` | `FBCA04` | Pauses every run on the issues of this epic (nightmill's pause flag) |
   | `<labels.areaPrefix><area>` for each of `areas` | `1D76DB` | Area: `<area>` |
   | `<labels.priorityPrefix><priority, lower case>` for each of `board.priorities` | Critical `B60205`, High `D93F0B`, Medium `F9D0C4`, Low `C5DEF5` | Priority: `<priority>` |
 
@@ -261,7 +262,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   - **C. Edits in the slots**, one rule: `Edit(//<R as POSIX path, without its leading slash>/slot-*/**)`, for
     example `Edit(//Users/a/work/app-wt/slot-*/**)` or, on Windows, `Edit(//c/Users/a/work/app-wt/slot-*/**)`.
     `slot-*` is one path segment, so `<R>/.slots/` (markers, ledger, capacity) is not covered and still prompts.
-  - **D. The scripts**, 8 rules, for `<name>` in `slot`, `room`, `validate-config`, `status`:
+  - **D. The scripts**, 10 rules, for `<name>` in `slot`, `room`, `gate`, `validate-config`, `status`:
     `Bash(bash "<P>/scripts/<name>.sh" *)` and
     `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)`. Other scripts get no
     rule. The folder holds the version, so after an upgrade the next run finds these missing and adds the new ones;
@@ -269,7 +270,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
     `kept: <k> script rules for another plugin folder`.
   - **E. The directory**: `<R>` once in `permissions.additionalDirectories` (the array is created when missing),
     so files in the slots are read without a prompt and a `cd` into a slot is read-only.
-  - **Count.** `24 + 21 × worktrees.slots` rules and one directory: 66 rules for 2 slots, 108 for 4.
+  - **Count.** `26 + 21 × worktrees.slots` rules and one directory: 68 rules for 2 slots, 110 for 4.
   - **Never broader.** Each rule names its subcommand before the first `*`. No bare `git push` rule, no wildcard
     for git as a whole or for `git -C` in any directory, no hard reset, no `git stash drop`, `git branch -D`,
     `git clean` or `git checkout`. Refusing the forbidden actions is the job of **Deny rules** and the plugin's guard hook (#110), not this line's.
@@ -286,7 +287,7 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
     by rule, C, D, then `permissions.additionalDirectories`); for a present file the diff (the missing rules
     appended at the end of `permissions.allow` in that order, `<R>` appended to `additionalDirectories`, every other
     byte unchanged). Above it one sentence: it grants the skills' git commands in the main checkout and in the
-    slots, edits in the slots, the four scripts of nightmill `<version>` and the quick check; it does not grant
+    slots, edits in the slots, the five scripts of nightmill `<version>` and the quick check; it does not grant
     other git commands, other directories or other scripts; the plugin's scripts change folder with each version.
   - **Git.** The `git check-ignore` line of **Edit permission** covers this file too; it is said once.
   - **Apply** with the other settings changes, after **Edit permission**, merging without removing or reordering
