@@ -1,6 +1,6 @@
 # Iteration 55: the PowerShell smoke job runs in four parts on four runners at once, a final job keeps its required name, and every job writes its times to the run's summary
 
-Status: draft, awaiting approval (#289)
+Status: delivered in iteration 55 (PR #292)
 
 Story #289, filed under epic #47 (unattended runs) as a workflow-speed item. Every pull request waits for CI before it
 merges, and the check fix rounds of `/next` and `/fix` and every run of the driver pay that wait again. Today the job

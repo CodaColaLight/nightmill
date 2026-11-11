@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 echo 1794038400 > "$tmp/clock"
 export NIGHTMILL_CLOCK_FILE="$tmp/clock"
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
@@ -189,6 +189,65 @@ for r in A B; do
   [ -z "$(ls -A "$tmp/tmp$r")" ] || fail "two checks: run $r left files in its TMPDIR: $(ls -A "$tmp/tmp$r")"
 done
 
+echo "== summary"
+# --summary <file> appends the wall time and the five slowest steps (iteration 55, decision 6). The clock is moved by the steps.
+sclock="$tmp/sclock"
+mk_sum() { # mk_sum: six steps a to f, each advancing the clock by 5, 30, 1, 30, 12, 7 seconds; e exits 1
+  local name sec extra
+  : > "$tmp/sum-steps.txt"
+  for pair in a:5 b:30 c:1 d:30 e:12 f:7; do
+    name=${pair%%:*}; sec=${pair##*:}; extra=""
+    [ "$name" != e ] || extra="; exit 1"
+    printf '%s\tc=$(cat "%s"); echo $((c+%s)) > "%s"%s\n' "$name" "$sclock" "$sec" "$sclock" "$extra" >> "$tmp/sum-steps.txt"
+  done
+}
+mk_sum
+echo 1794038400 > "$sclock"
+saved_clock=$NIGHTMILL_CLOCK_FILE
+export NIGHTMILL_CLOCK_FILE="$sclock"
+run_check "$tmp/sum-steps.txt" --jobs 1
+plain_out=$out; plain_rc=$rc
+echo 1794038400 > "$sclock"
+rm -f "$tmp/summary.md"
+run_check "$tmp/sum-steps.txt" --jobs 1 --summary "$tmp/summary.md"
+[ "$rc" = 1 ] || fail "summary: exit $rc, wanted 1 (e fails): $out"
+[ "$plain_rc" = 1 ] || fail "summary: the run without --summary exited $plain_rc"
+[ "$out" = "$plain_out" ] || fail "summary: the standard output differs from a run without --summary: [$out] vs [$plain_out]"
+[ -f "$tmp/summary.md" ] || fail "summary: no summary file was written"
+want=$(printf '%s\n' '### tests/check.sh' '' 'Wall time: 1m25s for 6 steps, 1 at a time: FAILED' '' '| Slowest step | Time |' '|---|---|' \
+  '| `b` | 30s |' '| `d` | 30s |' '| `e` | 12s |' '| `f` | 7s |' '| `a` | 5s |' '')
+got=$(cat "$tmp/summary.md"; printf x)
+[ "$got" = "$want"$'\n\n'x ] || fail "summary: the summary file is not as wanted; got: [${got%x}] wanted: [$want]"
+# the summary comes before the verdict line, and the verdict is unchanged
+[ "$(tail -n 1 <<<"$out")" = "CHECK FAILED: e" ] || fail "summary: the last line: $out"
+# a passing run appends a second section: the file is appended to, not replaced
+printf 'x\ttrue\ny\ttrue\n' > "$tmp/sum2.txt"
+rm -f "$tmp/summary2.md"
+run_check "$tmp/sum2.txt" --jobs 1 --summary "$tmp/summary2.md"
+[ "$rc" = 0 ] || fail "summary twice: exit $rc: $out"
+run_check "$tmp/sum2.txt" --jobs 1 --summary "$tmp/summary2.md"
+[ "$rc" = 0 ] || fail "summary twice: the second run exit $rc: $out"
+[ "$(grep -c '^### tests/check.sh$' "$tmp/summary2.md")" = 2 ] || fail "summary twice: not two sections: $(cat "$tmp/summary2.md")"
+[ "$(grep -c '^Wall time: 0s for 2 steps, 1 at a time: passed$' "$tmp/summary2.md")" = 2 ] || fail "summary twice: the wall time lines: $(cat "$tmp/summary2.md")"
+# usage errors
+for sargs in "--summary $tmp/s1.md --summary $tmp/s2.md" "--summary"; do
+  # shellcheck disable=SC2086
+  run_check "$tmp/sum2.txt" $sargs
+  [ "$rc" = 2 ] || fail "summary usage ($sargs): exit $rc: $out"
+  grep -qxF -- "$USAGE" <<<"$err" || fail "summary usage ($sargs): no usage line: $err"
+done
+run_check "$tmp/sum2.txt" --summary ""
+[ "$rc" = 2 ] || fail "summary usage (empty value): exit $rc: $out"
+grep -qxF -- "$USAGE" <<<"$err" || fail "summary usage (empty value): no usage line: $err"
+# a file that cannot be written: the note, and the exit code of the steps
+mkdir -p "$tmp/sumdir"
+echo 1794038400 > "$sclock"
+run_check "$tmp/sum-steps.txt" --jobs 1 --summary "$tmp/sumdir"
+[ "$rc" = 1 ] || fail "summary to a directory: exit $rc, wanted 1: $out"
+grep -qxF "check: cannot write the summary to $tmp/sumdir" <<<"$err" || fail "summary to a directory: no 'cannot write' line: $err"
+[ "$(tail -n 1 <<<"$out")" = "CHECK FAILED: e" ] || fail "summary to a directory: the last line: $out"
+export NIGHTMILL_CLOCK_FILE=$saved_clock
+
 echo "== the slowest steps of the real list start first"
 # The real step list of tests/check.sh (between '# steps: begin' and '# steps: end'): the steps measured slowest in CI
 # (issue 279) carry the 'first' mark. Only these are pinned; more steps may be marked later.
@@ -238,10 +297,10 @@ lint_break nofile tests/check.sh 's/^# steps: end/add bash smoke-nope.sh\
 # steps: end/' 'FAIL: tests/check.sh runs tests/smoke-nope.sh, which does not exist'
 lint_break twopassed tests/check.sh '$a\
 echo "ALL CHECKS PASSED"' 'FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place'
-lint_break cibash .github/workflows/ci.yml '/run: bash tests\/check\.sh --only/s/smoke-hook\.sh,//' 'FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh'
-lint_break cips .github/workflows/ci.yml '/--powershell powershell --only/s/smoke-hook\.ps1,//' 'FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.ps1'
-lint_break cijson .github/workflows/ci.yml '/run: bash tests\/check\.sh --only/s/--only /--only smoke-json.sh,/' 'FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice'
-lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --only/s/smoke-hook\.sh,smoke-release\.sh/smoke-release.sh,smoke-hook.sh/' 'FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list'
+lint_break cibash .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,//' 'FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh'
+lint_break cips .github/workflows/ci.yml '/^ *only: smoke-hook\.ps1,/s/smoke-hook\.ps1,//' 'FAIL: .github/workflows/ci.yml: tests/smoke-hook.ps1 runs in no PowerShell part'
+lint_break cijson .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/--only /--only smoke-json.sh,/' 'FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice'
+lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,smoke-release\.sh/smoke-release.sh,smoke-hook.sh/' 'FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list'
 lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'

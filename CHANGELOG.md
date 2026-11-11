@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 55 (#289): CI runs the PowerShell smoke steps in four parts on four Windows runners at once
+  (`smoke-slot.ps1` alone in one); a final job keeps the required name `PowerShell scripts smoke tests` and fails
+  unless every part succeeded. `tests/check.sh --summary <file>` (`check.ps1 -Summary`) appends the check's wall
+  time and its five slowest steps to a Markdown file, and each run's summary page shows every job's wall time and
+  five slowest workflow steps (the final job alone gets `actions: read` for that, amending iteration 38). The
+  lint fails when a PowerShell step runs in no part or in two. No config key, no marker change.
 - Iteration 54 (#166): history and metrics. `status.sh --json` (`status.ps1 -Json`) prints the `/status` cells as one
   JSON object. `scripts/history.sh` and `history.ps1` compute for a window, read-only, the time issues stayed at each
   board status (from the board's status changes), fix rounds and check fix rounds per issue, cost per issue and slot

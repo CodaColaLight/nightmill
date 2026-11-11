@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/check.sh - the local equivalent of CI, in one command (verification.check in .claude/nightmill.json).
-#   tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh]
+#   tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]
 # The steps are the lines of the step list below (between '# steps: begin' and '# steps: end'; tests/lint.sh reads it
 # and fails on a smoke script that is not in it), then the two claude steps:
 #   lint                      tests/lint.sh
@@ -17,6 +17,9 @@
 #   --only a,b     exactly the named steps (CI runs its smoke jobs this way)
 #   --jobs N       the limit for this run, 1 to 16, not capped
 #   --powershell   the PowerShell for the ps steps (default: pwsh, else powershell)
+#   --summary F    appends the check's wall time and its five slowest steps to the Markdown file F, before the
+#                  verdict line, whatever the verdict (iteration 55; CI passes $GITHUB_STEP_SUMMARY); an interrupted
+#                  check writes none
 # Exit code is non-zero when any step that ran failed (2 for a usage error). Skipped steps are listed at the end. Each
 # result line carries the step's time, and a Times: block after the last step lists every step's time and the total
 # (iteration 41; the total is the wall time from the start to the end of the last step).
@@ -29,14 +32,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 . scripts/lib/ledger.sh
 . scripts/lib/json.sh
 
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 usage() { echo "$USAGE" >&2; exit 2; }
 whole_1_16() { [[ "$1" =~ ^[1-9][0-9]?$ ]] && [ "$1" -le 16 ]; }
 
-mode=full; only=""; jobs=""; psopt=""; seen=" "
+mode=full; only=""; jobs=""; psopt=""; summary=""; seen=" "
 while [ $# -gt 0 ]; do
   case $1 in
-    --quick|--only|--jobs|--powershell)
+    --quick|--only|--jobs|--powershell|--summary)
       case $seen in *" $1 "*) usage ;; esac
       seen="$seen$1 " ;;
   esac
@@ -45,6 +48,7 @@ while [ $# -gt 0 ]; do
     --only) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; only=$2; mode=only; shift 2 ;;
     --jobs) [ $# -ge 2 ] || usage; whole_1_16 "$2" || usage; jobs=$2; shift 2 ;;
     --powershell) [ $# -ge 2 ] || usage; case $2 in powershell|pwsh) psopt=$2 ;; *) usage ;; esac; shift 2 ;;
+    --summary) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; summary=$2; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -109,6 +113,7 @@ add bash test-guard-rules.sh
 add bash smoke-drive.sh
 add bash smoke-gate.sh
 add bash smoke-history.sh
+add bash test-ci-summary.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
@@ -243,7 +248,7 @@ step_cmd() {
   esac
 }
 
-failed=(); times=()
+failed=(); times=(); t_names=(); t_secs=()
 ledger_clock; check_start=$ledger_s; check_end=$ledger_s
 # result <i> <rc> <t0> <t1>: the result line of step i, its time and the verdict
 result() {
@@ -252,6 +257,7 @@ result() {
   if [ "$2" = 0 ]; then echo "-- $name: ok ($d)"; else echo "-- $name: FAILED ($d)"; failed+=("$name"); fi
   [ "$4" -le "$check_end" ] || check_end=$4
   times+=("$(printf '  %-28s %8s' "$name" "$d")")
+  t_names+=("$name"); t_secs+=($(($4 - $3)))
 }
 # times_block: the Times: block (every step that ran, in list order, then the total from the start to the end of the
 # last step)
@@ -261,6 +267,22 @@ times_block() {
   echo "Times:"
   for l in ${times[@]+"${times[@]}"}; do printf '%s\n' "$l"; done
   printf '  %-28s %8s\n' total "$(ledger_duration $((check_end - check_start)))"
+}
+# write_summary <file>: appends the wall time and the five slowest steps that ran (most seconds first, a tie in list
+# order) as Markdown (iteration 55, decision 6); a file that cannot be written gets a note on standard error
+write_summary() {
+  local sum_file=$1 text verdict=passed k=${#t_names[@]} i row
+  [ ${#failed[@]} -eq 0 ] || verdict=FAILED
+  text="### tests/check.sh"$'\n\n'"Wall time: $(ledger_duration $((check_end - check_start))) for $k steps, $L at a time: $verdict"$'\n\n'
+  if [ "$k" -gt 0 ]; then
+    text="$text| Slowest step | Time |"$'\n'"|---|---|"$'\n'
+    while IFS=$'\t' read -r _ i; do
+      row="| \`${t_names[i]}\` | $(ledger_duration "${t_secs[i]}") |"
+      text="$text$row"$'\n'
+    done < <(for ((i = 0; i < k; i++)); do printf '%s\t%s\n' "${t_secs[i]}" "$i"; done | sort -t$'\t' -k1,1nr -k2,2n | head -n 5)
+    text="$text"$'\n'
+  fi
+  printf '%s' "$text" 2>/dev/null >> "$sum_file" || echo "check: cannot write the summary to $sum_file" >&2
 }
 
 # The steps that run, in list order (prints), and the jobs, in start order (starts: the steps marked first, then the
@@ -384,6 +406,7 @@ for ((i = 0; i < n; i++)); do
   shown="$shown${k_skip[i]}|"
   echo "SKIPPED: ${k_skip[i]}"
 done
+[ -z "$summary" ] || write_summary "$summary"
 case $mode in
   quick)
     if [ ${#failed[@]} -gt 0 ]; then echo "QUICK CHECK FAILED: ${failed[*]} (the full check has not run)"; exit 1; fi
