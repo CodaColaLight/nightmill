@@ -73,12 +73,15 @@ fi
 # escape the name (text next to the listing line), or (b) validate-config refuses such a name for
 # board.statusField and for board.priorityField. The test passes when (a) or (b) holds completely.
 (
-  quotefail=0
-  # (a) every listing window mentions escaping and holds a backslash
+  # (a) every listing window mentions escaping and holds all three escapes, each as a fixed string:
+  # \" (double quote), \\ (backslash) and '\'' (single quote inside the single-quoted argument)
   esc_ok=1
   for s in spec next fix; do
     win=$(awk '/gh project item-list <project>/{n=8} n>0{print; n--}' "skills/$s/SKILL.md")
-    if ! grep -i -E 'escap' <<<"$win" >/dev/null || ! grep -F '\' <<<"$win" >/dev/null; then esc_ok=0; fi
+    if ! grep -i -E 'escap' <<<"$win" >/dev/null \
+       || ! grep -F -e '\"' <<<"$win" >/dev/null \
+       || ! grep -F -e '\\' <<<"$win" >/dev/null \
+       || ! grep -F -e "'\\''" <<<"$win" >/dev/null; then esc_ok=0; fi
   done
   # (b) the validator reports an error on the key, exit code 1, for each name and each field
   val_ok=1
