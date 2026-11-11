@@ -388,7 +388,7 @@ The schema documents every key; the short version:
 | `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
 | `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it) |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
-| `roles` | The model of each agent role (`roles.<role>.model`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
+| `roles` | The model of each agent role (`roles.<role>.model`, an alias the Agent tool takes: `sonnet`, `opus`, `haiku` or `fable`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
 | `review.maxFixRounds` | How many fix rounds a producer gets after a review, and how many check fix rounds a pull request gets after a red check, over every run |
 | `review.watchChecksMinutes` | Minutes a skill watches its pull request's checks after enabling auto-merge, per push (default 30) |
@@ -417,8 +417,9 @@ so is every key inside them: a role that is absent, or whose `model` is empty, t
 
 `specReviewer` reviews `specWriter`; `codeReviewer` reviews `implementer` and `fixer`. A reviewer should rank at
 least as high as each role it reviews. The rank comes from `models.ranking`, the models from weakest to
-strongest (aliases and full model ids); models of the same level share one entry, joined by `=`, for example
-`"opus=claude-opus-5-5"`. The validator checks the pairing (see below). `review.maxFixRounds` (default 2) is how
+strongest; models of the same level share one entry, joined by `=`, for example `"opus=claude-opus-5-5"`. A role's
+model is an alias (`sonnet`, `opus`, `haiku`, `fable`): the Agent tool refuses a full model id at launch, so the
+validator reports one as an error. The validator checks the pairing (see below). `review.maxFixRounds` (default 2) is how
 many fix rounds a producer gets after a review.
 
 The workflow skill defines how a skill picks a role's model: the configured model, else the default of the schema,

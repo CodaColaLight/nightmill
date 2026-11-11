@@ -108,13 +108,13 @@
       "type": "object",
       "description": "The model each agent role runs on. A role that is absent, or whose model is empty, takes the default shown. specReviewer must rank at least as high as specWriter, and codeReviewer at least as high as implementer and fixer (checked by the validator against models.ranking, or its default when it is not set).",
       "properties": {
-        "specWriter": { "type": "object", "description": "Writes the spec of a Ready story.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
-        "specReviewer": { "type": "object", "description": "Reviews a spec before it goes to Spec review. Reviews specWriter.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
-        "tester": { "type": "object", "description": "Writes the failing tests from the approved spec, before the implementer. Not compared with any other role.", "properties": { "model": { "type": "string", "default": "sonnet", "description": "Model alias or full model id." } } },
-        "implementer": { "type": "object", "description": "Writes the code of an Approved story.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
-        "codeReviewer": { "type": "object", "description": "Reviews the change before the pull request opens. Reviews implementer and fixer.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
-        "fixer": { "type": "object", "description": "Fixes a bug.", "properties": { "model": { "type": "string", "default": "opus", "description": "Model alias or full model id." } } },
-        "worker": { "type": "object", "description": "Does mechanical, fully specified jobs (the worker agent).", "properties": { "model": { "type": "string", "default": "haiku", "description": "Model alias or full model id." } } }
+        "specWriter": { "type": "object", "description": "Writes the spec of a Ready story.", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "opus", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } },
+        "specReviewer": { "type": "object", "description": "Reviews a spec before it goes to Spec review. Reviews specWriter.", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "opus", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } },
+        "tester": { "type": "object", "description": "Writes the failing tests from the approved spec, before the implementer. Not compared with any other role.", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "sonnet", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } },
+        "implementer": { "type": "object", "description": "Writes the code of an Approved story.", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "opus", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } },
+        "codeReviewer": { "type": "object", "description": "Reviews the change before the pull request opens. Reviews implementer and fixer.", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "opus", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } },
+        "fixer": { "type": "object", "description": "Fixes a bug.", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "opus", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } },
+        "worker": { "type": "object", "description": "Does mechanical, fully specified jobs (the worker agent).", "properties": { "model": { "type": "string", "pattern": "^(sonnet|opus|haiku|fable)?$", "default": "haiku", "description": "A model alias the Agent tool takes: sonnet, opus, haiku or fable (a full model id is refused at launch). Empty takes the default." } } }
       }
     },
     "models": {
@@ -126,7 +126,7 @@
           "items": { "type": "string" },
           "minItems": 1,
           "default": ["haiku", "sonnet", "opus", "fable"],
-          "description": "Models from weakest to strongest; a model's rank is its position. Name models of the same level in one entry, joined by =, for example \"opus=claude-opus-5-5\". List the aliases and the full model ids that roles use."
+          "description": "Models from weakest to strongest; a model's rank is its position. Name models of the same level in one entry, joined by =, for example \"opus=claude-opus-5-5\". List the aliases that roles use; a full model id may share an entry with its alias."
         }
       }
     },
