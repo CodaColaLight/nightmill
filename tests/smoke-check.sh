@@ -189,6 +189,15 @@ for r in A B; do
   [ -z "$(ls -A "$tmp/tmp$r")" ] || fail "two checks: run $r left files in its TMPDIR: $(ls -A "$tmp/tmp$r")"
 done
 
+echo "== the slowest steps of the real list start first"
+# The real step list of tests/check.sh (between '# steps: begin' and '# steps: end'): the steps measured slowest in CI
+# (issue 279) carry the 'first' mark. Only these are pinned; more steps may be marked later.
+real_list=$(awk '/^# steps: begin$/{on=1;next} /^# steps: end$/{on=0} on' "$here/tests/check.sh")
+for want in "bash test-spec-template.sh" "bash smoke-slot.sh" "ps smoke-slot.ps1" "ps smoke-check.ps1" "ps smoke-validate.ps1" \
+            "ps smoke-release.ps1" "ps smoke-drive.ps1" "ps test-lintcopy-output.ps1"; do
+  has_line "$real_list" "add $want first" || fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh"
+done
+
 echo "== the lint: the check runs every smoke script"
 # The section of tests/lint.sh is run alone on scratch copies of the files it reads, each broken once.
 sec="$tmp/lint-section.sh"

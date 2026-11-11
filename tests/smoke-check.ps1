@@ -227,6 +227,20 @@ try {
     if (@(Get-ChildItem -Force "$tmp\tmp$x").Count -ne 0) { Fail "two checks: run $x left files in its temp folder: $((Get-ChildItem -Force "$tmp\tmp$x" | ForEach-Object Name) -join ' ')" }
   }
 
+  Write-Host "== the slowest steps of the real list start first"
+  # The real step list of tests/check.sh (between '# steps: begin' and '# steps: end'): the steps measured slowest in CI
+  # (issue 279) carry the 'first' mark. Only these are pinned; more steps may be marked later.
+  $realList = New-Object System.Collections.ArrayList
+  $onList = $false
+  foreach ($l in ((Read-Lf (Join-Path $here "tests\check.sh")) -split "`n")) {
+    if ($l -ceq '# steps: end') { $onList = $false }
+    if ($onList) { [void]$realList.Add($l) }
+    if ($l -ceq '# steps: begin') { $onList = $true }
+  }
+  foreach ($want in "bash test-spec-template.sh", "bash smoke-slot.sh", "ps smoke-slot.ps1", "ps smoke-check.ps1", "ps smoke-validate.ps1", "ps smoke-release.ps1", "ps smoke-drive.ps1", "ps test-lintcopy-output.ps1") {
+    if (-not (Has-Line ($realList -join "`n") "add $want first")) { Fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh" }
+  }
+
   Write-Host "== the lint: the check runs every smoke script"
   # The section of tests/lint.sh is run alone (through bash) on scratch copies of the files it reads, each broken once.
   $lintText = Read-Lf (Join-Path $here "tests\lint.sh")

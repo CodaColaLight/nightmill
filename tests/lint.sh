@@ -1231,11 +1231,12 @@ if [ -n "$bare_tmp" ]; then
 fi
 
 echo "== the check starts the longest steps first"
-# Iteration 42, decision 1: exactly the two slot tests (the longest steps) carry the mark 'first' in the step list of
+# Iteration 42, decision 1 (and #279): exactly the longest steps of a CI run carry the mark 'first' in the step list of
 # tests/check.sh, so with a limit above 1 they start before all others and the total is set by the slowest step.
 firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p && / first$/' tests/check.sh | tr '\n' '|')
-if [ "$firsts" != "add bash smoke-slot.sh first|add ps smoke-slot.ps1 first|" ]; then
-  echo "FAIL: tests/check.sh: the steps marked first are not exactly smoke-slot.sh and smoke-slot.ps1: $firsts"; fail=1
+want_firsts="add bash smoke-slot.sh first|add bash test-spec-template.sh first|add ps smoke-slot.ps1 first|add ps smoke-release.ps1 first|add ps smoke-validate.ps1 first|add ps smoke-check.ps1 first|add ps test-lintcopy-output.ps1 first|add ps smoke-drive.ps1 first|"
+if [ "$firsts" != "$want_firsts" ]; then
+  echo "FAIL: tests/check.sh: the steps marked first are not exactly the longest steps (docs/specs/iteration-42-parallel-check.md, decision 1): $firsts"; fail=1
 fi
 grep -qF 'k_first[i]}" = first' tests/check.sh || { echo "FAIL: tests/check.sh does not start the steps marked first first"; fail=1; }
 
