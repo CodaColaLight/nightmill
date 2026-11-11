@@ -314,7 +314,8 @@ try {
   }
   function Lint-In([string]$d) {
     $df = $d -replace '\\', '/'
-    Write-Lf "$tmp\run-section.sh" ("set -euo pipefail`ncd `"$df`"`nfail=0`n. scripts/lib/json.sh`n" + $secText + "`nexit `$fail`n")
+    # NIGHTMILL_CI_PARTS_RULES_ONLY: the copy checks the rules of tests/test-ci-parts.sh, its cases run once in the lint (#293)
+    Write-Lf "$tmp\run-section.sh" ("set -euo pipefail`ncd `"$df`"`nfail=0`nexport NIGHTMILL_CI_PARTS_RULES_ONLY=1`n. scripts/lib/json.sh`n" + $secText + "`nexit `$fail`n")
     Wait-Child (Start-Child $bashExe "`"$tf/run-section.sh`"" $d @{})
   }
   # Lint-Break <name> <file> <line transform: a scriptblock from the lines to the new lines> <expected text>

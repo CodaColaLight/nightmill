@@ -274,7 +274,8 @@ mkcopy() { # mkcopy <dir>: the files the section reads (every script in tests/, 
   cp -R "$here/skills" "$d/skills"
 }
 lint_in() { # lint_in <dir>: output and exit code of the section in <dir>
-  { printf 'set -euo pipefail\ncd "%s"\nfail=0\n. scripts/lib/json.sh\n' "$1"; cat "$sec"; printf 'exit $fail\n'; } > "$tmp/run-section.sh"
+  # NIGHTMILL_CI_PARTS_RULES_ONLY: the copy checks the rules of tests/test-ci-parts.sh, its cases run once in the lint (#293)
+  { printf 'set -euo pipefail\ncd "%s"\nfail=0\nexport NIGHTMILL_CI_PARTS_RULES_ONLY=1\n. scripts/lib/json.sh\n' "$1"; cat "$sec"; printf 'exit $fail\n'; } > "$tmp/run-section.sh"
   set +e; out=$(bash "$tmp/run-section.sh" 2>&1); rc=$?; set -e
 }
 lint_break() { # lint_break <name> <file> <sed expression> <expected text>

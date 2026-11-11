@@ -80,5 +80,46 @@ if [ -n "$other_sections" ]; then
   echo "FAIL: a call of tests/lint.sh with an argument ran more than the spec section (#280): $(printf '%s\n' "$other_sections" | sort -u | head -n 3 | tr '\n' ';') ...)"
   bad=1
 fi
+# Regression test for #293: tests/smoke-check.sh ran the lint section "the check runs every smoke script" on about 11
+# throwaway copies of the repository, and since iteration 55 that range holds the section "the PowerShell job runs in
+# parts", which started tests/test-ci-parts.sh with its 18 cases (sed, awk and cp, slow under Git Bash) once per copy:
+# smoke-check.ps1 took 10m22s and bounded part 3 of the PowerShell job. The cost is counted, not timed. A shim named cp,
+# first on the PATH, logs every cp whose destination is the scratch root of a case of tests/test-ci-parts.sh (each case
+# starts with one: cp tests/check.sh <tmp>/case-<name>/tests/check.sh) and passes every call to the real cp. The bound is
+# one run of the cases: what one direct run of tests/test-ci-parts.sh logs. smoke-check.sh may log no more for all its
+# lint copies, and it must still end well (its case "cips" needs the part rule's FAIL line on a copy).
+# smoke-check.ps1 runs the same lint through Git Bash, so this bash count covers the shared cause.
+real_cp=$(command -v cp)
+cpshim="$tmp/cpshim"; cplog="$tmp/cp-calls.log"
+mkdir -p "$cpshim"; : > "$cplog"
+cat > "$cpshim/cp" <<SHIM
+#!/bin/sh
+for a in "\$@"; do
+  case "\$a" in */nightmill-ci-parts.*/case-*/tests/check.sh) echo "\$a" >> "$cplog" ;; esac
+done
+exec "$real_cp" "\$@"
+SHIM
+chmod +x "$cpshim/cp"
+set +e
+parts_out=$(cd "$here" && PATH="$cpshim:$PATH" bash tests/test-ci-parts.sh "$here" 2>&1); parts_rc=$?
+set -e
+one_run=$(wc -l < "$cplog" | tr -d ' ')
+if [ "$parts_rc" != 0 ] || [ "$one_run" -lt 5 ]; then
+  echo "FAIL: one run of tests/test-ci-parts.sh (exit $parts_rc) logged $one_run case copies, so the count proves nothing: $(printf '%s\n' "$parts_out" | tail -n 3)"
+  bad=1
+fi
+: > "$cplog"
+set +e
+check_out=$(cd "$here" && PATH="$cpshim:$PATH" bash tests/smoke-check.sh 2>&1); check_rc=$?
+set -e
+check_runs=$(wc -l < "$cplog" | tr -d ' ')
+if [ "$check_rc" != 0 ]; then
+  echo "FAIL: tests/smoke-check.sh did not pass (exit $check_rc), so its count proves nothing: $(printf '%s\n' "$check_out" | tail -n 5)"
+  bad=1
+fi
+if [ "$one_run" -ge 5 ] && [ "$check_runs" -gt "$one_run" ]; then
+  echo "FAIL: tests/smoke-check.sh runs the cases of tests/test-ci-parts.sh $check_runs case copies in all; at most $one_run (one run of the cases, #293)"
+  bad=1
+fi
 [ "$bad" = 0 ] || exit 1
 echo "LINTCOPY OUTPUT OK"

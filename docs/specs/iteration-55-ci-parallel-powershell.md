@@ -265,7 +265,8 @@ line are removed, and the section's comment says that the job-level rule lives i
 as the `smoke-bash` timeout pin lives in `tests/test-ci-smoke-bash-timeout.sh`.
 
 Then `tests/test-ci-parts.sh` runs its own cases (Tests) in the same process on scratch copies, and exits 1 when any rule or case failed,
-else 0 with the line `OK: the PowerShell parts`. The lines are matched with their leading spaces removed and trailing
+else 0 with the line `OK: the PowerShell parts`. With `NIGHTMILL_CI_PARTS_RULES_ONLY=1` it checks the rules only and
+skips its cases; the lint copies of `tests/smoke-check.sh`/`.ps1` set it, so one check runs the cases once (bug #293). The lines are matched with their leading spaces removed and trailing
 blanks and a carriage return ignored.
 
 **6. The summary: `tests/check.sh --summary <file>`** (`tests/check.ps1 -Summary <file>`).
@@ -431,7 +432,8 @@ No decision record: iteration 38's decision is a spec decision, and the status f
   lines of `ci.yml` (decisions 3, 5, 6 and 8), so that each edit still changes a line. The section is still cut from
   `== the check runs every smoke script` to `== text from issues is data`, so it now holds the new section
   `== the PowerShell job runs in parts` too, and the scratch copy has `tests/test-ci-parts.sh` (every script in
-  `tests/` is copied). The constant `USAGE` becomes
+  `tests/` is copied); the copies set `NIGHTMILL_CI_PARTS_RULES_ONLY=1`, so `tests/test-ci-parts.sh` checks the rules
+  there and runs its cases only in the lint itself (bug #293). The constant `USAGE` becomes
   `usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]`
   (decision 6). The four cases (`.sh` sed address / `.ps1` `-like` pattern; the replacement inside the line as today):
   - `cibash`: the line `run: bash tests/check.sh --summary` (sed `/run: bash tests\/check\.sh --summary/`, `.ps1`
