@@ -1,6 +1,6 @@
 # tests/smoke-drive.ps1 - scripts/drive.ps1 against a fake claude, a fake gh and throwaway slots (iteration 52, #164;
 # docs/specs/iteration-52-unattended-driver.md, "Tests"): the same cases as tests/smoke-drive.sh, except `signal`
-# (bash only). The fakes are .cmd files that call a .ps1, first on the PATH. Each case runs the driver in a child
+# (bash only), and the cases of iteration 53 (#165, docs/specs/iteration-53-run-limits.md). The fakes are .cmd files that call a .ps1, first on the PATH. Each case runs the driver in a child
 # powershell process in the main checkout.
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
@@ -46,7 +46,19 @@ if ($k -eq 'pr list') {
 }
 if ($k -eq 'issue comment') {
   if ($env:GH_COMMENT_FAIL) { [Console]::Error.WriteLine('fake gh: comment refused'); exit 1 }
-  for ($i = 0; $i -lt $a.Count; $i++) { if ($a[$i] -eq '--body-file') { Copy-Item $a[$i + 1] $env:COMMENT -Force } }
+  for ($i = 0; $i -lt $a.Count; $i++) { if ($a[$i] -eq '--body-file') { Copy-Item $a[$i + 1] $env:COMMENT -Force; Copy-Item $a[$i + 1] ($env:COMMENT + '.' + $a[2]) -Force } }
+  exit 0
+}
+if ($k -eq 'issue edit') { exit 0 }
+if ($k -eq 'issue view') {
+  if ($env:ISSUE_COMMENTS -and (Test-Path $env:ISSUE_COMMENTS)) { Write-Output (Get-Content $env:ISSUE_COMMENTS -Raw) } else { Write-Output '{"comments":[]}' }
+  exit 0
+}
+if ($k -eq 'api user') { Write-Output 'agent'; exit 0 }
+if ($k -eq 'api graphql') {
+  $q = $a -join ' '
+  if ($env:EPIC_FOR -and $q.Contains("issue(number: $($env:EPIC_FOR))")) { Write-Output (Get-Content $env:EPIC_FILE -Raw) }
+  else { Write-Output '{"data":{"repository":{"issue":{"parent":null}}}}' }
   exit 0
 }
 [Console]::Error.WriteLine('fake gh: unexpected call'); exit 1
@@ -58,12 +70,13 @@ if ($k -eq 'issue comment') {
 $clPs = @'
 $a = $args
 Add-Content -Path $env:CLAUDE_LOG -Value ($a -join ' ')
+Add-Content -Path $env:ENV_LOG -Value ("left=" + $env:NIGHTMILL_ISSUES_LEFT + " started=" + $env:NIGHTMILL_RUN_STARTED)
 $k = 0
 if (Test-Path $env:STEPFILE) { $k = [int](Get-Content $env:STEPFILE | Select-Object -First 1) }
 $k++
 Set-Content -Path $env:STEPFILE -Value $k
 $line = @(Get-Content $env:SCRIPT)[$k - 1]
-$cost = '0.10'; $turns = 3; $code = 0; $stopped = ''; $long = $false
+$cost = '0.10'; $turns = 3; $code = 0; $stopped = ''; $long = $false; $dur = 1500; $subtype = 'success'
 foreach ($x in ($line -split ' ')) {
   if ($x -like 'status:*') {
     $p = $x -split ':'
@@ -79,10 +92,22 @@ foreach ($x in ($line -split ' ')) {
   elseif ($x -like 'cost:*') { $cost = $x.Substring(5) }
   elseif ($x -like 'turns:*') { $turns = [int]$x.Substring(6) }
   elseif ($x -eq 'long') { $long = $true }
+  elseif ($x -like 'dur:*') { $dur = [int]$x.Substring(4) }
+  elseif ($x -like 'subtype:*') { $subtype = $x.Substring(8) }
+  elseif ($x -eq 'pause') {
+    $cfgPath = Join-Path $env:MAIN ".claude\nightmill.json"
+    $ls = @(Get-Content $cfgPath)
+    $outl = @($ls[0..($ls.Count - 2)]) + '  ,"limits": { "paused": true }' + $ls[$ls.Count - 1]
+    Set-Content -Path $cfgPath -Value $outl
+    $ea = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & git -C $env:MAIN commit -q -am pause 2>&1 | Out-Null
+    & git -C $env:MAIN push -q origin main 2>&1 | Out-Null
+    $ErrorActionPreference = $ea
+  }
 }
 if ($long) { $msg = 'x' * 70000 }
 else { $msg = "Done with step $k."; if ($stopped) { $msg += "\nStopped: $stopped" } else { $msg += "\nAll good." } }
-Write-Output ('{"type":"result","result":"' + $msg + '","total_cost_usd":' + $cost + ',"num_turns":' + $turns + '}')
+Write-Output ('{"type":"result","subtype":"' + $subtype + '","result":"' + $msg + '","duration_ms":' + $dur + ',"total_cost_usd":' + $cost + ',"num_turns":' + $turns + '}')
 exit $code
 '@
 [IO.File]::WriteAllText((Join-Path $bin "claude.ps1"), $clPs)
@@ -110,9 +135,10 @@ function New-Case($extra = '"unattended": { "summaryIssue": 9, "maxMinutes": 60 
   $env:BOARD = Join-Path $c "board.tsv"; $env:PRS = Join-Path $c "prs.tsv"; $env:SCRIPT = Join-Path $c "script.txt"
   $env:GH_LOG = Join-Path $c "gh.log"; $env:CLAUDE_LOG = Join-Path $c "claude.log"; $env:COMMENT = Join-Path $c "comment.md"
   $env:STEPFILE = Join-Path $c "step.n"; $env:BGPID = Join-Path $c "bg.pid"
+  $env:ENV_LOG = Join-Path $c "env.log"; $env:MAIN = $m; $env:EPIC_FILE = Join-Path $fx "..\gate\epic-paused.json"; $env:LEDGER = Join-Path $c "wt\.slots\ledger.tsv"
   $env:NIGHTMILL_CLOCK_FILE = Join-Path $c "clock"; $env:STOPFILE = Join-Path $m ".git\nightmill-stop"
   Set-Content $env:PRS ""; Set-Content $env:SCRIPT ""; Set-Content $env:NIGHTMILL_CLOCK_FILE "1800000000"
-  Remove-Item Env:GH_AUTH_FAIL, Env:GH_COMMENT_FAIL -ErrorAction SilentlyContinue
+  Remove-Item Env:GH_AUTH_FAIL, Env:GH_COMMENT_FAIL, Env:EPIC_FOR, Env:ISSUE_COMMENTS -ErrorAction SilentlyContinue
 }
 function Use-Board($name) { Copy-Item (Join-Path $fx $name) $env:BOARD -Force }
 function Set-Script([string[]]$lines) { Set-Content -Path $env:SCRIPT -Value $lines }
@@ -139,12 +165,16 @@ function Need-Comment([string]$what) { if (-not (Test-Path $env:COMMENT)) { Fail
 function Audit([string]$what) {
   if (Test-Path $env:GH_LOG) {
     foreach ($l in (Get-Content $env:GH_LOG)) {
-      if (-not ($l.StartsWith("auth status") -or $l.StartsWith("project item-list") -or $l.StartsWith("pr list") -or $l.StartsWith("issue comment"))) { Fail "${what}: a gh call the driver may not make: $l" }
+      if ($l.StartsWith("issue edit ")) {
+        if ($l -notmatch '^issue edit [0-9]+ --add-label blocked$') { Fail "${what}: an issue edit other than the label blocked: $l" }
+      }
+      elseif (-not ($l.StartsWith("auth status") -or $l.StartsWith("project item-list") -or $l.StartsWith("pr list") -or $l.StartsWith("issue comment") -or $l.StartsWith("api graphql") -or $l.StartsWith("api user") -or $l.StartsWith("issue view"))) { Fail "${what}: a gh call the driver may not make: $l" }
     }
   }
   if (Test-Path (Join-Path $script:main ".git\nightmill-drive.lock")) { Fail "${what}: the lock is left" }
 }
-$FIX = '-p /nightmill:fix all --permission-mode manual --output-format json'
+$FLAGS = '--permission-mode manual --output-format json --max-turns 200 --max-budget-usd 25.00'
+$FIX = "-p /nightmill:fix all $FLAGS"
 
 # nothing
 New-Case; Use-Board "board-nothing.tsv"; Invoke-Drive
@@ -154,14 +184,14 @@ Has $cm "Ended: nothing Ready or Approved." "nothing"; Has $cm "Ready stories wa
 
 # loop
 New-Case; Use-Board "board-loop.tsv"
-Set-Script "status:11:Review pr:101:OPEN:11 cost:0.50 turns:4", "status:21:Done pr:121:MERGED:21 cost:1.25", "status:22:Done pr:122:MERGED:22 cost:1.25"
+Set-Script "status:11:Review pr:101:OPEN:11 cost:0.50 turns:4 dur:1234", "status:21:Done pr:121:MERGED:21 cost:1.25 turns:5 dur:2345", "status:22:Done pr:122:MERGED:22 cost:1.25 turns:6 dur:3456"
 Invoke-Drive
 Want-Code 0 "loop"
 $cl = @(Get-Content $env:CLAUDE_LOG)
 if ($cl.Count -ne 3) { Fail "loop: $($cl.Count) claude calls, 3 expected" }
 if ($cl[0] -ne $FIX) { Fail "loop: first call: $($cl[0])" }
-if ($cl[1] -ne '-p /nightmill:next 21 --permission-mode manual --output-format json') { Fail "loop: second call: $($cl[1])" }
-if ($cl[2] -ne '-p /nightmill:next 22 --permission-mode manual --output-format json') { Fail "loop: third call: $($cl[2])" }
+if ($cl[1] -ne "-p /nightmill:next 21 $FLAGS") { Fail "loop: second call: $($cl[1])" }
+if ($cl[2] -ne "-p /nightmill:next 22 $FLAGS") { Fail "loop: third call: $($cl[2])" }
 Need-Comment "loop"; $cm = Comment
 Has $cm "| #11 Crash on start | /fix all | Ready | Review | pull request open | #101 |" "loop"
 Has $cm "| #21 Add export | /next | Approved | Done | merged | #121 |" "loop"
@@ -184,7 +214,7 @@ Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress stopped:the
 Invoke-Drive
 Want-Code 0 "blocked"; $cm = Comment
 Has $cm "| #21 Add export | /next | Approved | In progress | blocked: Stopped: the check is red | - |" "blocked"
-if ((@(Get-Content $env:CLAUDE_LOG))[2] -ne '-p /nightmill:next 22 --permission-mode manual --output-format json') { Fail "blocked: #22 was not tried" }
+if ((@(Get-Content $env:CLAUDE_LOG))[2] -ne "-p /nightmill:next 22 $FLAGS") { Fail "blocked: #22 was not tried" }
 Audit "blocked"
 
 # tie
@@ -310,6 +340,159 @@ New-Case; Use-Board "board-loop.tsv"; Set-Script "long status:11:Review pr:101:O
 Want-Code 0 "long"; $cm = Comment
 if ($cm.Length -gt 60000) { Fail "long: the comment has $($cm.Length) characters, 60000 at most" }
 Has $cm "[cut: " "long"
+
+# ---------- iteration 53 (#165): the flags, the run ledger, the pause flag and the limits ----------
+function Run-Lines { if (Test-Path $env:LEDGER) { @(Get-Content $env:LEDGER | Where-Object { $_ -and $_.StartsWith("run`t") }) } else { @() } }
+function Loop-Script { Set-Script "status:11:Review pr:101:OPEN:11 cost:0.50 turns:4 dur:1234", "status:21:Done pr:121:MERGED:21 cost:1.25 turns:5 dur:2345", "status:22:Done pr:122:MERGED:22 cost:1.25 turns:6 dur:3456" }
+function Call-Line([int]$n) { @(Get-Content $env:CLAUDE_LOG)[$n - 1] }
+
+# flags
+New-Case; Use-Board "board-loop.tsv"; Loop-Script; Invoke-Drive
+Want-Code 0 "flags"
+if ((Call-Line 1) -ne "-p /nightmill:fix all $FLAGS") { Fail "flags: first call: $(Call-Line 1)" }
+if ((Call-Line 2) -ne "-p /nightmill:next 21 $FLAGS") { Fail "flags: second call: $(Call-Line 2)" }
+if ((Call-Line 3) -ne "-p /nightmill:next 22 $FLAGS") { Fail "flags: third call: $(Call-Line 3)" }
+$el = @(Get-Content $env:ENV_LOG)
+$wantLeft = 10, 9, 8
+for ($i = 0; $i -lt 3; $i++) {
+  if (-not $el[$i].StartsWith("left=$($wantLeft[$i]) ")) { Fail "flags: step $($i + 1) env: $($el[$i])" }
+  if ($el[$i] -notmatch ' started=[0-9]+$') { Fail "flags: NIGHTMILL_RUN_STARTED is not set in seconds: $($el[$i])" }
+}
+Audit "flags"
+
+# ledger
+New-Case; Use-Board "board-loop.tsv"; Loop-Script; Invoke-Drive
+Want-Code 0 "ledger"
+if (-not (Test-Path $env:LEDGER)) { Fail "ledger: $($env:LEDGER) was not written" }
+$rl = @(Run-Lines)
+if ($rl.Count -ne 3) { Fail "ledger: $($rl.Count) run lines, 3 expected" }
+$wants = @(@("1", "/nightmill:fix all", "11", "1234", 0.5, "4"), @("2", "/nightmill:next 21", "21", "2345", 1.25, "5"), @("3", "/nightmill:next 22", "22", "3456", 1.25, "6"))
+for ($i = 0; $i -lt 3; $i++) {
+  $f = $rl[$i] -split "`t"
+  $w = $wants[$i]; $ln = $i + 1
+  if ($f.Count -ne 11) { Fail "ledger: line $ln has $($f.Count) fields, 11 expected: $($rl[$i])" }
+  if ($f[3] -ne $w[0]) { Fail "ledger: line $ln field 4: $($f[3]), $($w[0]) expected" }
+  if ($f[4] -ne $w[1]) { Fail "ledger: line $ln field 5: $($f[4]), $($w[1]) expected" }
+  if ($f[5] -ne $w[2]) { Fail "ledger: line $ln field 6: $($f[5]), $($w[2]) expected" }
+  if ($f[6] -ne "ok") { Fail "ledger: line $ln field 7: $($f[6]), ok expected" }
+  if ($f[8] -ne $w[3]) { Fail "ledger: line $ln field 9: $($f[8]), $($w[3]) expected" }
+  if (-not $f[9] -or [math]::Abs([double]::Parse($f[9], [Globalization.CultureInfo]::InvariantCulture) - $w[4]) -gt 0.0001) { Fail "ledger: line $ln field 10: $($f[9]), $($w[4]) expected" }
+  if ($f[10] -ne $w[5]) { Fail "ledger: line $ln field 11: $($f[10]), $($w[5]) expected" }
+  foreach ($ix in 1, 2, 7) { if ($f[$ix] -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') { Fail "ledger: line $ln field $($ix + 1) is not a UTC stamp: $($f[$ix])" } }
+}
+if ((@($rl | ForEach-Object { ($_ -split "`t")[2] } | Select-Object -Unique)).Count -ne 1) { Fail "ledger: field 3 differs between the lines of one driver run" }
+Audit "ledger"
+
+# ledger when claude fails
+New-Case; Use-Board "board-loop.tsv"; Set-Script "exit:3"; Invoke-Drive
+Want-Code 1 "ledger on failure"
+$rl = @(Run-Lines)
+if ($rl.Count -ne 1) { Fail "ledger on failure: $($rl.Count) run lines, 1 expected" }
+if ((($rl[0] -split "`t")[6]) -ne "exit 3") { Fail "ledger on failure: field 7 is $((($rl[0] -split "`t")[6])), 'exit 3' expected" }
+
+# paused: the first step commits and pushes the pause
+New-Case; Use-Board "board-loop.tsv"; Set-Script "pause"; Invoke-Drive
+Want-Code 0 "paused"
+if ((Calls) -ne 1) { Fail "paused: $(Calls) claude calls, 1 expected" }
+Has (Comment) "paused: limits.paused is true on origin/HEAD:.claude/nightmill.json" "paused"
+Audit "paused"
+
+# paused at start
+New-Case '"unattended": { "summaryIssue": 9, "maxMinutes": 60 }, "limits": { "paused": true }'; Use-Board "board-loop.tsv"; Invoke-Drive
+Want-Code 1 "paused at start"; if ((Calls) -ne 0) { Fail "paused at start: claude was called" }
+Has $script:err "drive: cannot start: paused: " "paused at start"
+Audit "paused at start"
+
+# issue limit
+New-Case '"unattended": { "summaryIssue": 9, "maxMinutes": 60 }, "limits": { "issuesPerRun": 2 }'; Use-Board "board-loop.tsv"; Loop-Script; Invoke-Drive
+Want-Code 0 "issue limit"; if ((Calls) -ne 2) { Fail "issue limit: $(Calls) claude calls, 2 expected" }
+Has (Comment) "the issue limit of 2 per run (limits.issuesPerRun) is reached" "issue limit"
+Audit "issue limit"
+
+function Comment-Of([int]$n) { $f = "$($env:COMMENT).$n"; if (Test-Path $f) { [IO.File]::ReadAllText($f) } else { "" } }
+function Gh-Log { if (Test-Path $env:GH_LOG) { (Get-Content $env:GH_LOG | Out-String) } else { "" } }
+function Breach-Check([string]$what, [string]$reason, [string]$ended) {
+  Want-Code 0 $what
+  Has (Comment-Of 21) "Stopped by a limit: $reason" $what
+  Has (Gh-Log) "issue edit 21 --add-label blocked" $what
+  Has (Comment) "| #21 Add export | /next | Approved | In progress | blocked: $reason" $what
+  if ((Call-Line 3) -ne "-p /nightmill:next 22 $FLAGS") { Fail "${what}: #22 was not tried" }
+  Hasnt (Comment) "claude exited" $what
+  $f = (Run-Lines)[1] -split "`t"
+  if ($f[6] -ne $ended) { Fail "${what}: ledger field 7 of step 2 is $($f[6]), $ended expected" }
+  Audit $what
+}
+foreach ($ec in 0, 1) {
+  New-Case; Use-Board "board-loop.tsv"
+  Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress subtype:error_max_turns exit:$ec", "status:22:Done pr:122:MERGED:22"
+  Invoke-Drive
+  Breach-Check "max turns (exit $ec)" "the headless run reached its turn limit of 200" "max-turns"
+  Has (Comment) "(limits.turnsPerRole.session" "max turns (exit $ec)"
+  Has (Comment) "2. /nightmill:next 21: exit $ec, " "max turns (exit $ec): the step line shows the exit code"
+  Has (Comment) "Picked 3, merged 1, pull request open 1, blocked 1" "max turns (exit $ec)"
+}
+foreach ($ec in 0, 1) {
+  New-Case; Use-Board "board-loop.tsv"
+  Set-Script "status:11:Review pr:101:OPEN:11", "status:21:In_progress subtype:error_max_budget_usd exit:$ec", "status:22:Done pr:122:MERGED:22"
+  Invoke-Drive
+  Breach-Check "budget (exit $ec)" 'the headless run reached its budget of $25.00' "max-budget"
+  Has (Comment) "(limits.costPerIssueUsd" "budget (exit $ec)"
+}
+
+# limit at Review
+New-Case; Use-Board "board-loop.tsv"
+Set-Script "status:11:Review pr:101:OPEN:11 subtype:error_max_budget_usd exit:1", "status:21:Review pr:121:OPEN:21 subtype:error_max_turns exit:1", "status:22:Done pr:122:MERGED:22"
+Invoke-Drive
+Want-Code 0 "limit at Review"
+Has (Comment-Of 11) "Stopped by a limit: the headless run reached its budget of" "limit at Review"
+Has (Gh-Log) "issue edit 11 --add-label blocked" "limit at Review"
+Has (Comment-Of 21) "Stopped by a limit: the headless run reached its turn limit of 200" "limit at Review"
+Has (Gh-Log) "issue edit 21 --add-label blocked" "limit at Review"
+Has (Comment) "| #11 Crash on start | /fix all | Ready | Review | blocked: " "limit at Review"
+Has (Comment) "| #21 Add export | /next | Approved | Review | blocked: " "limit at Review"
+Audit "limit at Review"
+
+# spent: the ledger already holds $25.00 for #21 (20.00, and half of 10.00)
+function Spent-Ledger {
+  New-Item -ItemType Directory -Force -Path (Split-Path $env:LEDGER -Parent) | Out-Null
+  $l1 = "run`t2026-11-09T06:30:00Z`t2026-11-09T06:00:00Z`t1`t/nightmill:next 21`t21`tok`t2026-11-09T06:00:10Z`t1800000`t20.00`t30"
+  $l2 = "run`t2026-11-09T06:50:00Z`t2026-11-09T06:00:00Z`t2`t/nightmill:fix all`t21,22`tok`t2026-11-09T06:31:00Z`t1200000`t10.00`t45"
+  [IO.File]::WriteAllText($env:LEDGER, "$l1`n$l2`n")
+}
+New-Case; Use-Board "board-loop.tsv"; Spent-Ledger
+Set-Script "status:11:Review pr:101:OPEN:11", "status:22:Done pr:122:MERGED:22"
+Invoke-Drive
+Want-Code 0 "spent"
+if ((Get-Content $env:CLAUDE_LOG | Out-String).Contains('nightmill:next 21')) { Fail "spent: /next 21 was called" }
+Has (Comment-Of 21) 'Stopped by a limit: #21 has spent $25.00' "spent"
+Has (Gh-Log) "issue edit 21 --add-label blocked" "spent"
+Has (Comment) '| blocked: limit: #21 has spent $25.00' "spent"
+if ((Call-Line 2) -ne "-p /nightmill:next 22 --permission-mode manual --output-format json --max-turns 200 --max-budget-usd 20.00") { Fail "spent: the call of #22: $(Call-Line 2)" }
+Audit "spent"
+
+# comment once
+New-Case; Use-Board "board-loop.tsv"; Spent-Ledger
+$cj = Join-Path $script:c "comments.json"
+[IO.File]::WriteAllText($cj, '{"comments":[{"author":{"login":"agent"},"body":"Stopped by a limit: #21 has spent $25.00 in headless runs; the limit is $25.00 (limits.costPerIssueUsd). Labelled blocked; the board status (Approved) and the work (nothing) are left as they are for the maintainer."}]}' + "`n")
+$env:ISSUE_COMMENTS = $cj
+Set-Script "status:11:Review pr:101:OPEN:11", "status:22:Done pr:122:MERGED:22"
+Invoke-Drive
+Want-Code 0 "comment once"
+if (Test-Path "$($env:COMMENT).21") { Fail "comment once: a second comment was posted on #21" }
+Has (Gh-Log) "issue edit 21 --add-label blocked" "comment once"
+Audit "comment once"
+
+# epic paused
+New-Case; Use-Board "board-loop.tsv"; $env:EPIC_FOR = "21"
+Set-Script "status:11:Review pr:101:OPEN:11", "status:22:Done pr:122:MERGED:22"
+Invoke-Drive
+Want-Code 0 "epic paused"
+if ((Get-Content $env:CLAUDE_LOG | Out-String).Contains('nightmill:next 21')) { Fail "epic paused: /next 21 was called" }
+if (Test-Path "$($env:COMMENT).21") { Fail "epic paused: a comment was posted on #21" }
+Hasnt (Gh-Log) "issue edit" "epic paused"
+Has (Comment) "not started: paused: epic #5 has the label paused" "epic paused"
+Audit "epic paused"
+Remove-Item Env:EPIC_FOR
 
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 Write-Host "smoke-drive.ps1: ok"

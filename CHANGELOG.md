@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Iteration 53 (#165): limits bound what an unattended run spends. A new config object `limits` holds the pause flag
+  `paused` and the limits `minutesPerIssue`, `turnsPerRole.<role>`, `issuesPerRun` and `costPerIssueUsd`. A new
+  script, `scripts/gate.sh` and `gate.ps1`, checks the pause flag (in the base branch's config, or the label `paused`
+  on the issue's epic) and the limits; the skills that change anything run it before every step, and the driver runs
+  it before every step too, starts every `claude -p` with `--max-turns` and `--max-budget-usd` and appends one `run`
+  line per headless run to `ledger.tsv`. A breached limit labels the issue `blocked`, comments why and sets no
+  status. README: the configuration table and a section on the limits.
 - Iteration 52 (#164): an unattended driver, `scripts/drive.sh` and `drive.ps1`, runs `/nightmill:fix all` and then
   `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the run's time limit is reached or the
   kill switch `.git/nightmill-stop` is set; it checks for a clean base branch, a free slot and room on the machine

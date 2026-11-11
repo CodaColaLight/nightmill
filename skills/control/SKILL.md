@@ -6,6 +6,10 @@ description: Run one pass of the opt-in load controller - measure CPU and memory
 Run one pass of the load controller. This skill changes nothing itself: only the script changes the agent limit and
 the slot count, and only when `parallel.controlMode` is `apply`.
 
+**The pause and the limits** (the `workflow` skill): before the pass run the gate, `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`. Exit 0: run the pass. Exit 1 or 2: print its
+`Stopped:` line and run no pass (a loop goes on with its next pass, which checks again).
+
 Run the script of the shell in use, from inside the project (any checkout or worktree), and wait for it (it measures
 for `parallel.loadWindowSeconds` seconds, 10 by default):
 

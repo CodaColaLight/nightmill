@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tests/test-drive-docs.sh - the driver, its keys, the workflow template and the README section (iteration 52, #164).
+# Iteration 53 (#165): the driver also passes --max-turns and --max-budget-usd and edits an issue only to add blocked.
 # Parts S (the driver sets no status), K (the config keys), T (the template), R (the README).
 #   tests/test-drive-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
@@ -12,18 +13,27 @@ example="$root/templates/nightmill.example.json"
 tpl="$root/templates/workflows/nightmill-drive.yml"
 
 forbidden=(--bare --dangerously-skip-permissions bypassPermissions --allowedTools --continue --resume)
-nostatus=(item-edit item-add item-delete field-create updateProjectV2ItemFieldValue single-select-option-id "issue edit" "issue close" "pr merge" "label create")
+# "issue edit" is allowed only as `issue edit <n> --add-label blocked` (iteration 53, decision 8)
+nostatus=(item-edit item-add item-delete field-create updateProjectV2ItemFieldValue single-select-option-id "issue close" "pr merge" "label create")
 
 # --- Part S ---
 for f in scripts/drive.sh scripts/drive.ps1; do
   p="$root/$f"
   if [ ! -f "$p" ]; then fail "$f: missing"; continue; fi
-  for w in "/nightmill:fix all" "/nightmill:next" "--permission-mode manual" "--output-format json" "issue comment" "nightmill-stop" "nightmill-drive.lock"; do
+  for w in "/nightmill:fix all" "/nightmill:next" "--permission-mode manual" "--output-format json" "--max-turns" "--max-budget-usd" "issue comment" "nightmill-stop" "nightmill-drive.lock"; do
     grep -qF -- "$w" "$p" || fail "$f: does not contain '$w'"
   done
   for w in "${nostatus[@]}" "${forbidden[@]}"; do
     if grep -qF -- "$w" "$p"; then fail "$f: contains '$w'"; fi
   done
+  # every gh issue edit adds the label blocked and nothing else
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    [[ "$l" == *"issue edit"*"--add-label blocked"* ]] || fail "$f: an 'issue edit' that does not add the label blocked: $l"
+    for w in --remove-label --add-assignee --title --body --milestone; do
+      case "$l" in *"$w"*) fail "$f: an 'issue edit' with $w: $l" ;; esac
+    done
+  done < <(grep -F 'issue edit' "$p" || true)
 done
 if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
   mode=$(git -C "$root" ls-files -s scripts/drive.sh | awk '{ print $1 }')

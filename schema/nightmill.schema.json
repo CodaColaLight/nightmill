@@ -216,6 +216,30 @@
         "maxMinutes": { "type": "integer", "minimum": 1, "default": 240, "description": "No step of a driver run starts once this many minutes have passed since the driver started (1 to 1440); the running step is not stopped. Read by scripts/drive.* only; another value stops the driver before anything else." },
         "summaryIssue": { "type": "integer", "minimum": 1, "description": "The issue the driver's summary is posted on as a comment (a whole number of at least 1). No default: when absent the summary is printed only. Read by scripts/drive.* only." }
       }
+    },
+    "limits": {
+      "type": "object",
+      "description": "The pause flag and the limits of every run (iteration 53). Read only from the base branch's configuration by scripts/gate.*, which the skills that change anything run before every step and the driver (scripts/drive.*) runs before every step; a branch cannot unpause or raise the limits of its own run. A value of the wrong type or out of range is never taken as its default: the gate stops with exit 2. A breached limit comments on the issue, labels it blocked and stops its work; no status is set. The defaults are judgements for a default project; tune them.",
+      "properties": {
+        "paused": { "type": "boolean", "default": false, "description": "true pauses every gating skill and every driver of the project: no further step starts. The label paused on an issue's epic pauses the issues of that epic the same way. Read by scripts/gate.*." },
+        "minutesPerIssue": { "type": "integer", "minimum": 1, "maximum": 1440, "default": 180, "description": "The most wall-clock minutes one run works on one issue, from the later of its slot's take and the start of the driver's step; checked at every gate call (a whole number from 1 to 1440). Read by scripts/gate.*." },
+        "turnsPerRole": {
+          "type": "object",
+          "description": "The most turns per launch of each role, and for session the turns of a headless run per issue. Read by scripts/gate.* and scripts/drive.*.",
+          "properties": {
+            "session": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 200, "description": "The most turns of one headless run per issue: the driver passes it as --max-turns (times the bugs of a /fix all step), and Claude Code stops the run there (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "specWriter": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 150, "description": "The most turns (the tool uses of the Agent result) one launch of the spec writer takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "specReviewer": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 80, "description": "The most turns one launch of the spec reviewer takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "tester": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 150, "description": "The most turns one launch of the tester takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "implementer": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 300, "description": "The most turns one launch of the implementer takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "codeReviewer": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 80, "description": "The most turns one launch of the code reviewer takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "fixer": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 200, "description": "The most turns one launch of the fixer takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." },
+            "worker": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 40, "description": "The most turns one launch of the worker takes; checked by the gate after the launch returns (a whole number from 1 to 10000; another value stops the gate with exit 2)." }
+          }
+        },
+        "issuesPerRun": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "The most issues one run starts: a /fix all run and a driver run (a whole number from 1 to 100). Read by scripts/gate.* and scripts/drive.*." },
+        "costPerIssueUsd": { "type": "number", "minimum": 0.01, "maximum": 10000, "default": 25, "description": "The most US dollars, as Claude Code reports them (total_cost_usd), spent on one issue over all headless runs of the driver, from the run lines of ledger.tsv; the driver passes what is left as --max-budget-usd (a number from 0.01 to 10000). Read by scripts/gate.* and scripts/drive.*." }
+      }
     }
   }
 }

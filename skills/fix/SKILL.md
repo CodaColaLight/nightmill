@@ -19,6 +19,13 @@ configuration disagree, the configuration wins. The process rules are in the `wo
 A bug is a defect in shipped behaviour (form: `.github/ISSUE_TEMPLATE/bug.yml`). It needs no spec,
 milestone, iteration number or CHANGELOG entry.
 
+**The pause and the limits** (the `workflow` skill) are checked before every step of this list, by the six points
+listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`,
+with `--issue <N>` once the bug is known, `--slot <n>` once a slot is taken and `--role <role> --turns <t>` after a
+launch returns. For `/fix <N>` exit 1, 2 or 4 stops the run with its `Stopped:` line and exit 3 is the breach (comment,
+label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set); for `/fix all` see "The gate" in
+"Batch mode".
+
 1. **Pick the issue.** If `$ARGUMENTS` has a number, use it; otherwise list the items whose status is
    Ready on the board (`gh project item-list <project> --owner <owner> --limit 200 --format json --jq '.items[] | [.content.number, .content.type, .["<board.statusField, lower case>"], .["<board.priorityField, lower case>"], ((.labels // []) | join(",")), .content.title] | @tsv'`), keep
    open issues labelled `labels.bug`, take the highest `board.priorityField` and ask the maintainer on a
@@ -711,9 +718,17 @@ differences (step 7 does not run: `/fix all` watches no pull request):
   message, so they run at the same time. The session's own work for a bug (the board, the slot commands, the tester's
   files checks, the manual check, the pull request) is done for one bug at a time, between events.
 
-  **The gate.** Every new start passes one gate first (2 above). It holds the run limit, the count and the room. The
-  pause flag and the limits of an unattended run, once they exist, are checked there before each start, by the rules
-  that set them. A pause stops new starts.
+  **The gate.** Every new start passes one gate first (2 above). It holds the run limit, the count, the room and
+  **The pause and the limits** of the `workflow` skill (the pause flag and the limits): the gate script runs before each start (with `--issue` of the
+  bug) and at every other point that paragraph names. Its first call (without `--issue`, at the start of the run)
+  sets the run limit: the smallest of `parallel.fixAllMaxBugs` (when not 0) and `<k>` of its
+  `gate: issues per run: <k>` line; the reason stays `run limit of <k> reached`, and a bug skipped as `needs a story`
+  still does not count. Exit 1 (the project is paused) or 2 (cannot check) stops the whole run (see "The whole run
+  stops"): no new start, no further step of any bug, agents already running are waited for. Exit 4 (the bug's epic is
+  paused) ends that bug only: not yet started, it is listed as `not started` with
+  `paused: epic #<e> has the label paused`; in flight, it stops where it is and is listed as `stopped` with that
+  reason. Exit 3 (a limit is breached) is the breach for that bug (comment, label `blocked`, no status), a skip with
+  its slot held; the run goes on with the other bugs.
 - **One producer at a time per bug.** A bug keeps its own order: its tester has returned before its fixer is launched,
   and it never runs two of its agents at once. Each launch is counted (the live agent limit), the room is checked and
   the step is reported, as "The tester", "The fixer" and "The code review" say; bugs in flight run their agents beside

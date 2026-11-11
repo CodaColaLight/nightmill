@@ -17,6 +17,12 @@ Read the configuration first. Below, *the maintainer* is `maintainer.name`; `<ow
 text and the configuration disagree, the configuration wins. The process rules are in the `workflow`
 skill of this plugin; this skill is the step list.
 
+**The pause and the limits** (the `workflow` skill) are checked before every step of this list, by the six points
+listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`,
+with `--issue <N>` once the story is known and `--role <role> --turns <t>` after a launch returns. Exit 1, 2 or 4
+stops the run with its `Stopped:` line (and the clean-up of "The spec writer" step 5); exit 3 is the breach (comment,
+label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set).
+
 ## 1. Pick the issue
 
 Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`board.statuses.ready`).

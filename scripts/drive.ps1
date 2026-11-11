@@ -1,16 +1,21 @@
 # scripts/drive.ps1 - the unattended driver (nightmill): runs /nightmill:fix all and /nightmill:next <N> headless, round
 # after round, until no Ready bug and no Approved story is left, its time limit is reached or its kill switch is set,
 # then prints and posts one summary. PowerShell twin of drive.sh; the rules and the texts are in
-# docs/specs/iteration-52-unattended-driver.md.
+# docs/specs/iteration-52-unattended-driver.md, and for the pause flag, the limits and the run ledger
+# docs/specs/iteration-53-run-limits.md (decisions 7 to 9).
 #
 #   drive.ps1           # no arguments; -h or --help prints the usage line
 #
 # Run it from inside any checkout of the project. It reads the base branch's .claude/nightmill.json
-# (scripts/lib/baseconfig.ps1; github, board, labels, git.baseBranch, worktrees, unattended.maxMinutes and
-# unattended.summaryIssue), and calls only: gh auth status, gh project item-list, gh pr list, gh issue comment (the
-# summary), git rev-parse / fetch origin / symbolic-ref / status, slot.ps1 -Reap, slot.ps1 -Status -Porcelain,
-# room.ps1 and claude -p "<prompt>" --permission-mode manual --output-format json in the main checkout. It sets no
-# board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
+# (scripts/lib/baseconfig.ps1; github, board, labels, git.baseBranch, worktrees, unattended.maxMinutes,
+# unattended.summaryIssue, parallel.fixAllMaxBugs and limits), and calls only: gh auth status, gh project item-list,
+# gh pr list, gh issue comment (the summary, and the comment of a breached limit), gh api user, gh issue view (the
+# comments of an issue whose limit is breached), gh issue edit <n> --add-label blocked (a breached limit), git rev-parse /
+# fetch origin / symbolic-ref / status, slot.ps1 -Reap, slot.ps1 -Status -Porcelain, room.ps1, gate.ps1 (the pause
+# flag and the limits, before every step; its gh api graphql query) and claude -p "<prompt>" --permission-mode manual
+# --output-format json --max-turns <T> --max-budget-usd <B> with NIGHTMILL_RUN_STARTED and NIGHTMILL_ISSUES_LEFT in
+# its environment, in the main checkout. After every step it appends one run line to
+# <worktrees.root>\.slots\ledger.tsv (Add-LedgerLine of lib\ledger.ps1). It sets no board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
 # switch <git common dir>/nightmill-stop (only its existence counts; the driver never creates or removes it).
 # Each step's processes are followed (Windows: its process tree by ParentProcessId, and the job object the driver
 # puts itself into, which also holds a descendant whose parent ended unseen; macOS and Linux: its process group,
@@ -52,8 +57,9 @@ function Quote-Arg([string]$a) {
   $s = $s -replace '(\\+)$', '$1$1'
   return '"' + $s + '"'
 }
-# Invoke-Exe <exe> <arguments> [cwd]: Out, Err, Code (a program that cannot start: Code -1 and the reason in Err)
-function Invoke-Exe([string]$exe, [string[]]$argv, [string]$cwd = "") {
+# Invoke-Exe <exe> <arguments> [cwd] [environment: name = value, $null removes it]: Out, Err, Code (a program that
+# cannot start: Code -1 and the reason in Err)
+function Invoke-Exe([string]$exe, [string[]]$argv, [string]$cwd = "", [hashtable]$envs = $null) {
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = $exe
   $psi.Arguments = (@($argv | ForEach-Object { Quote-Arg ([string]$_) }) -join " ")
@@ -64,6 +70,12 @@ function Invoke-Exe([string]$exe, [string[]]$argv, [string]$cwd = "") {
   $psi.StandardOutputEncoding = $utf8
   $psi.StandardErrorEncoding = $utf8
   if ($cwd) { $psi.WorkingDirectory = $cwd }
+  if ($null -ne $envs) {
+    foreach ($ek in $envs.Keys) {
+      if ($null -eq $envs[$ek]) { if ($psi.EnvironmentVariables.ContainsKey($ek)) { $psi.EnvironmentVariables.Remove($ek) } }
+      else { $psi.EnvironmentVariables[$ek] = [string]$envs[$ek] }
+    }
+  }
   try {
     $p = [System.Diagnostics.Process]::Start($psi)
     $errTask = $p.StandardError.ReadToEndAsync()
@@ -140,6 +152,27 @@ $lbEpic = [string](Cfg $cfg @("labels", "epic") "epic")
 $prios = @("Critical", "High", "Medium", "Low")
 if ((Has-Key $cfg "board") -and (Has-Key $cfg.board "priorities")) { $prios = @($cfg.board.priorities | ForEach-Object { [string]$_ }) }
 $hasSlots = Has-Key $cfg "worktrees"
+$stDone = [string](Cfg $cfg @("board", "statuses", "done") "Done")
+$stProgress = [string](Cfg $cfg @("board", "statuses", "inProgress") "In progress")
+$stReview = [string](Cfg $cfg @("board", "statuses", "review") "Review")
+# the limits (iteration 53): the gate checks their values before every step and stops on a bad one; a value the gate
+# would refuse is taken as its default here, as the run does not get that far
+function Get-IntOr($v, [long]$default) { if (($v -is [int] -or $v -is [long]) -and [long]$v -ge 1) { return [long]$v }; return $default }
+function Get-NumOr($v, [double]$default) {
+  if (($v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [decimal]) -and [double]$v -gt 0) { return [double]$v }
+  return $default
+}
+$limTurns = Get-IntOr (Cfg $cfg @("limits", "turnsPerRole", "session") $null) 200
+$limCost = Get-NumOr (Cfg $cfg @("limits", "costPerIssueUsd") $null) 25
+$limIssues = Get-IntOr (Cfg $cfg @("limits", "issuesPerRun") $null) 10
+$fixMax = (Cfg $cfg @("parallel", "fixAllMaxBugs") 0)
+if (-not ($fixMax -is [int] -or $fixMax -is [long]) -or $fixMax -lt 0) { $fixMax = 0 }
+$rootRel = "../" + (Split-Path $main -Leaf) + "-wt"
+$rr = Cfg $cfg @("worktrees", "root") ""
+if ($rr) { $rootRel = [string]$rr }
+$ledgerPath = Join-Path ([System.IO.Path]::GetFullPath((Join-Path $main $rootRel))) ".slots\ledger.tsv"
+if ($hasSlots) { $workText = "the slot and branch" } else { $workText = "the branch" }
+$times = [string][char]0x00D7
 
 # --- the run ---
 $lock = Join-Path $gitDir "nightmill-drive.lock"
@@ -161,6 +194,10 @@ $script:tried = New-Object System.Collections.Generic.List[object]
 $script:triedSet = @{}
 $script:lastBoard = @()
 $script:cur = $null   # the running step: Process, Known (Windows), PgFile (elsewhere), T0
+$script:started = 0    # the items of this run whose board status after their step differs from before it
+$script:outcome = @{}  # number -> Kind (blocked | not started), Text: a breach or a pause of the item
+$script:login = ""
+$script:loginRead = $false
 
 function Invoke-Gh([string[]]$argv) {
   if (-not $ghExe) { return [pscustomobject]@{ Out = ""; Err = "gh is not on the PATH"; Code = -1 } }
@@ -384,7 +421,8 @@ function Build-Summary([string]$kind, [string]$reason) {
       $prn = ""; $state = ""
       if ($prsOk -and $prOf.ContainsKey($t.Num)) { $prn = $prOf[$t.Num].Number; $state = $prOf[$t.Num].State }
       $why = "-"
-      $res = $script:steps[$t.K - 1].Result
+      $res = ""
+      if ($t.K -ge 1) { $res = $script:steps[$t.K - 1].Result }
       if ($res) {
         foreach ($l in ($res -split "`r?`n")) {
           if ($t.Step -eq "/next") {
@@ -396,7 +434,12 @@ function Build-Summary([string]$kind, [string]$reason) {
           }
         }
       }
-      if ($state -eq "MERGED") { $outcome = "merged"; $cm++ }
+      if ($script:outcome.ContainsKey($t.Num)) {
+        $ov = $script:outcome[$t.Num]
+        $outcome = "$($ov.Kind): $($ov.Text)"
+        if ($ov.Kind -eq "blocked") { $cb++ } else { $cs++ }
+      }
+      elseif ($state -eq "MERGED") { $outcome = "merged"; $cm++ }
       elseif ($state -eq "OPEN") { $outcome = "pull request open"; $co++ }
       elseif ($af -eq $t.Before) { $outcome = "not started: $why"; $cs++ }
       else { $outcome = "blocked: $why"; $cb++ }
@@ -522,14 +565,100 @@ function Test-SlotRoom {
   }
 }
 
-function Invoke-Step([string]$prompt) {
+# Invoke-Gate [arguments]: gate.ps1 in the main checkout (iteration 53 decision 3); $script:gateRc, $script:gateOut and
+# $script:gateReason: its line without "gate: " (exit 1, 3, 4) or without "gate: cannot check: " (exit 2 and any other)
+function Invoke-Gate([string[]]$argv = @()) {
+  $g = Invoke-Exe $psExe (@("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "gate.ps1")) + $argv) $main @{ NIGHTMILL_RUN_STARTED = $null; NIGHTMILL_ISSUES_LEFT = $null }
+  $script:gateRc = $g.Code
+  $script:gateOut = [string]$g.Out
+  $script:gateReason = ""
+  $outLines = @($g.Out -split "`r?`n")
+  $errLines = @($g.Err -split "`r?`n")
+  if ($g.Code -eq 0) { return }
+  if ($g.Code -eq 1 -or $g.Code -eq 4) { $want = "gate: paused: "; $from = $outLines; $cut = 6 }
+  elseif ($g.Code -eq 3) { $want = "gate: limit: "; $from = $outLines; $cut = 6 }
+  else { $want = "gate: cannot check: "; $from = $errLines; $cut = 20 }
+  foreach ($l in $from) { if ($l.StartsWith($want)) { $script:gateReason = $l.Substring($cut); break } }
+  if (-not $script:gateReason) { $script:gateReason = One-Line ($g.Out + " " + $g.Err) }
+  if (-not $script:gateReason) { $script:gateReason = "gate.ps1 exited $($g.Code)" }
+}
+# Stop-Gate: the end of the run for a gate exit of 1 or 2 (or a gate that could not run)
+function Stop-Gate {
+  if ($script:gateRc -eq 1) { Stop-At $script:gateReason 0 }
+  Stop-At "the gate could not check the pause and the limits: $($script:gateReason)" 1
+}
+
+# Write-RunLine <k> <ended> <issues> <duration> <cost> <turns>: the run line of step k in the ledger (decision 7)
+function Write-RunLine([int]$k, [string]$how, [string]$issues, [string]$dur, [string]$cost, [string]$turns) {
+  $rec = $script:steps[$k - 1]
+  try { New-Item -ItemType Directory -Force -Path (Split-Path $ledgerPath -Parent) | Out-Null } catch { }
+  $fields = @("run", (Get-LedgerStamp (Get-LedgerClock)), (Get-LedgerStamp $startS), [string]$k, $rec.Prompt, $issues, $how, (Get-LedgerStamp $rec.T0), $dur, $cost, $turns)
+  $sw = New-Object System.IO.StringWriter
+  $old = [Console]::Error
+  [Console]::SetError($sw)
+  try { Add-LedgerLine $ledgerPath $fields } finally { [Console]::SetError($old) }
+  $e = $sw.ToString().Trim()
+  if ($e) {
+    $e = $e -replace '^slot: the record was not written \(', '' -replace '\)$', ''
+    [Console]::Error.WriteLine("drive: the run ledger was not written ($e)")
+  }
+}
+
+# Get-StatusOf <board> <number>: the item's status on that board read ("" when it is not there)
+function Get-StatusOf($board, [string]$n) {
+  foreach ($i in @($board)) { if ($null -ne $i -and $i.Num -eq $n) { return $i.Status } }
+  return ""
+}
+
+# Invoke-Breach <n> <reason> <status> <work>: iteration 53 decision 9 by the driver: one comment, the label blocked, no status
+function Invoke-Breach([string]$n, [string]$reason, [string]$status, [string]$work) {
+  $key = ""
+  $km = [regex]::Matches($reason, 'limits\.[A-Za-z.]*[A-Za-z]')
+  if ($km.Count -gt 0) { $key = $km[$km.Count - 1].Value }
+  if (-not $script:loginRead) {
+    $script:loginRead = $true
+    $u = Invoke-Gh @("api", "user", "-q", ".login")
+    if ($u.Code -eq 0) { $script:login = $u.Out.Trim() }
+  }
+  $found = $false
+  if ($script:login) {
+    $v = Invoke-Gh @("issue", "view", $n, "--repo", "$owner/$repo", "--json", "comments")
+    if ($v.Code -eq 0) {
+      try {
+        $doc = ConvertFrom-Json -InputObject $v.Out
+        foreach ($cm in @($doc.comments)) {
+          if ($null -eq $cm -or $null -eq $cm.author) { continue }
+          $b = [string]$cm.body
+          if ([string]$cm.author.login -eq $script:login -and $b.StartsWith("Stopped by a limit: ") -and (-not $key -or $b.Contains($key))) { $found = $true; break }
+        }
+      } catch { $found = $false }
+    }
+  }
+  if (-not $found) {
+    $bodyPath = Join-Path $run "breach-$n.md"
+    [IO.File]::WriteAllText($bodyPath, "Stopped by a limit: $reason. Labelled blocked; the board status ($status) and the work ($work) are left as they are for the maintainer.`n", $utf8)
+    $cr = Invoke-Gh @("issue", "comment", $n, "--repo", "$owner/$repo", "--body-file", $bodyPath)
+    if ($cr.Code -ne 0) { [Console]::Error.WriteLine("drive: the comment on #$n could not be posted: $(One-Line $cr.Err)") }
+  }
+  if ($ghExe) { $lr = Invoke-Exe $ghExe @("issue", "edit", $n, "--add-label", "blocked") $main }
+  else { $lr = [pscustomobject]@{ Out = ""; Err = "gh is not on the PATH"; Code = -1 } }
+  if ($lr.Code -ne 0) {
+    $first = @(([string]$lr.Err) -split "`r?`n")[0]
+    Out-Line "The label blocked could not be added: $first; /init creates it."
+  }
+  Out-Line "drive: #${n}: Stopped: limit: $reason. Labelled blocked."
+}
+
+# Invoke-Step <prompt> <issues> <T> <B> <k of the limits>: one headless step in the main checkout; then its run line,
+# and the breach of every item it left undone when a limit inside it ended it
+function Invoke-Step([string]$prompt, [string]$issues, [long]$maxTurns, [string]$budget, [long]$kq) {
   $k = $script:steps.Count + 1
-  $rec = [pscustomobject]@{ Prompt = $prompt; Rc = "?"; Dur = "0s"; Cost = $null; Turns = "?"; Result = "" }
-  $script:steps.Add($rec)
   $t0 = Get-LedgerClock
+  $rec = [pscustomobject]@{ Prompt = $prompt; Rc = "?"; Dur = "0s"; Cost = $null; Turns = "?"; Result = ""; T0 = $t0; Issues = $issues }
+  $script:steps.Add($rec)
   $jsonPath = Join-Path $run "step-$k.json"
   $errPath = Join-Path $run "step-$k.err"
-  $claudeArgs = @("-p", $prompt, "--permission-mode", "manual", "--output-format", "json")
+  $claudeArgs = @("-p", $prompt, "--permission-mode", "manual", "--output-format", "json", "--max-turns", [string]$maxTurns, "--max-budget-usd", $budget)
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $pgFile = Join-Path $run "step-$k.pgid"
   if ($onWindows) {
@@ -548,6 +677,8 @@ function Invoke-Step([string]$prompt) {
   $psi.RedirectStandardError = $true
   $psi.StandardOutputEncoding = $utf8
   $psi.StandardErrorEncoding = $utf8
+  $psi.EnvironmentVariables["NIGHTMILL_RUN_STARTED"] = [string]$t0
+  $psi.EnvironmentVariables["NIGHTMILL_ISSUES_LEFT"] = [string]($limIssues - $script:started)
   $before = New-Object 'System.Collections.Generic.HashSet[int]'
   if ($onWindows) {
     Enter-Job
@@ -573,17 +704,52 @@ function Invoke-Step([string]$prompt) {
   [IO.File]::WriteAllText($errPath, $errTask.Result, $utf8)
   $rec.Rc = [string]$rc
   $rec.Dur = Format-LedgerDuration ((Get-LedgerClock) - $t0)
+  $how = "no-result"; $fDur = ""; $fCost = ""; $fTurns = ""
   try {
     $j = ConvertFrom-Json -InputObject $out
-    if ($null -ne $j) {
+    if ($null -ne $j -and $j -is [System.Management.Automation.PSCustomObject] -and [string]$j.type -eq "result") {
       if ($null -ne $j.result) { $rec.Result = [string]$j.result }
       $cv = $j.total_cost_usd
-      if ($null -ne $cv -and ($cv -is [int] -or $cv -is [long] -or $cv -is [double] -or $cv -is [decimal])) { $rec.Cost = [double]$cv }
+      if ($null -ne $cv -and ($cv -is [int] -or $cv -is [long] -or $cv -is [double] -or $cv -is [decimal])) { $rec.Cost = [double]$cv; $fCost = [Convert]::ToString($cv, [Globalization.CultureInfo]::InvariantCulture) }
       $tv = $j.num_turns
-      if ($null -ne $tv -and ($tv -is [int] -or $tv -is [long])) { $rec.Turns = [string]$tv }
+      if ($null -ne $tv -and ($tv -is [int] -or $tv -is [long])) { $rec.Turns = [string]$tv; $fTurns = [string]$tv }
+      $dv = $j.duration_ms
+      if ($null -ne $dv -and ($dv -is [int] -or $dv -is [long] -or $dv -is [double] -or $dv -is [decimal])) { $fDur = [Convert]::ToString($dv, [Globalization.CultureInfo]::InvariantCulture) }
+      $sub = [string]$j.subtype
+      if ($sub -eq "error_max_turns") { $how = "max-turns" }
+      elseif ($sub -eq "error_max_budget_usd") { $how = "max-budget" }
+      elseif (($sub -eq "success" -or -not $sub) -and $rc -eq 0) { $how = "ok" }
+      else { $how = "exit $rc" }
     }
-  } catch { }
+  } catch { $how = "no-result" }
   [IO.File]::WriteAllText((Join-Path $run "step-$k.result"), $rec.Result, $utf8)
+  # the items whose board status the step changed (field 6 for /fix all, and the count of started items)
+  $post = Read-Board
+  $changed = @()
+  if ($null -ne $post) {
+    foreach ($t in $script:tried) {
+      if ($t.K -ne $k) { continue }
+      $now = Get-StatusOf $post $t.Num
+      if ($now -and $now -ne $t.Before) { $changed += $t.Num; $script:started++ }
+    }
+  }
+  if ($prompt -eq "/nightmill:fix all") { $issues = $changed -join "," }
+  Write-RunLine $k $how $issues $fDur $fCost $fTurns
+  $reason = ""
+  if ($how -eq "max-turns") { $reason = "the headless run reached its turn limit of $maxTurns (limits.turnsPerRole.session $times $kq)" }
+  elseif ($how -eq "max-budget") { $reason = "the headless run reached its budget of `$$budget (limits.costPerIssueUsd $times $kq)" }
+  if ($reason) {
+    # every item of the step that is not done gets the breach, whatever status the run left it at
+    foreach ($n in @($issues -split "," | Where-Object { $_ })) {
+      $now = Get-StatusOf $post $n
+      if ($prompt.StartsWith("/nightmill:next")) { if ($now -eq $stDone) { continue } }
+      elseif (-not ($now -eq $stProgress -or $now -eq $stReview)) { continue }
+      if (-not $now) { $now = "?" }
+      Invoke-Breach $n $reason $now $workText
+      $script:outcome[$n] = [pscustomobject]@{ Kind = "blocked"; Text = $reason }
+    }
+    return
+  }
   if ($rc -ne 0) { Ended "claude exited $rc in $prompt" 1 }
 }
 
@@ -628,6 +794,9 @@ try {
   while ($true) {
     if (Test-Path -LiteralPath $stopFile) { Stop-At "the kill switch is set (.git/nightmill-stop)" 0 }
     if (((Get-LedgerClock) - $startS) -ge ($maxMinutes * 60)) { Stop-At "the time limit of $maxMinutes minutes (unattended.maxMinutes) is reached" 0 }
+    Invoke-Gate
+    if ($script:gateRc -ne 0) { Stop-Gate }
+    if ($script:started -ge $limIssues) { Stop-At "the issue limit of $limIssues per run (limits.issuesPerRun) is reached" 0 }
     if (-not (Test-CleanMain)) { Stop-At "the main checkout is not on $base with a clean tree" 0 }
     $board = Read-Board
     if ($null -eq $board) { Stop-At "the board could not be read: $($script:boardWhy)" 1 }
@@ -645,7 +814,13 @@ try {
         $script:tried.Add([pscustomobject]@{ Num = $i.Num; Step = "/fix all"; K = $script:steps.Count + 1; Before = $i.Status; Title = $i.Title })
         $script:triedSet[$i.Num] = $true
       }
-      Invoke-Step "/nightmill:fix all"
+      # k: the smallest of the Ready bugs, the issues left and parallel.fixAllMaxBugs (when not 0)
+      $kf = [long]$R.Count
+      $leftNow = $limIssues - $script:started
+      if ($leftNow -lt $kf) { $kf = $leftNow }
+      if ($fixMax -gt 0 -and $fixMax -lt $kf) { $kf = [long]$fixMax }
+      if ($kf -lt 1) { $kf = 1 }
+      Invoke-Step "/nightmill:fix all" "" ($limTurns * $kf) (Format-Money ($limCost * $kf)) $kf
       continue
     }
     if ($A.Count -gt 0) {
@@ -661,10 +836,33 @@ try {
         Ended "a tie of priorities among the Approved stories $($nums -join ', ') ($pn); the maintainer sets one higher" 0
       }
       $pick = $top[0]
+      # the pause of its epic and its limits (iteration 53 decision 8): a skip counts as tried, the step is not run
+      Invoke-Gate @("-Issue", $pick.Num)
+      if ($script:gateRc -eq 4 -or $script:gateRc -eq 3) {
+        $script:tried.Add([pscustomobject]@{ Num = $pick.Num; Step = "/next"; K = 0; Before = $pick.Status; Title = $pick.Title })
+        $script:triedSet[$pick.Num] = $true
+        if ($script:gateRc -eq 4) {
+          $script:outcome[$pick.Num] = [pscustomobject]@{ Kind = "not started"; Text = $script:gateReason }
+          Out-Line "drive: #$($pick.Num) not started: $($script:gateReason)"
+        } else {
+          $why = $script:gateReason
+          if ($why.StartsWith("limit: ")) { $why = $why.Substring(7) }
+          Invoke-Breach $pick.Num $why $pick.Status "nothing"
+          $script:outcome[$pick.Num] = [pscustomobject]@{ Kind = "blocked"; Text = $script:gateReason }
+        }
+        continue
+      }
+      if ($script:gateRc -ne 0) { Stop-Gate }
+      $spent = [double]0
+      foreach ($l in ($script:gateOut -split "`r?`n")) {
+        if ($l -match ('^gate: spent on #' + $pick.Num + ': \$([0-9.]+) of ')) { $spent = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) }
+      }
+      $bud = $limCost - $spent
+      if ($bud -lt 0.01) { $bud = 0.01 }
       Test-SlotRoom
       $script:tried.Add([pscustomobject]@{ Num = $pick.Num; Step = "/next"; K = $script:steps.Count + 1; Before = $pick.Status; Title = $pick.Title })
       $script:triedSet[$pick.Num] = $true
-      Invoke-Step "/nightmill:next $($pick.Num)"
+      Invoke-Step "/nightmill:next $($pick.Num)" $pick.Num $limTurns (Format-Money $bud) 1
       continue
     }
     if ($x -eq 0) { Ended "nothing Ready or Approved" 0 }
@@ -683,6 +881,7 @@ try {
     if ($null -ne $script:cur) {
       $script:cur.Rec.Rc = "stopped"
       $script:cur.Rec.Dur = Format-LedgerDuration ((Get-LedgerClock) - $script:cur.T0)
+      try { Write-RunLine $script:steps.Count "signal" ([string]$script:cur.Rec.Issues) "" "" "" } catch { }
     }
     Out-Line "drive: ended: stopped by SIGINT"
     Finish "end" "stopped by SIGINT" 1

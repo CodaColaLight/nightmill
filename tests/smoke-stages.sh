@@ -228,4 +228,23 @@ done
 st --last 1
 if grep -qF "$note" <<<"$err"; then fail "a usable clock gave the note: $err"; fi
 
+echo "== run lines of the driver (iteration 53, #165)"
+# the driver's run lines (kind run, 11 fields) between the lines of the fixture change no table and give no note
+echo $((T0 + 13700)) > "$CLOCK"
+cp "$FIX/ledger.tsv" "$L"
+st
+base_out=$out; base_err=$err
+awk -F'\t' -v OFS='\t' '
+  function runline(n) { print "run", "2026-11-07T10:00:0" n "Z", "2026-11-07T07:00:00Z", n, "/nightmill:next 12", "12", "ok", "2026-11-07T09:50:00Z", "600000", "1.50", "40" }
+  { print; if (NR % 3 == 0) runline(NR % 10) }
+  END { runline(9) }' "$FIX/ledger.tsv" > "$L"
+[ "$(grep -c '^run' "$L")" -gt 3 ] || fail "run lines: the test ledger has too few run lines"
+st
+[ "$rc" = 0 ] || fail "run lines: exit $rc: $err"
+[ "$out" = "$base_out" ] || fail "run lines: the tables differ from those without the run lines; got: [$out]"
+[ "$err" = "$base_err" ] || fail "run lines: standard error differs ([$err] and not [$base_err]): the run lines were counted as malformed"
+st --issue 12
+[ "$rc" = 0 ] && [ "$out" = "$(block a)${nl}" ] || fail "run lines: --issue 12 changed: [$out]"
+cp "$FIX/ledger.tsv" "$L"
+
 echo "SMOKE OK"

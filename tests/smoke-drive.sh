@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tests/smoke-drive.sh - scripts/drive.sh against a fake claude, a fake gh and throwaway slots (iteration 52, #164;
-# docs/specs/iteration-52-unattended-driver.md, "Tests"). smoke-drive.ps1 runs the same cases. Needs bash and awk, no network.
+# docs/specs/iteration-52-unattended-driver.md, "Tests"; iteration 53, #165, docs/specs/iteration-53-run-limits.md: the
+# flags, the run ledger, the pause flag and the limits). smoke-drive.ps1 runs the same cases. Needs bash and awk, no network.
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 D="$here/scripts/drive.sh"
@@ -39,9 +40,21 @@ case "${1:-} ${2:-}" in
     if [ -n "${GH_COMMENT_FAIL:-}" ]; then echo "fake gh: comment refused" >&2; exit 1; fi
     prev=""
     for a in "$@"; do
-      [ "$prev" = "--body-file" ] && cp "$a" "$COMMENT"
+      if [ "$prev" = "--body-file" ]; then cp "$a" "$COMMENT"; cp "$a" "$COMMENT.${3:-0}"; fi
       prev=$a
     done
+    exit 0 ;;
+  "issue edit") exit 0 ;;
+  "issue view")
+    if [ -f "${ISSUE_COMMENTS:-/nonexistent}" ]; then cat "$ISSUE_COMMENTS"; else echo '{"comments":[]}'; fi
+    exit 0 ;;
+  "api user") echo agent; exit 0 ;;
+  "api graphql")
+    if [ -n "${EPIC_FOR:-}" ] && case "$*" in *"issue(number: $EPIC_FOR)"*) true ;; *) false ;; esac; then
+      cat "$EPIC_FILE"
+    else
+      echo '{"data":{"repository":{"issue":{"parent":null}}}}'
+    fi
     exit 0 ;;
 esac
 echo "fake gh: unexpected call" >&2
@@ -49,15 +62,17 @@ exit 1
 GH
 # --- the fake claude: one line of $SCRIPT per step; actions separated by spaces ---
 #   status:N:Name  pr:P:STATE:N  stop  clock:+S  bg  hang  exit:C  stopped:Text_with_underscores  cost:X  turns:T  long
+#   dur:MS  subtype:S (the result's subtype, default success)  pause (commit limits.paused true and push it from the main checkout)
 cat > "$tmp/bin/claude" <<'CL'
 #!/usr/bin/env bash
 echo "$*" >> "$CLAUDE_LOG"
+echo "left=${NIGHTMILL_ISSUES_LEFT:-} started=${NIGHTMILL_RUN_STARTED:-}" >> "$ENV_LOG"
 k=0
 [ -f "$STEPFILE" ] && k=$(cat "$STEPFILE")
 k=$((k + 1))
 echo "$k" > "$STEPFILE"
 line=$(sed -n "${k}p" "$SCRIPT")
-cost=0.10; turns=3; code=0; stopped=""; long=""
+cost=0.10; turns=3; code=0; stopped=""; long=""; dur=1500; subtype=success
 for a in $line; do
   case "$a" in
     status:*) IFS=: read -r _ n s <<<"$a"; awk -F'\t' -v OFS='\t' -v n="$n" -v s="${s//_/ }" '$1 == n { $2 = s } { print }' "$BOARD" > "$BOARD.new"; mv "$BOARD.new" "$BOARD" ;;
@@ -71,6 +86,12 @@ for a in $line; do
     cost:*) cost=${a#cost:} ;;
     turns:*) turns=${a#turns:} ;;
     long) long=1 ;;
+    dur:*) dur=${a#dur:} ;;
+    subtype:*) subtype=${a#subtype:} ;;
+    pause)
+      awk '{ l[NR] = $0 } END { for (i = 1; i < NR; i++) print l[i]; print "  ,\"limits\": { \"paused\": true }"; print l[NR] }' "$MAIN/.claude/nightmill.json" > "$MAIN/.claude/nightmill.json.new"
+      mv "$MAIN/.claude/nightmill.json.new" "$MAIN/.claude/nightmill.json"
+      git -C "$MAIN" commit -q -am "pause" && git -C "$MAIN" push -q origin main ;;
   esac
 done
 if [ -n "$long" ]; then
@@ -80,7 +101,7 @@ else
   [ -z "$stopped" ] || msg="$msg\\nStopped: $stopped"
   [ -n "$stopped" ] || msg="$msg\\nAll good."
 fi
-printf '{"type":"result","result":"%s","total_cost_usd":%s,"num_turns":%s}\n' "$msg" "$cost" "$turns"
+printf '{"type":"result","subtype":"%s","result":"%s","duration_ms":%s,"total_cost_usd":%s,"num_turns":%s}\n' "$subtype" "$msg" "$dur" "$cost" "$turns"
 exit "$code"
 CL
 chmod +x "$tmp/bin/gh" "$tmp/bin/claude"
@@ -107,10 +128,11 @@ new_case() {
   git -C "$main" remote set-head origin main >/dev/null 2>&1
   git -C "$main" fetch -q origin
   export BOARD="$c/board.tsv" PRS="$c/prs.tsv" SCRIPT="$c/script.txt" GH_LOG="$c/gh.log" CLAUDE_LOG="$c/claude.log"
+  export ENV_LOG="$c/env.log" MAIN="$main" EPIC_FILE="$fx/../gate/epic-paused.json" LEDGER="$c/wt/.slots/ledger.tsv"
   export COMMENT="$c/comment.md" STEPFILE="$c/step.n" BGPID="$c/bg.pid" STEPPID="$c/step.pid"
   export NIGHTMILL_CLOCK_FILE="$c/clock" STOPFILE="$main/.git/nightmill-stop"
   : > "$PRS"; : > "$SCRIPT"; echo 1800000000 > "$NIGHTMILL_CLOCK_FILE"
-  unset GH_AUTH_FAIL GH_COMMENT_FAIL
+  unset GH_AUTH_FAIL GH_COMMENT_FAIL EPIC_FOR ISSUE_COMMENTS
 }
 board() { cp "$fx/$1" "$BOARD"; }
 script() { printf '%s\n' "$@" > "$SCRIPT"; }
@@ -124,17 +146,23 @@ calls() { [ -f "$CLAUDE_LOG" ] && wc -l < "$CLAUDE_LOG" | tr -d ' ' || echo 0; }
 has() { grep -qF -- "$2" "$1" || fail "$3: '$2' not found in $(basename "$1")"; }
 hasnt() { if [ -f "$1" ] && grep -qF -- "$2" "$1"; then fail "$3: '$2' found in $(basename "$1")"; fi; }
 want_code() { [ "$code" = "$1" ] || fail "$2: exit $code, $1 expected ($(cat "$c/err.txt" "$c/out.txt" | head -5))"; }
-# every gh call is one of the four reads and writes of decision 9, and no lock is left
+# every gh call is one of the driver's reads and writes (iteration 52 decision 9 and iteration 53 decision 8): the only
+# edit is the label blocked; no status, no field, no item
 audit() {
   if [ -f "$GH_LOG" ]; then
     while IFS= read -r l; do
-      case "$l" in "auth status"*|"project item-list"*|"pr list"*|"issue comment"*) ;; *) fail "$1: a gh call the driver may not make: $l" ;; esac
+      case "$l" in
+        "auth status"*|"project item-list"*|"pr list"*|"issue comment"*|"api graphql"*|"api user"*|"issue view"*) ;;
+        "issue edit "*) [[ "$l" =~ ^issue\ edit\ [0-9]+\ --add-label\ blocked$ ]] || fail "$1: an issue edit other than the label blocked: $l" ;;
+        *) fail "$1: a gh call the driver may not make: $l" ;;
+      esac
     done < "$GH_LOG"
   fi
   [ ! -e "$main/.git/nightmill-drive.lock" ] || fail "$1: the lock is left"
 }
 
-FIX='-p /nightmill:fix all --permission-mode manual --output-format json'
+FLAGS='--permission-mode manual --output-format json --max-turns 200 --max-budget-usd 25.00'
+FIX="-p /nightmill:fix all $FLAGS"
 
 # nothing
 new_case; board board-nothing.tsv; drive
@@ -145,12 +173,12 @@ audit nothing
 
 # loop
 new_case; board board-loop.tsv
-script "status:11:Review pr:101:OPEN:11 cost:0.50 turns:4" "status:21:Done pr:121:MERGED:21 cost:1.25" "status:22:Done pr:122:MERGED:22 cost:1.25"
+script "status:11:Review pr:101:OPEN:11 cost:0.50 turns:4 dur:1234" "status:21:Done pr:121:MERGED:21 cost:1.25 turns:5 dur:2345" "status:22:Done pr:122:MERGED:22 cost:1.25 turns:6 dur:3456"
 drive
 want_code 0 loop
 [ "$(sed -n 1p "$CLAUDE_LOG")" = "$FIX" ] || fail "loop: first call: $(sed -n 1p "$CLAUDE_LOG")"
-[ "$(sed -n 2p "$CLAUDE_LOG")" = "-p /nightmill:next 21 --permission-mode manual --output-format json" ] || fail "loop: second call: $(sed -n 2p "$CLAUDE_LOG")"
-[ "$(sed -n 3p "$CLAUDE_LOG")" = "-p /nightmill:next 22 --permission-mode manual --output-format json" ] || fail "loop: third call: $(sed -n 3p "$CLAUDE_LOG")"
+[ "$(sed -n 2p "$CLAUDE_LOG")" = "-p /nightmill:next 21 $FLAGS" ] || fail "loop: second call: $(sed -n 2p "$CLAUDE_LOG")"
+[ "$(sed -n 3p "$CLAUDE_LOG")" = "-p /nightmill:next 22 $FLAGS" ] || fail "loop: third call: $(sed -n 3p "$CLAUDE_LOG")"
 [ "$(calls)" = 3 ] || fail "loop: $(calls) claude calls, 3 expected"
 has "$COMMENT" "| #11 Crash on start | /fix all | Ready | Review | pull request open | #101 |" loop
 has "$COMMENT" "| #21 Add export | /next | Approved | Done | merged | #121 |" loop
@@ -173,7 +201,7 @@ script "status:11:Review pr:101:OPEN:11" "status:21:In_progress stopped:the_chec
 drive
 want_code 0 blocked
 has "$COMMENT" "| #21 Add export | /next | Approved | In progress | blocked: Stopped: the check is red | - |" blocked
-[ "$(sed -n 3p "$CLAUDE_LOG")" = "-p /nightmill:next 22 --permission-mode manual --output-format json" ] || fail "blocked: #22 was not tried"
+[ "$(sed -n 3p "$CLAUDE_LOG")" = "-p /nightmill:next 22 $FLAGS" ] || fail "blocked: #22 was not tried"
 audit blocked
 
 # tie
@@ -320,5 +348,164 @@ want_code 0 long
 sz=$(wc -c < "$COMMENT" | tr -d ' ')
 [ "$sz" -le 60000 ] || fail "long: the comment has $sz characters, 60000 at most"
 has "$COMMENT" "[cut: " long
+
+# ---------- iteration 53 (#165): the flags, the run ledger, the pause flag and the limits ----------
+
+# run_lines: the run lines of the ledger of this case
+run_lines() { awk -F'\t' '$1 == "run"' "$LEDGER" 2>/dev/null; }
+# field <line> <n>
+field() { printf '%s\n' "$1" | awk -F'\t' -v n="$2" '{ print $n }'; }
+# loop_flags: the loop of iteration 52 (bug #11, stories #21, #22) with the numbers of each step
+loop_script() { script "status:11:Review pr:101:OPEN:11 cost:0.50 turns:4 dur:1234" "status:21:Done pr:121:MERGED:21 cost:1.25 turns:5 dur:2345" "status:22:Done pr:122:MERGED:22 cost:1.25 turns:6 dur:3456"; }
+
+# flags
+new_case; board board-loop.tsv; loop_script; drive
+want_code 0 flags
+[ "$(sed -n 1p "$CLAUDE_LOG")" = "-p /nightmill:fix all $FLAGS" ] || fail "flags: first call: $(sed -n 1p "$CLAUDE_LOG")"
+[ "$(sed -n 2p "$CLAUDE_LOG")" = "-p /nightmill:next 21 $FLAGS" ] || fail "flags: second call: $(sed -n 2p "$CLAUDE_LOG")"
+[ "$(sed -n 3p "$CLAUDE_LOG")" = "-p /nightmill:next 22 $FLAGS" ] || fail "flags: third call: $(sed -n 3p "$CLAUDE_LOG")"
+[ "$(sed -n 1p "$ENV_LOG" | sed 's/ started=.*//')" = "left=10" ] || fail "flags: step 1 left: $(sed -n 1p "$ENV_LOG")"
+[ "$(sed -n 2p "$ENV_LOG" | sed 's/ started=.*//')" = "left=9" ] || fail "flags: step 2 left: $(sed -n 2p "$ENV_LOG")"
+[ "$(sed -n 3p "$ENV_LOG" | sed 's/ started=.*//')" = "left=8" ] || fail "flags: step 3 left: $(sed -n 3p "$ENV_LOG")"
+while IFS= read -r l; do
+  case "$l" in *" started=") fail "flags: NIGHTMILL_RUN_STARTED not set: $l" ;; esac
+  v=${l##*started=}
+  case "$v" in ''|*[!0-9]*) fail "flags: NIGHTMILL_RUN_STARTED is not seconds: $l" ;; esac
+done < "$ENV_LOG"
+audit flags
+
+# ledger
+new_case; board board-loop.tsv; loop_script; drive
+want_code 0 ledger
+[ -f "$LEDGER" ] || fail "ledger: $LEDGER was not written"
+[ "$(run_lines | wc -l | tr -d ' ')" = 3 ] || fail "ledger: $(run_lines | wc -l | tr -d ' ') run lines, 3 expected"
+n=1
+for want in "1|/nightmill:fix all|11|1234|0.5|4" "2|/nightmill:next 21|21|2345|1.25|5" "3|/nightmill:next 22|22|3456|1.25|6"; do
+  l=$(run_lines | sed -n "${n}p")
+  [ "$(printf '%s\n' "$l" | awk -F'\t' '{ print NF }')" = 11 ] || fail "ledger: line $n has not 11 fields: $l"
+  IFS='|' read -r w4 w5 w6 w9 w10 w11 <<<"$want"
+  [ "$(field "$l" 4)" = "$w4" ] || fail "ledger: line $n field 4: $(field "$l" 4), $w4 expected"
+  [ "$(field "$l" 5)" = "$w5" ] || fail "ledger: line $n field 5: $(field "$l" 5), $w5 expected"
+  [ "$(field "$l" 6)" = "$w6" ] || fail "ledger: line $n field 6: $(field "$l" 6), $w6 expected"
+  [ "$(field "$l" 7)" = ok ] || fail "ledger: line $n field 7: $(field "$l" 7), ok expected"
+  [ "$(field "$l" 9)" = "$w9" ] || fail "ledger: line $n field 9: $(field "$l" 9), $w9 expected"
+  awk -v a="$(field "$l" 10)" -v b="$w10" 'BEGIN { exit !(a != "" && a + 0 == b + 0) }' || fail "ledger: line $n field 10: $(field "$l" 10), $w10 expected"
+  [ "$(field "$l" 11)" = "$w11" ] || fail "ledger: line $n field 11: $(field "$l" 11), $w11 expected"
+  for f in 2 3 8; do
+    [[ "$(field "$l" $f)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "ledger: line $n field $f is not a UTC stamp: $(field "$l" $f)"
+  done
+  n=$((n + 1))
+done
+[ "$(run_lines | awk -F'\t' '{ print $3 }' | sort -u | wc -l | tr -d ' ')" = 1 ] || fail "ledger: field 3 differs between the lines of one driver run"
+audit ledger
+
+# ledger when claude fails: a line is written for the failed step too
+new_case; board board-loop.tsv; script "exit:3"; drive
+want_code 1 "ledger on failure"
+[ "$(run_lines | wc -l | tr -d ' ')" = 1 ] || fail "ledger on failure: $(run_lines | wc -l | tr -d ' ') run lines, 1 expected"
+[ "$(field "$(run_lines)" 7)" = "exit 3" ] || fail "ledger on failure: field 7 is $(field "$(run_lines)" 7), 'exit 3' expected"
+
+# paused: the first step commits and pushes the pause
+new_case; board board-loop.tsv; script "pause"; drive
+want_code 0 paused
+[ "$(calls)" = 1 ] || fail "paused: $(calls) claude calls, 1 expected"
+has "$COMMENT" "paused: limits.paused is true on origin/HEAD:.claude/nightmill.json" paused
+audit paused
+
+# paused at start
+new_case '"unattended": { "summaryIssue": 9, "maxMinutes": 60 }, "limits": { "paused": true }'; board board-loop.tsv; drive
+want_code 1 "paused at start"; [ "$(calls)" = 0 ] || fail "paused at start: claude was called"
+has "$c/err.txt" "drive: cannot start: paused: " "paused at start"
+audit "paused at start"
+
+# issue limit
+new_case '"unattended": { "summaryIssue": 9, "maxMinutes": 60 }, "limits": { "issuesPerRun": 2 }'; board board-loop.tsv; loop_script; drive
+want_code 0 "issue limit"; [ "$(calls)" = 2 ] || fail "issue limit: $(calls) claude calls, 2 expected"
+has "$COMMENT" "the issue limit of 2 per run (limits.issuesPerRun) is reached" "issue limit"
+audit "issue limit"
+
+# breach_case <name> <step 2 tokens>: a breach of #21 ends one issue and not the run
+breach_check() { # breach_check <name> <reason start> <ledger ended>
+  want_code 0 "$1"
+  has "$COMMENT.21" "Stopped by a limit: $2" "$1"
+  has "$GH_LOG" "issue edit 21 --add-label blocked" "$1"
+  has "$COMMENT" "| #21 Add export | /next | Approved | In progress | blocked: $2" "$1"
+  [ "$(sed -n 3p "$CLAUDE_LOG")" = "-p /nightmill:next 22 $FLAGS" ] || fail "$1: #22 was not tried"
+  hasnt "$COMMENT" "claude exited" "$1"
+  [ "$(field "$(run_lines | sed -n 2p)" 7)" = "$3" ] || fail "$1: ledger field 7 of step 2 is $(field "$(run_lines | sed -n 2p)" 7), $3 expected"
+  audit "$1"
+}
+for ec in 0 1; do
+  new_case; board board-loop.tsv
+  script "status:11:Review pr:101:OPEN:11" "status:21:In_progress subtype:error_max_turns exit:$ec" "status:22:Done pr:122:MERGED:22"
+  drive
+  breach_check "max turns (exit $ec)" "the headless run reached its turn limit of 200" max-turns
+  has "$COMMENT" "(limits.turnsPerRole.session" "max turns (exit $ec)"
+  has "$COMMENT" "2. /nightmill:next 21: exit $ec, " "max turns (exit $ec): the step line shows the exit code"
+  has "$COMMENT" "Picked 3, merged 1, pull request open 1, blocked 1" "max turns (exit $ec)"
+done
+
+# budget
+for ec in 0 1; do
+  new_case; board board-loop.tsv
+  script "status:11:Review pr:101:OPEN:11" "status:21:In_progress subtype:error_max_budget_usd exit:$ec" "status:22:Done pr:122:MERGED:22"
+  drive
+  breach_check "budget (exit $ec)" 'the headless run reached its budget of $25.00' max-budget
+  has "$COMMENT" "(limits.costPerIssueUsd" "budget (exit $ec)"
+done
+
+# limit at Review: a step ended by a limit labels an item that is at Review too
+new_case; board board-loop.tsv
+script "status:11:Review pr:101:OPEN:11 subtype:error_max_budget_usd exit:1" "status:21:Review pr:121:OPEN:21 subtype:error_max_turns exit:1" "status:22:Done pr:122:MERGED:22"
+drive
+want_code 0 "limit at Review"
+has "$COMMENT.11" "Stopped by a limit: the headless run reached its budget of" "limit at Review"
+has "$GH_LOG" "issue edit 11 --add-label blocked" "limit at Review"
+has "$COMMENT.21" "Stopped by a limit: the headless run reached its turn limit of 200" "limit at Review"
+has "$GH_LOG" "issue edit 21 --add-label blocked" "limit at Review"
+has "$COMMENT" "| #11 Crash on start | /fix all | Ready | Review | blocked: " "limit at Review"
+has "$COMMENT" "| #21 Add export | /next | Approved | Review | blocked: " "limit at Review"
+audit "limit at Review"
+
+# spent: the ledger already holds $25.00 for #21 (20.00, and half of 10.00)
+spent_ledger() {
+  mkdir -p "$c/wt/.slots"
+  printf 'run\t2026-11-09T06:30:00Z\t2026-11-09T06:00:00Z\t1\t/nightmill:next 21\t21\tok\t2026-11-09T06:00:10Z\t1800000\t20.00\t30\n' > "$LEDGER"
+  printf 'run\t2026-11-09T06:50:00Z\t2026-11-09T06:00:00Z\t2\t/nightmill:fix all\t21,22\tok\t2026-11-09T06:31:00Z\t1200000\t10.00\t45\n' >> "$LEDGER"
+}
+new_case; board board-loop.tsv; spent_ledger
+script "status:11:Review pr:101:OPEN:11" "status:22:Done pr:122:MERGED:22"
+drive
+want_code 0 spent
+if grep -qF 'nightmill:next 21' "$CLAUDE_LOG"; then fail "spent: /next 21 was called"; fi
+has "$COMMENT.21" 'Stopped by a limit: #21 has spent $25.00' spent
+has "$GH_LOG" "issue edit 21 --add-label blocked" spent
+has "$COMMENT" '| blocked: limit: #21 has spent $25.00' spent
+# #22 had $5.00 of the shared run: its budget is what is left of the 25.00
+[ "$(sed -n 2p "$CLAUDE_LOG")" = "-p /nightmill:next 22 --permission-mode manual --output-format json --max-turns 200 --max-budget-usd 20.00" ] || fail "spent: the call of #22: $(sed -n 2p "$CLAUDE_LOG")"
+audit spent
+
+# comment once
+new_case; board board-loop.tsv; spent_ledger
+printf '{"comments":[{"author":{"login":"agent"},"body":"Stopped by a limit: #21 has spent $25.00 in headless runs; the limit is $25.00 (limits.costPerIssueUsd). Labelled blocked; the board status (Approved) and the work (nothing) are left as they are for the maintainer."}]}\n' > "$c/comments.json"
+export ISSUE_COMMENTS="$c/comments.json"
+script "status:11:Review pr:101:OPEN:11" "status:22:Done pr:122:MERGED:22"
+drive
+want_code 0 "comment once"
+[ ! -e "$COMMENT.21" ] || fail "comment once: a second comment was posted on #21"
+has "$GH_LOG" "issue edit 21 --add-label blocked" "comment once"
+audit "comment once"
+
+# epic paused
+new_case; board board-loop.tsv; export EPIC_FOR=21
+script "status:11:Review pr:101:OPEN:11" "status:22:Done pr:122:MERGED:22"
+drive
+want_code 0 "epic paused"
+if grep -qF 'nightmill:next 21' "$CLAUDE_LOG"; then fail "epic paused: /next 21 was called"; fi
+[ ! -e "$COMMENT.21" ] || fail "epic paused: a comment was posted on #21"
+hasnt "$GH_LOG" "issue edit" "epic paused"
+has "$COMMENT" "not started: paused: epic #5 has the label paused" "epic paused"
+audit "epic paused"
+unset EPIC_FOR
 
 echo "smoke-drive.sh: ok"

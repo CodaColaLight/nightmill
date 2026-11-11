@@ -159,8 +159,9 @@ rm -f "$pair_cfg"
 echo "== schema keywords are supported"
 # scripts/validate-config.* understand type, properties, required, items, minimum, minItems,
 # additionalProperties, enum, pattern and not (iteration 48). A schema that gains another constraint would be silently
-# ignored by them.
-for kw in '$ref' anyOf oneOf allOf if format const maxItems uniqueItems minLength maxLength maximum dependencies; do
+# ignored by them. `maximum` is allowed (iteration 53): the validator ignores it and the script that reads the key
+# (scripts/gate.*) checks the upper end, as slot and room do.
+for kw in '$ref' anyOf oneOf allOf if format const maxItems uniqueItems minLength maxLength dependencies; do
   if grep -qF "\"$kw\"" schema/nightmill.schema.json; then
     echo "FAIL: schema/nightmill.schema.json uses \"$kw\", which scripts/validate-config.* does not support"; fail=1
   fi
@@ -375,7 +376,7 @@ echo "== init installs the run permissions"
 # slots, in .claude/settings.local.json. /init is a conversation, so the lint pins the wording; the manual check does the behaviour.
 ini=skills/init/SKILL.md
 for w in '**Run permissions**' '.claude/settings.local.json' 'additionalDirectories' 'Edit(//' '/slot-*/**' \
-         'git rev-parse --path-format=absolute --git-common-dir' '24 + 21' \
+         'git rev-parse --path-format=absolute --git-common-dir' '26 + 21' \
          "declined (the skills' git commands, scripts and slot edits will prompt)" \
          'kept: <k> script rules for another plugin folder' \
          'Bash(git fetch origin)' 'Bash(git switch *)' 'Bash(git add *)' 'Bash(git commit *)' \
@@ -1398,6 +1399,10 @@ bash tests/test-unattended-docs.sh "$PWD" || fail=1
 echo "== the driver is wired"
 # Iteration 52 (#164): the driver's flags, that it sets no status, the workflow template and the README section.
 bash tests/test-drive-docs.sh "$PWD" || fail=1
+
+echo "== the pause flag and the limits are wired"
+# Iteration 53 (#165): the limits keys, the gate in the skills, the driver's flags and ledger, the README rows.
+bash tests/test-limits-docs.sh "$PWD" || fail=1
 
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain

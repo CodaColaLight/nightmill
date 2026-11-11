@@ -2,16 +2,21 @@
 # scripts/drive.sh - the unattended driver (nightmill): runs /nightmill:fix all and /nightmill:next <N> headless, round
 # after round, until no Ready bug and no Approved story is left, its time limit is reached or its kill switch is set,
 # then prints and posts one summary. Bash twin of drive.ps1; the rules and the texts are in
-# docs/specs/iteration-52-unattended-driver.md.
+# docs/specs/iteration-52-unattended-driver.md, and for the pause flag, the limits and the run ledger
+# docs/specs/iteration-53-run-limits.md (decisions 7 to 9).
 #
 #   drive.sh            # no arguments; -h or --help prints the usage line
 #
 # Run it from inside any checkout of the project. It reads the base branch's .claude/nightmill.json
-# (scripts/lib/baseconfig.sh; github, board, labels, git.baseBranch, worktrees, unattended.maxMinutes and
-# unattended.summaryIssue), and calls only: gh auth status, gh project item-list, gh pr list, gh issue comment (the
-# summary), git rev-parse / fetch origin / symbolic-ref / status, slot.sh --reap, slot.sh --status --porcelain,
-# room.sh and claude -p "<prompt>" --permission-mode manual --output-format json in the main checkout. It sets no
-# board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
+# (scripts/lib/baseconfig.sh; github, board, labels, git.baseBranch, worktrees, unattended.maxMinutes,
+# unattended.summaryIssue, parallel.fixAllMaxBugs and limits), and calls only: gh auth status, gh project item-list,
+# gh pr list, gh issue comment (the summary, and the comment of a breached limit), gh api user, gh issue view (the
+# comments of an issue whose limit is breached), gh issue edit <n> --add-label blocked (a breached limit), git rev-parse /
+# fetch origin / symbolic-ref / status, slot.sh --reap, slot.sh --status --porcelain, room.sh, gate.sh (the pause
+# flag and the limits, before every step; its gh api graphql query) and
+# NIGHTMILL_RUN_STARTED=<s> NIGHTMILL_ISSUES_LEFT=<k> claude -p "<prompt>" --permission-mode manual
+# --output-format json --max-turns <T> --max-budget-usd <B> in the main checkout. After every step it appends one
+# run line to <worktrees.root>/.slots/ledger.tsv (lib/ledger.sh). It sets no board status and adds none. The lock is <git common dir>/nightmill-drive.lock (one driver per repository), the kill
 # switch <git common dir>/nightmill-stop (only its existence counts; the driver never creates or removes it).
 # Each step runs as its own process group; whatever is left of it after the step is sent TERM, after 5 seconds KILL.
 # The run's files (each step's .json and .err, summary.md) are kept in a mktemp folder named on the last line.
@@ -93,6 +98,22 @@ else
   prios=$'Critical\nHigh\nMedium\nLow\n'
 fi
 has_slots=0; if json_has worktrees; then has_slots=1; fi
+st_done=$(json_get board.statuses.done Done)
+st_progress=$(json_get board.statuses.inProgress "In progress")
+st_review=$(json_get board.statuses.review Review)
+# the limits (iteration 53): the gate checks their values before every step and stops on a bad one; a value the gate
+# would refuse is taken as its default here, as the run does not get that far
+num_or() { if [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
+int_or() { if [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
+lim_turns=$(int_or "$(json_get limits.turnsPerRole.session)" 200)
+lim_cost=$(num_or "$(json_get limits.costPerIssueUsd)" 25)
+lim_issues=$(int_or "$(json_get limits.issuesPerRun)" 10)
+fix_max=$(json_get parallel.fixAllMaxBugs 0); [[ "$fix_max" =~ ^[0-9]{1,9}$ ]] || fix_max=0
+root_rel=$(json_get worktrees.root); root_rel=${root_rel:-"../$(basename "$main")-wt"}
+if [ -d "$main/$root_rel" ]; then slot_root=$(cd "$main/$root_rel" && pwd); else slot_root="$main/$root_rel"; fi
+ledger="$slot_root/.slots/ledger.tsv"
+if [ "$has_slots" = 1 ]; then work_text="the slot and branch"; else work_text="the branch"; fi
+step_issues=""
 
 # --- the run ---
 lock="$gitdir/nightmill-drive.lock"
@@ -108,6 +129,10 @@ left_total=0
 not_ended=""
 cleaning=0
 : > "$run/tried.tsv"
+: > "$run/outcome.tsv"   # number TAB blocked|not started TAB the outcome's text (a breach or a pause of the item)
+started=0          # the items of this run whose board status after their step differs from before it
+agent_login=""     # gh api user -q .login (the short form of the flag), read once at the first breach
+login_read=0
 step_prompt=(); step_rc=(); step_dur=(); step_cost=(); step_turns=()
 
 on_exit() {
@@ -192,7 +217,7 @@ title_of() { # title_of <title>: without a leading [Bug] or [Story], at most 80 
 money() { LC_ALL=C awk -v x="$1" 'BEGIN { printf "%.2f", x }'; }
 
 build_summary() { # build_summary <start|end> <reason>
-  local kind=$1 reason=$2 end_s head prs_ok=0 rows="" p=0 m=0 o=0 b=0 s=0 k sum="0" nocost=0 text n step kk before title after pr state outcome why line rest avail block cut more c rf len used
+  local kind=$1 reason=$2 end_s head over prs_ok=0 rows="" p=0 m=0 o=0 b=0 s=0 k sum="0" nocost=0 text n step kk before title after pr state outcome why line rest avail block cut more c rf len used
   ledger_clock; end_s=$ledger_s
   head="**nightmill driver run** $(ledger_stamp "$start_s") to $(ledger_stamp "$end_s") UTC ($(ledger_duration $((end_s - start_s))))."
   if [ "$kind" = start ]; then head="$head Did not start: $reason."; else head="$head Ended: $reason."; fi
@@ -243,7 +268,11 @@ build_summary() { # build_summary <start|end> <reason>
           [ -z "$rest" ] || why=$rest
         fi
       fi
-      if [ "$state" = MERGED ]; then outcome="merged"; m=$((m + 1))
+      over=$(LC_ALL=C awk -F '\t' -v n="$n" '$1 == n { print $2 "\037" $3; exit }' "$run/outcome.tsv")
+      if [ -n "$over" ]; then
+        outcome="${over%%$'\037'*}: ${over#*$'\037'}"
+        if [ "${over%%$'\037'*}" = blocked ]; then b=$((b + 1)); else s=$((s + 1)); fi
+      elif [ "$state" = MERGED ]; then outcome="merged"; m=$((m + 1))
       elif [ "$state" = OPEN ]; then outcome="pull request open"; o=$((o + 1))
       elif [ "$after" = "$before" ]; then outcome="not started: $why"; s=$((s + 1))
       else outcome="blocked: $why"; b=$((b + 1)); fi
@@ -338,6 +367,7 @@ on_signal() {
     step_rc[$steps]="stopped"
     ledger_clock; step_dur[$steps]=$(ledger_duration $((ledger_s - step_t0)))
     step_pg=""
+    run_line "$steps" signal "$step_issues" "" "" ""
   fi
   echo "drive: ended: stopped by SIG$sig"
   build_code=130; [ "$sig" = TERM ] && build_code=143
@@ -376,12 +406,89 @@ clean_main() {
 }
 clean_main || cannot "the main checkout is not on $base with a clean tree"
 
-# before_step: the kill switch, the time limit, the clean main checkout (decision 3 step 1)
+# gate [--issue <n>]: scripts/gate.sh in the main checkout (iteration 53 decision 3); gate_rc, and gate_reason: its line
+# without "gate: " (exit 1, 3, 4) or without "gate: cannot check: " (exit 2 and any other code)
+gate() {
+  local line
+  gate_rc=0
+  (cd "$main" && env -u NIGHTMILL_RUN_STARTED -u NIGHTMILL_ISSUES_LEFT bash "$here/gate.sh" "$@") > "$run/gate.out" 2> "$run/gate.err" || gate_rc=$?
+  gate_reason=""
+  case "$gate_rc" in
+    0) return 0 ;;
+    1|4) line=$(grep -m 1 '^gate: paused: ' "$run/gate.out" || true); gate_reason=${line#gate: } ;;
+    3) line=$(grep -m 1 '^gate: limit: ' "$run/gate.out" || true); gate_reason=${line#gate: } ;;
+    *) line=$(grep -m 1 '^gate: cannot check: ' "$run/gate.err" || true); gate_reason=${line#gate: cannot check: } ;;
+  esac
+  [ -n "$gate_reason" ] || gate_reason=$(cat "$run/gate.out" "$run/gate.err" | tr '\r\n' '  ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//')
+  [ -n "$gate_reason" ] || gate_reason="gate.sh exited $gate_rc"
+}
+# gate_stop: the end of the run for a gate exit of 1 or 2 (or a gate that could not run)
+gate_stop() {
+  if [ "$gate_rc" = 1 ]; then stop_at "$gate_reason" 0; fi
+  stop_at "the gate could not check the pause and the limits: $gate_reason" 1
+}
+
+# before_step: the kill switch, the time limit, the pause flag and the limits, the issue count, the clean main
+# checkout (iteration 52 decision 3 step 1, iteration 53 decision 8)
 before_step() {
   if [ -e "$stopfile" ]; then stop_at "the kill switch is set (.git/nightmill-stop)" 0; fi
   ledger_clock
   if [ $((ledger_s - start_s)) -ge $((max_minutes * 60)) ]; then stop_at "the time limit of $max_minutes minutes (unattended.maxMinutes) is reached" 0; fi
+  gate
+  case "$gate_rc" in 0) ;; *) gate_stop ;; esac
+  if [ "$started" -ge "$lim_issues" ]; then stop_at "the issue limit of $lim_issues per run (limits.issuesPerRun) is reached" 0; fi
   clean_main || stop_at "the main checkout is not on $base with a clean tree" 0
+}
+
+# run_line <k> <ended> <issues> <duration> <cost> <turns>: the run line of step k in the ledger (decision 7)
+run_line() {
+  local err
+  mkdir -p "$(dirname "$ledger")" 2>/dev/null || true
+  ledger_clock
+  err=$(ledger_append "$ledger" run "$(ledger_stamp "$ledger_s")" "$(ledger_stamp "$start_s")" "$1" "${step_prompt[$1]}" "$3" "$2" \
+    "$(ledger_stamp "$step_t0")" "$4" "$5" "$6" 2>&1)
+  if [ -n "$err" ]; then
+    err=${err#slot: the record was not written (}; err=${err%)}
+    echo "drive: the run ledger was not written ($err)" >&2
+  fi
+}
+
+# status_of <board tsv> <number>: the item's status on that board read ("" when it is not there)
+status_of() { LC_ALL=C awk -F '\t' -v n="$2" '$1 == n { print $3; exit }' "$1" 2>/dev/null; }
+
+# breach <n> <reason> <status> <work>: iteration 53 decision 9 by the driver: one comment, the label blocked, no status
+breach() {
+  local n=$1 reason=$2 status=$3 work=$4 key found=0 err
+  key=$(printf '%s\n' "$reason" | grep -o 'limits\.[A-Za-z.]*[A-Za-z]' | tail -n 1 || true)
+  if [ "$login_read" = 0 ]; then
+    login_read=1
+    agent_login=$(gh api user -q .login 2> "$run/user.err" | tr -d '\r\n ') || agent_login=""
+  fi
+  if [ -n "$agent_login" ] && gh issue view "$n" --repo "$owner/$repo" --json comments > "$run/view-$n.json" 2> "$run/view-$n.err" \
+    && JSON_MODE=flat JSON_FILE="$run/view-$n.json" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" > "$run/view-$n.flat" 2>/dev/null; then
+    if LC_ALL=C awk -F '\t' -v who="$agent_login" -v key="$key" '
+      match($1, /^comments\[[0-9]+\]/) {
+        i = substr($1, 11, RLENGTH - 11); rest = substr($1, RLENGTH + 1)
+        if (rest == ".author.login") a[i] = $3
+        else if (rest == ".body") b[i] = $3
+      }
+      END {
+        for (i in a) if (a[i] == who && index(b[i], "Stopped by a limit: ") == 1 && (key == "" || index(b[i], key) > 0)) exit 0
+        exit 1
+      }' "$run/view-$n.flat"; then found=1; fi
+  fi
+  if [ "$found" = 0 ]; then
+    printf 'Stopped by a limit: %s. Labelled blocked; the board status (%s) and the work (%s) are left as they are for the maintainer.\n' \
+      "$reason" "$status" "$work" > "$run/breach-$n.md"
+    if ! gh issue comment "$n" --repo "$owner/$repo" --body-file "$run/breach-$n.md" > "$run/breach-$n.out" 2> "$run/breach-$n.err"; then
+      echo "drive: the comment on #$n could not be posted: $(one_line "$run/breach-$n.err")" >&2
+    fi
+  fi
+  if ! (cd "$main" && gh issue edit "$n" --add-label blocked) > "$run/label-$n.out" 2> "$run/label-$n.err"; then
+    err=$(head -n 1 "$run/label-$n.err")
+    echo "The label blocked could not be added: $err; /init creates it."
+  fi
+  echo "drive: #$n: Stopped: limit: $reason. Labelled blocked."
 }
 
 # slot_room: a free slot (with worktrees) and room on the machine, before a step
@@ -418,14 +525,17 @@ slot_room() {
   done
 }
 
-# run_step <prompt>: one headless step in the main checkout, as its own process group
+# run_step <prompt> <issues> <T> <B> <k of the limits>: one headless step in the main checkout, as its own process group;
+# then its run line, and the breach of every item it left undone when a limit inside it ended it
 run_step() {
-  local prompt=$1 k rc
+  local prompt=$1 k rc left how="" sub="" dur="" cst="" trn="" changed="" n before now limit_kind="" reason
+  step_issues=$2
   steps=$((steps + 1)); k=$steps
   step_prompt[$k]=$prompt; step_rc[$k]="?"; step_cost[$k]="?"; step_turns[$k]="?"; step_dur[$k]="0s"
   ledger_clock; step_t0=$ledger_s
+  left=$((lim_issues - started))
   set -m
-  (cd "$main" && exec claude -p "$prompt" --permission-mode manual --output-format json) < /dev/null > "$run/step-$k.json" 2> "$run/step-$k.err" &
+  (cd "$main" && NIGHTMILL_RUN_STARTED=$step_t0 NIGHTMILL_ISSUES_LEFT=$left exec claude -p "$prompt" --permission-mode manual --output-format json --max-turns "$3" --max-budget-usd "$4") < /dev/null > "$run/step-$k.json" 2> "$run/step-$k.err" &
   step_pg=$!
   set +m
   rc=0
@@ -434,14 +544,50 @@ run_step() {
   step_pg=""
   ledger_clock; step_dur[$k]=$(ledger_duration $((ledger_s - step_t0)))
   step_rc[$k]=$rc
-  if json_load "$run/step-$k.json" 2>/dev/null; then
+  if json_load "$run/step-$k.json" 2>/dev/null && [ "$(json_get type)" = result ]; then
     json_get result > "$run/step-$k.result"
     local c t
-    c=$(json_get total_cost_usd); t=$(json_get num_turns)
-    [[ "$c" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] && step_cost[$k]=$c
-    [[ "$t" =~ ^[0-9]+$ ]] && step_turns[$k]=$t
+    c=$(json_get total_cost_usd); t=$(json_get num_turns); sub=$(json_get subtype); dur=$(json_get duration_ms)
+    [[ "$c" =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] && { step_cost[$k]=$c; cst=$c; }
+    [[ "$t" =~ ^[0-9]+$ ]] && { step_turns[$k]=$t; trn=$t; }
+    [[ "$dur" =~ ^[0-9]+(\.[0-9]+)?$ ]] || dur=""
+    case "$sub" in
+      error_max_turns) how=max-turns ;;
+      error_max_budget_usd) how=max-budget ;;
+      success|"") [ "$rc" != 0 ] || how=ok ;;
+    esac
+    [ -n "$how" ] || how="exit $rc"
   else
     : > "$run/step-$k.result"
+    how=no-result
+  fi
+  # the items whose board status the step changed (field 6 for /fix all, and the count of started items)
+  if read_board "$run/board-post-$k" >/dev/null 2>&1; then
+    while IFS=$'\037' read -r n _ kk before _; do
+      [ "$kk" = "$k" ] || continue
+      now=$(status_of "$run/board-post-$k.tsv" "$n")
+      if [ -n "$now" ] && [ "$now" != "$before" ]; then changed="$changed${changed:+,}$n"; started=$((started + 1)); fi
+    done < "$run/tried.tsv"
+  fi
+  if [ "$prompt" = "/nightmill:fix all" ]; then step_issues=$changed; fi
+  run_line "$k" "$how" "$step_issues" "$dur" "$cst" "$trn"
+  case "$how" in
+    max-turns) limit_kind=turns; reason="the headless run reached its turn limit of $3 (limits.turnsPerRole.session × $5)" ;;
+    max-budget) limit_kind=budget; reason="the headless run reached its budget of \$$4 (limits.costPerIssueUsd × $5)" ;;
+  esac
+  if [ -n "$limit_kind" ]; then
+    # every item of the step that is not done gets the breach, whatever status the run left it at
+    for n in $(printf '%s' "$step_issues" | tr ',' ' '); do
+      now=$(status_of "$run/board-post-$k.tsv" "$n")
+      if [ "${prompt#/nightmill:next}" != "$prompt" ]; then
+        [ "$now" != "$st_done" ] || continue
+      else
+        { [ "$now" = "$st_progress" ] || [ "$now" = "$st_review" ]; } || continue
+      fi
+      breach "$n" "$reason" "${now:-?}" "$work_text"
+      printf '%s\t%s\t%s\n' "$n" blocked "$reason" >> "$run/outcome.tsv"
+    done
+    return 0
   fi
   if [ "$rc" != 0 ]; then ended "claude exited $rc in $prompt" 1; fi
 }
@@ -486,10 +632,17 @@ while :; do
   pf="$run/pick-$round.tsv"
   if grep -q '^R' "$pf"; then
     slot_room
+    nr=0
     while IFS=$'\t' read -r _ n s t; do
       printf '%s\037%s\037%s\037%s\037%s\n' "$n" "/fix all" "$((steps + 1))" "$s" "$t" >> "$run/tried.tsv"
+      nr=$((nr + 1))
     done < <(grep '^R' "$pf")
-    run_step "/nightmill:fix all"
+    # k: the smallest of the Ready bugs, the issues left and parallel.fixAllMaxBugs (when not 0)
+    kf=$nr; left=$((lim_issues - started))
+    [ "$left" -ge "$kf" ] || kf=$left
+    if [ "$fix_max" -gt 0 ] && [ "$fix_max" -lt "$kf" ]; then kf=$fix_max; fi
+    [ "$kf" -ge 1 ] || kf=1
+    run_step "/nightmill:fix all" "" $((lim_turns * kf)) "$(LC_ALL=C awk -v c="$lim_cost" -v k="$kf" 'BEGIN { printf "%.2f", c * k }')" "$kf"
     continue
   fi
   if grep -q '^A' "$pf"; then
@@ -498,12 +651,32 @@ while :; do
       ended "a tie of priorities among the Approved stories ${tie%%$'\t'*} (${tie#*$'\t'}); the maintainer sets one higher" 0
     fi
     pick=$(LC_ALL=C awk -F '\t' '$1 == "P" { print $2 }' "$pf")
-    slot_room
+    pick_status=""; pick_title=""
     while IFS=$'\t' read -r _ n s t; do
       [ "$n" = "$pick" ] || continue
-      printf '%s\037%s\037%s\037%s\037%s\n' "$n" "/next" "$((steps + 1))" "$s" "$t" >> "$run/tried.tsv"
+      pick_status=$s; pick_title=$t
     done < <(grep '^A' "$pf")
-    run_step "/nightmill:next $pick"
+    # the pause of its epic and its limits (iteration 53 decision 8): a skip counts as tried, the step is not run
+    gate --issue "$pick"
+    case "$gate_rc" in
+      0) ;;
+      4|3)
+        printf '%s\037%s\037%s\037%s\037%s\n' "$pick" "/next" 0 "$pick_status" "$pick_title" >> "$run/tried.tsv"
+        if [ "$gate_rc" = 4 ]; then
+          printf '%s\t%s\t%s\n' "$pick" "not started" "$gate_reason" >> "$run/outcome.tsv"
+          echo "drive: #$pick not started: $gate_reason"
+        else
+          breach "$pick" "${gate_reason#limit: }" "$pick_status" nothing
+          printf '%s\t%s\t%s\n' "$pick" blocked "$gate_reason" >> "$run/outcome.tsv"
+        fi
+        continue ;;
+      *) gate_stop ;;
+    esac
+    spent=$(sed -n "s/^gate: spent on #$pick: \$\([0-9.]*\) of .*/\1/p" "$run/gate.out" | tail -n 1)
+    budget=$(LC_ALL=C awk -v c="$lim_cost" -v s="${spent:-0}" 'BEGIN { b = c - s; if (b < 0.01) b = 0.01; printf "%.2f", b }')
+    slot_room
+    printf '%s\037%s\037%s\037%s\037%s\n' "$pick" "/next" "$((steps + 1))" "$pick_status" "$pick_title" >> "$run/tried.tsv"
+    run_step "/nightmill:next $pick" "$pick" "$lim_turns" "$budget" 1
     continue
   fi
   x=$(LC_ALL=C awk -F '\t' '$1 == "X" { print $2 }' "$pf")

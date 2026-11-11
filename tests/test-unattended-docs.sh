@@ -68,12 +68,23 @@ cnt=$(printf '%s\n' "$sec" | grep -c '^### ' || true)
 # 3. the four command lines in a code block of '### The commands'; the skills still have these names
 cmds=$(part '### The commands')
 block=$(printf '%s\n' "$cmds" | awk '/^```/ { b = !b; next } b { print }')
-for c in \
-  'claude -p "/nightmill:next" --permission-mode manual' \
-  'claude -p "/nightmill:next 112" --permission-mode manual' \
-  'claude -p "/nightmill:fix 57" --permission-mode manual' \
-  'claude -p "/nightmill:fix all" --permission-mode manual'; do
-  printf '%s\n' "$block" | grep -xF -- "$c" >/dev/null || fail "README.md: '### The commands' has no code-block line: $c"
+# the defaults 200 and 2000 are the schema's limits.turnsPerRole.session and that times limits.issuesPerRun (iteration 53)
+d_session=$(awk '/"turnsPerRole": \{/ { t = 1 } t && /"session": \{/ { s = 1 } s && /"default":/ { sub(/.*"default": */, ""); sub(/[^0-9].*/, ""); print; exit }' "$schema")
+d_issues=$(awk '/"issuesPerRun": \{/ { s = 1 } s && /"default":/ { sub(/.*"default": */, ""); sub(/[^0-9].*/, ""); print; exit }' "$schema")
+case "$d_session$d_issues" in ''|*[!0-9]*) fail "schema/nightmill.schema.json: limits.turnsPerRole.session or limits.issuesPerRun has no numeric default" ;; esac
+if [ -n "$d_session" ] && [ -n "$d_issues" ]; then
+  [ "$d_session" = 200 ] || fail "schema: limits.turnsPerRole.session default is $d_session, 200 expected (the README commands use --max-turns 200)"
+  [ $((d_session * d_issues)) = 2000 ] || fail "schema: limits.turnsPerRole.session times limits.issuesPerRun is $((d_session * d_issues)), 2000 expected (the README's /nightmill:fix all uses --max-turns 2000)"
+fi
+for pair in '/nightmill:next=200' '/nightmill:next 112=200' '/nightmill:fix 57=200' '/nightmill:fix all=2000'; do
+  cmd=${pair%=*}; turns=${pair##*=}
+  line=$(printf '%s\n' "$block" | grep -F -- "claude -p \"$cmd\" " | head -1 || true)
+  if [ -z "$line" ]; then fail "README.md: '### The commands' has no code-block line for claude -p \"$cmd\""; continue; fi
+  case "$line " in *" --max-turns $turns "*) ;; *) fail "README.md: the line for $cmd has no '--max-turns $turns': $line" ;; esac
+  contains "$line" '--permission-mode manual' || fail "README.md: the line for $cmd lacks --permission-mode manual: $line"
+done
+for w in 'limits.turnsPerRole.session' 'limits.issuesPerRun' '--max-budget-usd'; do
+  contains "$(printf '%s\n' "$cmds" | flatten)" "$w" || fail "README.md: '### The commands' does not mention $w"
 done
 grep -xF 'name: next' "$root/skills/next/SKILL.md" >/dev/null || fail "skills/next/SKILL.md: no line 'name: next'"
 grep -xF 'name: fix' "$root/skills/fix/SKILL.md" >/dev/null || fail "skills/fix/SKILL.md: no line 'name: fix'"

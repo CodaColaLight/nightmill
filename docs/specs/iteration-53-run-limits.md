@@ -1,6 +1,6 @@
 # Iteration 53: limits per issue, per role and per run, a pause flag and a run ledger bound what an unattended run spends
 
-Status: draft, awaiting approval (#165)
+Status: delivered in iteration 53 (PR #274)
 
 Story #165, epic #163 (capabilities of comparable tools), gap 2 of the gap analysis of 2026-11-05. Today only `/fix all`
 caps its work (`parallel.fixAllMaxBugs`), no skill reads a pause flag, and nothing records what a headless run cost.

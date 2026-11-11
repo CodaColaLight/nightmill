@@ -54,6 +54,7 @@ not a conversation.
 | `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
 | `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
 | `scripts/drive.ps1`, `scripts/drive.sh` | Runs `/nightmill:fix all` and `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the time limit is reached or the kill switch is set, then posts one summary. Sets no status. |
+| `scripts/gate.ps1`, `scripts/gate.sh` | Checks the pause flag and the limits before a step: exit 0 go, 1 paused, 2 cannot check, 3 a limit is breached, 4 the epic is paused. Changes nothing. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
@@ -143,10 +144,10 @@ pull request. So `/init` has a second plan line, **Run permissions**, that adds 
 - **The git commands in each slot**, written `git -C <slot> ...` for every slot from 1 to `worktrees.slots`: the
   subcommands `/next`, `/fix` and their agents run there (status, diff, log, add, commit, stash, the plumbing for
   the tester's files, the two `reset` forms, the rebase and a push with the feature or fix prefix).
-- **Four scripts** at the plugin's folder, `slot`, `room`, `validate-config` and `status`, in the bash and the
+- **Five scripts** at the plugin's folder, `slot`, `room`, `gate`, `validate-config` and `status`, in the bash and the
   PowerShell form, and the quick check (`<verification.check> --quick`).
 
-That makes `24 + 21 × worktrees.slots` rules (66 for 2 slots) and one directory. The skills write each of those
+That makes `26 + 21 × worktrees.slots` rules (68 for 2 slots) and one directory. The skills write each of those
 commands in exactly one form, because a rule matches only the text that is typed: in a slot always
 `git -C <absolute slot path> ...`, the check as `cd <absolute slot path> && <verification.check>`.
 
@@ -356,7 +357,7 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 | `/next` checks who set Approved | not enforced yet | [#177](https://github.com/CodaColaLight/nightmill/issues/177) |
 | An agent claims an issue before it changes anything | not enforced yet | [#176](https://github.com/CodaColaLight/nightmill/issues/176) |
 | The agent runs as its own identity, so a required review and code owners can gate its merges | not enforced yet | [#178](https://github.com/CodaColaLight/nightmill/issues/178), [#162](https://github.com/CodaColaLight/nightmill/issues/162) |
-| An unattended run is bounded by limits and a kill switch | not enforced yet | [#165](https://github.com/CodaColaLight/nightmill/issues/165) |
+| An unattended run is bounded by limits and a kill switch | enforced by scripts/gate.* (the pause flag and the limits, before every step of the skills that change anything and of the driver) and by Claude Code (--max-turns, --max-budget-usd on the driver's runs); a launch of a role is checked after it returns | [#165](https://github.com/CodaColaLight/nightmill/issues/165) |
 | The check, warm-ups and tests run in a sandbox without the token and with a network allowlist | not enforced yet | [#169](https://github.com/CodaColaLight/nightmill/issues/169) |
 | The plugin's own CI runs with least privilege | enforced by `.github/workflows/ci.yml`, pinned by `tests/lint.sh` | [#154](https://github.com/CodaColaLight/nightmill/issues/154) |
 
@@ -395,6 +396,7 @@ The schema documents every key; the short version:
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5); and for `/fix all` the most bugs one run starts (`fixAllMaxBugs`, default 0: no limit) |
 | `worktrees` | Slot root, count, port bases, warm-up commands, run hints, and `stalledAfterMinutes` (default 30): the minutes without a report after which a busy slot's agent counts as stalled, and `dashboardRefreshSeconds` (default 60): how often `scripts/dashboard.*` rewrites the page in the browser, and `panelRefreshSeconds` (default 15): how often the slots pane beside the chat reads the slots again |
 | `unattended` | For `scripts/drive.*`: the most minutes one driver run starts steps for (`maxMinutes`, default 240) and the issue its summary is posted on (`summaryIssue`, no default: printed only) |
+| `limits` | The pause flag (`paused`, default false) and the limits of every run: minutes per issue (`minutesPerIssue`, default 180), turns per launch of each role and of a headless session per issue (`turnsPerRole.<role>`, default `session` 200, `specWriter` 150, `specReviewer` 80, `tester` 150, `implementer` 300, `codeReviewer` 80, `fixer` 200, `worker` 40), issues per run (`issuesPerRun`, default 10), cost per issue (`costPerIssueUsd`, default 25). Read from the base branch only ([Limits and the kill switch](#limits-and-the-kill-switch)) |
 
 `templates/nightmill.example.json` is a complete example.
 
@@ -539,7 +541,9 @@ the deletion of the branch (delete it by hand to start over). Only `slot.ps1` an
 that already run, so no skill or agent does anything extra: the take appends a `take` line (the claim and the end of
 the take), every report a `step` line (the step name and when it was reported), every freeing a `free` line
 (`released`, `reaped` or `abandoned`, with the merged pull request's number, open and merge time and closing issues).
-One line per event, eleven tab-separated fields, times in UTC; readers skip a line kind they do not know.
+One line per event, eleven tab-separated fields, times in UTC; readers skip a line kind they do not know. The driver
+also appends a `run` line after each headless run ([Limits and the kill switch](#limits-and-the-kill-switch)), which
+`stages.*` skips.
 
 `scripts/stages.sh --issue N` (`stages.ps1 -Issue N`) prints the takes that ended in a merged pull request closing
 issue N; `--last N` (`-Last N`, default 5) the last N takes. Read-only, no network. Per take, a header
@@ -773,16 +777,23 @@ Start each run in the project's main checkout (the folder where `/init` ran), on
 one run per terminal:
 
 ```sh
-claude -p "/nightmill:next" --permission-mode manual
-claude -p "/nightmill:next 112" --permission-mode manual
-claude -p "/nightmill:fix 57" --permission-mode manual
-claude -p "/nightmill:fix all" --permission-mode manual
+claude -p "/nightmill:next" --permission-mode manual --max-turns 200
+claude -p "/nightmill:next 112" --permission-mode manual --max-turns 200
+claude -p "/nightmill:fix 57" --permission-mode manual --max-turns 200
+claude -p "/nightmill:fix all" --permission-mode manual --max-turns 2000
 ```
 
 `112` and `57` are example issue numbers: `/nightmill:next <N>` implements story N, `/nightmill:fix <N>` fixes bug N,
 and `/nightmill:fix all` fixes every Ready bug. The plugin's full skill names are used because the bare `/next` and
 `/fix` can be shadowed by another plugin or project command of the same name ([What is in the
 plugin](#what-is-in-the-plugin)).
+
+`--max-turns` ends the run after that many turns. The numbers are the defaults of `limits.turnsPerRole.session` (200
+per issue) and, for `/nightmill:fix all`, that times `limits.issuesPerRun` (10); with other values in the config, use
+those. `--max-budget-usd <amount>` bounds the cost of a run the same way (`limits.costPerIssueUsd` per issue). The
+driver passes both from the config ([Limits and the kill switch](#limits-and-the-kill-switch)). The pause flag and the
+limits are checked inside such a run as in any other; only its `run` line in the ledger is missing, because only the
+caller sees the run's result.
 
 `--permission-mode manual` is written out so that the run's mode depends neither on the Claude Code version (before
 2.1.302 a `-p` run could start in auto mode) nor on a `defaultMode` in your settings. `manual` is the name
@@ -804,7 +815,7 @@ output, redirect it to a file outside the checkout (a file in the checkout makes
 `/fix all`); stderr carries the trust warning:
 
 ```sh
-claude -p "/nightmill:fix all" --permission-mode manual > "$HOME/nightmill-fix-all.log" 2>&1
+claude -p "/nightmill:fix all" --permission-mode manual --max-turns 2000 > "$HOME/nightmill-fix-all.log" 2>&1
 ```
 
 ### Several runs at once
@@ -851,8 +862,8 @@ message and `/nightmill:status`.
 
 Stop a run with Ctrl+C in its terminal, or with SIGTERM (`kill <pid>`), which ends Claude Code with exit code 143,
 terminates the commands it is running and starts nothing new. The driver's kill switch stops a driver between steps
-([Limits and the kill switch](#limits-and-the-kill-switch)); a pause flag for every run comes with
-[#165](https://github.com/CodaColaLight/nightmill/issues/165). What it leaves:
+([Limits and the kill switch](#limits-and-the-kill-switch)); the pause flag stops every run at its next step
+([Limits and the kill switch](#limits-and-the-kill-switch), [#165](https://github.com/CodaColaLight/nightmill/issues/165)). What it leaves:
 
 - **During a take:** an interrupted take frees its slot again ("interrupted ...; slot <n> is free again"). A take
   killed without a chance to clean up (`kill -KILL`, a closed window) leaves a claim that `/nightmill:status` shows
@@ -893,12 +904,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<plugin>/scripts/drive.ps1"
 everything of [Before the first run](#before-the-first-run), and slots (`worktrees`): without them `/next` leaves the
 main checkout on its branch and the driver ends before the next step. What it does, round after round:
 
-1. It checks the kill switch, the time limit and that the main checkout is on the base branch with a clean tree.
+1. It checks the kill switch, the time limit, the pause flag and the limits (`scripts/gate.*`), the issue limit and
+   that the main checkout is on the base branch with a clean tree.
 2. It reads the board. With a Ready bug it checks for a free slot and room on the machine and runs
-   `claude -p "/nightmill:fix all" --permission-mode manual --output-format json`.
-3. Otherwise it takes the Approved story with the highest priority and runs `/nightmill:next <N>` the same way. When
-   two or more Approved stories share the highest priority it does not choose: the run ends and the maintainer sets
-   one higher.
+   `claude -p "/nightmill:fix all" --permission-mode manual --output-format json --max-turns <T> --max-budget-usd <B>`.
+3. Otherwise it takes the Approved story with the highest priority, checks the pause of its epic and its cost
+   (`gate --issue <N>`) and runs `/nightmill:next <N>` the same way. When two or more Approved stories share the
+   highest priority it does not choose: the run ends and the maintainer sets one higher.
 4. Each item is tried at most once per run. The run ends when no Ready bug and no Approved story is left (or every one
    left was tried), when the time limit is reached, the kill switch is set, a step's `claude` fails, or no slot or no
    room is there.
@@ -932,8 +944,40 @@ To start it from a local scheduler instead of the workflow, one cron line:
   driver ends the step's processes, starts no other step and still posts the summary. What a stopped step leaves is in
   [When a run is stopped](#when-a-run-is-stopped).
 - `parallel.fixAllMaxBugs` is `/fix all`'s own limit of bugs per run.
-- Limits per issue, per role and per cost, and a pause flag for every run, are not there yet
-  ([#165](https://github.com/CodaColaLight/nightmill/issues/165)).
+
+The kill switch and the time limit bound one driver run on one machine; the pause flag and the `limits` keys bound every
+run, driver or not ([#165](https://github.com/CodaColaLight/nightmill/issues/165)):
+
+| | Kill switch | Pause flag |
+|---|---|---|
+| Where | the file `.git/nightmill-stop` | `limits.paused` in the base branch's config, or the label `paused` on the issue's epic |
+| Reaches | the driver on this machine | every skill that changes anything and every driver, on every machine |
+| Read by | the driver, before each step | `scripts/gate.*`: the skills before every step, the driver before every step |
+| Set by | `touch .git/nightmill-stop` | a merged change of the config, or the label on the epic |
+| Effect | the driver starts no further step | no further step starts; a running skill stops at its next step |
+
+- **Pausing:** merge `"limits": { "paused": true }` into the base branch's `.claude/nightmill.json`, or add the label
+  `paused` (`/init` creates it) to an epic to pause its issues. Unpause by merging `false` or removing the label. The
+  gate reads the config only from the base branch (the last fetched state, no fetch of its own), so a branch or a pull
+  request cannot unpause its own run, and a merged pause reaches a run at its next gate call after the next fetch (a
+  take, the driver's start); the label is read live. A change under `.claude/` is never auto-merged.
+- **The limits:** `limits.minutesPerIssue` (default 180: wall-clock minutes from the slot's take or the driver's step
+  start), `limits.turnsPerRole.<role>` (the tool uses of one launch of a role, checked after it returns; `session` 200:
+  the driver's `--max-turns` per issue), `limits.issuesPerRun` (default 10: the issues one `/fix all` run or one driver
+  run starts) and `limits.costPerIssueUsd` (default 25: US dollars over all headless runs of an issue, from the ledger;
+  the driver passes what is left as `--max-budget-usd`). The defaults are judgements, not measurements; tune them.
+- **A breach** (a limit reached, or a headless run ended by its `--max-turns` or `--max-budget-usd`): the issue gets one
+  comment `Stopped by a limit: <reason>. ...`, the label `blocked`, and its work stops. No status is set: the item stays
+  at Spec, In progress or Review with its slot and branch for the maintainer, who removes `blocked`, raises the limit
+  or moves the item. A `/fix all` run and a driver run go on with their other items. The issue limit, the time limit,
+  the kill switch and a pause label nothing.
+- **The run ledger:** after every headless run the driver appends one `run` line to
+  `<worktrees.root>/.slots/ledger.tsv` (untracked, outside the repository with the default root), eleven tab-separated
+  fields: `run`, the stamp, the driver run's start, the step's number, the prompt, the issues it worked on (for
+  `/fix all` the bugs whose status changed, joined by `,`), how it ended (`ok`, `max-turns`, `max-budget`,
+  `exit <code>`, `signal`, `no-result`), the step's start, and `duration_ms`, `total_cost_usd` and `num_turns` of the
+  run's JSON result. The gate sums the cost of an issue's lines (a `/fix all` line's cost shared equally among its
+  bugs). A `claude -p` started by hand gets no line.
 
 ### The summary
 
@@ -1003,6 +1047,7 @@ bash tests/smoke-json.sh    # the JSON reader the bash scripts use (checked agai
 bash tests/smoke-check.sh   # tests/check.sh: the parallel steps, the order, the verdict, --quick
 bash tests/smoke-guard.sh   # guard.sh: what the PreToolUse guard refuses
 bash tests/smoke-drive.sh   # drive.sh against a fake claude, a fake gh and throwaway slots
+bash tests/smoke-gate.sh    # gate.sh: the pause flag and the limits against a throwaway repository
 powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
@@ -1020,6 +1065,7 @@ powershell -ExecutionPolicy Bypass -File tests/smoke-stages.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-guard.ps1
 powershell -ExecutionPolicy Bypass -File tests/smoke-drive.ps1
+powershell -ExecutionPolicy Bypass -File tests/smoke-gate.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```

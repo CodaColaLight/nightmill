@@ -231,6 +231,29 @@ try {
   $r = Stages "-Last 1"
   if ($r.Err.Contains($note)) { Fail "a usable clock gave the note: $($r.Err)" }
 
+  Write-Host "== run lines of the driver (iteration 53, #165)"
+  # the driver's run lines (kind run, 11 fields) between the lines of the fixture change no table and give no note
+  Set-Clock ($T0 + 13700)
+  Copy-Item "$FIX\ledger.tsv" $L -Force
+  $base = Stages ""
+  $mixed = New-Object System.Collections.Generic.List[string]
+  function Run-Line([int]$n) { "run`t2026-11-07T10:00:0$($n)Z`t2026-11-07T07:00:00Z`t$n`t/nightmill:next 12`t12`tok`t2026-11-07T09:50:00Z`t600000`t1.50`t40" }
+  $i = 0
+  foreach ($ln in @(Get-Content "$FIX\ledger.tsv")) {
+    $i++
+    $mixed.Add($ln)
+    if ($i % 3 -eq 0) { $mixed.Add((Run-Line ($i % 10))) }
+  }
+  $mixed.Add((Run-Line 9))
+  [System.IO.File]::WriteAllText($L, (($mixed -join "`n") + "`n"))
+  $r = Stages ""
+  if ($r.Code -ne 0) { Fail "run lines: exit $($r.Code): $($r.Err)" }
+  if ($r.Out -cne $base.Out) { Fail "run lines: the tables differ from those without the run lines; got: [$($r.Out)]" }
+  if ($r.Err -cne $base.Err) { Fail "run lines: standard error differs ([$($r.Err)] and not [$($base.Err)]): the run lines were counted as malformed" }
+  $r = Stages "-Issue 12"
+  if ($r.Code -ne 0 -or $r.Out -cne (Block "a")) { Fail "run lines: -Issue 12 changed: [$($r.Out)]" }
+  Copy-Item "$FIX\ledger.tsv" $L -Force
+
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {
   Set-Location $here
