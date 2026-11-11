@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 54 (#166): history and metrics. `status.sh --json` (`status.ps1 -Json`) prints the `/status` cells as one
+  JSON object. `scripts/history.sh` and `history.ps1` compute for a window, read-only, the time issues stayed at each
+  board status (from the board's status changes), fix rounds and check fix rounds per issue, cost per issue and slot
+  utilisation (from `<worktrees.root>/.slots/ledger.tsv`), as text, JSON (`--json`) or one static HTML page that needs
+  no network (`--html <dir>`). The driver's summary carries the history of its run. No config key, no marker or ledger
+  change.
 - Iteration 53 (#165): limits bound what an unattended run spends. A new config object `limits` holds the pause flag
   `paused` and the limits `minutesPerIssue`, `turnsPerRole.<role>`, `issuesPerRun` and `costPerIssueUsd`. A new
   script, `scripts/gate.sh` and `gate.ps1`, checks the pause flag (in the base branch's config, or the label `paused`
