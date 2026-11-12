@@ -4,7 +4,9 @@
 # .github/workflows/ci.yml, each list is in the order of the step list, smoke-slot.ps1 has a part of its own, the final
 # job smoke-powershell (the required name) fails unless every part succeeded, and only that job has a job-level
 # permissions block (contents: read, actions: read). Prints one FAIL line per broken rule, then runs its own cases on
-# scratch copies, each broken once. tests/lint.sh starts it once.
+# scratch copies, each broken once. tests/lint.sh starts it once. With NIGHTMILL_CI_PARTS_RULES_ONLY=1 it checks the
+# rules only and skips its cases: tests/smoke-check.sh/.ps1 set it on their lint copies, so one check runs the cases once
+# (bug #293), as tests/test-lint-agreement-cost.sh bounds the agreement section (bug #270).
 #   tests/test-ci-parts.sh [<root>]
 # Exit 1 on any failure, else 0 with the line "OK: the PowerShell parts". Needs bash, awk, sed and tr.
 set -o pipefail
@@ -154,6 +156,10 @@ rules() {
 # on the checkout
 out=$(rules "$root")
 if [ -n "$out" ]; then printf '%s\n' "$out"; fail=1; fi
+if [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ]; then
+  [ "$fail" = 0 ] || exit 1
+  echo "OK: the PowerShell parts"; exit 0
+fi
 
 # the cases: each on a scratch copy of tests/check.sh and the workflow changed by one sed or awk
 mkcase() { # mkcase <name>: the scratch root of the case
