@@ -55,7 +55,7 @@ jobs:
           - part: 3
             only: smoke-hook.ps1,smoke-validate.ps1,smoke-control.ps1,smoke-panel.ps1,smoke-check.ps1,test-render-quoting.ps1,smoke-gate.ps1
           - part: 4
-            only: smoke-template-board.ps1,smoke-models.ps1,smoke-load.ps1,smoke-room.ps1,smoke-stages.ps1,test-lintcopy-output.ps1,test-status-controls.ps1,smoke-guard.ps1,smoke-history.ps1
+            only: smoke-template-board.ps1,smoke-models.ps1,smoke-load.ps1,smoke-room.ps1,smoke-stages.ps1,test-lintcopy-output.ps1,test-status-controls.ps1,test-smoke-slot-tar.ps1,smoke-guard.ps1,smoke-history.ps1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - shell: bash
