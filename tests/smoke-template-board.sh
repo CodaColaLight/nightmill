@@ -128,13 +128,13 @@ run "$cfg_default" fields-ok.json
 setup_template '{ "owner": "", "number": 7 }'
 run "$cfg_default" fields-ok.json
 [ "$Code" = 2 ] && grep -q 'owner must be a non-empty string' "$tmp/err.txt" || fail "an empty owner must exit 2: $Code $(cat "$tmp/err.txt")"
-# no gh at all: only the system tools on the PATH
+# no gh at all: only the system tools and git on the PATH (git is not in /usr/bin in Git for Windows)
 setup_template '{ "owner": "acme", "number": 7 }'
 set +e
-(PATH="/usr/bin:/bin" bash "$S" --config "$cfg_default") > "$tmp/out.txt" 2> "$tmp/err.txt"
+(PATH="/usr/bin:/bin:$(command -v git | sed 's,/[^/]*$,,')" bash "$S" --config "$cfg_default") > "$tmp/out.txt" 2> "$tmp/err.txt"
 Code=$?
 set -e
-if ! PATH="/usr/bin:/bin" command -v gh >/dev/null 2>&1; then
+if ! PATH="/usr/bin:/bin:$(command -v git | sed 's,/[^/]*$,,')" command -v gh >/dev/null 2>&1; then
   [ "$Code" = 2 ] && grep -q 'gh is not installed' "$tmp/err.txt" || fail "a missing gh must exit 2 with a message: $Code $(cat "$tmp/err.txt")"
 fi
 
