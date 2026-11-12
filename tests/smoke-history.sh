@@ -264,9 +264,9 @@ want_code 0 "board fails json"
 same "board fails json" "$FIX/expected-boardfails.json"
 json_check "$tmp/out.txt" || fail "board fails json: not valid JSON"
 unset GH_FAIL
-# no gh at all: only the system tools on the PATH
-if ! PATH="/usr/bin:/bin" command -v gh >/dev/null 2>&1; then
-  HIST_PATH="/usr/bin:/bin"; export HIST_PATH
+# no gh at all: only the system tools and git on the PATH (git is not in /usr/bin in Git for Windows)
+if ! PATH="/usr/bin:/bin:$(command -v git | sed 's,/[^/]*$,,')" command -v gh >/dev/null 2>&1; then
+  HIST_PATH="/usr/bin:/bin:$(command -v git | sed 's,/[^/]*$,,')"; export HIST_PATH
   hist
   want_code 0 "no gh"
   has "$out" "note: the board was not read: " "no gh"

@@ -115,6 +115,7 @@ add bash smoke-gate.sh
 add bash smoke-history.sh
 add bash test-ci-summary.sh
 add bash test-baseconfig-pathconv.sh
+add bash test-restricted-path-git.sh
 add ps smoke-slot.ps1 first
 add ps smoke-render.ps1
 add ps smoke-hook.ps1
