@@ -37,7 +37,7 @@ base_config() {
     return 0
   fi
   base_cfg_tmp=$(mktemp "${TMPDIR:-/tmp}/nightmill-baseconfig.XXXXXX") || { base_cfg_stop="cannot make a temporary file"; return 1; }
-  if ! git -C "$m" show "origin/HEAD:$c" > "$base_cfg_tmp" 2>/dev/null; then
+  if ! _base_config_show "$m" "origin/HEAD:$c" > "$base_cfg_tmp" 2>/dev/null; then
     rm -f "$base_cfg_tmp"; base_cfg_tmp=""
     base_cfg_note="nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree."
     return 0
@@ -48,7 +48,7 @@ base_config() {
   x=${head#origin/}
   if [ "$x" != "$b" ]; then
     ref="origin/$b"
-    if ! git -C "$m" show "$ref:$c" > "$base_cfg_tmp" 2>/dev/null; then
+    if ! _base_config_show "$m" "$ref:$c" > "$base_cfg_tmp" 2>/dev/null; then
       rm -f "$base_cfg_tmp"; base_cfg_tmp=""
       base_cfg_stop="origin/$b has no .claude/nightmill.json (git.baseBranch of the configuration on origin/HEAD)"
       return 1
@@ -58,6 +58,13 @@ base_config() {
   base_cfg_file=$base_cfg_tmp
   base_cfg_from="$ref:$c"
   return 0
+}
+
+# _base_config_show <checkout> <ref>:<path>: git show with Git Bash's path conversion off, which otherwise takes
+# <ref>:<path> for a path list and rewrites it (#300). The conversion stays on for the checkout's path (a /c/... or
+# /tmp/... path that git.exe does not understand unconverted), so the call changes into it instead of using git -C.
+_base_config_show() {
+  (cd "$1" && MSYS_NO_PATHCONV=1 git show "$2")
 }
 
 # _base_config_json <ref>: loads base_cfg_tmp; a text that is not valid JSON is a stop
