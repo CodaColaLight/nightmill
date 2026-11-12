@@ -1162,7 +1162,10 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
       New-Item -ItemType Directory -Force "$tmp\prev" | Out-Null
       # a complete copy of the scripts\ folder at the tag, whatever library files it sources
       git -C $here archive --format=tar -o "$tmp\prev.tar" $tag scripts
-      tar -xf "$tmp\prev.tar" -C "$tmp\prev" --strip-components=1
+      # Windows' own tar by its path: a GNU tar first on the PATH (Git Bash) reads "C:\..." as a host (#304)
+      $tarExe = 'tar'
+      if ($env:SystemRoot -and (Test-Path (Join-Path $env:SystemRoot 'System32\tar.exe'))) { $tarExe = Join-Path $env:SystemRoot 'System32\tar.exe' }
+      & $tarExe -xf "$tmp\prev.tar" -C "$tmp\prev" --strip-components=1
       Write-Cfg $gateJson
       $h = Start-Take "-Take feat/v1 -Slot 1"
       Wait-For 1 "taking"
