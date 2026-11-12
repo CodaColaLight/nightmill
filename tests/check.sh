@@ -15,6 +15,9 @@
 # two claude steps run one after the other in one job.
 #   --quick        the lint and the bash smoke tests only; never prints the line of a passed full check
 #   --only a,b     exactly the named steps (CI runs its smoke jobs this way)
+# verification.platform (iteration 56) picks the test family of a full or quick run: windows skips the bash steps,
+# unix skips the ps steps, all (or no key) runs both; the lint and the claude steps run on every platform, and the
+# skipped family is listed as SKIPPED. --only ignores the key and does not read it.
 #   --jobs N       the limit for this run, 1 to 16, not capped
 #   --powershell   the PowerShell for the ps steps (default: pwsh, else powershell)
 #   --summary F    appends the check's wall time and its five slowest steps to the Markdown file F, before the
@@ -179,6 +182,25 @@ if [ -n "${NIGHTMILL_CHECK_STEPS:-}" ]; then
 else
   real_steps
   fixture=0
+fi
+
+# The platform (iteration 56): verification.platform windows skips the bash steps, unix the ps steps; the lint and
+# the claude steps belong to neither family. --only does not read it.
+if [ "$mode" != only ] && [ -f .claude/nightmill.json ] && json_load .claude/nightmill.json >/dev/null 2>&1 &&
+  json_has verification.platform; then
+  # json_get gives a number or a boolean as its text, which is never one of the three words
+  plat=$(json_get verification.platform); plat_kind=""; plat_reason=""
+  case $plat in
+    windows) plat_kind=bash; plat_reason="bash tests (verification.platform is windows)" ;;
+    unix) plat_kind=ps; plat_reason="PowerShell tests (verification.platform is unix)" ;;
+    all) ;;
+    *) echo "check: verification.platform must be windows, unix or all; running both families" >&2 ;;
+  esac
+  if [ -n "$plat_kind" ]; then
+    for ((i = 0; i < n; i++)); do
+      [ "${k_kind[i]}" != "$plat_kind" ] || k_skip[i]=$plat_reason
+    done
+  fi
 fi
 
 # The selection: sel[i] is 1 for a step this run takes

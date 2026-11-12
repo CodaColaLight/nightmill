@@ -156,6 +156,15 @@ done
 printf '%s\n' '{"mode":"fast"}' > "$tmp/mini.json"
 bash "$V" --schema "$mini" "$tmp/mini.json" >/dev/null || fail "enum: a valid value was refused"
 
+echo "== verification.platform is windows, unix or all"
+# the key is in the schema (iteration 56): a known value is clean even with --strict, any other value is an enum error on the key
+plat_cfg() { printf '{"github":{"owner":"o","repo":"r","projectNumber":1},"maintainer":{"name":"M"},"verification":{"check":"true","platform":%s}}' "$1"; }
+for plat in windows unix all; do
+  check "platform $plat" "$(plat_cfg "\"$plat\"")" 0 "--strict" "0 errors, 0 warnings"
+done
+check "platform linux" "$(plat_cfg '"linux"')" 1 "" 'error: verification.platform: must be one of: all, windows, unix, got "linux"' "1 error, 0 warnings"
+check "platform a number" "$(plat_cfg 3)" 1 "" "error: verification.platform: expected string, got integer"
+
 echo "== git.mergeFlags must contain --auto and never --admin"
 MF='"mergeFlags": "--auto --squash"'
 check "merge flags without auto" "$(edit "$ex" "$MF" '"mergeFlags": "--squash"')" 1 "" \

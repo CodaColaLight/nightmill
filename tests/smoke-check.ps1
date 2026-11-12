@@ -202,6 +202,109 @@ try {
   $r = Cfg ', "checkJobs": 2' @{ UPDATE_PANEL_FIXTURES = "1" } "-Jobs 3"
   if ((Head-Line $r.Out) -cne "check: full, 1 at a time (UPDATE_PANEL_FIXTURES is set)") { Fail "config UPDATE: the header: $($r.Out)" }
 
+  Write-Host "== the platform from the config"
+  # verification.platform (iteration 56): windows skips the bash steps, unix skips the ps steps, the lint and the claude steps
+  # always run, -Only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
+  $plog = "$tf/platform.log"
+  $WIN_LINE = "SKIPPED: bash tests (verification.platform is windows)"
+  $UNIX_LINE = "SKIPPED: PowerShell tests (verification.platform is unix)"
+  $PNOTE = "check: verification.platform must be windows, unix or all; running both families"
+  function Write-Plat([string]$reasonB, [string]$reasonP) {
+    Write-Lf "$tmp\plat.txt" ("l`techo l >> `"$plog`"`tlint`n" +
+      "b`techo b >> `"$plog`"`tbash`t$reasonB`n" +
+      "p`techo p >> `"$plog`"`tps`t$reasonP`n" +
+      "c`techo c >> `"$plog`"`tclaude`n")
+  }
+  # Plat-Run <platform as JSON, or - for no key> <check.ps1 arguments>: the result of the check in $repo; Log is what the steps wrote
+  function Plat-Run([string]$val, [string]$cargs = "") {
+    $pl = if ($val -ceq "-") { "" } else { ", `"platform`": $val" }
+    Write-Lf "$repo\.claude\nightmill.json" "{ `"verification`": { `"check`": `"true`"$pl } }`n"
+    Write-Lf "$tmp\platform.log" ""
+    $r = Check "$tf/plat.txt" ("-Jobs 1 " + $cargs) $repo
+    $log = (@((Read-Lf "$tmp\platform.log") -split "`n" | Where-Object { $_ -ne "" }) -join ",") + ","
+    $r | Add-Member -NotePropertyName Log -NotePropertyValue $log -PassThru
+  }
+  function Skipped-Lines([string]$text) { @($text -split "`n" | Where-Object { $_ -clike "SKIPPED:*" }) }
+  Write-Plat "" ""
+  # windows: the PowerShell tests only
+  $r = Plat-Run '"windows"'
+  if ($r.Code -ne 0) { Fail "platform windows: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,p,c,") { Fail "platform windows: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out) -join "|" -cne $WIN_LINE) { Fail "platform windows: the SKIPPED lines are not just '$WIN_LINE': $($r.Out)" }
+  if (Has-Line $r.Out "== b") { Fail "platform windows: a section for the skipped bash step: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform windows: the last line: $($r.Out)" }
+  # unix: the bash tests only
+  $r = Plat-Run '"unix"'
+  if ($r.Code -ne 0) { Fail "platform unix: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b,c,") { Fail "platform unix: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out) -join "|" -cne $UNIX_LINE) { Fail "platform unix: the SKIPPED lines are not just '$UNIX_LINE': $($r.Out)" }
+  if (Has-Line $r.Out "== p") { Fail "platform unix: a section for the skipped ps step: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform unix: the last line: $($r.Out)" }
+  # the platform's reason replaces the step's own reason
+  Write-Plat "" "no pwsh here"
+  $r = Plat-Run '"unix"'
+  if ($r.Code -ne 0) { Fail "platform unix, p with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b,c,") { Fail "platform unix, p with a reason: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out $UNIX_LINE)) { Fail "platform unix, p with a reason: no platform line: $($r.Out)" }
+  if (Has-Line $r.Out "SKIPPED: no pwsh here") { Fail "platform unix, p with a reason: the step's own reason was printed: $($r.Out)" }
+  Write-Plat "other reason" ""
+  $r = Plat-Run '"windows"'
+  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "platform windows, b with a reason: no platform line: $($r.Out)" }
+  if (Has-Line $r.Out "SKIPPED: other reason") { Fail "platform windows, b with a reason: the step's own reason was printed: $($r.Out)" }
+  # a skipped step of the kept family keeps its own reason, and both lines print in list order
+  Write-Plat "" "no pwsh here"
+  $r = Plat-Run '"windows"'
+  if ($r.Code -ne 0) { Fail "platform windows, p with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,c,") { Fail "platform windows, p with a reason: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out) -join "|" -cne "$WIN_LINE|SKIPPED: no pwsh here") { Fail "platform windows, p with a reason: the SKIPPED lines or their order: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform windows, p with a reason: the last line: $($r.Out)" }
+  # all and no key: today's behaviour, both families, nothing skipped, nothing on standard error
+  Write-Plat "" ""
+  $r = Plat-Run '"all"'
+  if ($r.Code -ne 0) { Fail "platform all: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b,p,c,") { Fail "platform all: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out).Count -ne 0) { Fail "platform all: a SKIPPED line: $($r.Out)" }
+  if ($r.Err -ne "") { Fail "platform all: standard error is not empty: $($r.Err)" }
+  $outAll = $r.Out
+  $r = Plat-Run '-'
+  if ($r.Code -ne 0) { Fail "platform not set: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b,p,c,") { Fail "platform not set: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out).Count -ne 0) { Fail "platform not set: a SKIPPED line: $($r.Out)" }
+  if ($r.Err -ne "") { Fail "platform not set: standard error is not empty: $($r.Err)" }
+  if ($r.Out -cne $outAll) { Fail "platform not set: the output differs from platform all: [$($r.Out)] vs [$outAll]" }
+  # any other value: the note, and both families run
+  foreach ($bad in '"linux"', '3') {
+    $r = Plat-Run $bad
+    if ($r.Code -ne 0) { Fail "platform ${bad}: exit $($r.Code): $($r.Out) $($r.Err)" }
+    if ($r.Log -cne "l,b,p,c,") { Fail "platform ${bad}: the steps that ran: $($r.Log)" }
+    if (-not (Has-Line $r.Err $PNOTE)) { Fail "platform ${bad}: no note on standard error: $($r.Err)" }
+    if (@(Skipped-Lines $r.Out).Count -ne 0) { Fail "platform ${bad}: a SKIPPED line: $($r.Out)" }
+  }
+  # -Quick: the lint and the bash steps, then the key
+  $QUICK_LAST = "QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)"
+  $r = Plat-Run '"windows"' "-Quick"
+  if ($r.Code -ne 0) { Fail "platform windows, quick: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,") { Fail "platform windows, quick: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "platform windows, quick: no platform line: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne $QUICK_LAST) { Fail "platform windows, quick: the last line: $($r.Out)" }
+  $r = Plat-Run '"unix"' "-Quick"
+  if ($r.Code -ne 0) { Fail "platform unix, quick: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b,") { Fail "platform unix, quick: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out).Count -ne 0) { Fail "platform unix, quick: a SKIPPED line: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne $QUICK_LAST) { Fail "platform unix, quick: the last line: $($r.Out)" }
+  # -Only ignores the key, and does not read it either
+  foreach ($plat in '"windows"', '"unix"') {
+    $r = Plat-Run $plat "-Only b,p"
+    if ($r.Code -ne 0) { Fail "platform $plat, only: exit $($r.Code): $($r.Out) $($r.Err)" }
+    if ($r.Log -cne "b,p,") { Fail "platform $plat, only: the steps that ran: $($r.Log)" }
+    if (@(Skipped-Lines $r.Out).Count -ne 0) { Fail "platform $plat, only: a SKIPPED line: $($r.Out)" }
+    if ((Last-Line $r.Out) -cne "SELECTED CHECKS PASSED (2 of 4 steps; the full check has not run)") { Fail "platform $plat, only: the last line: $($r.Out)" }
+  }
+  $r = Plat-Run '"linux"' "-Only b"
+  if ($r.Code -ne 0) { Fail "platform linux, only: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "b,") { Fail "platform linux, only: the steps that ran: $($r.Log)" }
+  if ($r.Err.Contains($PNOTE)) { Fail "platform linux, only: a note for a key that -Only does not read: $($r.Err)" }
+
   Write-Host "== two checks at once"
   New-Item -ItemType Directory "$tmp\tmpA", "$tmp\tmpB" | Out-Null
   $psSh = $psExe -replace '\\', '/'   # the steps run under bash -c, which would strip backslashes
@@ -346,6 +449,12 @@ try {
   Lint-Break "ciswap" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("smoke-hook.sh,smoke-release.sh", "smoke-release.sh,smoke-hook.sh") } else { $l } } } "FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list"
   Lint-Break "cidirect" $CI { param($ls) $ls; "      - run: bash tests/smoke-render.sh" } "FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh"
   Lint-Break "cirename" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: bash scripts smoke tests", "name: bash scripts smoke") } } "the required job bash scripts smoke tests is missing"
+  # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
+  Lint-Break "platformschema" "schema\nightmill.schema.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform"', '"platformx"') } } 'FAIL: schema/nightmill.schema.json does not mention "platform"'
+  Lint-Break "platformexample" "templates\nightmill.example.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform": "all"', '"platform": "unix"') } } "FAIL: templates/nightmill.example.json does not mention verification.platform all"
+  Lint-Break "platformreadme" "README.md" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: README.md does not mention verification.platform"
+  Lint-Break "platforminit" "skills\init\SKILL.md" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: skills/init/SKILL.md does not mention verification.platform"
+  Lint-Break "platformcheck" "tests\check.sh" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: tests/check.sh does not mention verification.platform"
 
   Write-Host "smoke-check: ok"
 } finally {

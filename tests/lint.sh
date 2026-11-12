@@ -154,12 +154,12 @@ fi
 grep -q 'Picking an issue' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md has no 'Picking an issue' section"; fail=1; }
 
 echo "== init skill keeps the install-chat steps"
-# /init detects, asks seven questions in order, plans, confirms once, applies with gh and git (iteration 1).
+# /init detects, asks eight questions in order, plans, confirms once, applies with gh and git (iteration 1; the platform is the eighth, iteration 56).
 for w in validate-config createProjectV2View updateProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link'; do
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
 done
 i=0
-for t in 'maintainer name' 'check command' 'areas' 'invariants' 'manual-check paths' 'slot count' 'ports'; do
+for t in 'maintainer name' 'check command' 'areas' 'invariants' 'manual-check paths' 'slot count' 'ports' 'platform'; do
   i=$((i + 1))
   grep -q -- "^$i\. \*\*$t\*\*" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md question $i is not '$t'"; fail=1; }
 done
@@ -1316,6 +1316,12 @@ chk_np=$(grep -o 'ALL CHECKS PASSED' tests/check.sh | wc -l | tr -d ' ')
 grep -qF '"checkJobs"' schema/nightmill.schema.json || { echo "FAIL: schema/nightmill.schema.json does not mention \"checkJobs\""; fail=1; }
 json_load templates/nightmill.example.json
 [ "$(json_get verification.checkJobs)" = 4 ] || { echo "FAIL: templates/nightmill.example.json does not mention verification.checkJobs 4"; fail=1; }
+# Iteration 56 (#307): verification.platform is wired in the schema, the example, the README, the init skill and the check
+grep -qF '"platform"' schema/nightmill.schema.json || { echo "FAIL: schema/nightmill.schema.json does not mention \"platform\""; fail=1; }
+[ "$(json_get verification.platform)" = all ] || { echo "FAIL: templates/nightmill.example.json does not mention verification.platform all"; fail=1; }
+for fw in 'README.md' 'skills/init/SKILL.md' 'tests/check.sh'; do
+  grep -qF -- 'verification.platform' "$fw" || { echo "FAIL: $fw does not mention verification.platform"; fail=1; }
+done
 for fw in 'README.md|checkJobs' 'README.md|--quick' 'CONTRIBUTING.md|--quick' \
   'skills/workflow/SKILL.md|--quick' 'skills/workflow/SKILL.md|check: QUICK' 'skills/next/SKILL.md|--quick' \
   'skills/next/SKILL.md|check: QUICK' 'skills/fix/SKILL.md|--quick' 'skills/fix/SKILL.md|check: QUICK' \
