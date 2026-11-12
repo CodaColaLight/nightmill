@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.0 (2026-11-12)
+
 - Iteration 55 (#289): CI runs the PowerShell smoke steps in four parts on four Windows runners at once
   (`smoke-slot.ps1` alone in one); a final job keeps the required name `PowerShell scripts smoke tests` and fails
   unless every part succeeded. `tests/check.sh --summary <file>` (`check.ps1 -Summary`) appends the check's wall
