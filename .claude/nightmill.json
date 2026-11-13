@@ -41,6 +41,7 @@
     "benchRule": "A script that runs in the smoke tests keeps its scenario there; a new script flag gets a smoke step in both shells",
     "checkJobs": 4
   },
+  "limits": { "minutesPerIssue": 360 },
   "escalation": {
     "storyTriggers": ["a change to the status flow or who sets a status", "a new, renamed or removed config key", "a change to the slot marker format"]
   },
