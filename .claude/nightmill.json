@@ -39,7 +39,8 @@
     "manualCheckPaths": ["skills", "agents", "hooks"],
     "manualCheckText": "Run the changed skill in a real project with `claude --plugin-dir <this checkout>` and watch it take the right steps",
     "benchRule": "A script that runs in the smoke tests keeps its scenario there; a new script flag gets a smoke step in both shells",
-    "checkJobs": 4
+    "checkJobs": 4,
+    "platform": "windows"
   },
   "limits": { "minutesPerIssue": 1440 },
   "escalation": {

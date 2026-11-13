@@ -1317,11 +1317,21 @@ grep -qF '"checkJobs"' schema/nightmill.schema.json || { echo "FAIL: schema/nigh
 json_load templates/nightmill.example.json
 [ "$(json_get verification.checkJobs)" = 4 ] || { echo "FAIL: templates/nightmill.example.json does not mention verification.checkJobs 4"; fail=1; }
 # Iteration 56 (#307): verification.platform is wired in the schema, the example, the README, the init skill and the check
-grep -qF '"platform"' schema/nightmill.schema.json || { echo "FAIL: schema/nightmill.schema.json does not mention \"platform\""; fail=1; }
+json_load schema/nightmill.schema.json
+pf=properties.verification.properties.platform
+[ "$(json_get "$pf.type")" = string ] || { echo "FAIL: schema: verification.platform is not a string"; fail=1; }
+[ "$(json_get "$pf.default")" = all ] || { echo "FAIL: schema: verification.platform default is not all"; fail=1; }
+[ -n "$(json_get "$pf.description")" ] || { echo "FAIL: schema: verification.platform has no description"; fail=1; }
+for j in 0 1 2; do
+  case $j in 0) m=all ;; 1) m=windows ;; 2) m=unix ;; esac
+  [ "$(json_get "$pf.enum[$j]")" = "$m" ] || { echo "FAIL: schema: verification.platform enum[$j] is not $m"; fail=1; }
+done
+json_load templates/nightmill.example.json
 [ "$(json_get verification.platform)" = all ] || { echo "FAIL: templates/nightmill.example.json does not mention verification.platform all"; fail=1; }
 for fw in 'README.md' 'skills/init/SKILL.md' 'tests/check.sh'; do
   grep -qF -- 'verification.platform' "$fw" || { echo "FAIL: $fw does not mention verification.platform"; fail=1; }
 done
+grep -E '^\| `verification` \|.*`platform`' README.md >/dev/null || { echo "FAIL: README.md: the verification row of the configuration table does not mention platform"; fail=1; }
 for fw in 'README.md|checkJobs' 'README.md|--quick' 'CONTRIBUTING.md|--quick' \
   'skills/workflow/SKILL.md|--quick' 'skills/workflow/SKILL.md|check: QUICK' 'skills/next/SKILL.md|--quick' \
   'skills/next/SKILL.md|check: QUICK' 'skills/fix/SKILL.md|--quick' 'skills/fix/SKILL.md|check: QUICK' \

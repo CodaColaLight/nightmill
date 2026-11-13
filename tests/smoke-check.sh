@@ -16,11 +16,18 @@ USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
 barrier() { printf 'i=0; until %s; do i=$((i+1)); [ $i -gt 300 ] && exit 9; sleep 0.1; done' "$1"; }
-# run_check <steps-file> <args...>: out, err, rc of tests/check.sh in this checkout
+# nrepo: a copy of tests/check.sh and scripts/lib/ with a configuration of its own that has no platform key, so the cases
+# below do not read this repository's own .claude/nightmill.json (its verification.platform may be windows, unix, all or absent)
+nrepo="$tmp/nrepo"
+mkdir -p "$nrepo/tests" "$nrepo/scripts" "$nrepo/.claude"
+cp "$here/tests/check.sh" "$here/tests/check.ps1" "$nrepo/tests/"
+cp -R "$here/scripts/lib" "$nrepo/scripts/lib"
+echo '{ "verification": { "check": "true" } }' > "$nrepo/.claude/nightmill.json"
+# run_check <steps-file> <args...>: out, err, rc of tests/check.sh in nrepo
 run_check() {
   local steps=$1; shift
   set +e
-  out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$here/tests/check.sh" "$@" 2>"$tmp/err.txt"); rc=$?
+  out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$nrepo/tests/check.sh" "$@" 2>"$tmp/err.txt"); rc=$?
   set -e
   err=$(cat "$tmp/err.txt")
 }
@@ -279,12 +286,12 @@ for r in A B; do
   o=B; [ "$r" = B ] && o=A
   {
     printf 'run\techo "run %s"; touch "%s/started%s"; %s\n' "$r" "$tmp" "$r" "$(barrier "[ -f '$tmp/started$o' ]")"
-    printf 'render\tbash tests/smoke-render.sh\n'
-    printf 'hook\tbash tests/smoke-hook.sh\n'
+    printf 'render\tbash "%s/tests/smoke-render.sh"\n' "$here"
+    printf 'hook\tbash "%s/tests/smoke-hook.sh"\n' "$here"
   } > "$tmp/two$r.txt"
 done
 for r in A B; do
-  ( TMPDIR="$tmp/tmp$r" NIGHTMILL_CHECK_STEPS="$tmp/two$r.txt" bash "$here/tests/check.sh" --jobs 2 > "$tmp/out$r.txt" 2>&1; echo $? > "$tmp/rc$r.txt" ) &
+  ( TMPDIR="$tmp/tmp$r" NIGHTMILL_CHECK_STEPS="$tmp/two$r.txt" bash "$nrepo/tests/check.sh" --jobs 2 > "$tmp/out$r.txt" 2>&1; echo $? > "$tmp/rc$r.txt" ) &
 done
 wait
 for r in A B; do
@@ -415,7 +422,7 @@ lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'
 # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
-lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema/nightmill.schema.json does not mention "platform"'
+lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema: verification.platform is not a string'
 lint_break platformexample templates/nightmill.example.json 's/"platform": "all"/"platform": "unix"/' 'FAIL: templates/nightmill.example.json does not mention verification.platform all'
 lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
 lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'

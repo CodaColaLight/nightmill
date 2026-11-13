@@ -42,8 +42,16 @@ function Wait-Child($c) {
   $c.P.WaitForExit()
   [pscustomobject]@{ Out = ($c.OutTask.Result -replace "`r`n", "`n"); Err = ($c.ErrTask.Result -replace "`r`n", "`n"); Code = $c.P.ExitCode }
 }
-# Check <steps-file> <check.ps1 arguments> [dir of the checkout] [environment]: tests/check.ps1 with fixture steps
-function Check([string]$steps, [string]$cargs, [string]$root = $here, [hashtable]$extraEnv = @{}) {
+# $nrepo: a copy of tests/check.sh, tests/check.ps1 and scripts/lib with a configuration of its own that has no platform key,
+# so the cases that do not test the key do not read this repository's own .claude/nightmill.json (its verification.platform
+# may be windows, unix, all or absent)
+$nrepo = "$tmp\nrepo"
+New-Item -ItemType Directory "$nrepo\tests", "$nrepo\scripts", "$nrepo\.claude" | Out-Null
+Copy-Item "$here\tests\check.sh", "$here\tests\check.ps1" "$nrepo\tests\"
+Copy-Item "$here\scripts\lib" "$nrepo\scripts\lib" -Recurse
+[System.IO.File]::WriteAllText("$nrepo\.claude\nightmill.json", "{ `"verification`": { `"check`": `"true`" } }`n")
+# Check <steps-file> <check.ps1 arguments> [dir of the checkout, nrepo by default] [environment]: tests/check.ps1 with fixture steps
+function Check([string]$steps, [string]$cargs, [string]$root = $nrepo, [hashtable]$extraEnv = @{}) {
   $e = @{ NIGHTMILL_CHECK_STEPS = $steps; NIGHTMILL_CLOCK_FILE = $clockF }
   foreach ($k in $extraEnv.Keys) { $e[$k] = $extraEnv[$k] }
   Wait-Child (Start-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$root\tests\check.ps1`" $cargs" $root $e)
@@ -168,7 +176,7 @@ try {
   # to the parameter and the second to nothing, and a repeated -Quick fails in PowerShell's own binding, so they are run through bash with the same arguments
   foreach ($a in @("--jobs"), @("extra"), @("--quick", "--quick")) {
     Write-Lf "$tmp\quick.log" ""
-    $c = Start-Child $bashExe ("tests/check.sh " + ($a -join " ")) $here @{ NIGHTMILL_CHECK_STEPS = "$tf/quick.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
+    $c = Start-Child $bashExe ("tests/check.sh " + ($a -join " ")) $nrepo @{ NIGHTMILL_CHECK_STEPS = "$tf/quick.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
     $r = Wait-Child $c
     if ($r.Code -ne 2) { Fail "usage ($a): exit $($r.Code): $($r.Out)" }
     if (-not (Has-Line $r.Err $USAGE)) { Fail "usage ($a): no usage line on standard error: $($r.Err)" }
@@ -308,15 +316,16 @@ try {
   Write-Host "== two checks at once"
   New-Item -ItemType Directory "$tmp\tmpA", "$tmp\tmpB" | Out-Null
   $psSh = $psExe -replace '\\', '/'   # the steps run under bash -c, which would strip backslashes
+  $hf = $here -replace '\\', '/'      # the steps run in the throwaway checkout, so they name the scripts of this one
   foreach ($x in "A", "B") {
     $o2 = if ($x -eq "A") { "B" } else { "A" }
     Write-Lf "$tmp\two$x.txt" ("run`techo `"run $x`"; touch `"$tf/started$x`"; " + (Barrier "[ -f '$tf/started$o2' ]") + "`n" +
-      "render`t'$psSh' -NoProfile -ExecutionPolicy Bypass -File tests/smoke-render.ps1`n" +
-      "hook`t'$psSh' -NoProfile -ExecutionPolicy Bypass -File tests/smoke-hook.ps1`n")
+      "render`t'$psSh' -NoProfile -ExecutionPolicy Bypass -File '$hf/tests/smoke-render.ps1'`n" +
+      "hook`t'$psSh' -NoProfile -ExecutionPolicy Bypass -File '$hf/tests/smoke-hook.ps1'`n")
   }
   $cs = @{}
   foreach ($x in "A", "B") {
-    $cs[$x] = Start-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$here\tests\check.ps1`" -Jobs 2" $here @{ TMPDIR = "$tf/tmp$x"; TEMP = "$tmp\tmp$x"; TMP = "$tmp\tmp$x"; NIGHTMILL_CHECK_STEPS = "$tf/two$x.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
+    $cs[$x] = Start-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$nrepo\tests\check.ps1`" -Jobs 2" $nrepo @{ TMPDIR = "$tf/tmp$x"; TEMP = "$tmp\tmp$x"; TMP = "$tmp\tmp$x"; NIGHTMILL_CHECK_STEPS = "$tf/two$x.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
   }
   foreach ($x in "A", "B") {
     $o2 = if ($x -eq "A") { "B" } else { "A" }
@@ -342,10 +351,10 @@ try {
   }
   Write-Lf "$tmp\sum-steps.txt" $sumSteps
   Write-Lf "$tmp\sclock" "1794038400`n"
-  $plain = Check "$tf/sum-steps.txt" "-Jobs 1" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+  $plain = Check "$tf/sum-steps.txt" "-Jobs 1" $nrepo @{ NIGHTMILL_CLOCK_FILE = $sclock }
   Write-Lf "$tmp\sclock" "1794038400`n"
   if (Test-Path "$tmp\summary.md") { Remove-Item "$tmp\summary.md" }
-  $r = Check "$tf/sum-steps.txt" "-Jobs 1 -Summary `"$tf/summary.md`"" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+  $r = Check "$tf/sum-steps.txt" "-Jobs 1 -Summary `"$tf/summary.md`"" $nrepo @{ NIGHTMILL_CLOCK_FILE = $sclock }
   if ($r.Code -ne 1) { Fail "summary: exit $($r.Code), wanted 1 (e fails): $($r.Out)" }
   if ($plain.Code -ne 1) { Fail "summary: the run without -Summary exited $($plain.Code)" }
   if ($r.Out -cne $plain.Out) { Fail "summary: the standard output differs from a run without -Summary: [$($r.Out)] vs [$($plain.Out)]" }
@@ -360,7 +369,7 @@ try {
   Write-Lf "$tmp\sum2.txt" "x`ttrue`ny`ttrue`n"
   if (Test-Path "$tmp\summary2.md") { Remove-Item "$tmp\summary2.md" }
   foreach ($i in 1, 2) {
-    $r = Check "$tf/sum2.txt" "-Jobs 1 -Summary `"$tf/summary2.md`"" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+    $r = Check "$tf/sum2.txt" "-Jobs 1 -Summary `"$tf/summary2.md`"" $nrepo @{ NIGHTMILL_CLOCK_FILE = $sclock }
     if ($r.Code -ne 0) { Fail "summary twice: run $i exit $($r.Code): $($r.Out)" }
   }
   $s2 = Read-Lf "$tmp\summary2.md"
@@ -373,7 +382,7 @@ try {
   # a file that cannot be written: the note, and the exit code of the steps
   New-Item -ItemType Directory "$tmp\sumdir" | Out-Null
   Write-Lf "$tmp\sclock" "1794038400`n"
-  $r = Check "$tf/sum-steps.txt" "-Jobs 1 -Summary `"$tf/sumdir`"" $here @{ NIGHTMILL_CLOCK_FILE = $sclock }
+  $r = Check "$tf/sum-steps.txt" "-Jobs 1 -Summary `"$tf/sumdir`"" $nrepo @{ NIGHTMILL_CLOCK_FILE = $sclock }
   if ($r.Code -ne 1) { Fail "summary to a directory: exit $($r.Code), wanted 1: $($r.Out)" }
   if (-not (Has-Line $r.Err "check: cannot write the summary to $tf/sumdir")) { Fail "summary to a directory: no 'cannot write' line: $($r.Err)" }
   if ((Last-Line $r.Out) -cne "CHECK FAILED: e") { Fail "summary to a directory: the last line: $($r.Out)" }
@@ -450,7 +459,7 @@ try {
   Lint-Break "cidirect" $CI { param($ls) $ls; "      - run: bash tests/smoke-render.sh" } "FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh"
   Lint-Break "cirename" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: bash scripts smoke tests", "name: bash scripts smoke") } } "the required job bash scripts smoke tests is missing"
   # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
-  Lint-Break "platformschema" "schema\nightmill.schema.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform"', '"platformx"') } } 'FAIL: schema/nightmill.schema.json does not mention "platform"'
+  Lint-Break "platformschema" "schema\nightmill.schema.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform"', '"platformx"') } } 'FAIL: schema: verification.platform is not a string'
   Lint-Break "platformexample" "templates\nightmill.example.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform": "all"', '"platform": "unix"') } } "FAIL: templates/nightmill.example.json does not mention verification.platform all"
   Lint-Break "platformreadme" "README.md" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: README.md does not mention verification.platform"
   Lint-Break "platforminit" "skills\init\SKILL.md" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: skills/init/SKILL.md does not mention verification.platform"
