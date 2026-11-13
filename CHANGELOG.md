@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 56 (#307): the platform chosen in /init decides which test family the check runs. A new key,
+  verification.platform (windows, unix or all, default all), is asked by /nightmill:init as its eighth question,
+  with the detected platform proposed. tests/check.sh runs the PowerShell tests only on windows and the bash tests
+  only on unix, always the lint and claude plugin validate and test, and lists the family it skipped; without the
+  key it runs both, as before. --only ignores the key, so CI is unchanged and runs both families.
+
 ## 0.7.0 (2026-11-12)
 
 - Iteration 55 (#289): CI runs the PowerShell smoke steps in four parts on four Windows runners at once
