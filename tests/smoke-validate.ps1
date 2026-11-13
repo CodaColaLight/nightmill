@@ -165,6 +165,15 @@ try {
   $r = Run-V $f @("-Schema", "`"$mini`"")
   if ($r.Code -ne 0) { Fail "enum: a valid value was refused: $($r.Out)" }
 
+  Write-Host "== verification.platform is windows, unix or all"
+  # the key is in the schema (iteration 56): a known value is clean even with -Strict, any other value is an enum error on the key
+  function Plat-Cfg([string]$value) { '{"github":{"owner":"o","repo":"r","projectNumber":1},"maintainer":{"name":"M"},"verification":{"check":"true","platform":' + $value + '}}' }
+  foreach ($plat in "windows", "unix", "all") {
+    Check "platform $plat" (Plat-Cfg ('"' + $plat + '"')) 0 @("0 errors, 0 warnings") @("-Strict")
+  }
+  Check "platform linux" (Plat-Cfg '"linux"') 1 @('error: verification.platform: must be one of: all, windows, unix, got "linux"', "1 error, 0 warnings")
+  Check "platform a number" (Plat-Cfg '3') 1 @("error: verification.platform: expected string, got integer")
+
   Write-Host "== git.mergeFlags must contain --auto and never --admin"
   $MF = '"mergeFlags": "--auto --squash"'
   $pAuto = 'error: git.mergeFlags: must match the pattern ^(.* )?--auto( .*)?$, got '

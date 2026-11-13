@@ -387,7 +387,7 @@ The schema documents every key; the short version:
 | `board` | Field names, status names, priority order |
 | `labels`, `areas`, `invariants` | Label scheme, area options, the project's rules (rendered into the issue forms) |
 | `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
-| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it) |
+| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it), and which test family the check runs (`platform`: `windows`, `unix` or `all`, default `all`, for a check that reads it) |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`, an alias the Agent tool takes: `sonnet`, `opus`, `haiku` or `fable`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
@@ -1129,7 +1129,9 @@ check `PowerShell scripts smoke tests` is a final job that fails unless every pa
 PowerShell step runs in no part or in two. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
 appends the check's wall time and its five slowest steps to a Markdown file; each CI run's summary page shows every
 job's wall time and its five slowest workflow steps (read from the jobs API by the final job, the one job with
-`actions: read`), and each check's five slowest steps.
+`actions: read`), and each check's five slowest steps. With `verification.platform` set, `tests/check.sh` runs only
+that platform's tests (the PowerShell tests on `windows`, the bash tests on `unix`), always the lint and the `claude`
+steps, and lists the family it skipped; `--only` ignores the key, and CI runs both families through `--only`.
 
 CI runs all of them. `tests/check.sh` runs `claude plugin test .` when `claude` is on the PATH and has the
 `plugin test` subcommand, and lists it as skipped otherwise; CI runs it in the `validate` job, which does not block a

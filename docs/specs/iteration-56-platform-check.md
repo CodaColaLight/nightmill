@@ -1,6 +1,6 @@
 # Iteration 56: the platform chosen in /init decides which test family the local check runs
 
-Status: draft, awaiting approval (#307)
+Status: delivered in iteration 56 (PR #312)
 
 Story #307, epic #306 (platform support). On Windows the bash tests run in Git Bash, fail there for reasons that are
 not product bugs (#300, #302, #303, #304) and make the full check take 2 to 3 hours; CI already runs each family on its

@@ -91,7 +91,8 @@
         "manualCheckPaths": { "type": "array", "items": { "type": "string" }, "description": "A change under one of these paths also needs the manual check." },
         "manualCheckText": { "type": "string", "description": "What the manual check is, in one sentence." },
         "benchRule": { "type": "string", "description": "Optional extra testing rule, for example which code needs a benchmark." },
-        "checkJobs": { "type": "integer", "minimum": 1, "default": 4, "description": "How many independent steps the check command runs at the same time (1 to 16), for a check command that reads it; nightmill's own tests/check.sh does, and runs no more steps at once than the machine has processors. 1 runs them one after another." }
+        "checkJobs": { "type": "integer", "minimum": 1, "default": 4, "description": "How many independent steps the check command runs at the same time (1 to 16), for a check command that reads it; nightmill's own tests/check.sh does, and runs no more steps at once than the machine has processors. 1 runs them one after another." },
+        "platform": { "type": "string", "enum": ["all", "windows", "unix"], "default": "all", "description": "The platform the project runs on, for a check command that reads it; nightmill's own tests/check.sh does. windows runs the PowerShell tests and skips the bash tests (Git Bash on Windows counts as windows); unix (Linux or macOS) runs the bash tests and skips the PowerShell tests; all runs both. The lint and claude plugin validate and test run on every platform. The check lists what it skipped; --only ignores this key. /nightmill:init proposes the detected platform." }
       }
     },
     "escalation": {

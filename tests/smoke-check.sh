@@ -16,11 +16,18 @@ USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
 barrier() { printf 'i=0; until %s; do i=$((i+1)); [ $i -gt 300 ] && exit 9; sleep 0.1; done' "$1"; }
-# run_check <steps-file> <args...>: out, err, rc of tests/check.sh in this checkout
+# nrepo: a copy of tests/check.sh and scripts/lib/ with a configuration of its own that has no platform key, so the cases
+# below do not read this repository's own .claude/nightmill.json (its verification.platform may be windows, unix, all or absent)
+nrepo="$tmp/nrepo"
+mkdir -p "$nrepo/tests" "$nrepo/scripts" "$nrepo/.claude"
+cp "$here/tests/check.sh" "$here/tests/check.ps1" "$nrepo/tests/"
+cp -R "$here/scripts/lib" "$nrepo/scripts/lib"
+echo '{ "verification": { "check": "true" } }' > "$nrepo/.claude/nightmill.json"
+# run_check <steps-file> <args...>: out, err, rc of tests/check.sh in nrepo
 run_check() {
   local steps=$1; shift
   set +e
-  out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$here/tests/check.sh" "$@" 2>"$tmp/err.txt"); rc=$?
+  out=$(NIGHTMILL_CHECK_STEPS="$steps" bash "$nrepo/tests/check.sh" "$@" 2>"$tmp/err.txt"); rc=$?
   set -e
   err=$(cat "$tmp/err.txt")
 }
@@ -164,18 +171,127 @@ printf '{ "verification": { "check": "true", "checkJobs": 2 } }\n' > "$repo/.cla
 out=$(UPDATE_PANEL_FIXTURES=1 NIGHTMILL_CHECK_STEPS="$tmp/one-step.txt" bash "$repo/tests/check.sh" --jobs 3 2>/dev/null) || fail "config UPDATE: exit $?"
 [ "$(head -n 1 <<<"$out")" = "check: full, 1 at a time (UPDATE_PANEL_FIXTURES is set)" ] || fail "config UPDATE: the header: $out"
 
+echo "== the platform from the config"
+# verification.platform (iteration 56): windows skips the bash steps, unix skips the ps steps, the lint and the claude steps
+# always run, --only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
+plog="$tmp/platform.log"
+WIN_LINE='SKIPPED: bash tests (verification.platform is windows)'
+UNIX_LINE='SKIPPED: PowerShell tests (verification.platform is unix)'
+PNOTE='check: verification.platform must be windows, unix or all; running both families'
+mk_plat() { # mk_plat <reason of b> <reason of p>: the four steps in $tmp/plat.txt
+  {
+    printf 'l\techo l >> "%s"\tlint\n' "$plog"
+    printf 'b\techo b >> "%s"\tbash\t%s\n' "$plog" "$1"
+    printf 'p\techo p >> "%s"\tps\t%s\n' "$plog" "$2"
+    printf 'c\techo c >> "%s"\tclaude\n' "$plog"
+  } > "$tmp/plat.txt"
+}
+plat_run() { # plat_run <platform as JSON, or - for no key> <check.sh arguments...>: out, err, rc of the check in $repo; the log in $plat_log
+  local val=$1; shift
+  if [ "$val" = - ]; then printf '{ "verification": { "check": "true" } }\n' > "$repo/.claude/nightmill.json"
+  else printf '{ "verification": { "check": "true", "platform": %s } }\n' "$val" > "$repo/.claude/nightmill.json"; fi
+  : > "$plog"
+  set +e
+  out=$(NIGHTMILL_CHECK_STEPS="$tmp/plat.txt" bash "$repo/tests/check.sh" --jobs 1 "$@" 2>"$tmp/err.txt"); rc=$?
+  set -e
+  err=$(cat "$tmp/err.txt")
+  plat_log=$(tr '\n' ',' < "$plog")
+}
+skipped_lines() { grep -c '^SKIPPED:' <<<"$1" || true; }
+mk_plat "" ""
+# windows: the PowerShell tests only
+plat_run '"windows"'
+[ "$rc" = 0 ] || fail "platform windows: exit $rc: $out $err"
+[ "$plat_log" = "l,p,c," ] || fail "platform windows: the steps that ran: $plat_log"
+[ "$(grep -cxF -- "$WIN_LINE" <<<"$out")" = 1 ] || fail "platform windows: not one '$WIN_LINE' line: $out"
+[ "$(skipped_lines "$out")" = 1 ] || fail "platform windows: more SKIPPED lines than the platform's: $out"
+if grep -qx '== b' <<<"$out"; then fail "platform windows: a section for the skipped bash step: $out"; fi
+[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows: the last line: $out"
+# unix: the bash tests only
+plat_run '"unix"'
+[ "$rc" = 0 ] || fail "platform unix: exit $rc: $out $err"
+[ "$plat_log" = "l,b,c," ] || fail "platform unix: the steps that ran: $plat_log"
+[ "$(grep -cxF -- "$UNIX_LINE" <<<"$out")" = 1 ] || fail "platform unix: not one '$UNIX_LINE' line: $out"
+[ "$(skipped_lines "$out")" = 1 ] || fail "platform unix: more SKIPPED lines than the platform's: $out"
+if grep -qx '== p' <<<"$out"; then fail "platform unix: a section for the skipped ps step: $out"; fi
+[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform unix: the last line: $out"
+# the platform's reason replaces the step's own reason
+mk_plat "" "no pwsh here"
+plat_run '"unix"'
+[ "$rc" = 0 ] || fail "platform unix, p with a reason: exit $rc: $out $err"
+[ "$plat_log" = "l,b,c," ] || fail "platform unix, p with a reason: the steps that ran: $plat_log"
+has_line "$out" "$UNIX_LINE" || fail "platform unix, p with a reason: no platform line: $out"
+if has_line "$out" 'SKIPPED: no pwsh here'; then fail "platform unix, p with a reason: the step's own reason was printed: $out"; fi
+mk_plat "other reason" ""
+plat_run '"windows"'
+has_line "$out" "$WIN_LINE" || fail "platform windows, b with a reason: no platform line: $out"
+if has_line "$out" 'SKIPPED: other reason'; then fail "platform windows, b with a reason: the step's own reason was printed: $out"; fi
+# a skipped step of the kept family keeps its own reason, and both lines print in list order
+mk_plat "" "no pwsh here"
+plat_run '"windows"'
+[ "$rc" = 0 ] || fail "platform windows, p with a reason: exit $rc: $out $err"
+[ "$plat_log" = "l,c," ] || fail "platform windows, p with a reason: the steps that ran: $plat_log"
+[ "$(grep '^SKIPPED:' <<<"$out" | tr '\n' '|')" = "$WIN_LINE|SKIPPED: no pwsh here|" ] || fail "platform windows, p with a reason: the SKIPPED lines or their order: $out"
+[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows, p with a reason: the last line: $out"
+# all and no key: today's behaviour, both families, nothing skipped, nothing on standard error
+mk_plat "" ""
+plat_run '"all"'
+[ "$rc" = 0 ] || fail "platform all: exit $rc: $out $err"
+[ "$plat_log" = "l,b,p,c," ] || fail "platform all: the steps that ran: $plat_log"
+[ "$(skipped_lines "$out")" = 0 ] || fail "platform all: a SKIPPED line: $out"
+[ -z "$err" ] || fail "platform all: standard error is not empty: $err"
+out_all=$out
+plat_run -
+[ "$rc" = 0 ] || fail "platform not set: exit $rc: $out $err"
+[ "$plat_log" = "l,b,p,c," ] || fail "platform not set: the steps that ran: $plat_log"
+[ "$(skipped_lines "$out")" = 0 ] || fail "platform not set: a SKIPPED line: $out"
+[ -z "$err" ] || fail "platform not set: standard error is not empty: $err"
+[ "$out" = "$out_all" ] || fail "platform not set: the output differs from platform all: [$out] vs [$out_all]"
+# any other value: the note, and both families run
+for bad in '"linux"' 3; do
+  plat_run "$bad"
+  [ "$rc" = 0 ] || fail "platform $bad: exit $rc: $out $err"
+  [ "$plat_log" = "l,b,p,c," ] || fail "platform $bad: the steps that ran: $plat_log"
+  grep -qxF "$PNOTE" <<<"$err" || fail "platform $bad: no note on standard error: $err"
+  [ "$(skipped_lines "$out")" = 0 ] || fail "platform $bad: a SKIPPED line: $out"
+done
+# --quick: the lint and the bash steps, then the key
+QUICK_LAST='QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)'
+plat_run '"windows"' --quick
+[ "$rc" = 0 ] || fail "platform windows, quick: exit $rc: $out $err"
+[ "$plat_log" = "l," ] || fail "platform windows, quick: the steps that ran: $plat_log"
+has_line "$out" "$WIN_LINE" || fail "platform windows, quick: no platform line: $out"
+[ "$(tail -n 1 <<<"$out")" = "$QUICK_LAST" ] || fail "platform windows, quick: the last line: $out"
+plat_run '"unix"' --quick
+[ "$rc" = 0 ] || fail "platform unix, quick: exit $rc: $out $err"
+[ "$plat_log" = "l,b," ] || fail "platform unix, quick: the steps that ran: $plat_log"
+[ "$(skipped_lines "$out")" = 0 ] || fail "platform unix, quick: a SKIPPED line: $out"
+[ "$(tail -n 1 <<<"$out")" = "$QUICK_LAST" ] || fail "platform unix, quick: the last line: $out"
+# --only ignores the key, and does not read it either
+for plat in '"windows"' '"unix"'; do
+  plat_run "$plat" --only b,p
+  [ "$rc" = 0 ] || fail "platform $plat, only: exit $rc: $out $err"
+  [ "$plat_log" = "b,p," ] || fail "platform $plat, only: the steps that ran: $plat_log"
+  [ "$(skipped_lines "$out")" = 0 ] || fail "platform $plat, only: a SKIPPED line: $out"
+  [ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS PASSED (2 of 4 steps; the full check has not run)" ] || fail "platform $plat, only: the last line: $out"
+done
+plat_run '"linux"' --only b
+[ "$rc" = 0 ] || fail "platform linux, only: exit $rc: $out $err"
+[ "$plat_log" = "b," ] || fail "platform linux, only: the steps that ran: $plat_log"
+if grep -qF "$PNOTE" <<<"$err"; then fail "platform linux, only: a note for a key that --only does not read: $err"; fi
+
 echo "== two checks at once"
 mkdir -p "$tmp/tmpA" "$tmp/tmpB"
 for r in A B; do
   o=B; [ "$r" = B ] && o=A
   {
     printf 'run\techo "run %s"; touch "%s/started%s"; %s\n' "$r" "$tmp" "$r" "$(barrier "[ -f '$tmp/started$o' ]")"
-    printf 'render\tbash tests/smoke-render.sh\n'
-    printf 'hook\tbash tests/smoke-hook.sh\n'
+    printf 'render\tbash "%s/tests/smoke-render.sh"\n' "$here"
+    printf 'hook\tbash "%s/tests/smoke-hook.sh"\n' "$here"
   } > "$tmp/two$r.txt"
 done
 for r in A B; do
-  ( TMPDIR="$tmp/tmp$r" NIGHTMILL_CHECK_STEPS="$tmp/two$r.txt" bash "$here/tests/check.sh" --jobs 2 > "$tmp/out$r.txt" 2>&1; echo $? > "$tmp/rc$r.txt" ) &
+  ( TMPDIR="$tmp/tmp$r" NIGHTMILL_CHECK_STEPS="$tmp/two$r.txt" bash "$nrepo/tests/check.sh" --jobs 2 > "$tmp/out$r.txt" 2>&1; echo $? > "$tmp/rc$r.txt" ) &
 done
 wait
 for r in A B; do
@@ -305,5 +421,11 @@ lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --summar
 lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'
+# verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
+lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema: verification.platform is not a string'
+lint_break platformexample templates/nightmill.example.json 's/"platform": "all"/"platform": "unix"/' 'FAIL: templates/nightmill.example.json does not mention verification.platform all'
+lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
+lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'
+lint_break platformcheck tests/check.sh 's/verification\.platform/verification-platform/g' 'FAIL: tests/check.sh does not mention verification.platform'
 
 echo "smoke-check: ok"

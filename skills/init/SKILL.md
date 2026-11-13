@@ -39,6 +39,7 @@ Read these, in this order, and never ask for a value that was found:
 | `verification.manualCheckPaths` | the areas that look like a UI or an app: a `package.json` with a dev server, `src/ui`, `client`, `app` |
 | `worktrees.slots`, `parallel.maxAgents` | physical memory, one per 8 GB, at least 1 and at most 4 (PowerShell: `(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory`; bash: `/proc/meminfo` or `sysctl hw.memsize`) |
 | `worktrees.ports` | one name per dev server found (`PORT` or `--port` in `package.json` scripts or in config files); none when none |
+| `verification.platform` | the platform Claude Code runs on: Windows (`win32`, also in Git Bash, MSYS or Cygwin) is `windows`; Linux and macOS (`linux`, `darwin`) are `unix`. When the platform is not known: `uname -s` in bash (`MINGW*`, `MSYS*`, `CYGWIN*` give `windows`, anything else `unix`), or `$env:OS -eq 'Windows_NT'` in PowerShell |
 
 ## 2. Ask
 
@@ -52,6 +53,7 @@ asks only "keep" or "change":
 5. **manual-check paths** (`verification.manualCheckPaths`) and, when there are any, the one-sentence `verification.manualCheckText`
 6. **slot count** (`worktrees.slots`, also used for `parallel.maxAgents`)
 7. **ports** (`worktrees.ports`); skipped when no dev server was detected
+8. **platform** (`verification.platform`): `windows` (the check runs the PowerShell tests) or `unix` for Linux and macOS (the bash tests); `all` runs both, for a project worked on from both; read only by a check command that reads it. An empty answer deletes the key, and the check then runs both families
 
 A question is skipped when the existing config already holds the key, so a configured project is asked
 nothing. The user may answer "defaults" at any point; the remaining questions then take their proposed

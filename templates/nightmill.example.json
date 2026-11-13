@@ -36,7 +36,8 @@
     "manualCheckPaths": ["src/ui"],
     "manualCheckText": "Open the app, exercise the feature, no console errors.",
     "benchRule": "",
-    "checkJobs": 4
+    "checkJobs": 4,
+    "platform": "all"
   },
   "escalation": {
     "storyTriggers": ["a new rule or behaviour", "a public API change", "a design choice"]

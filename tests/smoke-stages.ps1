@@ -167,7 +167,14 @@ try {
   function Write-Steps([string]$two) {
     [System.IO.File]::WriteAllText($steps, ("one`t" + (Clock-Step 12) + "`ntwo`t" + (Clock-Step 75) + $two + "`nthree`t" + (Clock-Step 3700) + "`n"))
   }
-  $checkPs = Join-Path $here "tests\check.ps1"
+  # $nrepo: a copy of tests/check.sh, tests/check.ps1 and scripts/lib with a configuration of its own that has no platform key,
+  # so the cases below do not read this repository's own .claude/nightmill.json (its verification.platform may be windows, unix, all or absent)
+  $nrepo = "$tmp\nrepo"
+  New-Item -ItemType Directory "$nrepo\tests", "$nrepo\scripts", "$nrepo\.claude" | Out-Null
+  Copy-Item "$here\tests\check.sh", "$here\tests\check.ps1" "$nrepo\tests\"
+  Copy-Item "$here\scripts\lib" "$nrepo\scripts\lib" -Recurse
+  [System.IO.File]::WriteAllText("$nrepo\.claude\nightmill.json", "{ `"verification`": { `"check`": `"true`" } }`n")
+  $checkPs = Join-Path $nrepo "tests\check.ps1"
   function Run-Check { Run-Child $psExe "-NoProfile -ExecutionPolicy Bypass -File `"$checkPs`" -Jobs 1" @{ NIGHTMILL_CHECK_STEPS = "$tf/steps.txt"; NIGHTMILL_CLOCK_FILE = $clockF } }
   Write-Steps "; exit 1"
   Set-Clock $T0
