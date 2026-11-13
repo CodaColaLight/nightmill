@@ -554,7 +554,7 @@ for f in skills/*/SKILL.md; do
   if grep '^!`' "$f" | grep -v -e '^!`cat \.claude/nightmill\.json' -e '^!`git symbolic-ref -q --short refs/remotes/origin/HEAD ' >/dev/null; then
     echo "FAIL: $f: the injection has no matching allowed-tools (an injection line does not start !\`cat .claude/nightmill.json or !\`git symbolic-ref)"; fail=1
   fi
-  if grep '^!`git symbolic-ref' "$f" >/dev/null && ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -F 'Bash(git show origin/*:.claude/nightmill.json *)' >/dev/null; then
+  if grep '^!`git symbolic-ref' "$f" >/dev/null && ! printf '%s\n' "$fm" | grep -E '^allowed-tools:' | grep -F 'Bash(MSYS_NO_PATHCONV=1 git show origin/*:.claude/nightmill.json *)' >/dev/null; then
     echo "FAIL: $f: the base configuration's injection has no matching allowed-tools"; fail=1
   fi
 done

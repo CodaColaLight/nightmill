@@ -58,7 +58,7 @@ again on 2026-11-08 with WebFetch: `https://code.claude.com/docs/en/skills`, `..
 - The `allowed-tools` lines. The six skills that inject the base branch's configuration (`workflow`, `spec`, `next`,
   `fix`, `story`, `check`) all have one line of five comma-separated rules:
   `allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *),
-  Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)`
+  Bash(MSYS_NO_PATHCONV=1 git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)`
   (one line in the file). `init` has `allowed-tools: Bash(cat .claude/nightmill.json *), Bash(echo "*no
   .claude/nightmill.json yet*")` (one line). `status`, `models` and `control` have no `allowed-tools`. `init`, `next`,
   `fix` and `spec` have `disable-model-invocation: true` (`story` had it too until bug #119 removed it, so that `/next`

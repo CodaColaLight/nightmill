@@ -126,7 +126,7 @@ becomes
 ```
 Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; the first line names the base ref; see **The configuration** in the `workflow` skill):
 
-!`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
+!`git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || git for-each-ref --count=1 --format="NO origin/HEAD, but %(refname)" refs/remotes/origin; MSYS_NO_PATHCONV=1 git show origin/HEAD:.claude/nightmill.json 2>/dev/null || echo "NO BASE CONFIG: read .claude/nightmill.json of the working tree (cat .claude/nightmill.json); without it, run /nightmill:init first"`
 ```
 
 (in the workflow skill "see **The configuration** below"). Its output is one of: `origin/<X>` and the configuration
@@ -134,7 +134,7 @@ Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; 
 `NO BASE CONFIG` line (step 2, no remote branch, or step 3, no file: the working tree). Outside a git repository it
 prints the `NO BASE CONFIG` line and exits 0, so the `/nightmill:init` hint of #127 stays. `allowed-tools` of each of
 the six skills becomes exactly
-`Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)`
+`Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(MSYS_NO_PATHCONV=1 git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)`
 (the last one for the working-tree read the fallback asks for; `Bash(echo "NO CONFIG* run /nightmill:init first")`
 goes, as no injection runs it). `/init` keeps its `cat` injection: it creates and edits the working tree's file.
 

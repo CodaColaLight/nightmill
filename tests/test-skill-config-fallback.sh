@@ -2,8 +2,10 @@
 # tests/test-skill-config-fallback.sh - regression for #127, #111 and #241: the config injection of workflow, spec, next, fix,
 # story and check reads the configuration from the base branch (origin/HEAD) and must fall back to the "run /nightmill:init" hint when there is no config, and each skill (init too, for this part only) must declare allowed-tools
 # that cover its own injection command. A skill is text plus an injection the harness runs, so the test runs the
-# injection command itself.
+# injection command itself, with the argument conversion of Git Bash on Windows made visible in every shell and not
+# switched off by the caller (bug 302).
 set -uo pipefail
+unset MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL  # the default of Git Bash, where bug 302 is; a caller that set them hides it
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-skillcfg.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -59,6 +61,42 @@ mkrepo() {
 }
 mkrepo "$work/withhead" yes
 mkrepo "$work/nohead" no
+
+# Bug 302: in Git Bash on Windows an argument of the form <ref>:<path> is taken for a list of paths and rewritten before
+# git.exe starts, so "git show origin/HEAD:.claude/nightmill.json" exits 128 unless the conversion is off for that call.
+# The injection must work without the caller having switched the conversion off (a session with MSYS_NO_PATHCONV=1 for
+# everything breaks scripts/slot.sh, see #300), so the variables are unset at the top, and a git shim first on the PATH makes
+# the bug visible in every shell: it exits 128 for an argument of the form <ref>:<path> (a prefix of more than one
+# character, a colon, a path; the value of -C is not one) unless MSYS_NO_PATHCONV is set or MSYS2_ARG_CONV_EXCL holds
+# *, as Git Bash itself does; any other call goes to the real git. The injected line is run as written in the skill.
+real_git=$(command -v git)
+mkdir "$work/shim"
+cat > "$work/shim/git" <<SHIM
+#!/usr/bin/env bash
+if [ -z "\${MSYS_NO_PATHCONV:-}" ]; then
+  case "\${MSYS2_ARG_CONV_EXCL:-}" in
+    *'*'*) ;;
+    *)
+      skip=""
+      for a in "\$@"; do
+        if [ -n "\$skip" ]; then skip=""; continue; fi
+        if [ "\$a" = -C ]; then skip=1; continue; fi
+        if [[ "\$a" =~ ^[A-Za-z0-9_./-]{2,}:[^:]+\$ ]]; then
+          echo "fatal: path '\$a' does not exist (argument converted by the shell)" >&2
+          exit 128
+        fi
+      done ;;
+  esac
+fi
+exec "$real_git" "\$@"
+SHIM
+chmod +x "$work/shim/git"
+export PATH="$work/shim:$PATH"
+# the shim itself: it refuses the shape with the conversion on and lets it through with the conversion off
+rc=0; (cd "$work/withhead" && git show origin/HEAD:.claude/nightmill.json >/dev/null 2>&1) || rc=$?
+[ "$rc" -eq 128 ] || bad "the git shim does not refuse origin/HEAD:.claude/nightmill.json (exit $rc)"
+rc=0; (cd "$work/withhead" && MSYS_NO_PATHCONV=1 git show origin/HEAD:.claude/nightmill.json >/dev/null 2>&1) || rc=$?
+[ "$rc" -eq 0 ] || bad "the git shim refuses the shape with the conversion off (exit $rc)"
 
 # check_allowed_tools <name> <skill file> <injection command>: allowed-tools covers the injection command
 check_allowed_tools() {
