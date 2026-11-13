@@ -192,7 +192,7 @@ if [ "$mode" != only ] && [ -f .claude/nightmill.json ] && json_load .claude/nig
   plat=$(json_get verification.platform); plat_kind=""; plat_reason=""
   case $plat in
     windows) plat_kind=bash; plat_reason="bash tests (verification.platform is windows)" ;;
-    unix) plat_kind=ps; plat_reason="PowerShell tests (verification.platform is unix)" ;;
+    unix) plat_kind="ps"; plat_reason="PowerShell tests (verification.platform is unix)" ;;
     all) ;;
     *) echo "check: verification.platform must be windows, unix or all; running both families" >&2 ;;
   esac
