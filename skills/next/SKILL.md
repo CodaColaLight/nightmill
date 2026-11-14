@@ -1,6 +1,6 @@
 ---
 name: next
-description: Implement the next Approved story from the board - slot, tests, code, check, PR, auto-merge. Use when asked to pick up the next story, implement an approved spec, or start an approved story. Writing the spec for a Ready story is /spec.
+description: Implement the next Approved story from the board - slot, tests, code, check, PR, auto-merge. Writing the spec for a Ready story is /spec.
 argument-hint: [issue-number]
 disable-model-invocation: true
 allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(MSYS_NO_PATHCONV=1 git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)

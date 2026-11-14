@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Write the spec for a Ready story as its own PR and stop at Spec review. Use when asked to spec a story, write the spec for an issue, or start the next Ready story. Implementing an Approved story is /next.
+description: Write the spec for a Ready story as its own PR and stop at Spec review. Implementing an Approved story is /next.
 argument-hint: [issue-number]
 disable-model-invocation: true
 allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(MSYS_NO_PATHCONV=1 git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
@@ -80,6 +80,8 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
    `Spec: <path> (PR #<pr>).`: `Spec: <path> (PR #<pr>). Waiting for approval.` When a blocking review finding is still open, the comment ends
    with a fixed tail after that sentence (the text before it, which `/next` reads, is the same):
    `Blocking review findings are still open (<b> blocking, <a> advisory): auto-merge is off, see the Review section of the pull request.`
+   Remove the label `labels.needsSpec` that `/story` set, when the issue has it
+   (`gh issue edit <issue> --remove-label <labels.needsSpec>`): the spec is written.
    Then watch the checks (**Watching the checks** in the `workflow` skill; "The checks of the spec pull request" below).
 6. **Stop.** Show the spec to the maintainer with the `Decisions` and `Left` lines of the result block. Only the
    maintainer sets Approved; then `/next` implements it. If the maintainer asks for changes, revise the spec in

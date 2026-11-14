@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" fixes every Ready bug, several at once while slots and room allow. Use when asked to fix a bug issue.
+description: Fix one bug from the board without an iteration - failing test first, smallest fix, one PR. "all" fixes every Ready bug, several at once while slots and room allow.
 argument-hint: [issue-number | all]
 disable-model-invocation: true
 allowed-tools: Bash(git symbolic-ref -q --short refs/remotes/origin/HEAD *), Bash(git for-each-ref --count=1 *), Bash(MSYS_NO_PATHCONV=1 git show origin/*:.claude/nightmill.json *), Bash(echo "NO BASE CONFIG*"), Bash(cat .claude/nightmill.json *)
