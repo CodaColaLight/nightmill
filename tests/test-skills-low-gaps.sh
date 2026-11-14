@@ -36,7 +36,7 @@ fi
 spec="$root/skills/spec/SKILL.md"
 if [ ! -f "$spec" ]; then
   echo "FAIL: $spec is missing"; fail=1
-elif ! grep -E -e '--remove-label[[:space:]]+<?(labels\.needsSpec|needs-spec)' "$spec" | grep -q .; then
+elif ! grep -qE -e '--remove-label[[:space:]]+<?(labels\.needsSpec|needs-spec)' "$spec"; then
   echo "FAIL: skills/spec/SKILL.md never removes the labels.needsSpec label (needs-spec) that /story sets"
   fail=1
 fi
@@ -46,7 +46,8 @@ for f in "$root"/skills/*/SKILL.md; do
   rel=${f#"$root"/}
   fm=$(front "$f")
   grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' <<<"$fm" || continue
-  if grep -E '^description:' <<<"$fm" | grep -qiE 'use (it )?when (asked|someone asks|the maintainer asks)'; then
+  desc=$(grep -E '^description:' <<<"$fm" || true)
+  if grep -qiE 'use (it )?when (asked|someone asks|the maintainer asks)' <<<"$desc"; then
     echo "FAIL: $rel sets disable-model-invocation: true but its description says \"Use when asked ...\"," \
       "which never triggers it"
     fail=1
