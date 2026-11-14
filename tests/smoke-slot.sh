@@ -2027,6 +2027,60 @@ done
 bash "$S" --abandon 2 >/dev/null
 git -C "$tmp/work" branch -D feat/n1 feat/n3 >/dev/null 2>&1 || true
 
+echo "== a broken slot directory is reported and refused (bug 129)"
+# A slot directory that is no git worktree (here: slot 2 and slot 3 replaced by plain directories) is reported as
+# broken by --status, which lists every slot and exits 0, and refused with a message that says so by --release,
+# --abandon and --take; nothing is fetched, queried, switched or removed.
+reset_gh
+bash "$S" --take feat/b1 --slot 1 >/dev/null 2>&1
+bash "$S" --take feat/b2 --slot 2 >/dev/null 2>&1
+merged feat/b2 41 "$(git -C "$tmp/work" rev-parse origin/main)"
+for n in 2 3; do
+  rm -rf "$tmp/wt/slot-$n"; mkdir "$tmp/wt/slot-$n"; echo keep > "$tmp/wt/slot-$n/keep.txt"
+done
+broken_re='broken|not a git worktree'
+
+# --status reports slot 2 as broken and goes on to slot 3
+set +e; out=$(WORKER_SLOTS=3 bash "$S" --status 2>"$tmp/err.txt"); rc=$?; set -e
+err=$(cat "$tmp/err.txt")
+[ "$rc" = 0 ] || fail "broken: --status exit $rc, not 0: $out / $err"
+grep -q '^slot 1 .*busy: feat/b1' <<<"$out" || fail "broken: --status lost slot 1: $out"
+line2=$(grep -E '^slot 2 ' <<<"$out" || true)
+grep -qE "$broken_re" <<<"$line2" || fail "broken: --status does not report slot 2 as broken: $out / $err"
+line3=$(grep -E '^slot 3 ' <<<"$out" || true)
+grep -qE "$broken_re" <<<"$line3" || fail "broken: --status stopped before slot 3 or does not report it as broken: $out / $err"
+
+# --release refuses before it fetches or asks gh
+reset_gh; merged feat/b2 41 "$(git -C "$tmp/work" rev-parse origin/main)"
+rep --release 2
+[ "$rc" = 1 ] || fail "broken: --release exit $rc, not 1: $out / $err"
+grep -qiE "slot 2.*($broken_re)|($broken_re).*slot 2" <<<"$err" || fail "broken: --release gave no clear message: $err"
+[ ! -s "$tmp/gh.log" ] || fail "broken: --release asked gh before refusing: $(cat "$tmp/gh.log")"
+[ -f "$(marker 2)" ] || fail "broken: --release removed the marker"
+[ -f "$tmp/wt/slot-2/keep.txt" ] || fail "broken: --release touched the directory"
+
+# --abandon refuses, the marker stays
+rep --abandon 2
+[ "$rc" = 1 ] || fail "broken: --abandon exit $rc, not 1: $out / $err"
+grep -qiE "slot 2.*($broken_re)|($broken_re).*slot 2" <<<"$err" || fail "broken: --abandon gave no clear message: $err"
+[ -f "$(marker 2)" ] || fail "broken: --abandon removed the marker"
+[ -f "$tmp/wt/slot-2/keep.txt" ] || fail "broken: --abandon touched the directory"
+
+# --take refuses with the message, not with a failed switch, and leaves the slot free
+WORKER_SLOTS=3 rep --take feat/b3 --slot 3
+[ "$rc" = 1 ] || fail "broken: --take exit $rc, not 1: $out / $err"
+grep -qiE "slot 3.*($broken_re)|($broken_re).*slot 3" <<<"$err" || fail "broken: --take gave no clear message: $err"
+if grep -q 'failed (exit' <<<"$err"; then fail "broken: --take failed at a git step instead of refusing: $err"; fi
+[ ! -e "$(marker 3)" ] || fail "broken: --take left a marker for slot 3"
+[ -f "$tmp/wt/slot-3/keep.txt" ] || fail "broken: --take touched the directory"
+if git -C "$tmp/work" show-ref --verify --quiet refs/heads/feat/b3; then fail "broken: --take made the branch"; fi
+
+bash "$S" --abandon 1 >/dev/null 2>&1 || true
+rm -f "$(marker 2)"; rm -rf "$tmp/wt/slot-2" "$tmp/wt/slot-3"
+git -C "$tmp/work" worktree prune
+git -C "$tmp/work" branch -D feat/b1 feat/b2 >/dev/null 2>&1 || true
+reset_gh
+
 echo "== the config comes from the base branch (iteration 48)"
 # mkbase <name> <baseBranch> <warm-up command> [<extra JSON after git>]: a repository $tmp/<name>/work with a bare
 # origin, the config committed and pushed to main, origin/HEAD set to main; the slot root is $tmp/<name>/wt
