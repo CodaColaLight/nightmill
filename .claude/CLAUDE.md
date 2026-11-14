@@ -64,12 +64,16 @@ powershell -ExecutionPolicy Bypass -File tools/make-social-preview.ps1          
 
 ```
 .claude-plugin   plugin.json (name, version), marketplace.json, icon.png
-skills           one folder per skill: workflow (rules), spec, next, fix, story, check, init
+skills           one folder per skill: workflow (rules), spec, next, fix, story, check, init, status, models,
+                 control
 agents           worker.md, code-reviewer.md, spec-reviewer.md, tester.md
-scripts          slot, new-worktree, render-templates; each as .ps1 and .sh
+scripts          slot, new-worktree, render-templates, status, models, validate-config, stages, history, load,
+                 room, control, panel, dashboard, drive, gate, template-board, guard, session-start, release;
+                 each as .ps1 and .sh; lib/ holds what they share (awk, sh and ps1 helpers)
+hooks            hooks.json (SessionStart hint, PreToolUse guard), panel.tsx (the slots pane), panel.test.tsx
 schema           nightmill.schema.json, every config key described
 templates        nightmill.example.json, ISSUE_TEMPLATE/*.yml with {{placeholders}}, CLAUDE.snippet.md
-tests            lint.sh, smoke-*.sh/.ps1, check.sh/.ps1
+tests            lint.sh, smoke-*.sh/.ps1, test-*.sh/.ps1, check.sh/.ps1, fixtures/ (canned inputs for the tests)
 tools            make-icon.ps1, make-social-preview.ps1, fonts/ (Creepster, SIL OFL, licence beside it)
 docs             specs/ (iteration specs), decisions/
 ```

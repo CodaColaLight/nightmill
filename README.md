@@ -56,6 +56,12 @@ not a conversation.
 | `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
 | `scripts/drive.ps1`, `scripts/drive.sh` | Runs `/nightmill:fix all` and `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the time limit is reached or the kill switch is set, then posts one summary. Sets no status. |
 | `scripts/gate.ps1`, `scripts/gate.sh` | Checks the pause flag and the limits before a step: exit 0 go, 1 paused, 2 cannot check, 3 a limit is breached, 4 the epic is paused. Changes nothing. |
+| `scripts/status.ps1`, `scripts/status.sh` | Read-only: the table behind `/nightmill:status`, also as `--porcelain` or `--json`. |
+| `scripts/models.ps1`, `scripts/models.sh` | Read-only: the table behind `/nightmill:models`. |
+| `scripts/validate-config.ps1`, `scripts/validate-config.sh` | Checks a config against the schema: an error per wrong value, a warning per unknown key (an error with `--strict`); `--base` checks the one on the base branch. |
+| `scripts/guard.ps1`, `scripts/guard.sh` | The PreToolUse hook: refuses a status edit to Ready or Approved, a merge without `--auto`, a force push, a push to the base branch and the other commands the workflow forbids. |
+| `scripts/session-start.ps1`, `scripts/session-start.sh` | The SessionStart hook: where the project has no `.claude/nightmill.json`, one line that makes Claude offer `/nightmill:init`. |
+| `scripts/release.ps1`, `scripts/release.sh` | For nightmill's own releases: `--version X.Y.Z` opens the release pull request, `--publish` tags it and creates the GitHub Release. |
 | `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
 | `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
 | `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |

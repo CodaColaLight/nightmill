@@ -14,8 +14,8 @@ body:
     attributes:
       label: What is affected
       options:
-        - A skill (spec, next, fix, story, check, init, workflow)
-        - A script (slot, new-worktree, render-templates)
+        - A skill (spec, next, fix, story, check, init, status, models, control, workflow)
+        - A script (slot, new-worktree, render-templates, status, models, validate-config, stages, history, load, room, control, panel, dashboard, drive, gate, template-board, guard, session-start, release)
         - The SessionStart hook
         - The templates or issue forms
         - The documentation

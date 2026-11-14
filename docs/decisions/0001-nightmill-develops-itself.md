@@ -2,6 +2,10 @@
 
 Date: 2026-11-04
 
+> Note (2026-11-14): partly superseded by [0003](0003-develop-on-the-installed-release-preview-from-the-release-branch.md).
+> 0003 replaces how the plugin is loaded: nightmill now runs on the installed release, never `--plugin-dir .`
+> in this checkout. The rest of this decision stands.
+
 ## Decision
 
 The nightmill repository runs on the nightmill workflow: its own board (project 2 on the

@@ -1485,6 +1485,12 @@ echo "== the low-severity skill gaps are closed"
 # say "Use when asked", one spelling of the gh project permission rule. The pins live in tests/test-skills-low-gaps.sh.
 bash tests/test-skills-low-gaps.sh "$PWD" || fail=1
 
+echo "== the low-severity documentation gaps are closed"
+# Bug #143 (LOW-DOCS): every skill and script is named in the README table, the CLAUDE.md layout, the bug form and the
+# marketplace description, decision 0001 says 0003 partly supersedes it, the schema agrees with the validator about
+# unknown keys, a .ps1 file with a non-ASCII character has a byte order mark. The pins live in tests/test-docs-low-gaps.sh.
+bash tests/test-docs-low-gaps.sh "$PWD" || fail=1
+
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
 # --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in

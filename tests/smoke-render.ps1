@@ -1,4 +1,4 @@
-# tests/smoke-render.ps1 - render-templates.ps1 against a throwaway project: placeholders filled,
+﻿# tests/smoke-render.ps1 - render-templates.ps1 against a throwaway project: placeholders filled,
 # areas, labels and invariants quoted (also with , : # and "), non-ASCII text intact, the no-invariants
 # case drops the checkbox block, existing forms kept without -Force.
 $ErrorActionPreference = "Stop"
