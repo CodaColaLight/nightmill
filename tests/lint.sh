@@ -1491,6 +1491,16 @@ echo "== the low-severity documentation gaps are closed"
 # unknown keys, a .ps1 file with a non-ASCII character has a byte order mark. The pins live in tests/test-docs-low-gaps.sh.
 bash tests/test-docs-low-gaps.sh "$PWD" || fail=1
 
+echo "== one interpreter runs a warm-up command"
+# Bug #133: slot.* and new-worktree.* run worktrees.warmup[].command in bash in both shells, and the schema says so.
+# The PowerShell half needs Windows PowerShell (the test starts powershell); without it, it is skipped.
+bash tests/test-warmup-interpreter.sh || fail=1
+if command -v powershell >/dev/null 2>&1; then
+  powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-warmup-interpreter.ps1 || fail=1
+else
+  echo "(no powershell: tests/test-warmup-interpreter.ps1 skipped)"
+fi
+
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
 # --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in

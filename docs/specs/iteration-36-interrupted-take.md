@@ -202,7 +202,7 @@ after `== marker retries (iteration 35)` and before `SMOKE OK`. The header comme
 helpers of iterations 34 and 35: `waitfor`, `hold` / `letgo`, slot 1 detached at commit X, all slots free and the
 count 2 at the start, the config restored at the end. The **pid gate warm-up** is iteration 34's gate warm-up with
 one first command that writes `<tmp>/gate.pid` (bash `echo $$ > '<tmp>/gate.pid'`, the pid of the warm-up's own
-`bash -c`; PowerShell `Set-Content '<tmp>/gate.pid' x`, its warm-up runs inside the take). `<tmp>/gate.pid` is removed
+`bash -c`; PowerShell the same, since bug 133 `slot.ps1` runs a warm-up in bash too). `<tmp>/gate.pid` is removed
 before each take.
 
 **How a take is interrupted.**
