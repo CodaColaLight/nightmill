@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/CodaColaLight/nightmill/main/schema/nightmill.schema.json",
   "title": "nightmill project configuration (.claude/nightmill.json)",
-  "description": "Everything the nightmill skills and scripts need to know about one project. Unknown keys are ignored.",
+  "description": "Everything the nightmill skills and scripts need to know about one project. Unknown keys are ignored by the skills and scripts; scripts/validate-config.* reports each one as a warning (an error with --strict).",
   "type": "object",
   "required": ["github", "maintainer", "verification"],
   "properties": {
