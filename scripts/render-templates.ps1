@@ -15,7 +15,28 @@ if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
 # -Encoding UTF8 everywhere: Windows PowerShell 5.1 otherwise reads files in the ANSI code page.
 $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-function Yaml-Quote($s) { '"' + (([string]$s) -replace '\\', '\\' -replace '"', '\"') + '"' }
+# Quotes as json_quote in scripts/lib/json.awk does, byte for byte: \ and " escaped, newline, tab,
+# carriage return, backspace and form feed as \n \t \r \b \f, every other character below 32 as \u00xx.
+function Yaml-Quote($s) {
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  foreach ($c in ([string]$s).ToCharArray()) {
+    switch ([int]$c) {
+      34 { [void]$sb.Append('\"') }
+      92 { [void]$sb.Append('\\') }
+      10 { [void]$sb.Append('\n') }
+      9  { [void]$sb.Append('\t') }
+      13 { [void]$sb.Append('\r') }
+      8  { [void]$sb.Append('\b') }
+      12 { [void]$sb.Append('\f') }
+      default {
+        if ([int]$c -lt 32) { [void]$sb.Append(('\u{0:x4}' -f [int]$c)) } else { [void]$sb.Append($c) }
+      }
+    }
+  }
+  [void]$sb.Append('"')
+  $sb.ToString()
+}
 # Areas, labels and invariants are all double-quoted YAML scalars, so `,` `:` `#` and `"` keep the forms valid.
 function Label($key, $default) { Yaml-Quote $(if ($cfg.labels -and $cfg.labels.$key) { $cfg.labels.$key } else { $default }) }
 

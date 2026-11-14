@@ -73,4 +73,43 @@ grep -qxF 'labels: ["s: \"x\"", "needs-spec"]' "$d/story.yml" || fail "story lab
 grep -qxF 'labels: ["b #1, y"]' "$d/bug.yml" || fail "bug label not quoted: $(grep '^labels:' "$d/bug.yml")"
 grep -qxF 'labels: ["e, \"z\""]' "$d/epic.yml" || fail "epic label not quoted: $(grep '^labels:' "$d/epic.yml")"
 
+echo "== control characters are escaped as json_quote does, not written raw (bug #227)"
+cat > "$tmp/.claude/nightmill.json" <<'EOF'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a\nb\tc\u0001d"],
+  "invariants": ["a\nb\tc\u0001d"],
+  "labels": { "story": "a\nb\tc\u0001d" }
+}
+EOF
+bash "$R" --project "$tmp" --force >/dev/null
+for f in story bug; do
+  grep -qF 'options: ["a\nb\tc\u0001d"]' "$d/$f.yml" || fail "$f.yml area with control characters not escaped: $(grep 'options:' "$d/$f.yml" | od -c | head -3)"
+  grep -qxF '        - label: "a\nb\tc\u0001d"' "$d/$f.yml" || fail "$f.yml invariant with control characters not escaped"
+done
+grep -qxF 'labels: ["a\nb\tc\u0001d", "needs-spec"]' "$d/story.yml" || fail "story label with control characters not escaped"
+# no raw control character other than the newline that ends a line may reach a form
+if LC_ALL=C grep -q "$(printf '[\001-\010\013-\037]')" "$d/story.yml" "$d/bug.yml" "$d/epic.yml"; then fail "a raw control character was written into a form"; fi
+
+echo "== every other escape matches json_quote byte for byte: CR, BS, FF, VT, 0x1f, and DEL ' < > & raw (bug #227)"
+cat > "$tmp/.claude/nightmill.json" <<'EOF'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["x\r\b\f\u000b\u001f\u007f'<>&\\y"],
+  "invariants": ["x\r\b\f\u000b\u001f\u007f'<>&\\y"],
+  "labels": { "story": "x\r\b\f\u000b\u001f\u007f'<>&\\y" }
+}
+EOF
+bash "$R" --project "$tmp" --force >/dev/null
+# json_quote writes \r \b \f, \u000b and \u001f (lower-case, four wide), and leaves DEL ' < > & raw
+exp=$(printf '"x\\r\\b\\f\\u000b\\u001f\177'"'"'<>&\\\\y"')
+for f in story bug; do
+  grep -qF "options: [$exp]" "$d/$f.yml" || fail "$f.yml area is not quoted as json_quote does: $(grep 'options:' "$d/$f.yml" | od -c | head -4)"
+  grep -qxF "        - label: $exp" "$d/$f.yml" || fail "$f.yml invariant is not quoted as json_quote does"
+done
+grep -qxF "labels: [$exp, \"needs-spec\"]" "$d/story.yml" || fail "story label is not quoted as json_quote does"
+if LC_ALL=C grep -q "$(printf '[\001-\010\013-\037]')" "$d/story.yml" "$d/bug.yml" "$d/epic.yml"; then fail "a raw control character was written into a form"; fi
+
 echo "RENDER OK"
