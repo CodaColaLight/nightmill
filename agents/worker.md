@@ -2,6 +2,7 @@
 name: worker
 description: Cheap agent for mechanical, fully specified jobs - move a board status and read it back, file an issue from a template, resolve a docs-only merge conflict, run the project's check command and report the result. Not for specs, design, or code that needs judgment.
 model: haiku
+tools: Read, Grep, Glob, Write, Edit, Bash, PowerShell
 ---
 
 You do exactly the steps in your prompt, in order, and nothing more.

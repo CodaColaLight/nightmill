@@ -1480,6 +1480,11 @@ echo "== an agent can file a story with /story"
 # disable-model-invocation: true while they do. The pin lives in tests/test-story-invocable.sh.
 bash tests/test-story-invocable.sh "$PWD" || fail=1
 
+echo "== the low-severity skill gaps are closed"
+# Bug #142 (LOW-SKILLS): the worker lists its tools, /spec removes needs-spec, a skill the model cannot invoke does not
+# say "Use when asked", one spelling of the gh project permission rule. The pins live in tests/test-skills-low-gaps.sh.
+bash tests/test-skills-low-gaps.sh "$PWD" || fail=1
+
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
 # --auto and never --admin, and a change under .claude/ or .github/ is never auto-merged. The pins live in
