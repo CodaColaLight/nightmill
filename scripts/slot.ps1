@@ -99,11 +99,13 @@ $baseCfg = Get-BaseConfig $main
 if ($baseCfg.Stop) { [Console]::Error.WriteLine($baseCfg.Stop); exit 1 }
 if ($baseCfg.Note) { [Console]::Error.WriteLine($baseCfg.Note) }
 if ($null -ne $baseCfg.Text) {
-  $cfg = ConvertFrom-Json -InputObject $baseCfg.Text
+  $cfgText = $baseCfg.Text
+  $cfg = ConvertFrom-Json -InputObject $cfgText
 } else {
   $cfgPath = $baseCfg.Path
   if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
-  $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $cfgText = Get-Content $cfgPath -Raw -Encoding UTF8
+  $cfg = $cfgText | ConvertFrom-Json
 }
 $wt = $cfg.worktrees
 
@@ -145,7 +147,23 @@ if ($env:WORKER_SLOTS) {
 # The numbers: what the configuration alone gives, and the effective ones (see the header)
 $capPath = Join-Path $state "capacity.json"
 $cfgSlots = 2; $cfgSlotsFrom = "default"
-if ($wt -and $null -ne $wt.slots -and "$($wt.slots)" -ne "") { $cfgSlots = [int]$wt.slots; $cfgSlotsFrom = "config" }
+if ($wt -and $null -ne $wt.slots -and "$($wt.slots)" -ne "") {
+  # bug 136: a count only in digits, as slot.sh (2.0, 1e0, 2.5 or -1 would be cast); this also stops -Release and
+  # -Abandon until the configuration is fixed
+  $sv = $wt.slots
+  $digits = $false
+  if ($sv -is [string]) { $digits = $sv -cmatch '^[0-9]+\z' }
+  elseif ($sv -is [int] -or $sv -is [long] -or $sv -is [int16] -or $sv -is [byte] -or $sv -is [System.Numerics.BigInteger]) { $digits = $sv -ge 0 }
+  elseif ($sv -is [decimal]) { $digits = $sv -ge 0 -and (([decimal]::GetBits($sv)[3] -shr 16) -band 0xFF) -eq 0 }
+  if (-not $digits) {
+    # the value as written when the text has one "slots" number, else as parsed
+    $shownSlots = [string]::Format([Globalization.CultureInfo]::InvariantCulture, "{0}", $sv)
+    $ms = [regex]::Matches([string]$cfgText, '"slots"\s*:\s*(-?[0-9][0-9.eE+-]*)')
+    if ($ms.Count -eq 1) { $shownSlots = $ms[0].Groups[1].Value }
+    [Console]::Error.WriteLine("slot: worktrees.slots must be a whole number written in digits, got `"$shownSlots`""); exit 1
+  }
+  $cfgSlots = [int]$sv; $cfgSlotsFrom = "config"
+}
 $cfgAgents = 2; $cfgAgentsFrom = "default"
 if ($cfg.parallel -and $null -ne $cfg.parallel.maxAgents -and "$($cfg.parallel.maxAgents)" -ne "") { $cfgAgents = [int]$cfg.parallel.maxAgents; $cfgAgentsFrom = "config" }
 function Test-Count([string]$v) { return ($v -cmatch '^[1-9][0-9]?\z') }

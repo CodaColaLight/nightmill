@@ -150,6 +150,7 @@ cfg_slots=$(q worktrees.slots); cfg_slots_from=config
 if [ -z "$cfg_slots" ]; then cfg_slots=2; cfg_slots_from=default
 elif ! [[ "$cfg_slots" =~ ^[0-9]+$ ]]; then
   # bug 136: 2.0 or 1e0 is no count for the shell's arithmetic
+  # (this also stops --release and --abandon until the configuration is fixed)
   echo "slot: worktrees.slots must be a whole number written in digits, got \"$cfg_slots\"" >&2; exit 1
 fi
 cfg_agents=$(q parallel.maxAgents); cfg_agents_from=config

@@ -87,6 +87,22 @@ try {
     Reject-Number "port $num" (Edit $ex '"server": 8100' "`"server`": $num") "worktrees.ports.server"
   }
   Reject-Number "projectNumber 1.0" (Edit $ex '"projectNumber": 1' '"projectNumber": 1.0') "github.projectNumber"
+  # a negative integer in digits is an integer: slots fails the minimum, a port has no minimum
+  Check "slots -1" (Edit $ex '"slots": 2' '"slots": -1') 1 @("error: worktrees.slots: must be at least 1, got -1", "1 error, 0 warnings")
+  Check "port -1" (Edit $ex '"server": 8100' '"server": -1') 0 @("0 errors, 0 warnings")
+  # a whole number in 29 or more digits has no maximum to fail and is an integer; the same number written 1e29 is not,
+  # also when both are in one config
+  Check "port in 29 digits" (Edit $ex '"server": 8100' '"server": 12345678901234567890123456789') 0 @("0 errors, 0 warnings")
+  Check "port in 30 digits" (Edit $ex '"server": 8100' '"server": 100000000000000000000000000000') 0 @("0 errors, 0 warnings")
+  $bigText = Edit (Edit $ex '"server": 8100' '"server": 100000000000000000000000000000') '"client": 5200' '"client": 1e29'
+  $bigPath = Join-Path $tmp "int-big.json"
+  Write-Utf8 $bigPath $bigText
+  $r = Run-V $bigPath
+  if ($r.Code -ne 1) { Fail "1e29 beside 30 digits: expected exit code 1, got $($r.Code): $($r.Out) $($r.Err)" }
+  $got = @($r.Out -split "`r?`n")
+  if (-not ($got | Where-Object { $_.StartsWith("error: worktrees.ports.client: ", [StringComparison]::Ordinal) })) { Fail "1e29 beside 30 digits: no error naming worktrees.ports.client in: $($r.Out)" }
+  if ($got | Where-Object { $_.StartsWith("error: worktrees.ports.server: ", [StringComparison]::Ordinal) }) { Fail "30 digits beside 1e29: the digits were reported: $($r.Out)" }
+  if ($got -cnotcontains "1 error, 0 warnings") { Fail "1e29 beside 30 digits: wrong summary: $($r.Out)" }
   # digits stay valid
   Check "slots 3" (Edit $ex '"slots": 2' '"slots": 3') 0 @("0 errors, 0 warnings")
   Check "slots 10" (Edit $ex '"slots": 2' '"slots": 10') 0 @("0 errors, 0 warnings")

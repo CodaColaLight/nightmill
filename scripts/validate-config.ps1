@@ -76,15 +76,13 @@ function Get-Kind($v) {
   if ($v -is [bool]) { return "boolean" }
   if ($v -is [System.Array]) { return "array" }
   if ($v -is [System.Management.Automation.PSCustomObject]) { return "object" }
-  if ($v -is [int] -or $v -is [long] -or $v -is [int16] -or $v -is [byte] -or $v -is [uint32] -or $v -is [uint64]) { return "integer" }
+  if ($v -is [int] -or $v -is [long] -or $v -is [int16] -or $v -is [byte] -or $v -is [uint32] -or $v -is [uint64] -or $v -is [System.Numerics.BigInteger]) { return "integer" }
   # an integer only in digits (bug 136). ConvertFrom-Json gives 2.0 as a decimal with its scale, 1e0 as a double;
-  # a double is whole digits only when the raw text has that number in digits, too long for a decimal ($script:bigInts)
+  # digits too long for a decimal are a double, too, and become a BigInteger by their own text (Set-BigInts)
   if ($v -is [decimal]) {
     if ((([decimal]::GetBits($v)[3] -shr 16) -band 0xFF) -eq 0) { return "integer" } else { return "number" }
   }
-  if ($v -is [double] -or $v -is [single]) {
-    if ($script:bigInts.ContainsKey([double]$v)) { return "integer" } else { return "number" }
-  }
+  if ($v -is [double] -or $v -is [single]) { return "number" }
   return "other"
 }
 
@@ -273,6 +271,41 @@ function Test-Pairs($cfg, $sch) {
   }
 }
 
+# Add-NumberPlaces <value> <list>: every number below an object or array, as its container, its key or index and
+# whether the container is an array, in document order (the order ConvertFrom-Json keeps)
+function Add-NumberPlaces($v, $list) {
+  if ($v -is [System.Array]) {
+    for ($i = 0; $i -lt $v.Length; $i++) {
+      $x = $v[$i]
+      if ($x -is [System.Array] -or $x -is [System.Management.Automation.PSCustomObject]) { Add-NumberPlaces $x $list }
+      elseif ($x -is [ValueType] -and -not ($x -is [bool])) { $list.Add(@($v, $i, $true)) }
+    }
+  } elseif ($v -is [System.Management.Automation.PSCustomObject]) {
+    foreach ($pr in $v.PSObject.Properties) {
+      $x = $pr.Value
+      if ($x -is [System.Array] -or $x -is [System.Management.Automation.PSCustomObject]) { Add-NumberPlaces $x $list }
+      elseif ($x -is [ValueType] -and -not ($x -is [bool])) { $list.Add(@($v, $pr.Name, $false)) }
+    }
+  }
+}
+
+# Set-BigInts <doc> <text>: a number written in digits that the parser gives as a double (too long for a decimal) is
+# set to a BigInteger of its own text, so that Get-Kind tells it from 1e29 (bug 136). The number tokens of the text
+# outside strings are paired with the parsed numbers in document order, and only when their counts agree.
+function Set-BigInts($doc, [string]$text) {
+  $places = New-Object System.Collections.Generic.List[object]
+  Add-NumberPlaces $doc $places
+  $tokens = @([regex]::Matches($text, '"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*') | Where-Object { $_.Value[0] -ne '"' } | ForEach-Object { $_.Value })
+  if ($tokens.Count -ne $places.Count) { return }
+  for ($i = 0; $i -lt $tokens.Count; $i++) {
+    $c = $places[$i][0]; $k = $places[$i][1]; $inArray = $places[$i][2]
+    $old = if ($inArray) { $c[$k] } else { $c.PSObject.Properties[$k].Value }
+    if (-not ($old -is [double] -or $old -is [single]) -or $tokens[$i] -cnotmatch '^-?[0-9]+\z') { continue }
+    $big = [System.Numerics.BigInteger]::Parse($tokens[$i], [Globalization.CultureInfo]::InvariantCulture)
+    if ($inArray) { $c[$k] = $big } else { $c.PSObject.Properties[$k].Value = $big }
+  }
+}
+
 # --- run -----------------------------------------------------------------------------------------------------
 
 if (-not $shown) { $shown = $Config }
@@ -281,12 +314,6 @@ Write-Output "validating $shown against $Schema"
 $schemaDoc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText((Resolve-Path -LiteralPath $Schema).Path, $utf8))
 if ($null -ne $baseText) { $text = $baseText }
 else { $text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Config).Path, $utf8) }
-
-# the numbers of the config written in digits that are too long for a decimal, as doubles (Get-Kind; bug 136)
-$script:bigInts = @{}
-foreach ($m in [regex]::Matches($text, '"(?:[^"\\]|\\.)*"|(?<![0-9.eE+-])-?[0-9]{29,}(?![.eE0-9])')) {
-  if ($m.Value[0] -ne '"') { $script:bigInts[[double]::Parse($m.Value, [Globalization.CultureInfo]::InvariantCulture)] = $true }
-}
 
 $doc = $null
 $valid = $true
@@ -306,11 +333,12 @@ elseif ($text.TrimStart()[0] -ne '{') {
     '"' { "string" }
     '[tf]' { "boolean" }
     'n' { "null" }
-    default { Get-Kind $doc }
+    default { if ($doc -is [double] -and $text.Trim() -cmatch '^-?[0-9]+\z') { "integer" } else { Get-Kind $doc } }
   }
   Add-Finding "" "error" "expected object, got $kind"
 }
 else {
+  Set-BigInts $doc $text
   Test-Node $doc $schemaDoc ""
   Test-Pairs $doc $schemaDoc
 }

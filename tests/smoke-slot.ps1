@@ -2142,6 +2142,38 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   if ($r.Code -ne 0) { Fail "UTF-8: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
   if (-not $r.Out.StartsWith("slots = 2")) { Fail "UTF-8: unexpected status: $($r.Out)" }
 
+  Write-Host "== worktrees.slots in the configuration is digits (bug 136)"
+  # 2.0, 1e0 and 2.5 are not a count: slot.ps1 stops with a line that names worktrees.slots, exits 1 (not 0 after a
+  # cast that rounds or reads them) and takes no slot
+  $n136 = 0
+  foreach ($v in "2.0", "1e0", "2.5") {
+    $n136++; $name = "cn136$n136"
+    Mk-Base $name "main" "Set-Content warmed.txt warm"
+    $cfgPath = "$tmp\$name\work\.claude\nightmill.json"
+    $cfgText = [System.IO.File]::ReadAllText($cfgPath)
+    if (-not $cfgText.Contains('"slots": 2,')) { Fail "slots $v`: fixture: the slot count is not in the config" }
+    [System.IO.File]::WriteAllText($cfgPath, $cfgText.Replace('"slots": 2,', "`"slots`": $v,"), $utf8n)
+    Gq -C "$tmp\$name\work" -c user.name=t -c user.email=t@example.invalid commit -qam "slots $v"
+    Gq -C "$tmp\$name\work" push -q origin main
+    foreach ($args136 in "-Status", "-Status -Porcelain", "-Take feat/a") {
+      $r = SlotIn $name $args136
+      if ($r.Code -ne 1) { Fail "slots $v`: $args136`: exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+      if (-not $r.Err.Contains("worktrees.slots")) { Fail "slots $v`: $args136`: the line does not name worktrees.slots: $($r.Err)" }
+      if (($r.Out + $r.Err) -match "Cannot convert|InvalidArgument|Exception|syntax error|arithmetic") { Fail "slots $v`: $args136`: a cast or arithmetic error: $($r.Out) / $($r.Err)" }
+      if (($r.Out + $r.Err) -match "slots are busy") { Fail "slots $v`: $args136`: reported busy slots: $($r.Out) / $($r.Err)" }
+    }
+    if ((Test-Path "$tmp\$name\wt\slot-1") -or (Test-Path "$tmp\$name\wt\.slots\slot-1.json")) { Fail "slots $v`: the take made a slot" }
+  }
+  # a count in digits still works
+  Mk-Base "cn1364" "main" "Set-Content warmed.txt warm"
+  $cfgPath = "$tmp\cn1364\work\.claude\nightmill.json"
+  [System.IO.File]::WriteAllText($cfgPath, ([System.IO.File]::ReadAllText($cfgPath)).Replace('"slots": 2,', '"slots": 3,'), $utf8n)
+  Gq -C "$tmp\cn1364\work" -c user.name=t -c user.email=t@example.invalid commit -qam "slots 3"
+  Gq -C "$tmp\cn1364\work" push -q origin main
+  $r = SlotIn "cn1364" "-Status"
+  if ($r.Code -ne 0) { Fail "slots 3: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
+  if (-not $r.Out.StartsWith("slots = 3")) { Fail "slots 3: unexpected status: $($r.Out)" }
+
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {
   Set-Location $here
