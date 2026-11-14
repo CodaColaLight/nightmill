@@ -104,6 +104,31 @@ try {
     if ($raw -cmatch '[\x00-\x08\x0B-\x1F]') { Fail "$f has a raw control character" }
   }
 
+  Write-Host '== every other escape matches json_quote byte for byte: CR, BS, FF, VT, 0x1f, and DEL '' < > & raw (bug #227)'
+  $cfg5 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["x\r\b\f\u000b\u001f\u007f'<>&\\y"],
+  "invariants": ["x\r\b\f\u000b\u001f\u007f'<>&\\y"],
+  "labels": { "story": "x\r\b\f\u000b\u001f\u007f'<>&\\y" }
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg5, $utf8)
+  $null = Render -Force
+  # json_quote writes \r \b \f, \u000b and \u001f (lower-case, four wide), and leaves DEL ' < > & raw
+  $exp = '"x\r\b\f\u000b\u001f' + [string][char]127 + [string][char]39 + '<>&\\y"'
+  foreach ($f in "story.yml", "bug.yml") {
+    $lines = FormLines $f
+    if (-not ($lines | Where-Object { $_.Contains('options: [' + $exp + ']') })) { Fail "$f area is not quoted as json_quote does" }
+    if ($lines -cnotcontains ('        - label: ' + $exp)) { Fail "$f invariant is not quoted as json_quote does" }
+  }
+  if ((FormLines "story.yml") -cnotcontains ('labels: [' + $exp + ', "needs-spec"]')) { Fail "story label is not quoted as json_quote does" }
+  foreach ($f in "story.yml", "bug.yml", "epic.yml") {
+    $raw = [System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\$f", $utf8)
+    if ($raw -cmatch '[\x00-\x08\x0B-\x1F]') { Fail "$f has a raw control character" }
+  }
+
   Write-Host "RENDER OK" -ForegroundColor Green
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
