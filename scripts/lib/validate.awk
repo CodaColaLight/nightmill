@@ -9,10 +9,10 @@
 # not valid JSON. A config that is not valid JSON is a finding.
 
 # the kind of a node: null, string, boolean, array, object, integer or number
-function vkind(id,   x) {
+function vkind(id) {
   if (jk[id] == "number") {
-    x = jv[id] + 0
-    if (x == int(x)) return "integer"
+    # an integer only in digits: 2.0 and 1e0 are numbers (bug 136); jv holds the number's JSON text
+    if (jv[id] ~ /^-?[0-9]+$/) return "integer"
     return "number"
   }
   return jk[id]

@@ -77,8 +77,13 @@ function Get-Kind($v) {
   if ($v -is [System.Array]) { return "array" }
   if ($v -is [System.Management.Automation.PSCustomObject]) { return "object" }
   if ($v -is [int] -or $v -is [long] -or $v -is [int16] -or $v -is [byte] -or $v -is [uint32] -or $v -is [uint64]) { return "integer" }
-  if ($v -is [double] -or $v -is [decimal] -or $v -is [single]) {
-    if ($v -eq [math]::Floor($v)) { return "integer" } else { return "number" }
+  # an integer only in digits (bug 136). ConvertFrom-Json gives 2.0 as a decimal with its scale, 1e0 as a double;
+  # a double is whole digits only when the raw text has that number in digits, too long for a decimal ($script:bigInts)
+  if ($v -is [decimal]) {
+    if ((([decimal]::GetBits($v)[3] -shr 16) -band 0xFF) -eq 0) { return "integer" } else { return "number" }
+  }
+  if ($v -is [double] -or $v -is [single]) {
+    if ($script:bigInts.ContainsKey([double]$v)) { return "integer" } else { return "number" }
   }
   return "other"
 }
@@ -276,6 +281,12 @@ Write-Output "validating $shown against $Schema"
 $schemaDoc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText((Resolve-Path -LiteralPath $Schema).Path, $utf8))
 if ($null -ne $baseText) { $text = $baseText }
 else { $text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Config).Path, $utf8) }
+
+# the numbers of the config written in digits that are too long for a decimal, as doubles (Get-Kind; bug 136)
+$script:bigInts = @{}
+foreach ($m in [regex]::Matches($text, '"(?:[^"\\]|\\.)*"|(?<![0-9.eE+-])-?[0-9]{29,}(?![.eE0-9])')) {
+  if ($m.Value[0] -ne '"') { $script:bigInts[[double]::Parse($m.Value, [Globalization.CultureInfo]::InvariantCulture)] = $true }
+}
 
 $doc = $null
 $valid = $true
