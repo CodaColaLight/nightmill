@@ -55,6 +55,42 @@ check "check a boolean" "$(edit "$ex" '"check": "bash scripts/check.sh"' '"check
 check "root an array" "[1]" 1 "" "error: .: expected object, got array"
 check "trailing comma" '{"a": 1,}' 1 "" "error: .: not valid JSON" "1 error, 0 warnings"
 
+echo "== an integer is accepted only in digits (bug 136)"
+# 2.0 and 1e0 are whole numbers but not integers in canonical form: slot.sh cannot count with them
+for v in 2.0 2.00 1e0 1E+0 2e0; do
+  printf '%s\n' "$(edit "$ex" '"slots": 2' "\"slots\": $v")" > "$tmp/int-slots.json"
+  set +e; out=$(bash "$V" "$tmp/int-slots.json" 2>&1); rc=$?; set -e
+  [ "$rc" = 1 ] || fail "slots $v: expected exit code 1, got $rc: $out"
+  grep -qE '^error: worktrees\.slots: ' <<<"$out" || fail "slots $v: no error naming worktrees.slots: $out"
+  grep -qxF "1 error, 0 warnings" <<<"$out" || fail "slots $v: wrong summary: $out"
+done
+for v in 8100.0 8e3; do
+  printf '%s\n' "$(edit "$ex" '"server": 8100' "\"server\": $v")" > "$tmp/int-port.json"
+  set +e; out=$(bash "$V" "$tmp/int-port.json" 2>&1); rc=$?; set -e
+  [ "$rc" = 1 ] || fail "port $v: expected exit code 1, got $rc: $out"
+  grep -qE '^error: worktrees\.ports\.server: ' <<<"$out" || fail "port $v: no error naming worktrees.ports.server: $out"
+done
+printf '%s\n' "$(edit "$ex" '"projectNumber": 1' '"projectNumber": 1.0')" > "$tmp/int-pn.json"
+set +e; out=$(bash "$V" "$tmp/int-pn.json" 2>&1); rc=$?; set -e
+[ "$rc" = 1 ] || fail "projectNumber 1.0: expected exit code 1, got $rc: $out"
+grep -qE '^error: github\.projectNumber: ' <<<"$out" || fail "projectNumber 1.0: no error naming github.projectNumber: $out"
+# a negative integer in digits is an integer: slots fails the minimum, a port has no minimum
+check "slots -1" "$(edit "$ex" '"slots": 2' '"slots": -1')" 1 "" "error: worktrees.slots: must be at least 1, got -1" "1 error, 0 warnings"
+check "port -1" "$(edit "$ex" '"server": 8100' '"server": -1')" 0 "" "0 errors, 0 warnings"
+# a whole number in 29 or more digits has no maximum to fail and is an integer; the same number written 1e29 is not,
+# also when both are in one config
+check "port in 29 digits" "$(edit "$ex" '"server": 8100' '"server": 12345678901234567890123456789')" 0 "" "0 errors, 0 warnings"
+check "port in 30 digits" "$(edit "$ex" '"server": 8100' '"server": 100000000000000000000000000000')" 0 "" "0 errors, 0 warnings"
+printf '%s\n' "$(edit "$(edit "$ex" '"server": 8100' '"server": 100000000000000000000000000000')" '"client": 5200' '"client": 1e29')" > "$tmp/int-big.json"
+set +e; out=$(bash "$V" "$tmp/int-big.json" 2>&1); rc=$?; set -e
+[ "$rc" = 1 ] || fail "1e29 beside 30 digits: expected exit code 1, got $rc: $out"
+grep -qE '^error: worktrees\.ports\.client: ' <<<"$out" || fail "1e29 beside 30 digits: no error naming worktrees.ports.client: $out"
+if grep -qE '^error: worktrees\.ports\.server: ' <<<"$out"; then fail "30 digits beside 1e29: the digits were reported: $out"; fi
+grep -qxF "1 error, 0 warnings" <<<"$out" || fail "1e29 beside 30 digits: wrong summary: $out"
+# digits stay valid
+check "slots 3" "$(edit "$ex" '"slots": 2' '"slots": 3')" 0 "" "0 errors, 0 warnings"
+check "slots 10" "$(edit "$ex" '"slots": 2' '"slots": 10')" 0 "" "0 errors, 0 warnings"
+
 echo "== several findings print sorted, the summary counts them"
 multi=$(edit "$(edit "$(edit "$ex" '"owner": "acme", ' '')" '"slots": 2' '"slots": "two"')" '"github": {' '"worktree": 1, "github": {')
 printf '%s\n' "$multi" > "$tmp/multi.json"

@@ -66,6 +66,47 @@ try {
   Check "root an array" "[1]" 1 @("error: .: expected object, got array")
   Check "trailing comma" '{"a": 1,}' 1 @("error: .: not valid JSON", "1 error, 0 warnings")
 
+  Write-Host "== an integer is accepted only in digits (bug 136)"
+  # 2.0 and 1e0 are whole numbers but not integers in canonical form: slot.sh cannot count with them
+  function Reject-Number([string]$name, [string]$text, [string]$keyPath) {
+    $script:i++
+    $f = Join-Path $tmp ("int$($script:i).json")
+    Write-Utf8 $f $text
+    $r = Run-V $f
+    if ($r.Code -ne 1) { Fail "$name : expected exit code 1, got $($r.Code): $($r.Out) $($r.Err)" }
+    $got = @($r.Out -split "`r?`n")
+    if (-not ($got | Where-Object { $_.StartsWith("error: ${keyPath}: ", [StringComparison]::Ordinal) })) { Fail "$name : no error naming $keyPath in: $($r.Out)" }
+  }
+  foreach ($num in @("2.0", "2.00", "1e0", "1E+0", "2e0")) {
+    $text = Edit $ex '"slots": 2' "`"slots`": $num"
+    Reject-Number "slots $num" $text "worktrees.slots"
+    $r = Run-V (Join-Path $tmp ("int$($script:i).json"))
+    if (-not (@($r.Out -split "`r?`n") -ccontains "1 error, 0 warnings")) { Fail "slots $num : wrong summary: $($r.Out)" }
+  }
+  foreach ($num in @("8100.0", "8e3")) {
+    Reject-Number "port $num" (Edit $ex '"server": 8100' "`"server`": $num") "worktrees.ports.server"
+  }
+  Reject-Number "projectNumber 1.0" (Edit $ex '"projectNumber": 1' '"projectNumber": 1.0') "github.projectNumber"
+  # a negative integer in digits is an integer: slots fails the minimum, a port has no minimum
+  Check "slots -1" (Edit $ex '"slots": 2' '"slots": -1') 1 @("error: worktrees.slots: must be at least 1, got -1", "1 error, 0 warnings")
+  Check "port -1" (Edit $ex '"server": 8100' '"server": -1') 0 @("0 errors, 0 warnings")
+  # a whole number in 29 or more digits has no maximum to fail and is an integer; the same number written 1e29 is not,
+  # also when both are in one config
+  Check "port in 29 digits" (Edit $ex '"server": 8100' '"server": 12345678901234567890123456789') 0 @("0 errors, 0 warnings")
+  Check "port in 30 digits" (Edit $ex '"server": 8100' '"server": 100000000000000000000000000000') 0 @("0 errors, 0 warnings")
+  $bigText = Edit (Edit $ex '"server": 8100' '"server": 100000000000000000000000000000') '"client": 5200' '"client": 1e29'
+  $bigPath = Join-Path $tmp "int-big.json"
+  Write-Utf8 $bigPath $bigText
+  $r = Run-V $bigPath
+  if ($r.Code -ne 1) { Fail "1e29 beside 30 digits: expected exit code 1, got $($r.Code): $($r.Out) $($r.Err)" }
+  $got = @($r.Out -split "`r?`n")
+  if (-not ($got | Where-Object { $_.StartsWith("error: worktrees.ports.client: ", [StringComparison]::Ordinal) })) { Fail "1e29 beside 30 digits: no error naming worktrees.ports.client in: $($r.Out)" }
+  if ($got | Where-Object { $_.StartsWith("error: worktrees.ports.server: ", [StringComparison]::Ordinal) }) { Fail "30 digits beside 1e29: the digits were reported: $($r.Out)" }
+  if ($got -cnotcontains "1 error, 0 warnings") { Fail "1e29 beside 30 digits: wrong summary: $($r.Out)" }
+  # digits stay valid
+  Check "slots 3" (Edit $ex '"slots": 2' '"slots": 3') 0 @("0 errors, 0 warnings")
+  Check "slots 10" (Edit $ex '"slots": 2' '"slots": 10') 0 @("0 errors, 0 warnings")
+
   Write-Host "== several findings print sorted, the summary counts them"
   $multi = Edit (Edit (Edit $ex '"owner": "acme", ' '') '"slots": 2' '"slots": "two"') '"github": {' '"worktree": 1, "github": {'
   $script:i++

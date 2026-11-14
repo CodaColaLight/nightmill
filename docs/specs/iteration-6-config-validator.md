@@ -41,8 +41,8 @@ UTF-8.
 
 The validator is generic: it walks the schema, it does not hard-code keys. It supports exactly the keywords
 `type`, `properties`, `required`, `items`, `minimum`, `minItems`, `additionalProperties` (a schema, `true`
-or `false`) and `enum`, and ignores the keywords that constrain nothing. `integer` accepts a whole number, not
-a string and not a boolean. `enum` is not used by the schema today; it is supported so that a future key can
+or `false`) and `enum`, and ignores the keywords that constrain nothing. `integer` accepts a whole number written in
+digits (not `2.0` or `1e0`; bug 136), not a string and not a boolean. `enum` is not used by the schema today; it is supported so that a future key can
 use it, and tested with a small schema of its own.
 
 ### Findings and output
