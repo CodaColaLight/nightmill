@@ -270,6 +270,11 @@ stalled_after() {
   echo 30
 }
 dirty_count() { git -C "$1" status --porcelain | wc -l | tr -d ' '; }
+# is_worktree DIR: DIR is the top of a git worktree (bug 129: a plain or broken directory is not, and dirty_count
+# cannot judge it)
+is_worktree() { local p; p=$(git -C "$1" rev-parse --show-prefix 2>/dev/null) && [ -z "$p" ]; }
+# broken_line N DIR: the refusal of a command on a slot whose directory is no git worktree
+broken_line() { echo "slot $1 is broken: $2 is not a git worktree (move what you need out of it, remove it and run git worktree prune)"; }
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -286,6 +291,7 @@ reap_all() {
     if [ "$(marker_field "$n" state 2>/dev/null)" = taking ]; then continue; fi
     dir=$(slot_dir "$n")
     [ -d "$dir" ] || continue
+    is_worktree "$dir" || continue
     [ "$(dirty_count "$dir")" -eq 0 ] || continue
     branch=$(marker_field "$n" branch)
     [ -n "$branch" ] || continue
@@ -511,7 +517,8 @@ if [ "$status" = 1 ]; then
   for ((i = 1; i <= top; i++)); do
     if [ "$i" -gt "$count" ] && ! has_marker "$i"; then continue; fi
     dir=$(slot_dir "$i")
-    where="not created yet"; [ -d "$dir" ] && where="ready"
+    where="not created yet"
+    if [ -d "$dir" ]; then if is_worktree "$dir"; then where="ready"; else where="broken"; fi; fi
     busy="free"
     if has_marker "$i"; then
       claim_of "$i"
@@ -524,7 +531,9 @@ if [ "$status" = 1 ]; then
     fi
     if [ "$i" -gt "$count" ]; then busy="$busy (retiring)"; fi
     dirty=""
-    if [ -d "$dir" ]; then
+    if [ "$where" = broken ]; then
+      dirty="  (not a git worktree)"
+    elif [ -d "$dir" ]; then
       n=$(dirty_count "$dir")
       [ "$n" -gt 0 ] && dirty="  ($n uncommitted files)"
     fi
@@ -723,6 +732,10 @@ if [ -n "$take" ]; then
     c=0; git worktree add --detach "$dir" "$base" || c=$?
     [ "$c" = 0 ] || restore_take "git worktree add" "$c"
     created=1
+  elif ! is_worktree "$dir"; then
+    trap ':' INT TERM
+    retry_marker rm -f "$mk" || leave_claim
+    broken_line "$n" "$dir" >&2; exit 1
   elif [ "$(dirty_count "$dir")" -gt 0 ]; then
     trap ':' INT TERM
     retry_marker rm -f "$mk" || leave_claim
@@ -768,6 +781,7 @@ if [ "$release" != 0 ]; then
   if [ "$claim" != none ]; then claim_line "$n" >&2; exit 1; fi
   dir=$(slot_dir "$n")
   branch=$(marker_field "$n" branch)
+  is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir" >&2; exit 1; }
   git fetch origin "$base_branch"
   prjson=$(gh pr list --state merged --head "$branch" --json number,createdAt,mergedAt,closingIssuesReferences)
@@ -795,6 +809,7 @@ if [ "$abandon" != 0 ]; then
   if [ "$claim" = dead ]; then
     # a take that did not finish: freed after the same checks, the local branch is kept
     if [ -d "$dir" ]; then
+      is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
       [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
       git -C "$dir" switch --detach "$base"
     fi
@@ -802,8 +817,12 @@ if [ "$abandon" != 0 ]; then
     echo "Slot $n is free (was $branch, a take that did not finish; the local branch is kept, delete it yourself if unwanted)."
     exit 0
   fi
-  [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
-  git -C "$dir" switch --detach "$base"
+  # a removed directory has nothing to switch (bug 129); one that is no worktree is refused
+  if [ -d "$dir" ]; then
+    is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
+    [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
+    git -C "$dir" switch --detach "$base"
+  fi
   rm -f "$(marker "$n")"
   record free "$n" "$branch" abandoned "" "" "" "" "" ""
   echo "Slot $n is free (was $branch; the local branch is kept, delete it yourself if unwanted)."

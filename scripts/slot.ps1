@@ -281,6 +281,14 @@ function Invoke-Native([string]$file, [string[]]$arguments) {
 function Get-FirstLine([string]$text) { (@($text -split "`r?`n" | Where-Object { $_ -ne "" }) | Select-Object -First 1) }
 # Exit-Line <text>: one plain line on standard error, then exit 1 (no error record)
 function Exit-Line([string]$text) { [Console]::Error.WriteLine($text); exit 1 }
+# Test-Worktree <dir>: the directory is the top of a git worktree (bug 129: a plain or broken directory is not, and git
+# status cannot judge it)
+function Test-Worktree($dir) {
+  $r = Invoke-Native "git" @("-C", $dir, "rev-parse", "--show-prefix")
+  return ($r.Code -eq 0 -and -not $r.Out.Trim())
+}
+# Get-BrokenLine <n> <dir>: the refusal of a command on a slot whose directory is no git worktree
+function Get-BrokenLine($n, $dir) { "slot $n is broken: $dir is not a git worktree (move what you need out of it, remove it and run git worktree prune)" }
 
 # Get-Claim <n> [marker]: State none (no marker, or a finished one), live or dead, and Pid (the usable pid, 1 to
 # 2147483647, or ""); a taking marker is live while a process with its pid runs on this machine
@@ -322,6 +330,7 @@ function Invoke-Reap {
     if ((Get-Text $m "state") -ceq "taking") { continue }
     $dir = Get-SlotDir $n
     if (-not (Test-Path -LiteralPath $dir)) { continue }
+    if (-not (Test-Worktree $dir)) { continue }
     if (@(git -C $dir status --porcelain).Count -gt 0) { continue }
     $branch = [string]$m.branch
     if (-not $branch) { continue }
@@ -563,7 +572,8 @@ if ($Status) {
     $dir = Get-SlotDir $i
     $m = Read-Marker $i
     if ($i -gt $count -and -not $m) { continue }
-    $where = if (Test-Path $dir) { "ready" } else { "not created yet" }
+    $where = "not created yet"
+    if (Test-Path $dir) { $where = if (Test-Worktree $dir) { "ready" } else { "broken" } }
     $busy = "free"
     if ($m) {
       $c = Get-Claim $i $m
@@ -576,7 +586,9 @@ if ($Status) {
     }
     if ($i -gt $count) { $busy += " (retiring)" }
     $dirty = ""
-    if (Test-Path $dir) {
+    if ($where -eq "broken") {
+      $dirty = "  (not a git worktree)"
+    } elseif (Test-Path $dir) {
       $n = @(git -C $dir status --porcelain).Count
       if ($n -gt 0) { $dirty = "  ($n uncommitted files)" }
     }
@@ -816,6 +828,8 @@ if ($Take) {
       $wc = Invoke-Git -C $main worktree add --detach $dir $Base
       if ($wc -ne 0) { Exit-Take "fail" "git worktree add" $wc }
       $script:created = $true
+    } elseif (-not (Test-Worktree $dir)) {
+      Exit-Take "dirty" -Lines @(Get-BrokenLine $n $dir)
     } elseif ((Invoke-GitOut -C $dir status --porcelain).Out.Trim()) {
       Exit-Take "dirty" -Lines @("slot $n has uncommitted files; deal with them first: $dir")
     }
@@ -866,6 +880,7 @@ if ($Release -gt 0) {
   $c = Get-Claim $n $m
   if ($c.State -ne "none") { Exit-Line (Get-ClaimLine $n $c) }
   $dir = Get-SlotDir $n
+  if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
   if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir" }
   git fetch origin $baseBranch
   if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
@@ -898,6 +913,7 @@ if ($Abandon -gt 0) {
     # a take that did not finish: freed after the same checks, the local branch is kept
     $branch = Get-Text $m "branch"
     if (Test-Path -LiteralPath $dir) {
+      if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
       if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
       git -C $dir switch --detach $Base
       if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
@@ -906,9 +922,13 @@ if ($Abandon -gt 0) {
     Write-Host "Slot $n is free (was $branch, a take that did not finish; the local branch is kept, delete it yourself if unwanted)." -ForegroundColor Yellow
     exit 0
   }
-  if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
-  git -C $dir switch --detach $Base
-  if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+  # a removed directory has nothing to switch (bug 129); one that is no worktree is refused
+  if (Test-Path -LiteralPath $dir) {
+    if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
+    if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
+    git -C $dir switch --detach $Base
+    if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+  }
   Remove-Item (Get-Marker $n)
   Write-Record "free" $n ([string]$m.branch) "abandoned"
   Write-Host "Slot $n is free (was $($m.branch); the local branch is kept, delete it yourself if unwanted)." -ForegroundColor Yellow

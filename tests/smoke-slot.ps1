@@ -1983,6 +1983,61 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   $null = Slot -Abandon 2
   Gq -C $work branch -D feat/n1 feat/n3
 
+  Write-Host "== a broken slot directory is reported and refused (bug 129)"
+  # A slot directory that is no git worktree (here: slot 2 and slot 3 replaced by plain directories) is reported as
+  # broken by -Status, which lists every slot and exits 0, and refused with a message that says so by -Release,
+  # -Abandon and -Take; nothing is fetched, queried, switched or removed.
+  Reset-Gh
+  $null = Slot -Take feat/b1 -Slot 1
+  $null = Slot -Take feat/b2 -Slot 2
+  $originMain = ([string](git -C $work rev-parse origin/main)).Trim()
+  Merged feat/b2 41 $originMain
+  foreach ($n in 2, 3) {
+    Remove-Item -Recurse -Force "$tmp\wt\slot-$n" -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory "$tmp\wt\slot-$n" | Out-Null
+    [System.IO.File]::WriteAllText("$tmp\wt\slot-$n\keep.txt", "keep`n")
+  }
+  $brokenRe = 'broken|not a git worktree'
+
+  # -Status reports slot 2 as broken and goes on to slot 3
+  $r = SlotE '-Status' @{ WORKER_SLOTS = 3 }
+  if ($r.Code -ne 0) { Fail "broken: -Status exit $($r.Code), not 0: $($r.Out) / $($r.Err)" }
+  if ($r.Out -notmatch '(?m)^slot 1 .*busy: feat/b1') { Fail "broken: -Status lost slot 1: $($r.Out)" }
+  if ($r.Out -notmatch "(?m)^slot 2 .*($brokenRe)") { Fail "broken: -Status does not report slot 2 as broken: $($r.Out) / $($r.Err)" }
+  if ($r.Out -notmatch "(?m)^slot 3 .*($brokenRe)") { Fail "broken: -Status stopped before slot 3 or does not report it as broken: $($r.Out) / $($r.Err)" }
+
+  # -Release refuses before it fetches or asks gh
+  Reset-Gh; Merged feat/b2 41 $originMain
+  $r = SlotE '-Release 2'
+  if ($r.Code -ne 1) { Fail "broken: -Release exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if ($r.Err -notmatch "(?i)slot 2.*($brokenRe)|($brokenRe).*slot 2") { Fail "broken: -Release gave no clear message: $($r.Err)" }
+  if ((Get-Item $ghLog).Length -gt 0) { Fail "broken: -Release asked gh before refusing: $([System.IO.File]::ReadAllText($ghLog))" }
+  if (-not (Test-Path (Marker 2))) { Fail 'broken: -Release removed the marker' }
+  if (-not (Test-Path "$tmp\wt\slot-2\keep.txt")) { Fail 'broken: -Release touched the directory' }
+
+  # -Abandon refuses, the marker stays
+  $r = SlotE '-Abandon 2'
+  if ($r.Code -ne 1) { Fail "broken: -Abandon exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if ($r.Err -notmatch "(?i)slot 2.*($brokenRe)|($brokenRe).*slot 2") { Fail "broken: -Abandon gave no clear message: $($r.Err)" }
+  if (-not (Test-Path (Marker 2))) { Fail 'broken: -Abandon removed the marker' }
+  if (-not (Test-Path "$tmp\wt\slot-2\keep.txt")) { Fail 'broken: -Abandon touched the directory' }
+
+  # -Take refuses with the message, not with a failed switch, and leaves the slot free
+  $r = SlotE '-Take feat/b3 -Slot 3' @{ WORKER_SLOTS = 3 }
+  if ($r.Code -ne 1) { Fail "broken: -Take exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if ($r.Err -notmatch "(?i)slot 3.*($brokenRe)|($brokenRe).*slot 3") { Fail "broken: -Take gave no clear message: $($r.Err)" }
+  if ($r.Err -match 'failed \(exit') { Fail "broken: -Take failed at a git step instead of refusing: $($r.Err)" }
+  if (Test-Path (Marker 3)) { Fail 'broken: -Take left a marker for slot 3' }
+  if (-not (Test-Path "$tmp\wt\slot-3\keep.txt")) { Fail 'broken: -Take touched the directory' }
+  if (Test-Branch $work 'feat/b3') { Fail 'broken: -Take made the branch' }
+
+  $null = Slot -Abandon 1
+  Remove-Item (Marker 2) -Force -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force "$tmp\wt\slot-2", "$tmp\wt\slot-3" -ErrorAction SilentlyContinue
+  Gq -C $work worktree prune
+  Gq -C $work branch -D feat/b1 feat/b2
+  Reset-Gh
+
   Write-Host "== the config comes from the base branch (iteration 48)"
   $utf8n = New-Object System.Text.UTF8Encoding $false
   function Cfg-Text([string]$base, [string]$warm, [string]$inv) {
