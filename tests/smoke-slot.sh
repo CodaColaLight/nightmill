@@ -2182,4 +2182,36 @@ in_repo cb6 --status
 [ "$rc" = 0 ] || fail "UTF-8: --status exit $rc: $out / $err"
 case "$out" in "slots = 2"*) ;; *) fail "UTF-8: unexpected status: $out" ;; esac
 
+echo "== worktrees.slots in the configuration is digits (bug 136)"
+# 2.0, 1e0 and 2.5 are not a count: slot.sh stops with a line that names worktrees.slots, exits 1 (not 0 with an
+# arithmetic error and an empty porcelain list) and takes no slot
+n=0
+for v in 2.0 1e0 2.5; do
+  n=$((n + 1)); name="cn136$n"
+  mkbase "$name" main "echo warm > warmed.txt"
+  sed "s/\"slots\": 2,/\"slots\": $v,/" "$tmp/$name/work/.claude/nightmill.json" > "$tmp/$name.json"
+  grep -q "\"slots\": $v," "$tmp/$name.json" || fail "slots $v: fixture: the slot count was not replaced"
+  cp "$tmp/$name.json" "$tmp/$name/work/.claude/nightmill.json"
+  git -C "$tmp/$name/work" -c user.name=t -c user.email=t@example.invalid commit -qam "slots $v"
+  git -C "$tmp/$name/work" push -q origin main
+  for args in "--status" "--status --porcelain" "--take feat/a"; do
+    # shellcheck disable=SC2086
+    in_repo "$name" $args
+    [ "$rc" = 1 ] || fail "slots $v: $args: exit $rc, not 1: $out / $err"
+    case "$err" in *"worktrees.slots"*) ;; *) fail "slots $v: $args: the line does not name worktrees.slots: $err" ;; esac
+    case "$out$err" in *"syntax error"*|*"arithmetic"*) fail "slots $v: $args: an arithmetic error: $out / $err" ;; esac
+    case "$out$err" in *"slots are busy"*) fail "slots $v: $args: reported busy slots: $out / $err" ;; esac
+  done
+  [ ! -e "$tmp/$name/wt/slot-1" ] && [ ! -e "$tmp/$name/wt/.slots/slot-1.json" ] || fail "slots $v: the take made a slot"
+done
+# a count in digits still works
+mkbase cn1364 main "echo warm > warmed.txt"
+sed 's/"slots": 2,/"slots": 3,/' "$tmp/cn1364/work/.claude/nightmill.json" > "$tmp/cn1364.json"
+cp "$tmp/cn1364.json" "$tmp/cn1364/work/.claude/nightmill.json"
+git -C "$tmp/cn1364/work" -c user.name=t -c user.email=t@example.invalid commit -qam "slots 3"
+git -C "$tmp/cn1364/work" push -q origin main
+in_repo cn1364 --status
+[ "$rc" = 0 ] || fail "slots 3: --status exit $rc: $out / $err"
+case "$out" in "slots = 3"*) ;; *) fail "slots 3: unexpected status: $out" ;; esac
+
 echo "SMOKE OK"
