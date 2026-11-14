@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # tests/test-skills-low-gaps.sh - regression test for #142 (LOW-SKILLS): the low-severity gaps in the skills that a
 # text check can pin without a design choice. Each check names the item of the bug report it pins.
-#   (a) agents/worker.md has a `tools:` line in its frontmatter, so the "mechanical" worker does not inherit every tool
-#   (b) skills/spec/SKILL.md removes the label that /story sets (labels.needsSpec) when the spec is written
+#   (a) agents/worker.md lists its tools, exactly 'Read, Grep, Glob, Write, Edit, Bash, PowerShell' (the way tests/lint.sh
+#       pins the other agents): not inherited from the session, no Agent, and Bash so it can move a board status
+#   (b) skills/spec/SKILL.md removes the label that /story sets (labels.needsSpec) with `--remove-label` when the spec is
+#       written
 #   (c) a skill with `disable-model-invocation: true` has no "Use when asked ..." in its description: the model never
 #       invokes it, so the sentence triggers nothing
 #   (d) one spelling of the permission rule for `gh project` across the skills: `Bash(gh project *)` or
@@ -21,16 +23,20 @@ front() { awk '/^---[[:space:]]*$/ { n++; next } n == 1 { print } n >= 2 { exit 
 worker="$root/agents/worker.md"
 if [ ! -f "$worker" ]; then
   echo "FAIL: $worker is missing"; fail=1
-elif ! front "$worker" | grep -qE '^tools:[[:space:]]*[A-Za-z]'; then
-  echo "FAIL: agents/worker.md has no 'tools:' line in its frontmatter, so the mechanical worker inherits every tool"
-  fail=1
+else
+  worker_tools=$(front "$worker" | sed -n 's/^tools:[[:space:]]*//p' | head -1 | tr -d '\r')
+  if [ "$worker_tools" != "Read, Grep, Glob, Write, Edit, Bash, PowerShell" ]; then
+    echo "FAIL: agents/worker.md: the tools must be exactly 'Read, Grep, Glob, Write, Edit, Bash, PowerShell' (no Agent;" \
+      "Bash to move a board status), found '$worker_tools'"
+    fail=1
+  fi
 fi
 
 # (b) /spec takes the needs-spec label off the story
 spec="$root/skills/spec/SKILL.md"
 if [ ! -f "$spec" ]; then
   echo "FAIL: $spec is missing"; fail=1
-elif ! grep -E 'labels\.needsSpec|needs-spec' "$spec" | grep -qiE 'remov|delet|drop'; then
+elif ! grep -E -e '--remove-label[[:space:]]+<?(labels\.needsSpec|needs-spec)' "$spec" | grep -q .; then
   echo "FAIL: skills/spec/SKILL.md never removes the labels.needsSpec label (needs-spec) that /story sets"
   fail=1
 fi

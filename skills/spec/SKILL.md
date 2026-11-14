@@ -129,8 +129,8 @@ At **Spec review**:
 
 | # | Found | Resumes at | Then |
 |---|---|---|---|
-| R1 | an open spec pull request | `the pull request` | auto-merge as in S1; the comment of step 5 when it is missing; the watch of step 5; step 6 |
-| R2 | a merged spec pull request, none open | `the comment` | the comment of step 5 when it is missing; step 6 |
+| R1 | an open spec pull request | `the pull request` | auto-merge as in S1; the comment of step 5 when it is missing; the label removal of step 5 when the issue has the label; the watch of step 5; step 6 |
+| R2 | a merged spec pull request, none open | `the comment` | the comment of step 5 when it is missing; the label removal of step 5 when the issue has the label; step 6 |
 | R3 | anything else | refused: `#<n> is at Spec review, but no open or merged spec pull request of it exists; the maintainer decides. Nothing was changed.` | |
 
 Before S1 or R1 enables auto-merge on the reused pull request, it runs the two checks of step 4; when one applies it

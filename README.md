@@ -354,7 +354,7 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 | The skills, the slot script's warm-up and the pairing check use the config on the base branch, not the working tree | enforced by the skills' config injection, `scripts/slot.*` and `scripts/validate-config.*` `--base`; the working tree's file only without a remote branch or before the base has one | [#111](https://github.com/CodaColaLight/nightmill/issues/111) |
 | A change under `.claude/` or `.github/` is not auto-merged | enforced by `tests/lint.sh` for the skills' text only; no mechanism checks it at run time | [#111](https://github.com/CodaColaLight/nightmill/issues/111) |
 | The guard hook and the other scripts (status, room, control, models, the dashboard and the pane) read the config from the base branch | not enforced yet | none filed |
-| The `worker` agent has a limited set of tools | not enforced yet | [#142](https://github.com/CodaColaLight/nightmill/issues/142) |
+| The `worker` agent cannot start subagents or use web or MCP tools | enforced by the `tools:` line of `agents/worker.md`, pinned by `tests/lint.sh`; it keeps Bash and PowerShell, so it can still run any shell command | [#142](https://github.com/CodaColaLight/nightmill/issues/142) |
 | `/next` checks who set Approved | not enforced yet | [#177](https://github.com/CodaColaLight/nightmill/issues/177) |
 | An agent claims an issue before it changes anything | not enforced yet | [#176](https://github.com/CodaColaLight/nightmill/issues/176) |
 | The agent runs as its own identity, so a required review and code owners can gate its merges | not enforced yet | [#178](https://github.com/CodaColaLight/nightmill/issues/178), [#162](https://github.com/CodaColaLight/nightmill/issues/162) |
