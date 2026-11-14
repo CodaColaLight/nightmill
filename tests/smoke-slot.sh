@@ -2045,8 +2045,10 @@ set +e; out=$(WORKER_SLOTS=3 bash "$S" --status 2>"$tmp/err.txt"); rc=$?; set -e
 err=$(cat "$tmp/err.txt")
 [ "$rc" = 0 ] || fail "broken: --status exit $rc, not 0: $out / $err"
 grep -q '^slot 1 .*busy: feat/b1' <<<"$out" || fail "broken: --status lost slot 1: $out"
-grep -E '^slot 2 ' <<<"$out" | grep -qE "$broken_re" || fail "broken: --status does not report slot 2 as broken: $out / $err"
-grep -E '^slot 3 ' <<<"$out" | grep -qE "$broken_re" || fail "broken: --status stopped before slot 3 or does not report it as broken: $out / $err"
+line2=$(grep -E '^slot 2 ' <<<"$out" || true)
+grep -qE "$broken_re" <<<"$line2" || fail "broken: --status does not report slot 2 as broken: $out / $err"
+line3=$(grep -E '^slot 3 ' <<<"$out" || true)
+grep -qE "$broken_re" <<<"$line3" || fail "broken: --status stopped before slot 3 or does not report it as broken: $out / $err"
 
 # --release refuses before it fetches or asks gh
 reset_gh; merged feat/b2 41 "$(git -C "$tmp/work" rev-parse origin/main)"
