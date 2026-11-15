@@ -421,6 +421,7 @@ lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --summar
 lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'
+lint_break cibegins .github/workflows/ci.yml 's/name: claude plugin validate (not blocking)/name: PowerShell scripts smoke tests (1)/' "FAIL: .github/workflows/ci.yml: the job name 'PowerShell scripts smoke tests (1)' begins with the required name 'PowerShell scripts smoke tests'"
 # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
 lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema: verification.platform is not a string'
 lint_break platformexample templates/nightmill.example.json 's/"platform": "all"/"platform": "unix"/' 'FAIL: templates/nightmill.example.json does not mention verification.platform all'

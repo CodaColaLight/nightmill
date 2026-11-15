@@ -227,7 +227,7 @@ decision 11, rule 6) changes:
   whose list (after `--only `) is checked by `chk_only` against the step list's bash steps but `smoke-json.sh`, as
   today;
 - the PowerShell list is no longer read from a run line there; the section checks instead that no `name:` line of
-  `ci.yml` other than the three exact required lines contains a required name
+  `ci.yml` other than the three exact required lines begins with a required name
   (`FAIL: .github/workflows/ci.yml: the job name '<name>' begins with the required name '<req>'`).
 
 A new section `== the PowerShell job runs in parts`, right after it, starts `bash tests/test-ci-parts.sh "$PWD"` once

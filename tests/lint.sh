@@ -1395,6 +1395,12 @@ echo "== the final CI job writes the job times"
 # Bug #296: rule 2 counts every run step of the part job, `- run: ...` too; tests/test-ci-run-steps.sh adds one per case.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-run-steps.sh || fail=1
 
+echo "== the job-name rule says begins with"
+# Bug #294: the rule that fails a job name that begins with a required name is pinned by the lint_break case cibegins
+# in tests/smoke-check.sh/.ps1; tests/test-ci-job-name-rule.sh checks that the iteration 55 spec words it the same way.
+# The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it (#293).
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-job-name-rule.sh || fail=1
+
 echo "== the lists and the shell twins agree"
 # Iteration 51 (#157): the README lists every smoke file, every tests/smoke-*.sh has a .ps1 twin (except the listed
 # ones), every scripts/*.sh has a .ps1 twin. The rules live in tests/test-lint-agreement.sh.
