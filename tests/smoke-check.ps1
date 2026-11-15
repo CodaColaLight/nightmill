@@ -458,6 +458,7 @@ try {
   Lint-Break "ciswap" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("smoke-hook.sh,smoke-release.sh", "smoke-release.sh,smoke-hook.sh") } else { $l } } } "FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list"
   Lint-Break "cidirect" $CI { param($ls) $ls; "      - run: bash tests/smoke-render.sh" } "FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh"
   Lint-Break "cirename" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: bash scripts smoke tests", "name: bash scripts smoke") } } "the required job bash scripts smoke tests is missing"
+  Lint-Break "cibegins" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: claude plugin validate (not blocking)", "name: PowerShell scripts smoke tests (1)") } } "FAIL: .github/workflows/ci.yml: the job name 'PowerShell scripts smoke tests (1)' begins with the required name 'PowerShell scripts smoke tests'"
   # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
   Lint-Break "platformschema" "schema\nightmill.schema.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform"', '"platformx"') } } 'FAIL: schema: verification.platform is not a string'
   Lint-Break "platformexample" "templates\nightmill.example.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform": "all"', '"platform": "unix"') } } "FAIL: templates/nightmill.example.json does not mention verification.platform all"
