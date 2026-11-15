@@ -258,7 +258,8 @@ two spaces and a letter) and prints one `FAIL:` line per broken rule, prefixed `
    `job <id> has a job-level 'permissions:' block (only smoke-powershell may, with contents: read and actions: read)`,
    and a block of `smoke-powershell` with other or further lines gives
    `the job smoke-powershell's 'permissions:' block is not exactly 'contents: read' and 'actions: read'`;
-9. (bug #295) a step of the job `smoke-powershell` runs `tests/ci-jobs-summary.sh` and has the step keys (exactly
+9. (bug #295) a step of the job `smoke-powershell` runs `tests/ci-jobs-summary.sh` (in its `run:` line or run block,
+   not in a name or a `#` comment) and has the step keys (exactly
    eight spaces of indent) `if: always()` and `continue-on-error: true` (decision 7); else
    `the job PowerShell scripts smoke tests has no Job times step (...)`. `tests/test-ci-job-times.sh`, started by the
    lint section `== the final CI job writes the job times`, breaks it once per case.
