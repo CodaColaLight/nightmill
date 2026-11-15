@@ -9,6 +9,7 @@ $here = Split-Path $PSScriptRoot -Parent
 $psExe = (Get-Command powershell).Source
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("nightmill-warmup-interp-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory $tmp | Out-Null
+$origPath = $env:PATH
 $script:failures = @()
 function Fail($msg) { Write-Host "FAIL: $msg" -ForegroundColor Red; $script:failures += $msg }
 $utf8n = New-Object System.Text.UTF8Encoding $false
@@ -79,6 +80,28 @@ try {
   Gq -C "$tmp\work" push -q origin main
   Gq -C "$tmp\work" remote set-head origin main
 
+  # A bash that does nothing and exits 0 comes FIRST on PATH for the runs below (like WSL's System32\bash.exe, which gets
+  # no NIGHTMILL_WARMUP and so runs nothing). A lookup that takes the first bash on PATH runs it and the warm-up files
+  # are missing; the lookup of Git for Windows' bin\bash.exe (beside git) first still runs the warm-ups. Run from Git
+  # Bash, PATH has Git's own bash first, which would hide that defect. Only where Git for Windows' bash is beside git.
+  $gitBash = $null
+  $exec = [string](& git --exec-path 2>$null)
+  if ($exec) {
+    $groot = Split-Path (Split-Path (Split-Path ($exec.Trim() -replace '/', '\') -Parent) -Parent) -Parent
+    $cand = Join-Path $groot "bin\bash.exe"
+    if (Test-Path -LiteralPath $cand -PathType Leaf) { $gitBash = $cand }
+  }
+  if (-not $gitBash) {
+    Write-Host "skipped: no bin\bash.exe beside git (not Git for Windows), so no no-op bash is put first on PATH"
+  } else {
+    $fake = Join-Path $tmp "fakebin"
+    New-Item -ItemType Directory $fake | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $fake "bash.cmd"), "@exit /b 0`r`n")
+    $env:PATH = "$fake;$origPath"
+    $first = Get-Command bash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $first -or $first.Source -ne (Join-Path $fake "bash.cmd")) { Fail "setup: the no-op bash.cmd is not the first bash on PATH ($($first.Source))" }
+  }
+
   Check-Warm "slot.ps1 -Take" (Run "slot.ps1" "-Take feat/warm") "$tmp\wt\slot-1\client\warmed.txt"
   Check-Warm "new-worktree.ps1" (Run "new-worktree.ps1" "feat/extra") "$tmp\wt\feat-extra\client\warmed.txt"
 
@@ -92,6 +115,7 @@ try {
   if (-not $desc) { Fail "the schema has no description for worktrees.warmup[].command" }
   elseif ($desc -notmatch '(?i)bash') { Fail "the schema description of worktrees.warmup[].command does not name the interpreter (bash): $desc" }
 } finally {
+  $env:PATH = $origPath
   Set-Location $env:TEMP
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
