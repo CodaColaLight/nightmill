@@ -197,7 +197,7 @@
             "required": ["command"],
             "properties": {
               "dir": { "type": "string", "description": "Directory inside the worktree to run in. Default: the worktree root." },
-              "command": { "type": "string" },
+              "command": { "type": "string", "description": "One command line, run by bash in both shells: bash -c in slot.sh and new-worktree.sh, and the same bash from slot.ps1 and new-worktree.ps1 (Git for Windows' bash beside git, else the first bash on the PATH that is not WSL's System32 bash.exe). Write it in bash syntax (&&, $VAR, quoting); without bash the PowerShell scripts fail the warm-up with \"bash not found\" and try no other interpreter." },
               "lockfile": { "type": "string", "description": "Relative to the worktree. When set, the command runs only when this file's hash changed since the last run in that slot." }
             }
           },

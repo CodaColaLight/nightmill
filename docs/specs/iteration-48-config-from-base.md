@@ -65,7 +65,7 @@ Read on `main` at cb53cae (iterations 39 and 47 merged), read only; nothing was 
 - `scripts/slot.sh` reads `$main/.claude/nightmill.json` (the main checkout's working tree, `main` the parent of the
   common git dir) before any mode, takes `git.baseBranch` from it, and at `--take` runs each
   `worktrees.warmup[].command` with `bash -c`; `slot.ps1` reads `Join-Path $main ".claude\nightmill.json"` and runs
-  `Invoke-Expression $w.command`.
+  `Invoke-Expression $w.command` (since bug 133 it runs the command in bash, as `slot.sh` does).
 - The workflow skill's **CI and merging** withholds auto-merge for a story trigger, a partial change, a skipped manual
   check, an open blocking finding or the maintainer's wish; no case looks at the paths a pull request changes.
   `escalation.storyTriggers` names a new, renamed or removed key, not a changed value.

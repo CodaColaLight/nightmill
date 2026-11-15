@@ -502,10 +502,9 @@ and before `SMOKE OK`, the same cases in both. The header comment of each test n
 Setup. All slots are free (abandon what the reports section left), the gh log is reset, and the count is 2. A **gate
 warm-up** replaces `worktrees.warmup` in a copy of the config: one command with no `lockfile` (so it always runs) that
 waits until the file `<tmp>/go` exists, polling every 0.1 s, and exits 9 after 120 s without it. bash:
-`i=0; while [ ! -e '<tmp>/go' ]; do i=$((i+1)); [ $i -lt 1200 ] || exit 9; sleep 0.1; done`. PowerShell: the same with
-`Test-Path` and `Start-Sleep -Milliseconds 100`, with paths written with `/`, and with `throw` in place of `exit 9`
-(an `exit` inside `Invoke-Expression` would end `slot.ps1` itself). A **failing warm-up** is one command that
-exits 7: bash `exit 7`, PowerShell `cmd /c exit 7`. `waitfor <n> <state>` polls every 0.1 s, for at most 60 s, until
+`i=0; while [ ! -e '<tmp>/go' ]; do i=$((i+1)); [ $i -lt 1200 ] || exit 9; sleep 0.1; done`. PowerShell: the same
+command, with paths written with `/` (bug 133: `slot.ps1` runs a warm-up in bash too). A **failing warm-up** is one
+command that exits 7: `exit 7` in both. `waitfor <n> <state>` polls every 0.1 s, for at most 60 s, until
 `--status --porcelain` shows field 9 of slot n as `<state>`, and fails the test otherwise. Takes run "in the
 background" are child processes started one right after the other without waiting (bash `&` with output to files,
 then `wait <pid>`; PowerShell two `System.Diagnostics.Process` started before either is read). A **dead pid** is the

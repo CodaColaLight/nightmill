@@ -710,8 +710,8 @@ try {
   $hereFwd = $here -replace '\\', '/'
   $origWarm = '"warmup": [ { "dir": "client", "command": "echo warm > warmed.txt", "lockfile": "client/lock.txt" } ],'
   if (-not $cfgBefore.Contains($origWarm)) { Fail "claim: the config has no warm-up line to replace" }
-  $gateJson = "[ { `"command`": `"`$gi = 0; while (-not (Test-Path '$tf/go')) { `$gi++; if (`$gi -ge 1200) { throw 'no go' }; Start-Sleep -Milliseconds 100 }`" } ]"
-  $exit7Json = '[ { "command": "cmd /c exit 7" } ]'
+  $gateJson = "[ { `"command`": `"i=0; while [ ! -e '$tf/go' ]; do i=`$((i+1)); [ `$i -lt 1200 ] || exit 9; sleep 0.1; done`" } ]"
+  $exit7Json = '[ { "command": "exit 7" } ]'
   function Stop-Claim { # opens both gates and waits for the background takes, so that none outlives the test
     [System.IO.File]::WriteAllText("$tmp\go", ""); [System.IO.File]::WriteAllText("$tmp\claim-go", "")
     foreach ($h in $script:bgs) { if (-not $h.P.WaitForExit(120000)) { try { $h.P.Kill() } catch { } } }
@@ -1016,7 +1016,7 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
     Remove-Item "$tmp\wt\slot-1\untracked.txt"
     # a changed file keeps a dead claim
     New-Branch "feat/f8" "f8.txt"
-    Write-Cfg '[ { "command": "Set-Content f8.txt changed; cmd /c exit 7" } ]'
+    Write-Cfg '[ { "command": "echo changed > f8.txt; exit 7" } ]'
     $r = SlotE "-Take feat/f8 -Slot 1"
     if ($r.Code -ne 1) { Fail "claim 3: a failed warm-up that changed a file exited $($r.Code): $($r.Out) / $($r.Err)" }
     if (-not (Test-EndsWithLines $r.Err @($left2, "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with -Abandon 1"))) { Fail "claim 3: the last two lines of standard error: $($r.Err)" }
@@ -1036,7 +1036,7 @@ echo x >> '@TMP@/barrier'; i=0; while [ "$(wc -l < '@TMP@/barrier')" -lt 2 ]; do
     if ($r.Code -ne 0 -or $r.Out.Trim() -cne "Slot 1 is free (was feat/f8, a take that did not finish; the local branch is kept, delete it yourself if unwanted).") { Fail "claim 3: -Abandon after the file was restored (exit $($r.Code)): $($r.Out) / $($r.Err)" }
     Gq -C $work branch -D feat/f8
     # an untracked file keeps a dead claim
-    Write-Cfg '[ { "command": "Set-Content junk.txt x; cmd /c exit 7" } ]'
+    Write-Cfg '[ { "command": "echo x > junk.txt; exit 7" } ]'
     $r = SlotE "-Take feat/f9 -Slot 1"
     if ($r.Code -ne 1) { Fail "claim 3: a failed warm-up that created a file exited $($r.Code): $($r.Out) / $($r.Err)" }
     if (-not (Test-EndsWithLines $r.Err @($left2, "warm-up 1 failed (exit 7); slot 1 could not be put back and stays claimed: free it with -Abandon 1"))) { Fail "claim 3: the last two lines of standard error (untracked file): $($r.Err)" }
@@ -1306,7 +1306,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
     if ((Get-LastLine $r.Err) -cne (Get-LastLine $ref.Err)) { Fail "retries $case`: last line of standard error [$(Get-LastLine $r.Err)], the reference run gave [$(Get-LastLine $ref.Err)]" }
     if ((Get-LineCount $r.Err) -ne (Get-LineCount $ref.Err)) { Fail "retries $case`: $(Get-LineCount $r.Err) lines of standard error, the reference run gave $(Get-LineCount $ref.Err) (nothing may be printed for a failed try): $($r.Err)" }
   }
-  $gateBody = "`$gi = 0; while (-not (Test-Path '$tf/go')) { `$gi++; if (`$gi -ge 1200) { throw 'no go' }; Start-Sleep -Milliseconds 100 }"
+  $gateBody = "i=0; while [ ! -e '$tf/go' ]; do i=`$((i+1)); [ `$i -lt 1200 ] || exit 9; sleep 0.1; done"
   function Get-GateJson([string]$after) { "[ { `"command`": `"$gateBody$after`" } ]" }
   $canHold = ($env:OS -eq "Windows_NT")
 
@@ -1346,13 +1346,13 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   # 2 the removal of the claim (restore item 5)
   function Retry-Case2 {
     Claim-Reset
-    Write-Cfg (Get-GateJson "; cmd /c exit 7")
+    Write-Cfg (Get-GateJson "; exit 7")
     [System.IO.File]::WriteAllText("$tmp\go", "")
     $ref = SlotE "-Take feat/r2 -Slot 1"
     $want = "warm-up 1 failed (exit 7); slot 1 is free again"
     if ($ref.Code -ne 1 -or (Get-LastLine $ref.Err) -cne $want) { Fail "retries 2: the reference run (exit $($ref.Code)): $($ref.Err)" }
     Claim-Reset
-    Write-Cfg (Get-GateJson "; cmd /c exit 7")
+    Write-Cfg (Get-GateJson "; exit 7")
     $h = Start-Take "-Take feat/r2 -Slot 1"
     Wait-For 1 "taking"
     Wait-Until "the switch to feat/r2" { [bool](Get-Ref "feat/r2") }
@@ -1375,7 +1375,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   function Retry-Case3 {
     Claim-Reset
     New-Branch "feat/rw" "rw.txt"
-    $json = Get-GateJson "; Set-Content rw.txt changed; cmd /c exit 7"
+    $json = Get-GateJson "; echo changed > rw.txt; exit 7"
     Write-Cfg $json
     [System.IO.File]::WriteAllText("$tmp\go", "")
     $ref = SlotE "-Take feat/rw -Slot 1"
@@ -1502,7 +1502,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
     }
   }
   function Fail($msg) { Kill-Intr; Let-Go; Stop-Claim; Write-Host "FAIL: $msg" -ForegroundColor Red; exit 1 }
-  $pidGate = "Set-Content '$tf/gate.pid' x; $gateBody"
+  $pidGate = "echo `$`$ > '$tf/gate.pid'; $gateBody"
   function Start-Intr([string]$arguments, [string]$gate = "") {
     $sw = New-Object System.IO.StringWriter
     $script:intrErrOld = [Console]::Error
@@ -1585,7 +1585,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   function Intr-Case2 {
     Intr-Clean @("feat/i3")
     New-Branch "feat/i3" "i3.txt"
-    Write-Cfg "[ { `"command`": `"Set-Content i3.txt changed; $pidGate`" } ]"
+    Write-Cfg "[ { `"command`": `"echo changed > i3.txt; $pidGate`" } ]"
     Start-Intr "-Take feat/i3 -Slot 1"
     Wait-IntrTaking
     Wait-IntrSign "the warm-up's pid file" { Test-Path -LiteralPath "$tmp\gate.pid" }
@@ -1795,7 +1795,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   $RC = "$tmp\clock"; $RW = "$tmp\warm-clock"
   $env:NIGHTMILL_CLOCK_FILE = $RC
   Remove-Item $RL -Force -ErrorAction SilentlyContinue
-  Write-Cfg "[ { `"command`": `"[System.IO.File]::WriteAllText('$tf/clock', [System.IO.File]::ReadAllText('$tf/warm-clock'))`" } ]"
+  Write-Cfg "[ { `"command`": `"cat '$tf/warm-clock' > '$tf/clock'`" } ]"
   function RClock([long]$secs) { [System.IO.File]::WriteAllText($RC, "$($RT0 + $secs)`n") }
   function RTake([long]$start, [long]$finish, [string]$arguments) { # a take that starts at T0+s and ends at T0+f
     RClock $start; [System.IO.File]::WriteAllText($RW, "$($RT0 + $finish)`n")
@@ -2087,17 +2087,17 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   }
 
   Write-Host "-- the warm-up comes from the base, not from the working tree"
-  Mk-Base "cb1" "main" "Set-Content warmed.txt warm"
-  [System.IO.File]::WriteAllText("$tmp\cb1\work\.claude\nightmill.json", (Cfg-Text "main" "Set-Content evil.txt evil" "plain"), $utf8n)
+  Mk-Base "cb1" "main" "echo warm > warmed.txt"
+  [System.IO.File]::WriteAllText("$tmp\cb1\work\.claude\nightmill.json", (Cfg-Text "main" "echo evil > evil.txt" "plain"), $utf8n)
   $r = SlotIn "cb1" "-Take feat/a"
   if ($r.Code -ne 0) { Fail "base config: the take exited $($r.Code): $($r.Out) / $($r.Err)" }
   if (-not (Test-Path "$tmp\cb1\wt\slot-1\client\warmed.txt")) { Fail "base config: the warm-up of the pushed config did not run" }
   if (@(Get-ChildItem "$tmp\cb1\wt" -Recurse -Filter evil.txt -ErrorAction SilentlyContinue).Count -ne 0) { Fail "base config: the warm-up of the uncommitted working-tree config ran" }
 
   Write-Host "-- the base branch hop: git.baseBranch of origin/HEAD names the branch whose config is read"
-  Mk-Base "cb2" "trunk" "Set-Content warmed.txt warm"
+  Mk-Base "cb2" "trunk" "echo warm > warmed.txt"
   Gq -C "$tmp\cb2\work" switch -q -c trunk
-  [System.IO.File]::WriteAllText("$tmp\cb2\work\.claude\nightmill.json", (Cfg-Text "trunk" "Set-Content trunk.txt hop" "plain"), $utf8n)
+  [System.IO.File]::WriteAllText("$tmp\cb2\work\.claude\nightmill.json", (Cfg-Text "trunk" "echo hop > trunk.txt" "plain"), $utf8n)
   Gq -C "$tmp\cb2\work" -c user.name=t -c user.email=t@example.invalid commit -qam "trunk config"
   Gq -C "$tmp\cb2\work" push -q origin trunk
   Gq -C "$tmp\cb2\work" switch -q main
@@ -2105,13 +2105,13 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   if ($r.Code -ne 0) { Fail "base hop: the take exited $($r.Code): $($r.Out) / $($r.Err)" }
   if (-not (Test-Path "$tmp\cb2\wt\slot-1\client\trunk.txt")) { Fail "base hop: the warm-up of origin/trunk did not run" }
   if (Test-Path "$tmp\cb2\wt\slot-1\client\warmed.txt") { Fail "base hop: the warm-up of origin/HEAD's config ran" }
-  Mk-Base "cb2b" "nope" "Set-Content warmed.txt warm"
+  Mk-Base "cb2b" "nope" "echo warm > warmed.txt"
   $r = SlotIn "cb2b" "-Take feat/a"
   if ($r.Code -ne 1) { Fail "base hop: a base branch with no config: exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
   if (-not $r.Err.Contains("origin/nope has no .claude/nightmill.json (git.baseBranch of the configuration on origin/HEAD)")) { Fail "base hop: wrong stop line: $($r.Err)" }
 
   Write-Host "-- no origin/HEAD stops with the set-head line"
-  Mk-Base "cb3" "main" "Set-Content warmed.txt warm"
+  Mk-Base "cb3" "main" "echo warm > warmed.txt"
   Gq -C "$tmp\cb3\work" remote set-head origin --delete
   $r = SlotIn "cb3" "-Status"
   if ($r.Code -ne 1) { Fail "no origin/HEAD: -Status exit $($r.Code), not 1: $($r.Out) / $($r.Err)" }
@@ -2120,14 +2120,14 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   Write-Host "-- offline: no remote branch, the working-tree file is read"
   New-Item -ItemType Directory "$tmp\cb4\work\.claude" | Out-Null
   Gq -C "$tmp\cb4\work" init -q -b main
-  [System.IO.File]::WriteAllText("$tmp\cb4\work\.claude\nightmill.json", (Cfg-Text "main" "Set-Content warmed.txt warm" "plain"), $utf8n)
+  [System.IO.File]::WriteAllText("$tmp\cb4\work\.claude\nightmill.json", (Cfg-Text "main" "echo warm > warmed.txt" "plain"), $utf8n)
   $r = SlotIn "cb4" "-Status"
   if ($r.Code -ne 0) { Fail "offline: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
   if (-not $r.Err.Contains("nightmill: no branch of origin is known; the configuration is read from the working tree.")) { Fail "offline: wrong line: $($r.Err)" }
   if (-not $r.Out.StartsWith("slots = 2")) { Fail "offline: the working-tree config was not used: $($r.Out)" }
 
   Write-Host "-- no file on the base: the working-tree file, with the line"
-  Mk-Base "cb5" "main" "Set-Content warmed.txt warm"
+  Mk-Base "cb5" "main" "echo warm > warmed.txt"
   Gq -C "$tmp\cb5\work" rm -q --cached .claude/nightmill.json
   Gq -C "$tmp\cb5\work" -c user.name=t -c user.email=t@example.invalid commit -qm "no config"
   Gq -C "$tmp\cb5\work" push -q origin main
@@ -2137,7 +2137,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   if (-not $r.Out.StartsWith("slots = 2")) { Fail "no file on the base: the working-tree config was not used: $($r.Out)" }
 
   Write-Host "-- a base config with a non-ASCII value works"
-  Mk-Base "cb6" "main" "Set-Content warmed.txt warm" ("Generic " + [char]0x2014 + " no private words")
+  Mk-Base "cb6" "main" "echo warm > warmed.txt" ("Generic " + [char]0x2014 + " no private words")
   $r = SlotIn "cb6" "-Status"
   if ($r.Code -ne 0) { Fail "UTF-8: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
   if (-not $r.Out.StartsWith("slots = 2")) { Fail "UTF-8: unexpected status: $($r.Out)" }
@@ -2148,7 +2148,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   $n136 = 0
   foreach ($v in "2.0", "1e0", "2.5") {
     $n136++; $name = "cn136$n136"
-    Mk-Base $name "main" "Set-Content warmed.txt warm"
+    Mk-Base $name "main" "echo warm > warmed.txt"
     $cfgPath = "$tmp\$name\work\.claude\nightmill.json"
     $cfgText = [System.IO.File]::ReadAllText($cfgPath)
     if (-not $cfgText.Contains('"slots": 2,')) { Fail "slots $v`: fixture: the slot count is not in the config" }
@@ -2165,7 +2165,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
     if ((Test-Path "$tmp\$name\wt\slot-1") -or (Test-Path "$tmp\$name\wt\.slots\slot-1.json")) { Fail "slots $v`: the take made a slot" }
   }
   # a count in digits still works
-  Mk-Base "cn1364" "main" "Set-Content warmed.txt warm"
+  Mk-Base "cn1364" "main" "echo warm > warmed.txt"
   $cfgPath = "$tmp\cn1364\work\.claude\nightmill.json"
   [System.IO.File]::WriteAllText($cfgPath, ([System.IO.File]::ReadAllText($cfgPath)).Replace('"slots": 2,', '"slots": 3,'), $utf8n)
   Gq -C "$tmp\cn1364\work" -c user.name=t -c user.email=t@example.invalid commit -qam "slots 3"

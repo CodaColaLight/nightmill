@@ -394,6 +394,47 @@ function Invoke-Reap {
   }
 }
 
+# Invoke-Bash <command>: runs one warm-up command in bash, as slot.sh does with bash -c, and leaves its exit code in
+# $LASTEXITCODE (bug 133: one interpreter in both shells). bash is Git for Windows' bin\bash.exe beside git,
+# else the first bash on the PATH that is not WSL's (Windows\System32, Sysnative or SysWOW64\bash.exe gets no
+# NIGHTMILL_WARMUP and would run nothing); without one it throws "bash not found" (no other interpreter is tried).
+# The command goes to bash in the environment, not as an argument (Windows PowerShell 5.1 loses the double quotes
+# of an argument to a native program); IFS= and set -f keep $NIGHTMILL_WARMUP one unchanged word, and eval runs it as bash -c would. bash
+# shares this console; the wait is a loop that a stop (Ctrl+C, a stopped runspace) ends, and then bash's process tree
+# is killed, since a stop does not end a native program PowerShell waits for.
+function Invoke-Bash([string]$command) {
+  $bash = $null
+  try { $exec = [string](git --exec-path 2>$null) } catch { $exec = "" }
+  if ($exec) {
+    $root = Split-Path (Split-Path (Split-Path ($exec.Trim() -replace '/', '\') -Parent) -Parent) -Parent
+    $cand = Join-Path $root "bin\bash.exe"
+    if (Test-Path -LiteralPath $cand -PathType Leaf) { $bash = $cand }
+  }
+  if (-not $bash) {
+    $wsl = @()
+    $win = [Environment]::GetFolderPath("Windows")
+    if ($win) { $wsl = @("System32", "Sysnative", "SysWOW64") | ForEach-Object { Join-Path $win "$_\bash.exe" } }
+    $bash = Get-Command bash -CommandType Application -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source } |
+      Where-Object { $wsl -notcontains $_ } | Select-Object -First 1
+  }
+  if (-not $bash) { throw "bash not found: a warm-up command runs in bash (Git for Windows has it)" }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $bash
+  $psi.Arguments = "-c `"NIGHTMILL_IFS=`$IFS; IFS=; set -f; eval 'set +f; IFS=`$NIGHTMILL_IFS; unset NIGHTMILL_IFS;' `$NIGHTMILL_WARMUP`""
+  $psi.WorkingDirectory = (Get-Location).ProviderPath
+  $psi.UseShellExecute = $false
+  $psi.EnvironmentVariables["NIGHTMILL_WARMUP"] = $command
+  $p = [System.Diagnostics.Process]::Start($psi)
+  try {
+    while (-not $p.WaitForExit(100)) { }
+    $global:LASTEXITCODE = $p.ExitCode
+  } finally {
+    if (-not $p.HasExited) {
+      if ($env:OS -eq "Windows_NT") { try { & taskkill.exe /T /F /PID $p.Id 2>$null | Out-Null } catch { } } else { try { $p.Kill() } catch { } }
+    }
+  }
+}
+
 # Invoke-Warmup <n> <dir>: runs the warm-up commands; on a failure it stops and leaves the failing command's number
 # and exit code in $script:warmFail (Index, Code), else $null. The hash of the lockfile, the read and the write of
 # the stamp belong to the command (code 1 when they throw).
@@ -428,7 +469,7 @@ function Invoke-Warmup($n, $dir) {
     Push-Location $where
     $global:LASTEXITCODE = 0
     $code = 0
-    try { Invoke-Expression $w.command; $code = $LASTEXITCODE }
+    try { Invoke-Bash $w.command; $code = $LASTEXITCODE }
     catch { [Console]::Error.WriteLine((Get-FirstLine $_.Exception.Message)); $code = 1 }
     finally { Pop-Location }
     if ($code -ne 0) { $script:warmFail = [pscustomobject]@{ Index = $i; Code = $code }; return }
