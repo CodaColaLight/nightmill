@@ -25,11 +25,19 @@ cat > .claude/nightmill.json <<'EOF2'
   "worktrees": {
     "root": "../wt",
     "slots": 2,
-    "warmup": [ { "dir": "client", "command": "echo a && echo b > warmed.txt" } ]
+    "warmup": [
+      { "dir": "client", "command": "echo a && echo b > warmed.txt" },
+      { "dir": "client", "command": "X=1; echo \"a b\" \"$X\" 'c $d' > quoted.txt; echo \"it's\" >> quoted.txt" }
+    ]
   }
 }
 EOF2
 echo x > client/keep.txt
+# what bash -c makes of the quoting warm-up: the expected content of quoted.txt, taken from bash itself
+mkdir -p "$tmp/expect"
+(cd "$tmp/expect" && bash -c "X=1; echo \"a b\" \"\$X\" 'c \$d' > quoted.txt; echo \"it's\" >> quoted.txt")
+expect_quoted=$(tr -d '\r' < "$tmp/expect/quoted.txt")
+[ "$expect_quoted" = "$(printf '%s\n%s' 'a b 1 c $d' "it's")" ] || fail "setup: bash -c made '$expect_quoted' of the quoting warm-up"
 git add -A
 git -c user.name=t -c user.email=t@example.invalid commit -qm init
 git remote add origin "$tmp/origin.git"
@@ -43,6 +51,12 @@ set +e; out=$(bash "$here/scripts/slot.sh" --take feat/warm 2>&1); rc=$?; set -e
 set +e; out=$(bash "$here/scripts/new-worktree.sh" feat/extra 2>&1); rc=$?; set -e
 [ "$rc" = 0 ] || fail "new-worktree.sh with the warm-up 'echo a && echo b > warmed.txt' exited $rc: $out"
 [ "$(tr -d '\r\n' < "$tmp/wt/feat-extra/client/warmed.txt" 2>/dev/null)" = b ] || fail "new-worktree.sh: the warm-up did not run to its end (warmed.txt is not b)"
+
+echo "== a warm-up with double quotes, single quotes, a \$VAR and a ; gives the same file as bash -c"
+for f in "$tmp/wt/slot-1/client/quoted.txt" "$tmp/wt/feat-extra/client/quoted.txt"; do
+  got=$(tr -d '\r' < "$f" 2>/dev/null || true)
+  [ "$got" = "$expect_quoted" ] || fail "quoted.txt in ${f#"$tmp/wt/"} holds '$got', not what bash -c makes of the quoting warm-up: '$expect_quoted'"
+done
 
 echo "== the schema says which interpreter runs warmup[].command"
 flat=$(tr -d '\r\n' < "$here/schema/nightmill.schema.json")

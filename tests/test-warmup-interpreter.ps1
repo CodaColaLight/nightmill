@@ -38,6 +38,17 @@ function Check-Warm([string]$name, $r, [string]$file) {
   if ($text.Trim() -ne "b") { Fail "${name}: warmed.txt holds '$text', not b" }
 }
 
+# Check-Quoted <name> <file>: the warm-up `X=1; echo "a b" "$X" 'c $d' > quoted.txt; echo "it's" >> quoted.txt` wrote what
+# bash -c makes of it (tests/test-warmup-interpreter.sh pins the same two lines against the bash twins): the inner double
+# quotes kept (a b is one word), $X expanded by bash (1), the single-quoted $d left alone, the ; a command separator. A
+# command handed to bash as an argument from Windows PowerShell 5.1 loses its inner double quotes and fails this.
+function Check-Quoted([string]$name, [string]$file) {
+  if (-not (Test-Path $file)) { Fail "${name}: the quoting warm-up did not run to its end (no quoted.txt)"; return }
+  $text = ([System.IO.File]::ReadAllText($file) -replace "`r`n", "`n")
+  $expect = "a b 1 c `$d`nit's`n"
+  if ($text -ne $expect) { Fail "${name}: quoted.txt holds '$($text -replace "`n", '\n')', not what bash -c makes of the quoting warm-up: '$($expect -replace "`n", '\n')'" }
+}
+
 try {
   Write-Host "== a warm-up of 'echo a && echo b' works in slot.ps1 -Take and new-worktree.ps1"
   Gq init -q --bare "$tmp\origin.git"
@@ -53,7 +64,10 @@ try {
   "worktrees": {
     "root": "../wt",
     "slots": 2,
-    "warmup": [ { "dir": "client", "command": "echo a && echo b > warmed.txt" } ]
+    "warmup": [
+      { "dir": "client", "command": "echo a && echo b > warmed.txt" },
+      { "dir": "client", "command": "X=1; echo \"a b\" \"$X\" 'c $d' > quoted.txt; echo \"it's\" >> quoted.txt" }
+    ]
   }
 }
 '@
@@ -67,6 +81,10 @@ try {
 
   Check-Warm "slot.ps1 -Take" (Run "slot.ps1" "-Take feat/warm") "$tmp\wt\slot-1\client\warmed.txt"
   Check-Warm "new-worktree.ps1" (Run "new-worktree.ps1" "feat/extra") "$tmp\wt\feat-extra\client\warmed.txt"
+
+  Write-Host "== a warm-up with double quotes, single quotes, a `$VAR and a ; gives the same file as bash -c"
+  Check-Quoted "slot.ps1 -Take" "$tmp\wt\slot-1\client\quoted.txt"
+  Check-Quoted "new-worktree.ps1" "$tmp\wt\feat-extra\client\quoted.txt"
 
   Write-Host "== the schema says which interpreter runs warmup[].command"
   $schema = [System.IO.File]::ReadAllText((Join-Path $here "schema\nightmill.schema.json"), $utf8n) | ConvertFrom-Json
