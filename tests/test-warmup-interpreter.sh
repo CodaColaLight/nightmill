@@ -63,7 +63,7 @@ flat=$(tr -d '\r\n' < "$here/schema/nightmill.schema.json")
 # the object of the "command" property of warmup items: from its key to the closing brace of that property
 cmdobj=$(printf '%s' "$flat" | grep -o '"warmup": *{.*' | grep -o '"command": *{[^}]*}' | head -1 || true)
 [ -n "$cmdobj" ] || fail "the schema has no object for worktrees.warmup[].command"
-printf '%s' "$cmdobj" | grep -q '"description"' || fail "the schema has no description for worktrees.warmup[].command"
-printf '%s' "$cmdobj" | grep -qi 'bash' || fail "the schema description of worktrees.warmup[].command does not name the interpreter (bash): $cmdobj"
+grep -q '"description"' <<<"$cmdobj" || fail "the schema has no description for worktrees.warmup[].command"
+grep -qi 'bash' <<<"$cmdobj" || fail "the schema description of worktrees.warmup[].command does not name the interpreter (bash): $cmdobj"
 
 echo "WARMUP INTERPRETER OK"
