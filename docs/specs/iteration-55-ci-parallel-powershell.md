@@ -239,7 +239,7 @@ two spaces and a letter) and prints one `FAIL:` line per broken rule, prefixed `
    `name: PowerShell smoke part ${{ matrix.part }} of <M>`, and M pairs of lines `- part: <k>` / `only: <list>` with
    k = 1, 2, ..., M in order and M ≥ 2 equal to the M of the name; else `the PowerShell parts are malformed (<what>)`;
 2. it has exactly one run line `run: bash tests/check.sh --powershell powershell --summary "$GITHUB_STEP_SUMMARY" --only ${{ matrix.only }}`
-   after a `shell: bash` line; else `the PowerShell part job does not run tests/check.sh --only ${{ matrix.only }}`;
+   after a `shell: bash` line, where every `run: ` and `- run: ` line of the job counts as a run line (bug #296); else `the PowerShell part job does not run tests/check.sh --only ${{ matrix.only }}`;
 3. every `add ps <x>` step of the step list is named in exactly one part, exactly once: else
    `tests/<x> runs in no PowerShell part` or `tests/<x> runs in more than one PowerShell part` (named twice in one
    part counts as more than one);
@@ -414,7 +414,7 @@ No decision record: iteration 38's decision is a spec decision, and the status f
   `smoke-nothing.ps1` in part 2 (`which is not a ps step`); two names of part 2 exchanged (`not in the order of the step
   list`); `smoke-hook.ps1` moved into part 1 (`smoke-slot.ps1 shares its part`); `if: always()` removed, and the
   `[ "$PARTS" = success ]` line removed (`does not fail unless every part succeeded`); the part numbers `1, 2, 4, 3`
-  and the name `of 5` with four parts (`malformed`); the run line without `--only ${{ matrix.only }}`; for rule 8:
+  and the name `of 5` with four parts (`malformed`); the run line without `--only ${{ matrix.only }}`, and a second step `- run: echo x` in the part job (bug #296); for rule 8:
   the block `permissions:` / `contents: read` added to the job `lint` (`job lint has a job-level 'permissions:'
   block`), `      actions: read` changed to `      actions: write`, and a third line `      checks: read` added to
   the block of `smoke-powershell` (each `is not exactly 'contents: read' and 'actions: read'`), the block removed

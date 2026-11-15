@@ -1392,6 +1392,8 @@ echo "== the final CI job writes the job times"
 # Bug #295: the rule of tests/test-ci-parts.sh that pins the Job times step (decision 7) is broken once per case in
 # tests/test-ci-job-times.sh. The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it (#293).
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-job-times.sh || fail=1
+# Bug #296: rule 2 counts every run step of the part job, `- run: ...` too; tests/test-ci-run-steps.sh adds one per case.
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-run-steps.sh || fail=1
 
 echo "== the lists and the shell twins agree"
 # Iteration 51 (#157): the README lists every smoke file, every tests/smoke-*.sh has a .ps1 twin (except the listed
