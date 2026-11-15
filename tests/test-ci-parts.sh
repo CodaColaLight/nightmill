@@ -40,7 +40,7 @@ rules() {
       'name: PowerShell smoke part ${{ matrix.part }} of '*) nameM=${t##* of } ;;
       "- part: "*) ks[${#ks[@]}]=${t#- part: } ;;
       "only: "*) onlys[${#onlys[@]}]=${t#only: } ;;
-      "run: "*)
+      "run: "*|"- run: "*) # every run step counts, the compact form `- run: ...` too (bug #296)
         runs=$((runs + 1))
         if [ "$t" = 'run: bash tests/check.sh --powershell powershell --summary "$GITHUB_STEP_SUMMARY" --only ${{ matrix.only }}' ] && { [ "$prev" = "shell: bash" ] || [ "$prev" = "- shell: bash" ]; }; then runok=$((runok + 1)); fi ;;
     esac
@@ -218,6 +218,8 @@ case_sed nosuccess '/\[ "\$PARTS" = success \]/d' 'does not fail unless every pa
 case_sed numbers 's/- part: 3$/- part: X/;s/- part: 4$/- part: 3/;s/- part: X$/- part: 4/' 'malformed'
 case_sed of5 's/part \${{ matrix.part }} of 4/part ${{ matrix.part }} of 5/' 'malformed'
 case_sed norunonly '/run: bash tests\/check\.sh --powershell powershell/s/ --only \${{ matrix.only }}//' 'does not run tests/check.sh --only ${{ matrix.only }}'
+case_sed dashrun '/run: bash tests\/check\.sh --powershell powershell/a\
+      - run: echo x' 'does not run tests/check.sh --only ${{ matrix.only }}'
 mkcase leadperm > /dev/null
 ci_awk leadperm '/^  [A-Za-z]/ { cur = $1 } { print } cur == "lint:" && /^    name:/ { print "    permissions:"; print "      contents: read" }'
 expect leadperm "job lint has a job-level 'permissions:' block"
