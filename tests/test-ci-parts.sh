@@ -117,6 +117,15 @@ rules() {
     fi
   fi
   grep -qE '^ *\[ "\$PARTS" = success \] \|\| \{' <<<"$fblock" || fl 'the job PowerShell scripts smoke tests does not fail unless every part succeeded (missing: [ "$PARTS" = success ] || {)'
+  # the job times step (decision 7, bug #295): a step of the final job runs tests/ci-jobs-summary.sh, with if: always()
+  # and continue-on-error: true, so the summary is written after a failed part and never fails the job
+  printf '%s\n' "$fblock" | awk '
+    /^      - / { if (a && c && s) ok = 1; a = c = s = 0 }
+    $0 == "        if: always()" { a = 1 }
+    $0 == "        continue-on-error: true" { c = 1 }
+    /tests\/ci-jobs-summary\.sh/ { s = 1 }
+    END { if (a && c && s) ok = 1; exit !ok }' ||
+    fl 'the job PowerShell scripts smoke tests has no Job times step (a step that runs tests/ci-jobs-summary.sh with if: always() and continue-on-error: true)'
 
   # rule 8: job-level permissions, in the jobs section only
   printf '%s\n' "$norm" | awk '

@@ -257,7 +257,11 @@ two spaces and a letter) and prints one `FAIL:` line per broken rule, prefixed `
    a `permissions:` in any other job, or at any other indent, gives
    `job <id> has a job-level 'permissions:' block (only smoke-powershell may, with contents: read and actions: read)`,
    and a block of `smoke-powershell` with other or further lines gives
-   `the job smoke-powershell's 'permissions:' block is not exactly 'contents: read' and 'actions: read'`.
+   `the job smoke-powershell's 'permissions:' block is not exactly 'contents: read' and 'actions: read'`;
+9. (bug #295) a step of the job `smoke-powershell` runs `tests/ci-jobs-summary.sh` and has the step keys (exactly
+   eight spaces of indent) `if: always()` and `continue-on-error: true` (decision 7); else
+   `the job PowerShell scripts smoke tests has no Job times step (...)`. `tests/test-ci-job-times.sh`, started by the
+   lint section `== the final CI job writes the job times`, breaks it once per case.
 
 In `== CI runs with least privilege`, rule 1 keeps the top-level checks (`permissions:` at column 0 followed by
 exactly `  contents: read`) and the `: write` check; its line `grep -qE '^[[:space:]]+permissions:'` and its `FAIL`
@@ -491,7 +495,7 @@ the final job, `validate`) and a `#### Slowest steps` section for each; that fir
   moved out, the job-name rule); the new section `== the PowerShell job runs in parts`; in `== CI runs with least
   privilege`, the job-level `permissions:` grep and its `FAIL` line removed and the comment pointing to
   `tests/test-ci-parts.sh` rule 8 (decision 11).
-- `tests/test-ci-parts.sh` (new): the rules 1 to 8 of decision 5 and their cases.
+- `tests/test-ci-parts.sh` (new): the rules 1 to 8 of decision 5 and their cases (rule 9 since bug #295).
 - `tests/ci-jobs-summary.sh` (new): decision 7, the jobs table and the per-job steps sections.
 - `tests/test-ci-summary.sh` (new), `tests/fixtures/ci-summary/jobs.tsv` and `jobs.md` (new).
 - `README.md`, under `## Developing nightmill`: the paragraph after the test list says that CI runs the PowerShell
