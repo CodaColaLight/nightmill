@@ -16,10 +16,11 @@ if [ ! -f "$spec" ]; then
 else
   # one line of text, so a phrase broken across two lines of the spec is still found
   flat=$(tr -d '\r' < "$spec" | tr '\n' ' ' | tr -s ' ')
-  if printf '%s' "$flat" | grep -Eqi 'contains? (a|the|one of the) required (check )?name'; then
+  # grep gets the text with a here-string, not a pipe: under pipefail a pipe into grep -q can fail by SIGPIPE (#220)
+  if grep -Eqi 'contains? (a|the|one of the) required (check )?name' <<<"$flat"; then
     fail "the iteration 55 spec says a job name 'contains' a required name; the rule is 'begins with' (bug #294)"
   fi
-  printf '%s' "$flat" | grep -qF "begins with the required name" \
+  grep -qF "begins with the required name" <<<"$flat" \
     || fail "the iteration 55 spec does not give the FAIL text 'begins with the required name' of the job-name rule"
 fi
 
