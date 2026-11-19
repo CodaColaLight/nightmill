@@ -112,4 +112,71 @@ done
 grep -qxF "labels: [$exp, \"needs-spec\"]" "$d/story.yml" || fail "story label is not quoted as json_quote does"
 if LC_ALL=C grep -q "$(printf '[\001-\010\013-\037]')" "$d/story.yml" "$d/bug.yml" "$d/epic.yml"; then fail "a raw control character was written into a form"; fi
 
+echo "== twins (#329): an empty label or manualCheckText takes the default"
+cat > "$tmp/.claude/nightmill.json" <<'EOF2'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "labels": { "epic": "", "story": "", "bug": "", "needsSpec": "" },
+  "verification": { "check": "x", "manualCheckText": "" }
+}
+EOF2
+bash "$R" --project "$tmp" --force >/dev/null
+d="$tmp/.github/ISSUE_TEMPLATE"
+[ "$(sed -n 4p "$d/epic.yml")" = 'labels: ["epic"]' ] || fail "epic.yml line 4 is not the default label: $(sed -n 4p "$d/epic.yml")"
+[ "$(sed -n 4p "$d/story.yml")" = 'labels: ["story", "needs-spec"]' ] || fail "story.yml line 4 is not the default labels: $(sed -n 4p "$d/story.yml")"
+[ "$(sed -n 4p "$d/bug.yml")" = 'labels: ["bug"]' ] || fail "bug.yml line 4 is not the default label: $(sed -n 4p "$d/bug.yml")"
+grep -qxF '        - Manual check as the story describes' "$d/story.yml" || fail "story.yml has no default manual check line"
+! grep -qxF '        - ' "$d/story.yml" || fail "story.yml has an empty manual check line"
+
+echo "== twins (#329): invariants: only non-empty strings, newlines kept"
+cat > "$tmp/.claude/nightmill.json" <<'EOF2'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "invariants": ["one\ntwo", "ends\n", null, "", 5, true, {"k": "v"}, ["x"], "  last  "]
+}
+EOF2
+bash "$R" --project "$tmp" --force >/dev/null
+exp=$(printf '%s\n' '        - label: "one\ntwo"' '          required: false' '        - label: "ends\n"' '          required: false' '        - label: "  last  "' '          required: false')
+for f in story bug; do
+  got=$(grep -E '^( {8}- label: | {10}required: false$)' "$d/$f.yml" || true)
+  [ "$got" = "$exp" ] || fail "$f.yml invariants are not the six expected lines: $got"
+done
+cat > "$tmp/.claude/nightmill.json" <<'EOF2'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "invariants": [null, ""]
+}
+EOF2
+bash "$R" --project "$tmp" --force >/dev/null
+cp "$d/story.yml" "$tmp/story-nulls.yml"; cp "$d/bug.yml" "$tmp/bug-nulls.yml"
+cat > "$tmp/.claude/nightmill.json" <<'EOF2'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"]
+}
+EOF2
+bash "$R" --project "$tmp" --force >/dev/null
+cmp -s "$d/story.yml" "$tmp/story-nulls.yml" || fail "story.yml with only null and empty invariants differs from one without invariants"
+cmp -s "$d/bug.yml" "$tmp/bug-nulls.yml" || fail "bug.yml with only null and empty invariants differs from one without invariants"
+
+echo "== twins (#329): config keys are matched by their exact spelling"
+cat > "$tmp/.claude/nightmill.json" <<'EOF2'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "labels": { "Epic": "big", "story": "tale" }
+}
+EOF2
+bash "$R" --project "$tmp" --force >/dev/null
+[ "$(sed -n 4p "$d/epic.yml")" = 'labels: ["epic"]' ] || fail "epic.yml read the key Epic: $(sed -n 4p "$d/epic.yml")"
+[ "$(sed -n 4p "$d/story.yml")" = 'labels: ["tale", "needs-spec"]' ] || fail "story.yml labels wrong: $(sed -n 4p "$d/story.yml")"
+
 echo "RENDER OK"

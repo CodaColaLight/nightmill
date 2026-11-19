@@ -40,8 +40,8 @@ json_load "$cfg" 2>/dev/null || :
 owner=$(json_get github.owner)
 number=$(json_get github.projectNumber)
 field=$(json_get board.statusField Status)
-ready=$(json_get board.statuses.ready Ready)
-approved=$(json_get board.statuses.approved Approved)
+ready=$(json_text board.statuses.ready Ready)
+approved=$(json_text board.statuses.approved Approved)
 base=$(json_get git.baseBranch main)
 [ -n "$base" ] || base=main
 

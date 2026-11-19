@@ -375,6 +375,49 @@ for scn in a b c; do
   expect "porcelain $scn" "$FIX/$scn/expected-porcelain.txt"
 done
 
+echo "== twins (#329): an empty status name or epic label takes the default"
+cat > "$tmp/work/.claude/nightmill.json" <<'EOF2'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "labels": { "epic": "" },
+  "board": { "statuses": { "review": "", "inProgress": "" } },
+  "git": { "baseBranch": "main", "specPrefix": "spec/" },
+  "worktrees": { "root": "../wt", "slots": 4 }
+}
+EOF2
+markers a
+run_in "$tmp/work" a
+[ "$code" = 0 ] || fail "empty status names: exit code $code: $(cat "$tmp/err.txt")"
+expect "empty status names and epic label" "$FIX/a/expected.txt"
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
+
+echo "== twins (#329): a since that is not a time"
+markers e
+for form in "" --porcelain --json; do
+  run_in "$tmp/work" e $form
+  [ "$code" = 0 ] || fail "since not a time ($form): exit code $code: $(cat "$tmp/err.txt")"
+  case "$form" in
+    "") expect "since not a time" "$FIX/e/expected.txt" ;;
+    --porcelain) expect "since not a time (porcelain)" "$FIX/e/expected-porcelain.txt" ;;
+    --json) expect "since not a time (json)" "$FIX/e/expected.json" ;;
+  esac
+  [ ! -s "$tmp/err.txt" ] || fail "since not a time ($form): status printed on standard error: $(cat "$tmp/err.txt")"
+done
+
+echo "== twins (#329): a marker that is not a JSON object"
+markers c
+printf '{ "slot": 2, "branch": ' > "$tmp/wt/.slots/slot-2.json"
+run_in "$tmp/work" c --porcelain
+[ "$code" = 0 ] || fail "marker not a JSON object: exit code $code: $(cat "$tmp/err.txt")"
+want2=$(printf 'slot\t2\tbusy\tunknown\t\t?\t?\t-\t?\t-\tstale: busy, since unreadable')
+grep -qxF "$want2" "$tmp/out.txt" || fail "marker not a JSON object: the record of slot 2 is not as expected: $(grep "$(printf '^slot\t2\t')" "$tmp/out.txt")"
+for n in 1 3 4; do
+  want=$(grep "$(printf '^slot\t%s\t' "$n")" "$FIX/c/expected-porcelain.txt")
+  grep -qxF "$want" "$tmp/out.txt" || fail "marker not a JSON object: the record of slot $n changed: $(grep "$(printf '^slot\t%s\t' "$n")" "$tmp/out.txt")"
+done
+grep -qxF 'slot 2: the marker is not a JSON object' "$tmp/err.txt" || fail "marker not a JSON object: no note on standard error: $(cat "$tmp/err.txt")"
+
 echo "== the lint notices a status script that changes the board"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
 ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir" && tar -xf - )

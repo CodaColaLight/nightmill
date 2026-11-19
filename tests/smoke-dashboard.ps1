@@ -244,9 +244,20 @@ exit 0
   Run-D $work $FIX $pages "-Once"
   if ($Code -ne 0) { Fail "an unreadable marker: exit code $Code`: $Err" }
   HasNot '<td class="num">2</td><td class="free">free</td>' "unreadable marker"
-  # slot.ps1 fails on the marker, so status.ps1 and the fallback both fail: both parts say unknown
-  Has '<p class="unknown">unknown: the slots could not be read (' "unreadable marker"
-  Has '<p class="unknown">unknown: the board could not be read (' "unreadable marker"
+  HasNot 'unknown: the slots could not be read' "unreadable marker"
+  HasNot 'unknown: the board could not be read' "unreadable marker"
+  # #329: slot.sh and slot.ps1 both list that slot as busy and unknown, so status succeeds in both shells and the page is
+  # expected.html with slot 2's row replaced and the slot script's note in a Notes section before the legend
+  $row2Old = '<tr><td class="num">2</td><td>busy</td><td class="stalled">stalled</td><td>feat/&lt;b&gt;&amp;&#39;x</td><td>fix/fixer</td><td>test</td><td class="num">2h</td><td class="num">4h</td><td>-</td><td class="flagged">stale: busy, no open PR</td></tr>'
+  $row2New = '<tr><td class="num">2</td><td>busy</td><td class="unknown">unknown</td><td></td><td>?</td><td>?</td><td class="num">-</td><td class="num">?</td><td>-</td><td class="flagged">stale: busy, since unreadable</td></tr>'
+  $wantHtml = Read-Lf (Join-Path $FIX "expected.html")
+  if (-not $wantHtml.Contains($row2Old)) { Fail "the fixture has no slot 2 row $row2Old" }
+  $wantHtml = $wantHtml.Replace($row2Old, $row2New).Replace("<h2>What the words mean</h2>`n", "<h2>Notes</h2>`n<ul>`n<li>slot 2: the marker is not a JSON object</li>`n</ul>`n<h2>What the words mean</h2>`n")
+  $gotHtml = Page
+  if ($gotHtml -cne $wantHtml) {
+    Write-Host "--- expected"; Write-Host $wantHtml; Write-Host "--- got"; Write-Host $gotHtml
+    Fail "unreadable marker: the page is not expected.html with slot 2 busy and unknown and a note"
+  }
   Set-Markers (Join-Path $FIX "markers.txt")
 
   Write-Host "== nothing waits"

@@ -131,9 +131,19 @@ setup
   cl=$(gshow release/v0.2.0:CHANGELOG.md)
   expect=$'## Unreleased\n\n## 0.2.0 ('"$today"$')\n\n- A new thing.\n- Another thing.\n\n## 0.1.1 (2026-11-03)\n\n- Older.'
   case "$cl" in *"$expect"*) ;; *) fail "CHANGELOG not cut as expected: $cl" ;; esac
+  [ "$(gshow release/v0.2.0:CHANGELOG.md | tr -cd '\r' | wc -c | tr -d ' ')" = 0 ] || fail "an LF changelog came out with a CR byte (#329)"
   rd=$(gshow release/v0.2.0:README.md)
   case "$rd" in *'Version 0.2.0. Apache License 2.0, see `LICENSE`.'*) ;; *) fail "README line not updated: $rd" ;; esac
 )
+
+echo "== twins (#329): prepare keeps CRLF line ends in CHANGELOG.md"
+setup
+( cd "$W"; sed 's/$/\r/' CHANGELOG.md > c.tmp && mv c.tmp CHANGELOG.md; git add -A; git commit -q -m "CRLF changelog"; git push -q origin main )
+( cd "$W" && bash scripts/release.sh --version 0.2.0 --no-pr ) >/dev/null || fail "prepare with a CRLF changelog exited non-zero"
+( cd "$W" && gshow release/v0.2.0:CHANGELOG.md ) > "$tmp/crlf-cl.out"
+printf '# Changelog\r\n\r\n## Unreleased\r\n\r\n## 0.2.0 (%s)\r\n\r\n- A new thing.\r\n- Another thing.\r\n\r\n## 0.1.1 (2026-11-03)\r\n\r\n- Older.\r\n' "$today" > "$tmp/crlf-cl.want"
+cmp -s "$tmp/crlf-cl.want" "$tmp/crlf-cl.out" || fail "CRLF changelog is not cut with CRLF line ends: $(od -c "$tmp/crlf-cl.out" | head -12)"
+[ "$(tr -cd '\n' < "$tmp/crlf-cl.out" | wc -c | tr -d ' ')" = "$(tr -cd '\r' < "$tmp/crlf-cl.out" | wc -c | tr -d ' ')" ] || fail "CRLF changelog holds an LF that no CR precedes"
 
 echo "== publish: tags the release commit, not what came after"
 setup

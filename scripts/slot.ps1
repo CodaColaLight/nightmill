@@ -49,6 +49,11 @@
 # process has ended. Same behaviour as slot.sh, which names the signal and exits 130 or 143.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
 # scripts/stages.ps1); a failed append prints one note and changes nothing else. Same behaviour as slot.sh.
+# Failures (iteration 57): -Release and -Abandon exit 1 on every failure, with one plain line (no error record); a
+# failed git or gh call ends with one line after its text (git fetch failed, gh pr list failed, git switch failed).
+# -Release frees the slot also when the local branch cannot be deleted. A marker that is not a JSON object is a busy
+# slot in -Status (the branch and the other fields empty; -Porcelain writes "slot N: the marker is not a JSON
+# object" on standard error), exit 0. Same behaviour as slot.sh.
 param(
   [string]$Take,
   [string]$Release = "0",
@@ -107,6 +112,9 @@ if ($null -ne $baseCfg.Text) {
   $cfgText = Get-Content $cfgPath -Raw -Encoding UTF8
   $cfg = $cfgText | ConvertFrom-Json
 }
+# keys by their exact spelling, as slot.sh reads them (iteration 57, #329)
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+$cfg = Select-ExactKeys $cfg
 $wt = $cfg.worktrees
 
 $baseBranch = "main"
@@ -226,6 +234,23 @@ function Get-Marker($n) { Join-Path $state "slot-$n.json" }
 function Read-Marker($n) {
   $p = Get-Marker $n
   if (Test-Path $p) { Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
+}
+# Read-MarkerState <n>: for the two status forms (iteration 57, #329), never throws: Exists (the marker file is
+# there, which makes the slot busy whatever it holds), Marker (the parsed object) and Bad (the file is not valid JSON,
+# or its top level is not an object; Marker is then $null)
+function Read-MarkerState($n) {
+  $p = Get-Marker $n
+  $r = [pscustomobject]@{ Exists = $false; Marker = $null; Bad = $false }
+  if (-not (Test-Path -LiteralPath $p)) { return $r }
+  $r.Exists = $true
+  $m = $null
+  try {
+    $text = [System.IO.File]::ReadAllText($p, (New-Object System.Text.UTF8Encoding $false))
+    # the top level from the text: PowerShell 7 unrolls a one-item array into its object
+    if ($text.TrimStart().StartsWith("{")) { $m = ConvertFrom-Json -InputObject $text }
+  } catch { $m = $null }
+  if ($m -is [System.Management.Automation.PSCustomObject]) { $r.Marker = $m } else { $r.Bad = $true }
+  return $r
 }
 function Write-Lf($path, $text) { [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false)) }
 # Get-Text <marker> <key>: the value as the text in the file ("" when absent or null); PowerShell 7 reads a date-like
@@ -600,10 +625,17 @@ if ($Status -and $Porcelain) {
   if ($env:NIGHTMILL_NOW) { $now = [long]$env:NIGHTMILL_NOW } else { $now = Get-Stamp ((Get-Date).ToString("s")) }
   $top = Get-LastSlot
   for ($i = 1; $i -le $top; $i++) {
-    $m = Read-Marker $i
-    if ($m) {
+    $ms = Read-MarkerState $i
+    $m = $ms.Marker
+    if ($ms.Exists) {
       $retiring = ""
       if ($i -gt $count) { $retiring = "retiring" }
+      # a marker that is not a JSON object is a busy slot with empty fields and one note (iteration 57, #329)
+      if ($ms.Bad) {
+        [Console]::Error.WriteLine("slot ${i}: the marker is not a JSON object")
+        Write-Output ((@("$i", "busy", "", "", $retiring, "unknown", "", "", "", "")) -join "`t")
+        continue
+      }
       $c = Get-Claim $i $m
       if ($c.State -ne "none") {
         $stepText = if ($c.State -eq "live") { "taking" } else { "take-died" }
@@ -629,12 +661,15 @@ if ($Status) {
   $top = Get-LastSlot
   for ($i = 1; $i -le $top; $i++) {
     $dir = Get-SlotDir $i
-    $m = Read-Marker $i
-    if ($i -gt $count -and -not $m) { continue }
+    $ms = Read-MarkerState $i
+    $m = $ms.Marker
+    if ($i -gt $count -and -not $ms.Exists) { continue }
     $where = "not created yet"
     if (Test-Path $dir) { $where = if (Test-Worktree $dir) { "ready" } else { "broken" } }
     $busy = "free"
-    if ($m) {
+    if ($ms.Bad) {
+      $busy = "busy: (the marker is not a JSON object)"
+    } elseif ($m) {
       $c = Get-Claim $i $m
       $busy = "busy: $(Get-Text $m 'branch') since $(Get-Text $m 'since')"
       if ($c.State -eq "live") { $busy = "taking: $(Get-Text $m 'branch') since $(Get-Text $m 'since') (process $($c.Pid))" }
@@ -935,24 +970,31 @@ if ($Take) {
 if ($Release -gt 0) {
   $n = $Release
   $m = Read-Marker $n
-  if (-not $m) { throw "slot $n is not in use" }
+  if (-not $m) { Exit-Line "slot $n is not in use" }
   $c = Get-Claim $n $m
   if ($c.State -ne "none") { Exit-Line (Get-ClaimLine $n $c) }
   $dir = Get-SlotDir $n
   if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
-  if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir" }
+  if (@(git -C $dir status --porcelain).Count -gt 0) { Exit-Line "slot $n has uncommitted files: $dir" }
+  # a failed git or gh call: its own text, then one plain line, exit 1 (iteration 57, #329)
   git fetch origin $baseBranch
-  if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-  $prOut = gh pr list --state merged --head $m.branch --json number,createdAt,mergedAt,closingIssuesReferences
+  if ($LASTEXITCODE -ne 0) { Exit-Line "git fetch failed" }
+  $prOut = $null
+  try {
+    $prOut = gh pr list --state merged --head $m.branch --json number,createdAt,mergedAt,closingIssuesReferences
+    $ghCode = $LASTEXITCODE
+  } catch { [Console]::Error.WriteLine((Get-FirstLine "$($_.Exception.Message)")); $ghCode = 127 }
+  if ($ghCode -ne 0) { Exit-Line "gh pr list failed" }
   $pr0 = $null
   try { $pr0 = ConvertFrom-Json -InputObject ((@($prOut) -join "`n")) | ForEach-Object { $_ } | Select-Object -First 1 } catch { $pr0 = $null }
   $merged = ""
   if ($null -ne $pr0 -and $null -ne $pr0.PSObject.Properties["number"]) { $merged = "$($pr0.number)" }
   if (-not $merged) {
-    throw "no merged PR for $($m.branch). Merge it first, or free the slot with -Abandon $n."
+    Exit-Line "no merged PR for $($m.branch). Merge it first, or free the slot with -Abandon $n."
   }
   git -C $dir switch --detach "origin/$baseBranch"
-  if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+  if ($LASTEXITCODE -ne 0) { Exit-Line "git switch failed" }
+  # a branch that cannot be deleted (in use elsewhere) does not keep the slot busy; git's error stays visible
   git branch -D $m.branch
   Remove-Item (Get-Marker $n)
   $pt = Get-PrTimes $pr0
@@ -964,7 +1006,7 @@ if ($Release -gt 0) {
 if ($Abandon -gt 0) {
   $n = $Abandon
   $m = Read-Marker $n
-  if (-not $m) { throw "slot $n is not in use" }
+  if (-not $m) { Exit-Line "slot $n is not in use" }
   $c = Get-Claim $n $m
   if ($c.State -eq "live") { Exit-Line (Get-ClaimLine $n $c) }
   $dir = Get-SlotDir $n
@@ -973,9 +1015,9 @@ if ($Abandon -gt 0) {
     $branch = Get-Text $m "branch"
     if (Test-Path -LiteralPath $dir) {
       if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
-      if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
+      if (@(git -C $dir status --porcelain).Count -gt 0) { Exit-Line "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
       git -C $dir switch --detach $Base
-      if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+      if ($LASTEXITCODE -ne 0) { Exit-Line "git switch failed" }
     }
     Remove-Item (Get-Marker $n)
     Write-Host "Slot $n is free (was $branch, a take that did not finish; the local branch is kept, delete it yourself if unwanted)." -ForegroundColor Yellow
@@ -984,9 +1026,9 @@ if ($Abandon -gt 0) {
   # a removed directory has nothing to switch (bug 129); one that is no worktree is refused
   if (Test-Path -LiteralPath $dir) {
     if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
-    if (@(git -C $dir status --porcelain).Count -gt 0) { throw "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
+    if (@(git -C $dir status --porcelain).Count -gt 0) { Exit-Line "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
     git -C $dir switch --detach $Base
-    if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+    if ($LASTEXITCODE -ne 0) { Exit-Line "git switch failed" }
   }
   Remove-Item (Get-Marker $n)
   Write-Record "free" $n ([string]$m.branch) "abandoned"

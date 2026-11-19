@@ -19,6 +19,9 @@
 #   From   origin/HEAD:.claude/nightmill.json, origin/<B>:.claude/nightmill.json, or the working tree's path
 #   Note   the fallback's line ("" when there was none); the caller prints it on standard error
 #   Stop   the stop line ("" when there was none); the caller exits
+# git.baseBranch is read by its exact spelling (Select-ExactKeys, lib\exactkeys.ps1; iteration 57).
+
+. (Join-Path $PSScriptRoot "exactkeys.ps1")
 
 # Invoke-BaseGit <main> <arguments>: git in that checkout, its output read as UTF-8 by the process, not the console (so
 # no native error record and no code page); Out, Code
@@ -64,7 +67,7 @@ function Get-BaseConfig([string]$m) {
   $ref = "origin/HEAD"
   $text = $s.Out.TrimStart([char]0xFEFF)
   if ($text.Trim() -eq "") { $r.Stop = "the configuration on $ref is not valid JSON: the text is empty"; return $r }
-  try { $doc = ConvertFrom-Json -InputObject $text } catch { $r.Stop = "the configuration on $ref is not valid JSON: $($_.Exception.Message)"; return $r }
+  try { $doc = Select-ExactKeys (ConvertFrom-Json -InputObject $text) } catch { $r.Stop = "the configuration on $ref is not valid JSON: $($_.Exception.Message)"; return $r }
   $b = "main"
   if ($doc -and $doc.git -and $doc.git.baseBranch) { $b = [string]$doc.git.baseBranch }
   $x = $head

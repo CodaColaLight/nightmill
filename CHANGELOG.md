@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Iteration 57 (#329): the bash and PowerShell twins give the same result where they differed. An empty label,
+  status name or verification.manualCheckText takes its default in both shells; the issue forms render only
+  invariants that are non-empty strings, with their newlines kept; slot --release frees the slot when the local branch
+  cannot be deleted, and --release and --abandon exit 1 with one line on a failed git or gh call; slot --status shows a
+  marker that is not a JSON object as a busy slot and /status shows a slot whose since is not a time with Since ? and
+  the flag "stale: busy, since unreadable", exit 0 in both shells; the PowerShell scripts match config keys by their
+  exact spelling, as bash does (a misspelled key such as worktrees.Slots is no longer read); release.sh keeps CRLF
+  line ends in CHANGELOG.md, as release.ps1 does.
 - Iteration 56 (#307): the platform chosen in /init decides which test family the check runs. A new key,
   verification.platform (windows, unix or all, default all), is asked by /nightmill:init as its eighth question,
   with the detected platform proposed. tests/check.sh runs the PowerShell tests only on windows and the bash tests

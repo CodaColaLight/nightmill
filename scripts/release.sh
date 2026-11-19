@@ -216,7 +216,24 @@ trap rollback ERR
 tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
 sed -E "s/^([[:space:]]*\"version\":[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")/\1$version\2/" "$PJ" > "$tmpf"
 cat "$tmpf" > "$PJ"
-awk -v v="$version" -v d="$date" '{ print } /^## Unreleased[[:space:]]*$/ && !done { print ""; print "## " v " (" d ")"; done = 1 }' CHANGELOG.md > "$tmpf"
+# The line ends of release.ps1 (iteration 57, #329): every line ends with CRLF when the file holds a CRLF, else
+# with LF, the two new lines included; the file ends with a line end exactly when it did before. BINMODE=3 keeps
+# gawk on Windows from dropping the CR on input (other awks ignore it).
+lastnl=1; if [ -s CHANGELOG.md ] && [ -n "$(tail -c 1 CHANGELOG.md)" ]; then lastnl=0; fi
+LC_ALL=C awk -v BINMODE=3 -v v="$version" -v d="$date" -v lastnl="$lastnl" '
+  { n++; line[n] = $0 }
+  END {
+    crlf = 0
+    for (i = 1; i <= n; i++) if ((i < n || lastnl) && line[i] ~ /\r$/) crlf = 1
+    eol = crlf ? "\r\n" : "\n"
+    m = 0
+    for (i = 1; i <= n; i++) {
+      s = line[i]; if (i < n || lastnl) sub(/\r$/, "", s)
+      out[++m] = s
+      if (s ~ /^## Unreleased[[:space:]]*$/ && !done) { out[++m] = ""; out[++m] = "## " v " (" d ")"; done = 1 }
+    }
+    for (i = 1; i <= m; i++) printf "%s%s", out[i], ((i < m || lastnl) ? eol : "")
+  }' CHANGELOG.md > "$tmpf"
 cat "$tmpf" > CHANGELOG.md
 sed -E "s/^Version [0-9]+\.[0-9]+\.[0-9]+\./Version $version./" README.md > "$tmpf"
 cat "$tmpf" > README.md

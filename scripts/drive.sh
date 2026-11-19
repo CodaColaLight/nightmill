@@ -87,10 +87,10 @@ owner=$(json_get github.owner); repo=$(json_get github.repo); project=$(json_get
 base=$(json_get git.baseBranch main); [ -n "$base" ] || base=main
 status_key=$(json_get board.statusField Status | tr '[:upper:]' '[:lower:]')
 prio_key=$(json_get board.priorityField Priority | tr '[:upper:]' '[:lower:]')
-st_ready=$(json_get board.statuses.ready Ready)
-st_approved=$(json_get board.statuses.approved Approved)
-lb_bug=$(json_get labels.bug bug)
-lb_epic=$(json_get labels.epic epic)
+st_ready=$(json_text board.statuses.ready Ready)
+st_approved=$(json_text board.statuses.approved Approved)
+lb_bug=$(json_text labels.bug bug)
+lb_epic=$(json_text labels.epic epic)
 prios=""
 if json_has board.priorities; then
   np=$(json_len board.priorities)
@@ -99,9 +99,9 @@ else
   prios=$'Critical\nHigh\nMedium\nLow\n'
 fi
 has_slots=0; if json_has worktrees; then has_slots=1; fi
-st_done=$(json_get board.statuses.done Done)
-st_progress=$(json_get board.statuses.inProgress "In progress")
-st_review=$(json_get board.statuses.review Review)
+st_done=$(json_text board.statuses.done Done)
+st_progress=$(json_text board.statuses.inProgress "In progress")
+st_review=$(json_text board.statuses.review Review)
 # the limits (iteration 53): the gate checks their values before every step and stops on a bad one; a value the gate
 # would refuse is taken as its default here, as the run does not get that far
 num_or() { if [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }

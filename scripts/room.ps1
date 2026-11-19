@@ -47,7 +47,8 @@ if ($gitCode -ne 0 -or -not $gitDir) { Stop-Room "room: run room.ps1 from inside
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path -LiteralPath $cfgPath)) { Stop-Room "room: no $cfgPath (run /nightmill:init)" }
-try { $cfg = Get-Content -LiteralPath $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Stop-Room "room: $cfgPath is not valid JSON: $($_.Exception.Message)" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys (Get-Content -LiteralPath $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { Stop-Room "room: $cfgPath is not valid JSON: $($_.Exception.Message)" }
 
 $room = Get-RoomSettings $cfg
 

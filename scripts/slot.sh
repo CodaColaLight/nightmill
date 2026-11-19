@@ -50,6 +50,11 @@
 # ended. Same behaviour as slot.ps1, which prints "<step> stopped" and cannot set the exit code.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
 # scripts/stages.sh); a failed append prints one note and changes nothing else. Same behaviour as slot.ps1.
+# Failures (iteration 57): --release and --abandon exit 1 on every failure; a failed git or gh call ends with one line
+# of their own after its text (git fetch failed, gh pr list failed, git switch failed). --release frees the slot
+# also when the local branch cannot be deleted. A marker that is not a JSON object is a busy slot in --status (the
+# branch and the other fields empty; --porcelain writes "slot N: the marker is not a JSON object" on standard
+# error), exit 0. Same behaviour as slot.ps1.
 set -euo pipefail
 
 usage() {
@@ -214,9 +219,11 @@ marker() { echo "$state/slot-$1.json"; }
 has_marker() { [ -f "$(marker "$1")" ]; }
 marker_field() { ( json_load "$(marker "$1")" && json_get "$2" ); }
 # marker_fields N: branch, since, skill, role, step, reported, state and pid of the marker, separated by the unit
-# separator (\037, not whitespace, so that empty fields stay); empty when absent
+# separator (\037, not whitespace, so that empty fields stay); empty when absent. Exit code 3 and nothing printed
+# when the marker is not valid JSON or its top level is not an object (iteration 57, #329)
 marker_fields() {
-  ( json_load "$(marker "$1")" || exit 0
+  ( json_load "$(marker "$1")" 2>/dev/null || exit 3
+    [ "$(json_kind "")" = object ] || exit 3
     printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s' "$(json_get branch)" "$(json_get since)" "$(json_get skill)" "$(json_get role)" \
       "$(json_get step)" "$(json_get reported)" "$(json_get state)" "$(json_get pid)" )
 }
@@ -242,7 +249,7 @@ claim_of() {
   local f st="" p=""
   claim=none; claim_pid=""
   has_marker "$1" || return 0
-  f=$(marker_fields "$1" 2>/dev/null)
+  f=$(marker_fields "$1" 2>/dev/null) || f=""
   IFS=$'\037' read -r _ _ _ _ _ _ st p <<<"$f" || true
   claim_from "$st" "$p"
 }
@@ -494,7 +501,9 @@ if [ "$status" = 1 ] && [ "$porcelain" = 1 ]; then
   for ((i = 1; i <= top; i++)); do
     if has_marker "$i"; then
       m_branch=""; m_since=""; m_skill=""; m_role=""; m_step=""; m_reported=""; m_state=""; m_pid=""
-      IFS=$'\037' read -r m_branch m_since m_skill m_role m_step m_reported m_state m_pid <<<"$(marker_fields "$i")" || true
+      # a marker that is not a JSON object is a busy slot with empty fields and one note (iteration 57, #329)
+      if m_fields=$(marker_fields "$i"); then :; else m_fields=""; echo "slot $i: the marker is not a JSON object" >&2; fi
+      IFS=$'\037' read -r m_branch m_since m_skill m_role m_step m_reported m_state m_pid <<<"$m_fields" || true
       claim_from "${m_state:-}" "${m_pid:-}"
       if [ "$claim" != none ]; then
         m_skill=""; m_role=""; m_reported=""
@@ -526,13 +535,20 @@ if [ "$status" = 1 ]; then
     if [ -d "$dir" ]; then if is_worktree "$dir"; then where="ready"; else where="broken"; fi; fi
     busy="free"
     if has_marker "$i"; then
-      claim_of "$i"
-      case "$claim" in
-        none) busy="busy: $(marker_field "$i" branch) since $(marker_field "$i" since)" ;;
-        live) busy="taking: $(marker_field "$i" branch) since $(marker_field "$i" since) (process $claim_pid)" ;;
-        *) if [ -n "$claim_pid" ]; then what="process $claim_pid has ended"; else what="no process recorded"; fi
-           busy="taking: $(marker_field "$i" branch) since $(marker_field "$i" since) ($what; free it with --abandon $i)" ;;
-      esac
+      # one read of the marker; one that is not a JSON object is a busy slot (iteration 57, #329)
+      if m_fields=$(marker_fields "$i"); then
+        m_branch=""; m_since=""; m_state=""; m_pid=""
+        IFS=$'\037' read -r m_branch m_since _ _ _ _ m_state m_pid <<<"$m_fields" || true
+        claim_from "${m_state:-}" "${m_pid:-}"
+        case "$claim" in
+          none) busy="busy: $m_branch since $m_since" ;;
+          live) busy="taking: $m_branch since $m_since (process $claim_pid)" ;;
+          *) if [ -n "$claim_pid" ]; then what="process $claim_pid has ended"; else what="no process recorded"; fi
+             busy="taking: $m_branch since $m_since ($what; free it with --abandon $i)" ;;
+        esac
+      else
+        busy="busy: (the marker is not a JSON object)"
+      fi
     fi
     if [ "$i" -gt "$count" ]; then busy="$busy (retiring)"; fi
     dirty=""
@@ -788,15 +804,17 @@ if [ "$release" != 0 ]; then
   branch=$(marker_field "$n" branch)
   is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir" >&2; exit 1; }
-  git fetch origin "$base_branch"
-  prjson=$(gh pr list --state merged --head "$branch" --json number,createdAt,mergedAt,closingIssuesReferences)
+  # a failed git or gh call: its own text, then one line of ours, exit 1 (iteration 57, #329)
+  git fetch origin "$base_branch" || { echo "git fetch failed" >&2; exit 1; }
+  prjson=$(gh pr list --state merged --head "$branch" --json number,createdAt,mergedAt,closingIssuesReferences) || { echo "gh pr list failed" >&2; exit 1; }
   tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-slot.XXXXXX"); printf '%s\n' "$prjson" > "$tmpf"
   flat=$(JSON_MODE=flat JSON_FILE="$tmpf" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" 2>/dev/null) || flat=""
   rm -f "$tmpf"
   merged=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' '$1 == "[0].number" && $2 == "number" { print $3 }')
   [ -n "$merged" ] || { echo "no merged PR for $branch. Merge it first, or free the slot with --abandon $n." >&2; exit 1; }
-  git -C "$dir" switch --detach "origin/$base_branch"
-  git branch -D "$branch"
+  git -C "$dir" switch --detach "origin/$base_branch" || { echo "git switch failed" >&2; exit 1; }
+  # a branch that cannot be deleted (in use elsewhere) does not keep the slot busy; git's error stays visible
+  git branch -D "$branch" || true
   rm -f "$(marker "$n")"
   IFS=$'\037' read -r pr_from pr_to pr_issues <<<"$(pr_times "$flat" "[0]")" || true
   record free "$n" "$branch" released "" "" "$merged" "$pr_from" "$pr_to" "$pr_issues"
@@ -816,7 +834,7 @@ if [ "$abandon" != 0 ]; then
     if [ -d "$dir" ]; then
       is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
       [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
-      git -C "$dir" switch --detach "$base"
+      git -C "$dir" switch --detach "$base" || { echo "git switch failed" >&2; exit 1; }
     fi
     rm -f "$(marker "$n")"
     echo "Slot $n is free (was $branch, a take that did not finish; the local branch is kept, delete it yourself if unwanted)."
@@ -826,7 +844,7 @@ if [ "$abandon" != 0 ]; then
   if [ -d "$dir" ]; then
     is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
     [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
-    git -C "$dir" switch --detach "$base"
+    git -C "$dir" switch --detach "$base" || { echo "git switch failed" >&2; exit 1; }
   fi
   rm -f "$(marker "$n")"
   record free "$n" "$branch" abandoned "" "" "" "" "" ""

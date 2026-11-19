@@ -193,7 +193,22 @@ printf '{ not json' > "$tmp/wt/.slots/slot-2.json"
 run_d "$tmp/work" "$FIX" "$pages" --once
 [ "$code" = 0 ] || fail "an unreadable marker: exit code $code"
 hasnot '<td class="num">2</td><td class="free">free</td>' "unreadable marker"
-has '<tr><td class="num">2</td><td>busy</td><td class="unknown">unknown</td>' "unreadable marker"
+hasnot 'unknown: the slots could not be read' "unreadable marker"
+hasnot 'unknown: the board could not be read' "unreadable marker"
+# #329: slot.sh and slot.ps1 both list that slot as busy and unknown, so status succeeds in both shells and the page is
+# expected.html with slot 2's row replaced and the slot script's note in a Notes section before the legend
+row2_old='<tr><td class="num">2</td><td>busy</td><td class="stalled">stalled</td><td>feat/&lt;b&gt;&amp;&#39;x</td><td>fix/fixer</td><td>test</td><td class="num">2h</td><td class="num">4h</td><td>-</td><td class="flagged">stale: busy, no open PR</td></tr>'
+row2_new='<tr><td class="num">2</td><td>busy</td><td class="unknown">unknown</td><td></td><td>?</td><td>?</td><td class="num">-</td><td class="num">?</td><td>-</td><td class="flagged">stale: busy, since unreadable</td></tr>'
+grep -qxF -- "$row2_old" "$FIX/expected.html" || fail "the fixture has no slot 2 row $row2_old"
+ROW_OLD="$row2_old" ROW_NEW="$row2_new" awk '
+  $0 == ENVIRON["ROW_OLD"] { print ENVIRON["ROW_NEW"]; next }
+  $0 == "<h2>What the words mean</h2>" { print "<h2>Notes</h2>"; print "<ul>"; print "<li>slot 2: the marker is not a JSON object</li>"; print "</ul>" }
+  { print }
+' "$FIX/expected.html" > "$tmp/want-unreadable.html"
+if ! cmp -s "$tmp/want-unreadable.html" "$page"; then
+  diff "$tmp/want-unreadable.html" "$page" >&2 || true
+  fail "unreadable marker: the page is not expected.html with slot 2 busy and unknown and a note"
+fi
 markers "$FIX/markers.txt"
 
 echo "== nothing waits"

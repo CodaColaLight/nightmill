@@ -105,7 +105,8 @@ if ($null -eq $cfgText) {
   if (-not (Test-Path -LiteralPath $bc.Path -PathType Leaf)) { Stop-Two "no $($bc.Path) (run /nightmill:init)" }
   $cfgText = [IO.File]::ReadAllText($bc.Path).TrimStart([char]0xFEFF)
 }
-try { $cfg = ConvertFrom-Json -InputObject $cfgText } catch { Stop-Two "$($bc.From) is not valid JSON: $(One-Line $_.Exception.Message)" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys (ConvertFrom-Json -InputObject $cfgText) } catch { Stop-Two "$($bc.From) is not valid JSON: $(One-Line $_.Exception.Message)" }
 
 function Cfg($obj, [string[]]$path, $default) {
   foreach ($k in $path) {

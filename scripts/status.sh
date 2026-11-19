@@ -18,6 +18,8 @@
 # texts are in docs/specs/iteration-8-status.md; status.ps1 prints the same.
 # Needs git, gh, bash and awk, no jq. Exit code 0 when the table was printed (flags do not change it), 2 for a
 # usage error, a missing or unreadable config, a missing gh or a failed gh call.
+# A busy slot whose since is not YYYY-MM-DDTHH:MM:SS shows the Since cell ? and, unless its PR is merged or closed,
+# the flag "stale: busy, since unreadable" (iteration 57, #329).
 # NIGHTMILL_NOW (seconds since 1970, with the local time zone taken as UTC) fixes the clock; the smoke test uses it.
 set -euo pipefail
 
@@ -51,7 +53,7 @@ json_load "$cfg" || exit 2
 
 owner=$(json_get github.owner); repo=$(json_get github.repo); number=$(json_get github.projectNumber)
 { [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$number" ]; } || die "github.owner, github.repo and github.projectNumber are needed in $cfg"
-st() { json_get "board.statuses.$1" "$2"; }
+st() { json_text "board.statuses.$1" "$2"; } # an empty name counts as not set (iteration 57)
 # the statuses in the order of the table, tab separated
 order="$(st specReview 'Spec review')	$(st approved Approved)	$(st inProgress 'In progress')	$(st review Review)	$(st spec Spec)	$(st ready Ready)	$(st backlog Backlog)	$(st 'done' Done)"
 
@@ -109,7 +111,7 @@ fi
 
 if [ -n "${NIGHTMILL_NOW:-}" ]; then now=$NIGHTMILL_NOW; nowl=""; else now=$(date +%s); nowl=$(date +%Y-%m-%dT%H:%M:%S); fi
 
-ST_ALL=$all ST_PORCELAIN=$porcelain ST_JSON=$json ST_CAPACITY="${capline#capacity: }" ST_NOW=$now ST_NOWL=$nowl ST_SPECPREFIX=$(json_get git.specPrefix spec/) ST_EPIC=$(json_get labels.epic epic) \
+ST_ALL=$all ST_PORCELAIN=$porcelain ST_JSON=$json ST_CAPACITY="${capline#capacity: }" ST_NOW=$now ST_NOWL=$nowl ST_SPECPREFIX=$(json_get git.specPrefix spec/) ST_EPIC=$(json_text labels.epic epic) \
   ST_ORDER=$order ST_ITEMS="$tmp/items.flat" ST_PRS="$tmp/prs.flat" ST_AGEFILES="${agefiles# }" ST_SLOTS="$tmp/slots.tsv" \
   ST_SLOTS_CONFIGURED=$slots_configured LC_ALL=C awk -f "$here/lib/status.awk"
 if [ "$slots_configured" = 1 ] && [ "$json" = 0 ]; then

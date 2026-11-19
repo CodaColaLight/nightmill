@@ -36,18 +36,26 @@ for ((i = 0; i < areas_count; i++)); do
   AREAS+=$(json_quote "$(json_get "areas[$i]")")
 done
 AREAS+="]"
-inv_count=$(json_len invariants)
+# Iteration 57 (#329): only an item that is a string with at least one character is rendered, every character
+# kept (a trailing newline too: the value is read with a sentinel, so the command substitution drops nothing);
+# the block is removed when no item is rendered.
+inv_total=$(json_len invariants); inv_count=0
 export INVARIANTS; INVARIANTS=""
-for ((i = 0; i < inv_count; i++)); do
-  if [ "$i" -gt 0 ]; then INVARIANTS+=$'\n'; fi
-  INVARIANTS+="        - label: $(json_quote "$(json_get "invariants[$i]")")"$'\n'"          required: false"
+for ((i = 0; i < inv_total; i++)); do
+  [ "$(json_kind "invariants[$i]")" = string ] || continue
+  inv=$(json_get "invariants[$i]"; printf x); inv=${inv%x}
+  [ -n "$inv" ] || continue
+  if [ "$inv_count" -gt 0 ]; then INVARIANTS+=$'\n'; fi
+  INVARIANTS+="        - label: $(json_quote "$inv")"$'\n'"          required: false"
+  inv_count=$((inv_count + 1))
 done
 export CHECK_COMMAND; CHECK_COMMAND=$(json_get verification.check "")
-export MANUAL_CHECK; MANUAL_CHECK=$(json_get verification.manualCheckText "Manual check as the story describes")
-export LABEL_EPIC; LABEL_EPIC=$(json_quote "$(json_get labels.epic "epic")")
-export LABEL_STORY; LABEL_STORY=$(json_quote "$(json_get labels.story "story")")
-export LABEL_BUG; LABEL_BUG=$(json_quote "$(json_get labels.bug "bug")")
-export LABEL_NEEDS_SPEC; LABEL_NEEDS_SPEC=$(json_quote "$(json_get labels.needsSpec "needs-spec")")
+# An empty label or manualCheckText counts as not set (iteration 57, #329)
+export MANUAL_CHECK; MANUAL_CHECK=$(json_text verification.manualCheckText "Manual check as the story describes")
+export LABEL_EPIC; LABEL_EPIC=$(json_quote "$(json_text labels.epic "epic")")
+export LABEL_STORY; LABEL_STORY=$(json_quote "$(json_text labels.story "story")")
+export LABEL_BUG; LABEL_BUG=$(json_quote "$(json_text labels.bug "bug")")
+export LABEL_NEEDS_SPEC; LABEL_NEEDS_SPEC=$(json_quote "$(json_text labels.needsSpec "needs-spec")")
 export INV_COUNT=$inv_count
 
 render() { # file

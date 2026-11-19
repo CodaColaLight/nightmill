@@ -17,6 +17,8 @@
 # texts are in docs/specs/iteration-8-status.md; status.sh prints the same.
 # Exit code 0 when the table was printed (flags do not change it), 2 for a usage error, a missing or
 # unreadable config, a missing gh or a failed gh call.
+# A busy slot whose since is not YYYY-MM-DDTHH:MM:SS shows the Since cell ? and, unless its PR is merged or closed,
+# the flag "stale: busy, since unreadable" (iteration 57, #329).
 # $env:NIGHTMILL_NOW (seconds since 1970, with the local time zone taken as UTC) fixes the clock; the smoke test uses it.
 param(
   [switch]$All,
@@ -49,7 +51,8 @@ if ($LASTEXITCODE -ne 0 -or -not $gitDir) { Die "run status.ps1 from inside a gi
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { Die "no $cfgPath (run /nightmill:init)" }
-try { $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Die "$cfgPath is not valid JSON" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys (Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { Die "$cfgPath is not valid JSON" }
 
 function Cfg($obj, [string[]]$path, $default) {
   foreach ($k in $path) {
@@ -177,8 +180,10 @@ if ($hasSlots) {
     while ($f.Count -lt 10) { $f += "" }
     $row = [pscustomobject]@{ Slot = $f[0]; State = $f[1]; Busy = $null }
     if ($f[1] -eq "busy") {
-      $since = [datetime]::ParseExact($f[3], "yyyy-MM-ddTHH:mm:ss", [Globalization.CultureInfo]::InvariantCulture)
-      $b = [pscustomobject]@{ Slot = $f[0]; Branch = $f[2]; Since = ToEpoch ([datetime]::SpecifyKind($since, [DateTimeKind]::Utc))
+      # a since that is not YYYY-MM-DDTHH:MM:SS has no age: Since is $null (iteration 57, #329)
+      $since = $null
+      if ($f[3] -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\z') { $since = StampOf $f[3] }
+      $b = [pscustomobject]@{ Slot = $f[0]; Branch = $f[2]; Since = $since
         Agent = $f[5]; Skill = $f[6]; Role = $f[7]; Step = $f[8]; Reported = $f[9] }
       $busy += $b
       $row.Busy = $b
@@ -351,12 +356,15 @@ if ($hasSlots) {
     $b = $row.Busy
     if ($null -eq $b) { $srows += , @("$($row.Slot)", $row.State, "", "", "", "", "", "", "", ""); continue }
     $k = Pick "" "head" $b.Branch
-    $sinceAge = $nowLocal - $b.Since
+    $sinceOk = $null -ne $b.Since
+    $sinceAge = if ($sinceOk) { $nowLocal - $b.Since } else { 0 }
     $flag = ""
     if ($k) {
       if ($k.State -eq "merged") { $flag = "stale: busy, PR merged (slot --release $($b.Slot))" }
       elseif ($k.State -eq "closed") { $flag = "stale: busy, PR closed (slot --abandon $($b.Slot))" }
-    } elseif ($sinceAge -gt $grace) { $flag = "stale: busy, no open PR" }
+    }
+    if (-not $flag -and -not $sinceOk) { $flag = "stale: busy, since unreadable" }
+    elseif (-not $flag -and -not $k -and $sinceAge -gt $grace) { $flag = "stale: busy, no open PR" }
     if (-not $b.Skill -and -not $b.Role) { $who = "?" }
     else {
       $sk = if ($b.Skill) { $b.Skill } else { "?" }
@@ -368,7 +376,7 @@ if ($hasSlots) {
     if ($b.Reported -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\z') {
       $rep = Span ($nowLocal - (StampOf $b.Reported))
     }
-    $srows += , @("$($b.Slot)", "busy", $b.Agent, $b.Branch, $who, $step, $rep, (Span $sinceAge), (PrCell $k), $flag)
+    $srows += , @("$($b.Slot)", "busy", $b.Agent, $b.Branch, $who, $step, $rep, $(if ($sinceOk) { Span $sinceAge } else { "?" }), (PrCell $k), $flag)
   }
   if ($Porcelain) {
     for ($r = 1; $r -lt $srows.Count; $r++) { $porc.Add("slot`t" + (($srows[$r] | ForEach-Object { Clean $_ }) -join "`t")) | Out-Null }

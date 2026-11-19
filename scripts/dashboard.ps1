@@ -28,7 +28,8 @@ if ($LASTEXITCODE -ne 0 -or -not $gitDir) { Die "run dashboard.ps1 from inside a
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path -LiteralPath $cfgPath)) { Die "no $cfgPath (run /nightmill:init)" }
-try { $cfg = [IO.File]::ReadAllText($cfgPath, $utf8) | ConvertFrom-Json } catch { Die "${cfgPath}: $($_.Exception.Message)" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys ([IO.File]::ReadAllText($cfgPath, $utf8) | ConvertFrom-Json) } catch { Die "${cfgPath}: $($_.Exception.Message)" }
 
 function Cfg($obj, [string[]]$path, $default) {
   foreach ($k in $path) {

@@ -405,6 +405,9 @@ The schema documents every key; the short version:
 | `unattended` | For `scripts/drive.*`: the most minutes one driver run starts steps for (`maxMinutes`, default 240) and the issue its summary is posted on (`summaryIssue`, no default: printed only) |
 | `limits` | The pause flag (`paused`, default false) and the limits of every run: minutes per issue (`minutesPerIssue`, default 180), turns per launch of each role and of a headless session per issue (`turnsPerRole.<role>`, default `session` 200, `specWriter` 150, `specReviewer` 80, `tester` 150, `implementer` 300, `codeReviewer` 80, `fixer` 200, `worker` 40), issues per run (`issuesPerRun`, default 10), cost per issue (`costPerIssueUsd`, default 25). Read from the base branch only ([Limits and the kill switch](#limits-and-the-kill-switch)) |
 
+Keys are matched by their exact spelling in both shells (`Slots` is not `slots`; `validate-config` warns about it),
+and an empty string for a label, a status name or `verification.manualCheckText` counts as not set.
+
 `templates/nightmill.example.json` is a complete example.
 
 ### Agent roles and models

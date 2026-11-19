@@ -76,7 +76,8 @@ if ($null -eq $cfgText) {
   if (-not (Test-Path -LiteralPath $bc.Path -PathType Leaf)) { Stop-Cannot "no $($bc.Path) (run /nightmill:init)" }
   $cfgText = [IO.File]::ReadAllText($bc.Path).TrimStart([char]0xFEFF)
 }
-try { $cfg = ConvertFrom-Json -InputObject $cfgText } catch { Stop-Cannot "$($bc.From) is not valid JSON: $(One-Line $_.Exception.Message)" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys (ConvertFrom-Json -InputObject $cfgText) } catch { Stop-Cannot "$($bc.From) is not valid JSON: $(One-Line $_.Exception.Message)" }
 
 function Has-Key($obj, [string]$k) {
   return ($null -ne $obj -and $obj -is [System.Management.Automation.PSCustomObject] -and $null -ne $obj.PSObject.Properties[$k])

@@ -73,10 +73,10 @@ if [ -e "$record" ]; then
 fi
 
 owner=$(json_get github.owner); repo=$(json_get github.repo); number=$(json_get github.projectNumber)
-epic=$(json_get labels.epic epic)
+epic=$(json_text labels.epic epic)
 have_wt=0; json_has worktrees && have_wt=1
 slots=$(json_get worktrees.slots)
-st() { json_get "board.statuses.$1"; }
+st() { json_text "board.statuses.$1"; }
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-history.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
