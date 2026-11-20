@@ -86,9 +86,14 @@ Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`
 6. **Stop.** Show the spec to the maintainer with the `Decisions` and `Left` lines of the result block. Only the
    maintainer sets Approved; then `/next` implements it. If the maintainer asks for changes, revise the spec in
    a follow-up PR and keep the status at Spec review (`/spec N` at Spec review only finishes unfinished steps; it
-   does not start a revision). When a blocking review finding is still open, say that
-   auto-merge is off and that the pull request waits for the maintainer's merge (when the spec is accepted) or
-   revision; `/next` still needs the spec on the base branch.
+   does not start a revision). When a blocking review finding of this run's last review is still open, the final
+   message is the one of **When the rounds are used up** in **Findings and fix rounds** of the `workflow` skill (the
+   fixable case with its proposal, or the decision case), after the `Decisions` and `Left` lines; `/next` still needs
+   the spec on the base branch. A resumed run (S1, S2, R1, R2) makes no proposal; one resumed at an open pull request
+   (S1, R1) that finds
+   `Auto-merge is not enabled: blocking review findings are still open (see Review).` in its body says
+   `PR #<pr> has blocking review findings still open (see its Review section), so auto-merge is off; this run did not hold the review and proposes no extra round.`
+   On the answer `extra round` to a proposal, run "The extra review round" below.
 
 ## Resuming a story
 
@@ -265,7 +270,9 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    blocking findings, while fewer than `review.maxFixRounds` fix rounds have been used: check the room on the machine
    (**Parallel work** in the `workflow` skill), then a fix round (a fresh specWriter, the writer's prompt plus the blocking lines and "Fix exactly these blocking findings in the spec file
    and nothing else"), the form check of "Read the result" again (a failure stops the run as there), and a new review
-   from step 2 (the pairing is not checked again). No valid block, or an error: stop with
+   from step 2 (the pairing is not checked again). With blocking findings and no round left: **When the rounds are
+   used up** (`workflow` skill) applies after step 6, once the pull request is open as step 4 opens it. No valid
+   block, or an error: stop with
    `Stopped: the spec review could not be had: <the reason>. Nothing was opened.` and do the clean-up.
 5. **After the last review: the `## Review` section.** Build the section that **Findings and fix rounds** describes
    (the paragraph "The pull request" of the `workflow` skill, with `specReviewer` as the reviewer and `specWriter`
@@ -277,7 +284,42 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    blocking finding, do **not** run `gh pr merge` and put, in the body,
    `Auto-merge is not enabled: blocking review findings are still open (see Review).`; the story still goes to
    Spec review, with the comment of the numbered step 5 above. With only advisory findings, or none, enable
-   auto-merge as before: the section is there all the same (a missing section would mean no review ran).
+   auto-merge as before: the section is there all the same (a missing section would mean no review ran). After an
+   extra review round the section also has `- Extra rounds used: 1 of 1, accepted by the maintainer` and the
+   `fixed in the extra round:` lines, as the `workflow` skill gives them.
+
+## The extra review round
+
+Run only when the maintainer answered `extra round` to the proposal of step 6 in the same session (**When the rounds
+are used up** in the `workflow` skill: the rule, the bound of one per pull request, the messages). It is fix round
+`review.maxFixRounds + 1` and runs the same cycle as a fix round of "The spec review" step 4. `/spec` reports nothing.
+
+1. **The checkout.** Switch to the spec branch (`git switch <branch>`); the tree must be clean, else the round does not
+   finish with the reason `the checkout is not clean`. Remember the branch you came from.
+2. **The writer.** Count the agents, check the room, then a fresh `specWriter` on its model with the writer's prompt
+   plus the blocking lines of the last review and "Fix exactly these blocking findings in the spec file and nothing
+   else". The form check of "The spec writer" step 4 runs on its result; a failure: the round does not finish.
+3. **The review.** One fresh review as "The spec review" steps 2 and 3 (the pairing is not checked again). No valid
+   block, or an error: the round does not finish.
+4. **The commit and the push.** The session commits the spec file only: `git add <spec file>`, then
+   `git commit -m "docs: iteration <N> spec (#<issue>), extra review round"`, pushes with `git push -u origin <branch>`,
+   never forced (whether or not the extra review has a blocking finding), and switches back to the branch it came
+   from.
+5. **The body and the merge step.** Build the body again as step 4 and "The spec review" step 5 build it, now with the
+   extra round in `## Review`, and set it with `gh pr edit <pr> --body-file <file>`. Then the merge step of step 4 runs
+   again: with no blocking finding left, its two checks, then `gh pr merge <pr> <git.mergeFlags>`; with auto-merge on,
+   the watch of step 5. With a blocking finding the body has the blocking-findings line and no merge runs.
+6. **The comment.** One comment on the issue, only when no comment of the maintainer's login on it starts with
+   `Extra review round on PR #<pr>:`:
+   `Extra review round on PR #<pr>: <no blocking review finding is open; auto-merge is on. | <b> blocking review <finding is | findings are> still open; auto-merge is off, see the Review section of the pull request.>`
+   (an auto-merge withheld by another line: `no blocking review finding is open; auto-merge is off: <the line>.`). The
+   status stays Spec review.
+7. **The final message**: one of the after-the-extra-round messages of the `workflow` skill; no new proposal.
+
+A round that does not finish prints the does-not-finish line of the `workflow` skill. An uncommitted change of the spec
+file is first committed to the local branch with
+`-m "docs: iteration <N> spec (#<issue>), extra review round, unfinished"`, not pushed, and the session switches back.
+Nothing is reverted; the status stays Spec review.
 
 The reviewer reads the file in the working tree, so the review runs before the commit; the commit then holds the spec
 as the last round left it. The statuses, the comment on the issue, the stop at Spec review and every hard rule stay with

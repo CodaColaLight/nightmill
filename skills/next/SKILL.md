@@ -232,7 +232,7 @@ reports nothing.
 | just before each launch of the code reviewer ("The code review", step 2) | `codeReviewer` | `code-review` |
 | just before the tester's dispute launch for fix round k ("The tester's files", rule 5) | `tester` | `dispute-<k>` |
 | just before the tester's launch for the test findings of fix round k ("The code review", step 4) | `tester` | `test-finding-<k>` |
-| just before the launch of fix round k ("The code review", step 4) | `implementer` | `fix-round-<k>` |
+| just before the launch of fix round k ("The code review", step 4; in "The extra review round" `<k>` is `review.maxFixRounds + 1`) | `implementer` | `fix-round-<k>` |
 | the manual check (step 4), when it applies | `session` | `manual-check` |
 | the CHANGELOG entry and the rebase (step 5) | `session` | `changelog` |
 | opening the pull request (step 6) | `session` | `pull-request` |
@@ -715,7 +715,9 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
      code finding): launch no implementer and review no more; this review is the last.
 
    Round k is one fix round when the tester or the implementer was launched in it, whatever the number and kinds of
-   findings. No valid block, or an error: stop with
+   findings. With blocking findings and no round left (or the rounds ended by the tester's `stands:`): **When the
+   rounds are used up** in **Findings and fix rounds** of the `workflow` skill applies to the final message, once the
+   pull request is open (steps 6 to 8). No valid block, or an error: stop with
    `Stopped: the code review could not be had: <the reason>. Nothing was opened.`
 
    The tester's test-finding prompt, with the placeholders filled in:
@@ -775,9 +777,42 @@ findings format, the rounds and the pairing rule are in **Findings and fix round
    step 7 says why auto-merge was withheld,
    `Auto-merge is not enabled: blocking review findings are still open (see Review).`
    Otherwise the rule of step 7 decides, unchanged. Your final message to the maintainer says whether auto-merge is
-   on and, if not, that blocking findings are open.
+   on and, if not, that blocking findings are open. When the last review of this run has a blocking finding, the
+   final message is the one of **When the rounds are used up** in the `workflow` skill: the fixable case with its
+   proposal, or the decision case; it never offers a merge. A run resumed at an open pull request (row N1) that finds
+   blocking findings open in its body says
+   `PR #<pr> has blocking review findings still open (see its Review section), so auto-merge is off; this run did not hold the review and proposes no extra round.`
+   After an extra round the section also has `- Extra rounds used: 1 of 1, accepted by the maintainer` and the
+   `fixed in the extra round:` lines, as the `workflow` skill gives them.
 
 A `partial` result is reviewed like a complete one.
+
+## The extra review round
+
+Run only when the maintainer answered `extra round` to the proposal of the final message in the same session (**When
+the rounds are used up** in the `workflow` skill: the rule, the bound of one per pull request, the messages). It is fix
+round `review.maxFixRounds + 1` (`<k>`) and follows "The code review" step 4 for round `<k>` unchanged: the test findings
+first to the `tester` (report `test-finding-<k>`; a test finding answered `stands:` not again), then a fresh implementer
+(report `fix-round-<k>`) with the code findings, the tester's files guarded by rules 3 and 4 of "The tester's files",
+then one fresh review (report `code-review`; the pairing is not checked again). A dispute the implementer raises here is
+not sent to the tester (no round is left): it stays open under `## Disputed tests`. The count of agents, the room on the
+machine and the gate apply at every launch and before the push.
+
+1. **The checkout.** The slot that holds the branch (held until the merge). Without slots, the session's checkout on the
+   branch, its tree clean (`git status --porcelain --untracked-files=all` prints nothing), else the round does not
+   finish with the reason `the checkout is not clean`.
+2. **The push**, after the review, whether or not it has a blocking finding: `git -C <slot path> push -u origin <branch>`
+   (in the session's checkout without `-C`), never forced.
+3. **The body.** Build it again as step 6 builds it, from what the run holds, now with the extra round in `## Review`,
+   the `How verified` lines of round `<k>` and `## Disputed tests` as the rules give them, write it to a file and set it
+   with `gh pr edit <pr> --body-file <file>`. The blocking-findings line is in the body only when the extra review has a
+   blocking finding.
+4. **Auto-merge.** Step 7 runs again with its rule and its two merge-step checks unchanged. With auto-merge on, watch the
+   checks (step 9) as after the first opening. The manual check is not run again.
+5. **The final message**: one of the after-the-extra-round messages of the `workflow` skill; no new proposal.
+
+A round that does not finish prints the does-not-finish line of the `workflow` skill, reports `stopped` to the slot, and
+reverts nothing; the status stays Review.
 
 ## Hard rules
 

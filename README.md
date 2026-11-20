@@ -397,7 +397,7 @@ The schema documents every key; the short version:
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`, an alias the Agent tool takes: `sonnet`, `opus`, `haiku` or `fable`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
-| `review.maxFixRounds` | How many fix rounds a producer gets after a review, and how many check fix rounds a pull request gets after a red check, over every run |
+| `review.maxFixRounds` | How many fix rounds a producer gets after a review, and how many check fix rounds a pull request gets after a red check, over every run (default 3) |
 | `review.watchChecksMinutes` | Minutes a skill watches its pull request's checks after enabling auto-merge, per push (default 30) |
 | `git` | Base branch, branch prefixes, merge flags (with `--auto`, never `--admin`) |
 | `parallel` | Agent cap, hot files, task pairs to avoid, and for `scripts/load.*` the ceiling of its suggestion (`maxSuggestedAgents`, default 4), the memory one agent needs (`memoryPerAgentGB`, default 8) and the measurement window (`loadWindowSeconds`, default 10); and for the room check before each start (`scripts/room.*`) whether it runs (`roomCheck`, default true), the free memory it needs (`roomMinFreeMB`, default 2000), the highest CPU load (`roomMaxCpuPercent`, default 90), the pause between checks (`roomPauseSeconds`, default 60) and the longest wait (`roomMaxWaitMinutes`, default 30); and for the load controller (`scripts/control.*`, `/nightmill:control`) its mode (`controlMode`: `off` by default, `report`, `apply`), its bounds (`controlMinAgents`, default 1; `controlMaxAgents`, default 4), its cooldown (`controlCooldownMinutes`, default 15) and how often it runs (`controlIntervalMinutes`, default 5); and for `/fix all` the most bugs one run starts (`fixAllMaxBugs`, default 0: no limit) |
@@ -429,7 +429,7 @@ so is every key inside them: a role that is absent, or whose `model` is empty, t
 least as high as each role it reviews. The rank comes from `models.ranking`, the models from weakest to
 strongest; models of the same level share one entry, joined by `=`, for example `"opus=claude-opus-5-5"`. A role's
 model is an alias (`sonnet`, `opus`, `haiku`, `fable`): the Agent tool refuses a full model id at launch, so the
-validator reports one as an error. The validator checks the pairing (see below). `review.maxFixRounds` (default 2) is how
+validator reports one as an error. The validator checks the pairing (see below). `review.maxFixRounds` (default 3) is how
 many fix rounds a producer gets after a review.
 
 The workflow skill defines how a skill picks a role's model: the configured model, else the default of the schema,
@@ -439,8 +439,11 @@ model it ran on; the session keeps the board, the slot, the CHANGELOG and the pu
 writing of the spec to a `specWriter` subagent the same way, and the spec pull request says which model it ran
 on; the session keeps the board, the branch and the pull request. A `specReviewer` subagent on its configured model
 reviews the spec before it goes to Spec review (`agents/spec-reviewer.md`, read-only), and the blocking findings go
-back to the writer for at most `review.maxFixRounds` rounds. The spec pull request has the same Review section as a
-code pull request, and a blocking finding that is still open keeps auto-merge off and is said on the issue.
+back to the writer for at most `review.maxFixRounds` rounds. When the rounds are used up and every open blocking
+finding names a concrete fix, the final message proposes one extra review round (at most one per pull request), which
+runs only when the maintainer answers `extra round`; a finding that needs a decision ends the run as before, and the
+message names the decision. A run nobody answers ends with the pull request as it was opened. The spec pull request
+has the same Review section as a code pull request, and a blocking finding that is still open keeps auto-merge off and is said on the issue.
 `/nightmill:models` prints the table of every
 role, its model, where the model comes from, its rank and whether its pairing holds; it only reads.
 
@@ -464,7 +467,10 @@ Disputed tests and keeps auto-merge off, and How verified names the tests the te
 
 Before a pull request opens, `/next` and `/fix` have a `codeReviewer` subagent on its configured model review the
 change, as a separate agent that never sees the implementer's own account, and send the blocking findings back to the
-implementer or fixer for at most `review.maxFixRounds` rounds. The findings format and the rounds are in the workflow
+implementer or fixer for at most `review.maxFixRounds` rounds. When the rounds are used up and every open blocking
+finding names a concrete fix, the final message proposes one extra review round (at most one per pull request), which
+runs only when the maintainer answers `extra round`; a finding that needs a decision ends the run as before, and the
+message names the decision. A run nobody answers ends with the pull request as it was opened. The findings format and the rounds are in the workflow
 skill; the reviewer is `agents/code-reviewer.md` and can only read. The pull request has a Review section with the
 reviewer's and the author's model, the rounds used and the findings fixed and still open, and a blocking finding that
 is still open keeps auto-merge off. After enabling auto-merge, `/next`, `/fix` and `/spec` watch the pull request's checks for at most

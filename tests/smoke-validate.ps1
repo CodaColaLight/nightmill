@@ -135,9 +135,10 @@ try {
   Check "ranking not an array" (Edit $ex '"ranking": ["haiku", "sonnet", "opus", "fable"]' '"ranking": "opus"') 1 @("error: models.ranking: expected array, got string")
   Check "ranking empty" (Edit $ex '"ranking": ["haiku", "sonnet", "opus", "fable"]' '"ranking": []') 1 @("error: models.ranking: needs at least 1 items, got 0")
   Check "ranking entry not a string" (Edit $ex '"ranking": ["haiku", "sonnet", ' '"ranking": ["haiku", 3, ') 1 @("error: models.ranking[1]: expected string, got integer")
-  Check "fix rounds negative" (Edit $ex '"maxFixRounds": 2' '"maxFixRounds": -1') 1 @("error: review.maxFixRounds: must be at least 0, got -1")
-  Check "fix rounds a string" (Edit $ex '"maxFixRounds": 2' '"maxFixRounds": "two"') 1 @("error: review.maxFixRounds: expected integer, got string")
-  Check "zero fix rounds" (Edit $ex '"maxFixRounds": 2' '"maxFixRounds": 0') 0 @("0 errors, 0 warnings")
+  Check "fix rounds negative" (Edit $ex '"maxFixRounds": 3' '"maxFixRounds": -1') 1 @("error: review.maxFixRounds: must be at least 0, got -1")
+  Check "fix rounds a string" (Edit $ex '"maxFixRounds": 3' '"maxFixRounds": "two"') 1 @("error: review.maxFixRounds: expected integer, got string")
+  Check "zero fix rounds" (Edit $ex '"maxFixRounds": 3' '"maxFixRounds": 0') 0 @("0 errors, 0 warnings")
+  Check "two fix rounds" (Edit $ex '"maxFixRounds": 3' '"maxFixRounds": 2') 0 @("0 errors, 0 warnings")
   $roleCase = Edit $ex '"codeReviewer"' '"codereviewer"'
   Check "role key wrong case" $roleCase 0 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)')
   Check "role key wrong case strict" $roleCase 1 @('warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)') @("-Strict")

@@ -252,10 +252,112 @@ and are not repeated in the last review with the same file and text (the line is
 counts are 0 and there are no finding lines. With a blocking finding still open the pull request is opened all the
 same, the section says so, and the pull request says
 `Auto-merge is not enabled: blocking review findings are still open (see Review).`
+Only when an extra round ran (**When the rounds are used up**, below), the section gets one line directly after
+`- Fix rounds used: <r> of <review.maxFixRounds>`, exactly `- Extra rounds used: 1 of 1, accepted by the maintainer`;
+`Fix rounds used` stays `<m> of <m>`, the extra round is counted on its own line. A blocking finding the extra round
+fixed (sent back to it and not repeated in the extra review with the same file and text) gets the line
+`fixed in the extra round: blocking <file>:<line> <text>` after the `fixed in round <k>:` lines and is counted in
+`Findings fixed`; `Findings still open` and the open finding lines are those of the extra review. A pull request
+without an extra round has the section exactly as above.
 
 A spec pull request has the same section with `specReviewer role on <model>` as the reviewer and `specWriter role on
 <model>` as the author, after the two lines `Spec for #<issue>.` and `Written by the specWriter role on <model>.` (it
 has no "How verified"); when a blocking finding is still open the comment on the issue says so (see `/spec`).
+
+**When the rounds are used up.** After the last review of a run's review rounds, when it has at least one blocking
+finding, the session (never the reviewer: the findings format does not change) sorts each blocking finding of that
+review, in order. A finding **needs a decision** when one of these holds, checked in this order; its reason is the
+first that holds, as printed:
+
+- a. its text names more than one way to resolve it, or asks which, or its fix needs a value, behaviour or design that
+  neither the issue, the spec (in `/next` the approved spec, in `/fix` the bug report) nor a decision settles:
+  `a choice between designs`;
+- b. its fix is one of `escalation.storyTriggers` (in `/fix` also: the fix would make the bug a story):
+  `a story trigger: <the trigger, as configured>`;
+- c. it says the work, the issue or the spec conflicts with a decision in `iterations.decisionsDir`, with an existing
+  spec, with the approved spec, or that the issue is unclear or contradicts itself:
+  `a conflict with <the decision's or spec's path, or the issue>`;
+- d. it is a test finding (text beginning `test: `) that the tester answered `stands:` in this run:
+  `the tester stands by the test`;
+- e. its text does not name what to change, neither the missing piece nor the wrong thing and its right form:
+  `no concrete fix named`.
+
+Every other blocking finding is **fixable**. A dispute over the tester's tests still open (`## Disputed tests`) counts
+as one more finding that needs a decision, with the reason `a dispute over <file>: <test name>`. The run is then in
+exactly one case: the **decision case** when at least one finding (or open dispute) needs a decision; the **fixable
+case** when every finding is fixable and the fix rounds are used up (`Fix rounds used` equals `review.maxFixRounds`, 0
+included). The rounds end short of that with a blocking finding open only by row d, which is the decision case. When
+the session cannot tell a finding's kind, it needs a decision (row e or a): a stop is the safe side.
+
+The proposal comes after the pull request is open: the pull request, its `## Review` section, the withheld auto-merge
+and (in `/spec`) the issue comment are made exactly as before, in every case; the judgement and the proposal are only
+the final message, so a run nobody answers (a headless `claude -p` run, a driver step) ends with that hand-over and a
+message, and nothing detects whether a person is present. The only reply that runs the round is the maintainer's next
+message in the same session; trimmed and lower-cased it equals `extra round`. Any other reply is no acceptance: the
+session prints
+`No extra round: PR #<pr> stays as it was opened, with auto-merge off and the findings listed in its Review section.`
+and runs nothing of the round (what else that reply asks is the maintainer's own instruction).
+
+There is at most one extra round per pull request. Only the run that ran the review rounds itself (round 0 in this
+run) makes a proposal, once, in its final message: `/spec` through "The spec review", `/next` through "The code
+review", `/fix` with one bug. No proposal is made by `/fix all`, by a run resumed at an open or merged pull request, or
+after an extra round; a later session never gets one for the same pull request. More rounds without asking, or more
+than one extra round, are not done.
+
+The final messages. `<r>` is `Fix rounds used`, `<m>` is `review.maxFixRounds`, `<b>` the count of open blocking
+findings, `<finding is | findings are>` by `<b>`; `<producer>` is `specWriter`, `implementer` or `fixer`, `<reviewer>`
+`specReviewer` or `codeReviewer`, each with the model passed in the run. The fixable case:
+
+```
+PR #<pr> is open with auto-merge off: <b> blocking review <finding is | findings are> still open after <r> of <m> fix rounds, and each names a concrete fix. A revision is the next step, not a merge.
+Proposed: one extra review round, the <producer> role on <model> and then the <reviewer> role on <model>, to fix:
+<one line per open blocking finding: - blocking <file>:<line> <text>>
+Answer `extra round` to run it now; any other answer leaves the pull request as it is for the maintainer.
+```
+
+The decision case (the `Also open, fixable:` block only when a finding is fixable):
+
+```
+PR #<pr> is open with auto-merge off: <b> blocking review <finding is | findings are> still open after <r> of <m> fix rounds, and a decision by the maintainer is needed, so no extra round is proposed.
+Decision needed:
+<one line per finding that needs a decision: - <file>:<line> <text> (<the reason>)>
+Also open, fixable:
+<one line per fixable finding: - blocking <file>:<line> <text>>
+```
+
+After an extra round whose review still has a blocking finding, the case is judged again and no new proposal is made:
+
+```
+PR #<pr> is open with auto-merge off: <b> blocking review <finding is | findings are> still open after the extra review round. <fixable: Each names a concrete fix; a revision is the next step, not a merge. No further round is proposed. | decision: A decision by the maintainer is needed:>
+```
+
+followed, in the decision case, by the `Decision needed:` and `Also open, fixable:` blocks, and in the fixable case by
+the finding lines. After an extra round whose review has no blocking finding:
+`The extra review round fixed the blocking findings of PR #<pr>; auto-merge is <on | off: <the line that withheld it>>.`
+The `<file>:<line> <text>` parts are the reviewer's lines of the last review, as written. No message of a run with an
+open blocking finding speaks of a merge other than in `not a merge`. A run resumed at an open pull request that finds
+blocking findings open in its body says
+`PR #<pr> has blocking review findings still open (see its Review section), so auto-merge is off; this run did not hold the review and proposes no extra round.`
+
+The extra round runs the same cycle as a normal round. It is fix round `review.maxFixRounds + 1` (`<k>`), and it follows
+the skill's rules for round `<k>` unchanged: the blocking lines of the last review go to a fresh producer of the same
+role and model (in `/next` and `/fix` test findings first to the `tester`, a test finding answered `stands:` not again;
+the tester's files guarded and an undone round handled as in any round), the producer runs the check and commits (in
+`/spec` the session commits), then one fresh review by the same reviewer role and model with the same prompt (the
+pairing is not checked again). The count of agents, the room on the machine and the gate apply at every launch and
+before the push, as for any round. A dispute the producer raises in the extra round is not sent to the tester (no round
+is left): it stays open. The reports are those of a normal round (`test-finding-<k>`, `fix-round-<k>`, `code-review`;
+`/spec` reports nothing). The skill says the steps around it (the push, `gh pr edit`, the auto-merge step again). A
+round that does not finish (a `Stopped:` line of one of its launches, a `failed` or wrong-form result, an undone round,
+a review that cannot be had, a checkout that is not clean, a rejected push or a failed `gh pr edit`) prints the round's
+`Stopped:` line when it has one, then
+`The extra review round did not finish: <the reason>. PR #<pr> stays as it was opened, with auto-merge off; <the slot <s> | the branch <branch>> keeps the round's work, not pushed.`
+(after a rejected push or a failed `gh pr edit` the last part reads `the round's work is pushed` when the push went
+through). Nothing is reverted and the status stays; `/next` and `/fix` report `stopped` to the slot. A gate exit 1, 2, 3
+or 4 is handled as **The pause and the limits** says, and the line above follows its own line.
+
+An extra round is not a check fix round: it posts no `Check fix round` comment and uses none of them, and a check fix
+round never leads to a proposal.
 
 ## Parallel work
 

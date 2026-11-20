@@ -135,7 +135,7 @@
       "type": "object",
       "description": "How the internal reviews work.",
       "properties": {
-        "maxFixRounds": { "type": "integer", "minimum": 0, "default": 2, "description": "How many times a producer may fix what its reviewer found before the work is handed to the maintainer. 0 hands over after the first review." },
+        "maxFixRounds": { "type": "integer", "minimum": 0, "default": 3, "description": "How many times a producer may fix what its reviewer found before the work is handed to the maintainer. 0 hands over after the first review. When the rounds are used up and every open blocking finding names a concrete fix, /spec, /next and /fix propose one extra round to the maintainer, at most one per pull request (workflow skill, Findings and fix rounds)." },
         "watchChecksMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "Minutes /next, /fix and /spec watch a pull request's checks after enabling auto-merge, per push, before they stop watching and leave it to auto-merge. The watch cannot be turned off." }
       }
     },
