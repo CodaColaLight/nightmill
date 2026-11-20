@@ -177,6 +177,14 @@ rm -f "$O/hooks/pre-receive"
 git -C "$W" tag -d v0.2.0 >/dev/null; git -C "$W" tag -a v0.2.0 -m x "$release_commit^"
 refuses "tag at another commit" "tag v0.2.0 already exists at another commit" --version 0.2.0 --publish --no-release
 
+echo "== publish: origin's tags cannot be listed: exit 1 and one refused: line (#321)"
+git -C "$W" remote set-url origin "$tmp/nowhere.git"
+set +e; err=$(cd "$W" && bash scripts/release.sh --version 0.2.0 --publish --no-release --dry-run 2>&1 >/dev/null); rc=$?; set -e
+[ "$rc" = 1 ] || fail "unlistable tags: expected exit code 1, got $rc: $err"
+case "$err" in *"refused: cannot list the tags on origin"*) ;; *) fail "unlistable tags: wrong reason: $err" ;; esac
+[ "$(printf '%s\n' "$err" | grep -c '^refused: ')" = 1 ] || fail "unlistable tags: not exactly one refused: line: $err"
+case "$err" in *"error: "*) fail "unlistable tags: an error line besides the refusal: $err" ;; esac
+
 echo "== the lint notices versions that disagree"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
 ( cd "$here" && tar -cf - --exclude=.git . ) | ( cd "$cp_dir" && tar -xf - )

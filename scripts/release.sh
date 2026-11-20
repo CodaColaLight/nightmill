@@ -142,13 +142,13 @@ tag_exists() {
   [ -n "$(git ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" ]
 }
 
-# remote_tag_commit: the commit the tag points at on origin (peeled), empty when origin has no such tag
+# remote_tag_commit: sets rtag to the commit the tag points at on origin (peeled), empty when origin has no
+# such tag. It sets a variable rather than printing: a refuse inside $(...) would only leave the subshell.
 remote_tag_commit() {
-  local l c=""
+  local l
   l=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}") || refuse "cannot list the tags on origin"
-  c=$(printf '%s\n' "$l" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')
-  [ -n "$c" ] || c=$(printf '%s\n' "$l" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
-  printf '%s' "$c"
+  rtag=$(printf '%s\n' "$l" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')
+  [ -n "$rtag" ] || rtag=$(printf '%s\n' "$l" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
 }
 
 # --- checks both modes make --------------------------------------------------------------------------------
@@ -178,7 +178,7 @@ if [ "$publish" = 1 ]; then
   # every step is skipped when it is already done, so a run that failed half way can be run again; only a
   # tag at another commit is refused
   ltag=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" 2>/dev/null || true)
-  rtag=$(remote_tag_commit)
+  rtag=""; remote_tag_commit
   [ -z "$ltag" ] || [ "$ltag" = "$cand" ] || refuse "tag $tag already exists at another commit ($(git rev-parse --short "$ltag"), not $(git rev-parse --short "$cand"))"
   [ -z "$rtag" ] || [ "$rtag" = "$cand" ] || refuse "tag $tag already exists on origin at another commit (${rtag:0:7}, not $(git rev-parse --short "$cand"))"
 

@@ -219,6 +219,14 @@ try {
   $null = G $script:W @("tag", "-a", "v0.2.0", "-m", "x", "$releaseCommit^")
   Refuses "tag at another commit" "tag v0.2.0 already exists at another commit" @("-Version", "0.2.0", "-Publish", "-NoRelease")
 
+  Write-Host "== publish: origin's tags cannot be listed: exit 1 and one refused: line (#321)"
+  $null = G $script:W @("remote", "set-url", "origin", (Join-Path $tmp "nowhere.git"))
+  $r = Run-Release @("-Version", "0.2.0", "-Publish", "-NoRelease", "-DryRun")
+  if ($r.Code -ne 1) { Fail "unlistable tags: expected exit code 1, got $($r.Code): $($r.Err)" }
+  if ($r.Err -notlike "*refused: cannot list the tags on origin*") { Fail "unlistable tags: wrong reason: $($r.Err)" }
+  if (([regex]::Matches($r.Err, '(?m)^refused: ')).Count -ne 1) { Fail "unlistable tags: not exactly one refused: line: $($r.Err)" }
+  if ($r.Err -like "*error: *") { Fail "unlistable tags: an error line besides the refusal: $($r.Err)" }
+
   Write-Host "== the lint notices versions that disagree"
   $bash = $null
   $gitCmd = Get-Command git -ErrorAction SilentlyContinue
