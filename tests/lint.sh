@@ -1708,6 +1708,19 @@ for w in 'fixAllMaxBugs' 'abandons it itself'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 
+echo "== the PowerShell scripts read the config with exact keys (#329)"
+# Iteration 57 (#329): PowerShell's property access is case-insensitive, bash's json_get is not. Every PowerShell script
+# that parses the project config (a file that names nightmill.json and calls ConvertFrom-Json) passes the parsed object
+# through Select-ExactKeys (scripts/lib/exactkeys.ps1), which drops a key that differs from a schema property only by
+# case. validate-config.ps1 is the exception: it has to see the misspelled key to warn about it.
+for f in scripts/*.ps1 scripts/lib/*.ps1; do
+  [ -f "$f" ] || continue
+  case "$f" in scripts/validate-config.ps1) continue ;; esac
+  if grep -qF 'nightmill.json' "$f" && grep -qF 'ConvertFrom-Json' "$f"; then
+    grep -qF 'Select-ExactKeys' "$f" || { echo "FAIL: $f reads the config but does not call Select-ExactKeys (scripts/lib/exactkeys.ps1)"; fail=1; }
+  fi
+done
+
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and

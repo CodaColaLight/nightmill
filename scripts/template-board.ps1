@@ -32,7 +32,8 @@ foreach ($f in @($Config, $tplPath, $schemaPath)) {
 function Read-Json([string]$path) {
   try { return (Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { Die "$path is not valid JSON" }
 }
-$cfg = Read-Json $Config
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+$cfg = Select-ExactKeys (Read-Json $Config)
 $schema = Read-Json $schemaPath
 $tpl = Read-Json $tplPath
 

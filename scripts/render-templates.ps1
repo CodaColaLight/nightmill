@@ -13,7 +13,8 @@ $ErrorActionPreference = "Stop"
 $cfgPath = Join-Path $Project ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
 # -Encoding UTF8 everywhere: Windows PowerShell 5.1 otherwise reads files in the ANSI code page.
-$cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+$cfg = Select-ExactKeys (Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json)
 
 # Quotes as json_quote in scripts/lib/json.awk does, byte for byte: \ and " escaped, newline, tab,
 # carriage return, backspace and form feed as \n \t \r \b \f, every other character below 32 as \u00xx.
@@ -43,8 +44,17 @@ function Label($key, $default) { Yaml-Quote $(if ($cfg.labels -and $cfg.labels.$
 if (-not $cfg.areas -or @($cfg.areas).Count -eq 0) { throw "nightmill.json needs at least one entry in areas" }
 $areas = "[" + ((@($cfg.areas) | ForEach-Object { Yaml-Quote $_ }) -join ", ") + "]"
 
-# @($null) would be a one-element array; filter so a missing key means "no invariants".
-$invariants = @($cfg.invariants | Where-Object { $null -ne $_ -and "$_" -ne "" })
+# Iteration 57 (#329): only an item that is a string with at least one character is rendered, as written (a trailing
+# newline kept); null, "", numbers, booleans, objects and arrays are left out. foreach, not the pipeline, so that a
+# nested array is one item and not unrolled. Under PowerShell 7 ConvertFrom-Json turns a date-like string into a
+# DateTime; it is formatted back with ToString("s"), the rule of slot.ps1's Get-Text.
+$invariants = @()
+if ($null -ne $cfg.invariants) {
+  foreach ($i in @($cfg.invariants)) {
+    if ($i -is [datetime]) { $i = $i.ToString("s") }
+    if ($i -is [string] -and $i.Length -gt 0) { $invariants += , $i }
+  }
+}
 $invBlock = ""
 foreach ($i in $invariants) {
   $invBlock += "        - label: " + (Yaml-Quote $i) + "`n          required: false`n"

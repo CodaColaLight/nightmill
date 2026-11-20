@@ -389,6 +389,47 @@ exit 0
     Expect "porcelain $scn" (Join-Path $FIX "$scn\expected-porcelain.txt")
   }
 
+  Write-Host "== twins (#329): an empty status name or epic label takes the default"
+  Write-Utf8 $cfgFile @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "labels": { "epic": "" },
+  "board": { "statuses": { "review": "", "inProgress": "" } },
+  "git": { "baseBranch": "main", "specPrefix": "spec/" },
+  "worktrees": { "root": "../wt", "slots": 4 }
+}
+'@
+  Set-Markers "a"
+  Run-S $work "a"
+  if ($Code -ne 0) { Fail "empty status names: exit code $Code`: $Err" }
+  Expect "empty status names and epic label" (Join-Path $FIX "a\expected.txt")
+  Write-Utf8 $cfgFile $withSlots
+
+  Write-Host "== twins (#329): a since that is not a time"
+  Set-Markers "e"
+  foreach ($form in @(@("", "expected.txt"), @("-Porcelain", "expected-porcelain.txt"), @("-Json", "expected.json"))) {
+    Run-S $work "e" $form[0]
+    if ($Code -ne 0) { Fail "since not a time ($($form[0])): exit code $Code`: $Err" }
+    Expect "since not a time ($($form[0]))" (Join-Path $FIX "e\$($form[1])")
+    if ($Err) { Fail "since not a time ($($form[0])): status printed on standard error: $Err" }
+  }
+
+  Write-Host "== twins (#329): a marker that is not a JSON object"
+  Set-Markers "c"
+  Write-Utf8 (Join-Path $tmp "wt\.slots\slot-2.json") '{ "slot": 2, "branch": '
+  Run-S $work "c" "-Porcelain"
+  if ($Code -ne 0) { Fail "marker not a JSON object: exit code $Code`: $Err" }
+  $porcLines = @($OutRaw -split "`n")
+  $want2 = "slot`t2`tbusy`tunknown`t`t?`t?`t-`t?`t-`tstale: busy, since unreadable"
+  if ($porcLines -cnotcontains $want2) { Fail "marker not a JSON object: the record of slot 2 is not as expected: $(@($porcLines | Where-Object { $_.StartsWith("slot`t2`t") }))" }
+  $cLines = @((Read-Lf (Join-Path $FIX "c\expected-porcelain.txt")) -split "`n")
+  foreach ($n in 1, 3, 4) {
+    $want = @($cLines | Where-Object { $_.StartsWith("slot`t$n`t") })[0]
+    if ($porcLines -cnotcontains $want) { Fail "marker not a JSON object: the record of slot $n changed" }
+  }
+  if (-not (@($Err -split "`n" | ForEach-Object { $_.TrimEnd("`r") }) -contains "slot 2: the marker is not a JSON object")) { Fail "marker not a JSON object: no note on standard error: $Err" }
+
   Write-Host "STATUS OK" -ForegroundColor Green
 } finally {
   Set-Location $here

@@ -63,7 +63,8 @@ catch { Stop-Models "${Schema}: not valid JSON" }
 $text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Config).Path, $utf8)
 $doc = $null
 if ($text.Trim() -eq "") { Stop-Models "${Config}: not valid JSON (empty)" }
-try { $doc = ConvertFrom-Json -InputObject $text } catch { Stop-Models "${Config}: not valid JSON" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $doc = Select-ExactKeys (ConvertFrom-Json -InputObject $text) } catch { Stop-Models "${Config}: not valid JSON" }
 if ($text.TrimStart()[0] -ne '{' -or -not ($doc -is [System.Management.Automation.PSCustomObject])) { Stop-Models "${Config}: not a JSON object" }
 
 # --- the roles ----------------------------------------------------------------------------------------------------

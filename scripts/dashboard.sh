@@ -60,8 +60,8 @@ if [ -n "$rec" ]; then
   kind=${rec%%$'\t'*}; val=${rec#*$'\t'}
   if [ "$kind" = "number" ] && [[ "$val" =~ ^[1-9][0-9]{0,5}$ ]]; then stalled=$val; fi
 fi
-sr=$(json_get board.statuses.specReview 'Spec review')
-ap=$(json_get board.statuses.approved Approved)
+sr=$(json_text board.statuses.specReview 'Spec review')
+ap=$(json_text board.statuses.approved Approved)
 wt=0
 if json_has worktrees; then wt=1; fi
 

@@ -200,9 +200,12 @@ try {
   Run-P $work
   if ($Code -ne 0) { Fail "unreadable marker: exit code $Code`: $Err" }
   if ($OutRaw -match "(?m)^slot`t2`tfree") { Fail "a slot with an unreadable marker is listed free" }
-  # slot.ps1 fails on a marker that is not valid JSON: the whole read is an unknown record and no slot record
-  if (-not ($OutRaw -cmatch "(?m)^unknown`t[^`t`n]+`n")) { Fail "an unreadable marker does not give an unknown record: $OutRaw" }
-  if ($OutRaw -cmatch "(?m)^slot`t") { Fail "a slot record after a failed slot script: $OutRaw" }
+  # #329: slot.sh and slot.ps1 both list that slot as busy and unknown (exit 0), with one note line
+  if ($Err) { Fail "unreadable marker: the panel wrote on standard error: $Err" }
+  if ($OutRaw -cmatch "(?m)^unknown`t") { Fail "an unreadable marker gave an unknown record: $OutRaw" }
+  $wantLine = "slot${TAB}2${TAB}busy${TAB}stalled${TAB}feat/stall${TAB}fix/fixer${TAB}test${TAB}2h"
+  if (-not $good.Contains($wantLine)) { Fail "the fixture has no line $wantLine" }
+  Same "unreadable marker" ($good.Replace($wantLine, "slot${TAB}2${TAB}busy${TAB}unknown${TAB}${TAB}?${TAB}?${TAB}-") + "note${TAB}slot 2: the marker is not a JSON object`n")
   Write-Utf8 $mk2 $markersWritten["slot-2.json"]
 
   Write-Host "== a failing slot script is unknown"

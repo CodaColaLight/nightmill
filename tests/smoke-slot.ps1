@@ -2174,6 +2174,110 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
   if ($r.Code -ne 0) { Fail "slots 3: -Status exit $($r.Code): $($r.Out) / $($r.Err)" }
   if (-not $r.Out.StartsWith("slots = 3")) { Fail "slots 3: unexpected status: $($r.Out)" }
 
+  Write-Host "== twins (#329): --release frees the slot when the branch cannot be deleted"
+  function TwinWork([string]$name, [string]$branch) { # a repository with the branch taken in slot 1, one commit pushed
+    Mk-Base $name "main" "echo warm > warmed.txt"
+    $r = SlotIn $name "-Take $branch -Slot 1"
+    if ($r.Code -ne 0) { Fail "twins ($name): the take exited $($r.Code): $($r.Out) / $($r.Err)" }
+    $d = "$tmp\$name\wt\slot-1"
+    [System.IO.File]::WriteAllText("$d\work.txt", "$branch`n")
+    Gq -C $d add -A
+    Gq -C $d -c user.name=t -c user.email=t@example.invalid commit -qm "work on $branch"
+    Gq -C $d push -q origin $branch
+    $script:tip = ([string](git -C $d rev-parse HEAD)).Trim()
+  }
+  function LastLine([string]$text) { @($text -split "`n" | Where-Object { $_ -ne "" } | ForEach-Object { $_.TrimEnd("`r") }) | Select-Object -Last 1 }
+  TwinWork "tw1" "feat/rd"
+  $d1 = "$tmp\tw1\wt\slot-1"
+  Reset-Gh; Merged "feat/rd" 77 $tip
+  Gq -C "$tmp\tw1\work" worktree add -q --force "$tmp\tw1\other" feat/rd
+  $r = SlotIn "tw1" "-Release 1"
+  if ($r.Code -ne 0) { Fail "twins release: -Release exited $($r.Code), not 0: $($r.Out) / $($r.Err)" }
+  if ((LastLine $r.Out) -cne "Slot 1 is free (was feat/rd, PR #77).") { Fail "twins release: the last line of standard output: $($r.Out)" }
+  if (-not $r.Err.Contains("cannot delete branch 'feat/rd'")) { Fail "twins release: git's own error is not on standard error: $($r.Err)" }
+  if (Test-Path "$tmp\tw1\wt\.slots\slot-1.json") { Fail "twins release: the marker is still there" }
+  git -C "$tmp\tw1\work" show-ref --verify --quiet refs/heads/feat/rd
+  if ($LASTEXITCODE -ne 0) { Fail "twins release: the branch was deleted although it is in use" }
+  if ("$(git -C $d1 branch --show-current)".Trim() -ne "") { Fail "twins release: the slot is not detached" }
+  if (([string](git -C $d1 rev-parse HEAD)).Trim() -ne ([string](git -C "$tmp\tw1\work" rev-parse origin/main)).Trim()) { Fail "twins release: the slot is not at origin/main" }
+  $ledger = @([System.IO.File]::ReadAllLines("$tmp\tw1\wt\.slots\ledger.tsv"))
+  $lf = $ledger[$ledger.Count - 1] -split "`t"
+  if ($lf[0] -cne "free" -or $lf[4] -cne "released") { Fail "twins release: the last ledger line is not a free record with released: $($ledger[$ledger.Count - 1])" }
+  $r = SlotIn "tw1" "-Status -Porcelain"
+  if ((@($r.Out -split "`n"))[0].TrimEnd("`r") -cne "1`tfree") { Fail "twins release: -Status -Porcelain does not show slot 1 free: $($r.Out)" }
+  Reset-Gh
+
+  Write-Host "== twins (#329): --release and --abandon exit 1 with one line on a failed git or gh call"
+  TwinWork "tw2" "feat/ex"
+  Reset-Gh; Merged "feat/ex" 78 $tip
+  $m2 = "$tmp\tw2\wt\.slots\slot-1.json"
+  $before = [System.IO.File]::ReadAllBytes($m2)
+  function SameBytes($a, $b) { ($a.Length -eq $b.Length) -and (-not (Compare-Object $a $b)) }
+  # (a) origin cannot be reached
+  Gq -C "$tmp\tw2\work" remote set-url origin "$tmp\does-not-exist.git"
+  $r = SlotIn "tw2" "-Release 1"
+  if ($r.Code -ne 1) { Fail "twins exit (a): -Release exited $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if ((LastLine $r.Err) -cne "git fetch failed") { Fail "twins exit (a): the last line of standard error is not 'git fetch failed': $($r.Err)" }
+  if (-not (SameBytes $before ([System.IO.File]::ReadAllBytes($m2)))) { Fail "twins exit (a): the marker changed" }
+  Gq -C "$tmp\tw2\work" remote set-url origin "$tmp\tw2\origin.git"
+  # (b) gh pr list fails
+  $env:GH_FAIL = "1"
+  try { $r = SlotIn "tw2" "-Release 1" } finally { Remove-Item Env:\GH_FAIL -ErrorAction SilentlyContinue }
+  if ($r.Code -ne 1) { Fail "twins exit (b): -Release exited $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if ((LastLine $r.Err) -cne "gh pr list failed") { Fail "twins exit (b): the last line of standard error is not 'gh pr list failed': $($r.Err)" }
+  if (-not (SameBytes $before ([System.IO.File]::ReadAllBytes($m2)))) { Fail "twins exit (b): the marker changed" }
+  # (c) the base of -Abandon does not exist
+  $r = SlotIn "tw2" "-Abandon 1 -Base origin/nope"
+  if ($r.Code -ne 1) { Fail "twins exit (c): -Abandon exited $($r.Code), not 1: $($r.Out) / $($r.Err)" }
+  if ((LastLine $r.Err) -cne "git switch failed") { Fail "twins exit (c): the last line of standard error is not 'git switch failed': $($r.Err)" }
+  if (-not (SameBytes $before ([System.IO.File]::ReadAllBytes($m2)))) { Fail "twins exit (c): the marker changed" }
+  Reset-Gh
+
+  Write-Host "== twins (#329): a marker that is not a JSON object is a busy slot in --status"
+  Mk-Base "tw3" "main" "echo warm > warmed.txt"
+  $r = SlotIn "tw3" "-Take feat/one -Slot 1"
+  if ($r.Code -ne 0) { Fail "twins marker: the take exited $($r.Code): $($r.Out) / $($r.Err)" }
+  $r = SlotIn "tw3" "-Status -Porcelain"
+  $line1 = (@($r.Out -split "`n"))[0].TrimEnd("`r")
+  $r = SlotIn "tw3" "-Status"
+  $human1 = @($r.Out -split "`n" | Where-Object { $_.StartsWith("slot 1 ") })[0].TrimEnd("`r")
+  $m3 = "$tmp\tw3\wt\.slots\slot-2.json"
+  foreach ($content in '{ "slot": 2, "branch": ', 'null') {
+    [System.IO.File]::WriteAllText($m3, $content, $utf8n)
+    $r = SlotIn "tw3" "-Status -Porcelain"
+    if ($r.Code -ne 0) { Fail "twins marker ($content): -Status -Porcelain exited $($r.Code): $($r.Out) / $($r.Err)" }
+    $pl = @($r.Out -split "`n" | ForEach-Object { $_.TrimEnd("`r") })
+    if ($pl[0] -cne $line1) { Fail "twins marker ($content): line 1 changed: $($r.Out)" }
+    if ($pl[1] -cne "2`tbusy`t`t`t`tunknown`t`t`t`t") { Fail "twins marker ($content): line 2 is not the busy line with an empty branch: $($pl[1])" }
+    if ($r.Err.TrimEnd("`n") -cne "slot 2: the marker is not a JSON object") { Fail "twins marker ($content): standard error is not the one line: $($r.Err)" }
+    $r = SlotIn "tw3" "-Status"
+    if ($r.Code -ne 0) { Fail "twins marker ($content): -Status exited $($r.Code): $($r.Out) / $($r.Err)" }
+    if ($r.Err) { Fail "twins marker ($content): -Status wrote on standard error: $($r.Err)" }
+    $hl = @($r.Out -split "`n" | ForEach-Object { $_.TrimEnd("`r") })
+    if ($hl -cnotcontains ("slot 2  " + "not created yet".PadRight(15) + " busy: (the marker is not a JSON object)")) { Fail "twins marker ($content): the -Status line of slot 2: $($r.Out)" }
+    if (@($hl | Where-Object { $_.StartsWith("slot 1 ") })[0] -cne $human1) { Fail "twins marker ($content): the -Status line of slot 1 changed: $($r.Out)" }
+    if (-not (Test-Path $m3)) { Fail "twins marker ($content): the marker was removed" }
+  }
+  Remove-Item $m3 -Force
+
+  Write-Host "== twins (#329): worktrees.Slots is not worktrees.slots"
+  Mk-Base "tw4" "main" "echo warm > warmed.txt"
+  $r = SlotIn "tw4" "-Status"
+  $first = (@($r.Out -split "`n"))[0].TrimEnd("`r")
+  if (-not $first.StartsWith("slots = 2  root = ")) { Fail "twins keys: the baseline first line: $first" }
+  $cfgPath = "$tmp\tw4\work\.claude\nightmill.json"
+  $cfgText = [System.IO.File]::ReadAllText($cfgPath)
+  if (-not $cfgText.Contains('"slots": 2,')) { Fail "twins keys: fixture: the slot count is not in the config" }
+  [System.IO.File]::WriteAllText($cfgPath, $cfgText.Replace('"slots": 2,', '"Slots": 3,'), $utf8n)
+  Gq -C "$tmp\tw4\work" -c user.name=t -c user.email=t@example.invalid commit -qam "Slots 3"
+  Gq -C "$tmp\tw4\work" push -q origin HEAD
+  $r = SlotIn "tw4" "-Status"
+  if ($r.Code -ne 0) { Fail "twins keys: -Status exited $($r.Code): $($r.Out) / $($r.Err)" }
+  if ((@($r.Out -split "`n"))[0].TrimEnd("`r") -cne $first) { Fail "twins keys: the first line is not '$first': $($r.Out)" }
+  $r = SlotIn "tw4" "-Status -Porcelain"
+  $pl = @($r.Out -split "`n" | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_ -ne "" })
+  if ($pl.Count -ne 2 -or $pl[0] -cne "1`tfree" -or $pl[1] -cne "2`tfree") { Fail "twins keys: -Status -Porcelain does not list slots 1 and 2 only: $($r.Out)" }
+
   Write-Host "SMOKE OK" -ForegroundColor Green
 } finally {
   Set-Location $here

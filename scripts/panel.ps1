@@ -27,7 +27,8 @@ $main = Split-Path ([string]$gitDir).Trim() -Parent
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path -LiteralPath $cfgPath)) { Die "no $cfgPath (run /nightmill:init)" }
 $cfg = $null
-try { $cfg = [IO.File]::ReadAllText($cfgPath, $utf8) | ConvertFrom-Json } catch { Die "$cfgPath is not valid JSON" }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys ([IO.File]::ReadAllText($cfgPath, $utf8) | ConvertFrom-Json) } catch { Die "$cfgPath is not valid JSON" }
 if ($null -eq $cfg) { Die "$cfgPath is not valid JSON" }
 
 # the interval: worktrees.panelRefreshSeconds, a whole number from 5 to 3600, else 15 (with a note unless absent or null)

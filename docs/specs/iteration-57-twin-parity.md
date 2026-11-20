@@ -1,6 +1,6 @@
 # Iteration 57: the bash and PowerShell twins give the same result where they differ today
 
-Status: draft, awaiting approval (#329)
+Status: delivered in iteration 57 (PR #334)
 
 Story #329, epic #107 (hardening from the code review). #141 listed six places, read from the code of 0.3.0, where a
 `.sh` script and its `.ps1` twin give different results. The story folds the malformed `since` (first filed as bug

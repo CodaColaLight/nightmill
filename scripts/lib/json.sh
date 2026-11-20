@@ -9,6 +9,10 @@
 #   json_check FILE           like json_load but keeps nothing (is the file valid JSON?)
 #   json_get PATH [DEFAULT]   the string value at PATH, decoded; DEFAULT (empty when not given) when the
 #                             path is absent, null, an object or an array
+#   json_text PATH [DEFAULT]  the string value at PATH, decoded; DEFAULT (empty when not given) when the
+#                             path is absent, null, an object, an array or the empty string (iteration 57)
+#   json_kind PATH            the kind of the value at PATH (string, number, boolean, null, object, array);
+#                             empty when absent
 #   json_len PATH             the number of items of the array or object at PATH; 0 when absent
 #   json_keys PATH            the keys of the object at PATH, one per line, in file order (PATH "" = root)
 #   json_has PATH             exit code 0 when PATH exists, also when its value is null
@@ -44,6 +48,18 @@ json_get() {
   if [ "$res" = "-" ]; then printf '%s' "$def"; return 0; fi
   val=${res#*$'\t'}
   printf '%b' "$val"
+}
+
+json_text() {
+  local v
+  v=$(json_get "$1")
+  if [ -z "$v" ]; then printf '%s' "${2-}"; else printf '%s' "$v"; fi
+}
+
+json_kind() {
+  printf '%s\n' "$JSON_FLAT" | JSON_P=$1 LC_ALL=C awk -F '\t' '
+    $1 == ENVIRON["JSON_P"] { k = $2 }
+    END { print k }'
 }
 
 json_len() {

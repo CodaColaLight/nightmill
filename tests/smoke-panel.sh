@@ -158,9 +158,16 @@ echo "== an unreadable marker is never free"
 printf '{ not json' > "$tmp/wt/.slots/slot-2.json"
 run_p "$tmp/work"
 [ "$code" = 0 ] || fail "unreadable marker: exit code $code: $(cat "$tmp/err.txt")"
-grep -qxF "slot${TAB}2${TAB}free${TAB}${TAB}${TAB}${TAB}${TAB}" "$tmp/out.txt" && fail "a slot with an unreadable marker is listed free"
-grep -q "^slot${TAB}2${TAB}free" "$tmp/out.txt" && fail "a slot with an unreadable marker starts with slot, 2, free"
-grep -qxF "slot${TAB}2${TAB}busy${TAB}unknown${TAB}${TAB}?${TAB}?${TAB}-" "$tmp/out.txt" || fail "slot 2 is not busy and unknown: $(cat "$tmp/out.txt")"
+[ ! -s "$tmp/err.txt" ] || fail "unreadable marker: the panel wrote on standard error: $(cat "$tmp/err.txt")"
+# #329: slot.sh and slot.ps1 both list that slot as busy and unknown (exit 0), with one note line
+grep -q "^slot${TAB}2${TAB}free" "$tmp/out.txt" && fail "a slot with an unreadable marker is listed free"
+grep -q "^unknown${TAB}" "$tmp/out.txt" && fail "an unreadable marker gave an unknown record: $(cat "$tmp/out.txt")"
+{
+  sed "s/^slot${TAB}2${TAB}busy${TAB}stalled${TAB}feat\/stall${TAB}fix\/fixer${TAB}test${TAB}2h\$/slot${TAB}2${TAB}busy${TAB}unknown${TAB}${TAB}?${TAB}?${TAB}-/" "$FIX/expected.txt"
+  printf 'note\tslot 2: the marker is not a JSON object\n'
+} > "$tmp/want.txt"
+grep -qxF "slot${TAB}2${TAB}busy${TAB}unknown${TAB}${TAB}?${TAB}?${TAB}-" "$tmp/want.txt" || fail "the expected output was not built: $(cat "$tmp/want.txt")"
+same "unreadable marker" "$tmp/want.txt"
 cp "$tmp/markers-written/slot-2.json" "$tmp/wt/.slots/slot-2.json"
 
 echo "== a failing slot script is unknown"

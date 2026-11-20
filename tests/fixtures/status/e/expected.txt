@@ -1,0 +1,10 @@
+ #  Title            Status  Who  PR  Age  Flag
+30  Something ready  Ready   -    -    1d
+
+slots
+slot  State  Agent    Branch       Skill             Step   Report  Since  PR          Flag
+   1  busy   stalled  feat/merged  next/session      done       1d      ?  #60 merged  stale: busy, PR merged (slot --release 1)
+   2  busy   unknown  feat/odd     ?                 ?           -      ?  -           stale: busy, since unreadable
+   3  busy   stalled  feat/stale   next/implementer  check      2d     3d  -           stale: busy, no open PR
+   4  busy   running  feat/new     fix/fixer         test       5m    10m  -
+capacity: slots 4 (config), agents 2 (default)

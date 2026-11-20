@@ -2214,4 +2214,104 @@ in_repo cn1364 --status
 [ "$rc" = 0 ] || fail "slots 3: --status exit $rc: $out / $err"
 case "$out" in "slots = 3"*) ;; *) fail "slots 3: unexpected status: $out" ;; esac
 
+echo "== twins (#329): --release frees the slot when the branch cannot be deleted"
+mkbase tw1 main "echo warm > warmed.txt"
+in_repo tw1 --take feat/rd --slot 1
+[ "$rc" = 0 ] || fail "twins release: the take exited $rc: $out / $err"
+d1="$tmp/tw1/wt/slot-1"
+echo rd > "$d1/work.txt"
+G "$d1" add -A
+G "$d1" commit -qm "work on feat/rd"
+git -C "$d1" push -q origin feat/rd 2>/dev/null
+tip=$(git -C "$d1" rev-parse HEAD)
+reset_gh; merged feat/rd 77 "$tip"
+git -C "$tmp/tw1/work" worktree add -q --force "$tmp/tw1/other" feat/rd
+in_repo tw1 --release 1
+[ "$rc" = 0 ] || fail "twins release: --release exited $rc, not 0: $out / $err"
+[ "$(printf '%s\n' "$out" | tail -n 1)" = "Slot 1 is free (was feat/rd, PR #77)." ] || fail "twins release: the last line of standard output: $out"
+case "$err" in *"cannot delete branch 'feat/rd'"*) ;; *) fail "twins release: git's own error is not on standard error: $err" ;; esac
+[ ! -f "$tmp/tw1/wt/.slots/slot-1.json" ] || fail "twins release: the marker is still there"
+git -C "$tmp/tw1/work" show-ref --verify --quiet refs/heads/feat/rd || fail "twins release: the branch was deleted although it is in use"
+[ -z "$(git -C "$d1" branch --show-current)" ] || fail "twins release: the slot is not detached"
+[ "$(git -C "$d1" rev-parse HEAD)" = "$(git -C "$tmp/tw1/work" rev-parse origin/main)" ] || fail "twins release: the slot is not at origin/main"
+last=$(tail -n 1 "$tmp/tw1/wt/.slots/ledger.tsv")
+[ "$(printf '%s\n' "$last" | cut -f1)" = free ] && [ "$(printf '%s\n' "$last" | cut -f5)" = released ] || fail "twins release: the last ledger line is not a free record with released: $last"
+in_repo tw1 --status --porcelain
+[ "$(printf '%s\n' "$out" | sed -n 1p)" = "1${T}free" ] || fail "twins release: --status --porcelain does not show slot 1 free: $out"
+reset_gh
+
+echo "== twins (#329): --release and --abandon exit 1 with one line on a failed git or gh call"
+mkbase tw2 main "echo warm > warmed.txt"
+in_repo tw2 --take feat/ex --slot 1
+[ "$rc" = 0 ] || fail "twins exit: the take exited $rc: $out / $err"
+d2="$tmp/tw2/wt/slot-1"
+echo ex > "$d2/work.txt"
+G "$d2" add -A
+G "$d2" commit -qm "work on feat/ex"
+git -C "$d2" push -q origin feat/ex 2>/dev/null
+tip=$(git -C "$d2" rev-parse HEAD)
+reset_gh; merged feat/ex 78 "$tip"
+m2="$tmp/tw2/wt/.slots/slot-1.json"
+cp "$m2" "$tmp/m2.before"
+lastline() { printf '%s\n' "$1" | tail -n 1; }
+# (a) origin cannot be reached
+git -C "$tmp/tw2/work" remote set-url origin "$tmp/does-not-exist.git"
+in_repo tw2 --release 1
+[ "$rc" = 1 ] || fail "twins exit (a): --release exited $rc, not 1: $out / $err"
+[ "$(lastline "$err")" = "git fetch failed" ] || fail "twins exit (a): the last line of standard error is not 'git fetch failed': $err"
+cmp -s "$m2" "$tmp/m2.before" || fail "twins exit (a): the marker changed"
+git -C "$tmp/tw2/work" remote set-url origin "$tmp/tw2/origin.git"
+# (b) gh pr list fails
+GH_FAIL=1 in_repo tw2 --release 1
+[ "$rc" = 1 ] || fail "twins exit (b): --release exited $rc, not 1: $out / $err"
+[ "$(lastline "$err")" = "gh pr list failed" ] || fail "twins exit (b): the last line of standard error is not 'gh pr list failed': $err"
+cmp -s "$m2" "$tmp/m2.before" || fail "twins exit (b): the marker changed"
+# (c) the base of --abandon does not exist
+in_repo tw2 --abandon 1 --base origin/nope
+[ "$rc" = 1 ] || fail "twins exit (c): --abandon exited $rc, not 1: $out / $err"
+[ "$(lastline "$err")" = "git switch failed" ] || fail "twins exit (c): the last line of standard error is not 'git switch failed': $err"
+cmp -s "$m2" "$tmp/m2.before" || fail "twins exit (c): the marker changed"
+reset_gh
+
+echo "== twins (#329): a marker that is not a JSON object is a busy slot in --status"
+mkbase tw3 main "echo warm > warmed.txt"
+in_repo tw3 --take feat/one --slot 1
+[ "$rc" = 0 ] || fail "twins marker: the take exited $rc: $out / $err"
+in_repo tw3 --status --porcelain
+line1=$(printf '%s\n' "$out" | sed -n 1p)
+in_repo tw3 --status
+human1=$(printf '%s\n' "$out" | grep '^slot 1 ')
+m3="$tmp/tw3/wt/.slots/slot-2.json"
+for content in '{ "slot": 2, "branch": ' null; do
+  printf '%s' "$content" > "$m3"
+  in_repo tw3 --status --porcelain
+  [ "$rc" = 0 ] || fail "twins marker ($content): --status --porcelain exited $rc: $out / $err"
+  [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$line1" ] || fail "twins marker ($content): line 1 changed: $out"
+  [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$(printf '2\tbusy\t\t\t\tunknown\t\t\t\t')" ] || fail "twins marker ($content): line 2 is not the busy line with an empty branch: $(printf '%s\n' "$out" | sed -n 2p | od -c | head -3)"
+  [ "$err" = "slot 2: the marker is not a JSON object" ] || fail "twins marker ($content): standard error is not the one line: $err"
+  in_repo tw3 --status
+  [ "$rc" = 0 ] || fail "twins marker ($content): --status exited $rc: $out / $err"
+  [ -z "$err" ] || fail "twins marker ($content): --status wrote on standard error: $err"
+  grep -qxF "$(printf 'slot 2  %-15s busy: (the marker is not a JSON object)' 'not created yet')" <<<"$out" || fail "twins marker ($content): the --status line of slot 2: $out"
+  [ "$(printf '%s\n' "$out" | grep '^slot 1 ')" = "$human1" ] || fail "twins marker ($content): the --status line of slot 1 changed: $out"
+  [ -f "$m3" ] || fail "twins marker ($content): the marker was removed"
+done
+rm -f "$m3"
+
+echo "== twins (#329): worktrees.Slots is not worktrees.slots"
+mkbase tw4 main "echo warm > warmed.txt"
+in_repo tw4 --status
+first=$(printf '%s\n' "$out" | sed -n 1p)
+case "$first" in "slots = 2  root = "*) ;; *) fail "twins keys: the baseline first line: $first" ;; esac
+sed 's/"slots": 2,/"Slots": 3,/' "$tmp/tw4/work/.claude/nightmill.json" > "$tmp/tw4.json"
+grep -q '"Slots": 3,' "$tmp/tw4.json" || fail "twins keys: the config copy has no Slots"
+cp "$tmp/tw4.json" "$tmp/tw4/work/.claude/nightmill.json"
+G "$tmp/tw4/work" commit -qam "Slots 3"
+git -C "$tmp/tw4/work" push -q origin HEAD
+in_repo tw4 --status
+[ "$rc" = 0 ] || fail "twins keys: --status exited $rc: $out / $err"
+[ "$(printf '%s\n' "$out" | sed -n 1p)" = "$first" ] || fail "twins keys: the first line is not '$first': $(printf '%s\n' "$out" | sed -n 1p)"
+in_repo tw4 --status --porcelain
+[ "$out" = "$(printf '1\tfree\n2\tfree')" ] || fail "twins keys: --status --porcelain does not list slots 1 and 2 only: $out"
+
 echo "SMOKE OK"

@@ -129,6 +129,78 @@ try {
     if ($raw -cmatch '[\x00-\x08\x0B-\x1F]') { Fail "$f has a raw control character" }
   }
 
+  Write-Host "== twins (#329): an empty label or manualCheckText takes the default"
+  $cfg6 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "labels": { "epic": "", "story": "", "bug": "", "needsSpec": "" },
+  "verification": { "check": "x", "manualCheckText": "" }
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg6, $utf8)
+  $null = Render -Force
+  if ((FormLines "epic.yml")[3] -cne 'labels: ["epic"]') { Fail "epic.yml line 4 is not the default label: $((FormLines 'epic.yml')[3])" }
+  if ((FormLines "story.yml")[3] -cne 'labels: ["story", "needs-spec"]') { Fail "story.yml line 4 is not the default labels: $((FormLines 'story.yml')[3])" }
+  if ((FormLines "bug.yml")[3] -cne 'labels: ["bug"]') { Fail "bug.yml line 4 is not the default label: $((FormLines 'bug.yml')[3])" }
+  if ((FormLines "story.yml") -cnotcontains '        - Manual check as the story describes') { Fail "story.yml has no default manual check line" }
+  if ((FormLines "story.yml") -ccontains '        - ') { Fail "story.yml has an empty manual check line" }
+
+  Write-Host "== twins (#329): invariants: only non-empty strings, newlines kept"
+  $cfg7 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "invariants": ["one\ntwo", "ends\n", null, "", 5, true, {"k": "v"}, ["x"], "  last  "]
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg7, $utf8)
+  $null = Render -Force
+  $exp7 = @('        - label: "one\ntwo"', '          required: false', '        - label: "ends\n"', '          required: false', '        - label: "  last  "', '          required: false')
+  foreach ($f in "story.yml", "bug.yml") {
+    $got = @(FormLines $f | Where-Object { $_ -cmatch '^ {8}- label: ' -or $_ -ceq '          required: false' })
+    if (($got -join "`n") -cne ($exp7 -join "`n")) { Fail "$f invariants are not the six expected lines: $($got -join ' | ')" }
+  }
+  $cfg8 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "invariants": [null, ""]
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg8, $utf8)
+  $null = Render -Force
+  $storyNulls = [System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\story.yml", $utf8)
+  $bugNulls = [System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\bug.yml", $utf8)
+  $cfg9 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"]
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg9, $utf8)
+  $null = Render -Force
+  if ([System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\story.yml", $utf8) -cne $storyNulls) { Fail "story.yml with only null and empty invariants differs from one without invariants" }
+  if ([System.IO.File]::ReadAllText("$tmp\.github\ISSUE_TEMPLATE\bug.yml", $utf8) -cne $bugNulls) { Fail "bug.yml with only null and empty invariants differs from one without invariants" }
+
+  Write-Host "== twins (#329): config keys are matched by their exact spelling"
+  $cfg10 = @'
+{
+  "github": { "owner": "acme", "repo": "widgets", "projectNumber": 1 },
+  "maintainer": { "name": "Alex" },
+  "areas": ["a"],
+  "labels": { "Epic": "big", "story": "tale" }
+}
+'@
+  [System.IO.File]::WriteAllText("$tmp\.claude\nightmill.json", $cfg10, $utf8)
+  $null = Render -Force
+  if ((FormLines "epic.yml")[3] -cne 'labels: ["epic"]') { Fail "epic.yml read the key Epic: $((FormLines 'epic.yml')[3])" }
+  if ((FormLines "story.yml")[3] -cne 'labels: ["tale", "needs-spec"]') { Fail "story.yml labels wrong: $((FormLines 'story.yml')[3])" }
+
   Write-Host "RENDER OK" -ForegroundColor Green
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

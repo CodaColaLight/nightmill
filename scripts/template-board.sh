@@ -52,7 +52,7 @@ for k in $statuses; do
   printf -v "d_$k" '%s' "$(json_get "properties.board.properties.statuses.properties.$k.default")"
 done
 json_load "$config" || exit 2
-cfg() { local def="d_${1##*.}"; json_get "board.$1" "${!def}"; } # cfg statusField | cfg statuses.review
+cfg() { local def="d_${1##*.}"; json_text "board.$1" "${!def}"; } # cfg statusField | cfg statuses.review
 f_status=$(cfg statusField)
 f_priority=$(cfg priorityField)
 f_area=$(cfg areaField)

@@ -29,7 +29,8 @@ if ($LASTEXITCODE -ne 0 -or -not $gitDir) { [Console]::Error.WriteLine("run stag
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { [Console]::Error.WriteLine("no $cfgPath (run /nightmill:init)"); exit 1 }
-$cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+$cfg = Select-ExactKeys (Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json)
 $rootRel = "../" + (Split-Path $main -Leaf) + "-wt"
 if ($cfg.worktrees -and $cfg.worktrees.root) { $rootRel = $cfg.worktrees.root }
 $root = [System.IO.Path]::GetFullPath((Join-Path $main $rootRel))

@@ -90,7 +90,8 @@ if (-not $gitOk -or -not $gitDir) { [Console]::Error.WriteLine("run history.ps1 
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { [Console]::Error.WriteLine("no $cfgPath (run /nightmill:init)"); exit 2 }
-try { $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { [Console]::Error.WriteLine("$cfgPath is not valid JSON"); exit 2 }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys (Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { [Console]::Error.WriteLine("$cfgPath is not valid JSON"); exit 2 }
 function Cfg($obj, [string[]]$path, $default) {
   foreach ($k in $path) {
     if ($null -eq $obj) { return $default }

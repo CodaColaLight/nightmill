@@ -19,7 +19,8 @@ $main = Split-Path ([string]$gitDir).Trim() -Parent
 
 $cfgPath = Join-Path $main ".claude\nightmill.json"
 if (-not (Test-Path $cfgPath)) { throw "no $cfgPath (run /nightmill:init)" }
-$cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+$cfg = Select-ExactKeys (Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json)
 $wt = $cfg.worktrees
 
 $baseBranch = "main"

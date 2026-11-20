@@ -151,8 +151,30 @@ try {
   $cl = (G $W @("show", "release/v0.2.0:CHANGELOG.md")) -join "`n"
   $expect = "## Unreleased`n`n## 0.2.0 ($today)`n`n- A new thing.`n- Another thing.`n`n## 0.1.1 (2026-11-03)`n`n- Older."
   if (-not $cl.Contains($expect)) { Fail "CHANGELOG not cut as expected: $cl" }
+  # an LF changelog comes out with no CR byte (#329): the blob is exactly as long as the LF text
+  $clFull = "# Changelog`n`n" + $expect + "`n"
+  if ((G $W @("cat-file", "-s", "release/v0.2.0:CHANGELOG.md")) -ne "$($clFull.Length)") { Fail "an LF changelog came out with a CR byte (#329)" }
   $rd = (G $W @("show", "release/v0.2.0:README.md")) -join "`n"
   if (-not $rd.Contains('Version 0.2.0. Apache License 2.0, see `LICENSE`.')) { Fail "README line not updated: $rd" }
+
+  Write-Host "== twins (#329): prepare keeps CRLF line ends in CHANGELOG.md"
+  Setup
+  CommitIn "CRLF changelog" { $t = [IO.File]::ReadAllText((Join-Path $script:W "CHANGELOG.md")) -replace "`r?`n", "`r`n"; Write-Utf8 (Join-Path $script:W "CHANGELOG.md") $t }
+  $r = Run-Release @("-Version", "0.2.0", "-NoPr")
+  if ($r.Code -ne 0) { Fail "prepare with a CRLF changelog exited with $($r.Code): $($r.Err)" }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = "git"
+  $psi.Arguments = "-C `"$($script:W)`" show release/v0.2.0:CHANGELOG.md"
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $ms = New-Object System.IO.MemoryStream
+  $p.StandardOutput.BaseStream.CopyTo($ms)
+  $p.WaitForExit()
+  $clRaw = $utf8.GetString($ms.ToArray())
+  $clWant = "# Changelog`r`n`r`n## Unreleased`r`n`r`n## 0.2.0 ($today)`r`n`r`n- A new thing.`r`n- Another thing.`r`n`r`n## 0.1.1 (2026-11-03)`r`n`r`n- Older.`r`n"
+  if ($clRaw -cne $clWant) { Fail "CRLF changelog is not cut with CRLF line ends: $($clRaw -replace "`r", '<CR>' -replace "`n", '<LF>')" }
+  if ($clRaw -cmatch "(?<!`r)`n") { Fail "CRLF changelog holds an LF that no CR precedes" }
 
   Write-Host "== publish: tags the release commit, not what came after"
   Setup

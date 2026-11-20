@@ -43,12 +43,16 @@ if (-not $root) { $root = (Get-Location).Path }
 $cfgPath = Join-Path $root ".claude/nightmill.json"
 if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) { exit 0 }
 $cfg = $null
-try { $cfg = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($cfgPath)) } catch { $cfg = $null }
+. (Join-Path $PSScriptRoot "lib\exactkeys.ps1")
+try { $cfg = Select-ExactKeys (ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($cfgPath))) } catch { $cfg = $null }
 $owner = Get-Val $cfg @("github", "owner") ""
 $number = Get-Val $cfg @("github", "projectNumber") ""
 $field = Get-Val $cfg @("board", "statusField") "Status"
 $ready = Get-Val $cfg @("board", "statuses", "ready") "Ready"
 $approved = Get-Val $cfg @("board", "statuses", "approved") "Approved"
+# an empty status name counts as not set, as in guard.sh (iteration 57, #329)
+if ($ready -eq "") { $ready = "Ready" }
+if ($approved -eq "") { $approved = "Approved" }
 $base = Get-Val $cfg @("git", "baseBranch") "main"
 if ($base -eq "") { $base = "main" }
 

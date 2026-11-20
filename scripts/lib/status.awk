@@ -415,19 +415,24 @@ BEGIN {
       if (!(s in sl_busy)) continue
       j = sl_busy[s]
       k = pick(0, "head", bbranch[j])
-      sinceage = nowl - stamp(bsince[j])
+      # a since that is not YYYY-MM-DDTHH:MM:SS: the age is not known, the Since cell is ? and the slot is
+      # flagged unless its PR is merged or closed (iteration 57, #329)
+      sinceok = (bsince[j] ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]$/)
+      sinceage = sinceok ? nowl - stamp(bsince[j]) : 0
       flag = ""
       if (k >= 0) {
         sstate = prstate(k)
         if (sstate == "merged") flag = "stale: busy, PR merged (slot --release " bslot[j] ")"
         else if (sstate == "closed") flag = "stale: busy, PR closed (slot --abandon " bslot[j] ")"
-      } else if (sinceage > grace) flag = "stale: busy, no open PR"
+      }
+      if (flag == "" && !sinceok) flag = "stale: busy, since unreadable"
+      else if (flag == "" && k < 0 && sinceage > grace) flag = "stale: busy, no open PR"
       if (sl_skill[s] == "" && sl_role[s] == "") who = "?"
       else who = (sl_skill[s] == "" ? "?" : sl_skill[s]) "/" (sl_role[s] == "" ? "?" : sl_role[s])
       rep = "-"
       if (sl_rep[s] ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]$/) rep = span(nowl - stamp(sl_rep[s]))
       R[s, 3] = sl_agent[s]; R[s, 4] = bbranch[j]; R[s, 5] = who; R[s, 6] = (sl_step[s] == "" ? "?" : sl_step[s])
-      R[s, 7] = rep; R[s, 8] = span(sinceage); R[s, 9] = prcell(k); R[s, 10] = flag
+      R[s, 7] = rep; R[s, 8] = (sinceok ? span(sinceage) : "?"); R[s, 9] = prcell(k); R[s, 10] = flag
     }
     if (porcelain) {
       for (s = 1; s <= nslots; s++) {
