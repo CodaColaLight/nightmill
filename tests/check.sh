@@ -92,6 +92,7 @@ add bash smoke-check.sh
 add bash test-lintcopy-output.sh
 add bash test-lint-pipefail.sh
 add bash test-release-resume.sh
+add bash test-release-low-defects.sh
 add bash test-json-bom.sh
 add bash test-render-quoting.sh
 add bash test-changelog-refs.sh
@@ -136,6 +137,7 @@ add ps smoke-stages.ps1
 add ps smoke-check.ps1 first
 add ps test-lintcopy-output.ps1 first
 add ps test-release-resume.ps1
+add ps test-release-low-defects.ps1
 add ps test-json-bom.ps1
 add ps test-render-quoting.ps1
 add ps test-status-controls.ps1

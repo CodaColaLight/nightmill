@@ -107,8 +107,12 @@ refuses "README without a Version line" "README.md" --version 0.2.0
 
 echo "== dry run prints the plan and changes nothing"
 setup
+# the dry run checks that gh is logged in (#321): a fake gh that is
+mkdir -p "$tmp/bin"; printf '#!/bin/sh
+exit 0
+' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
 before=$(snap)
-out=$(cd "$W" && bash scripts/release.sh --version 0.2.0 --dry-run) || fail "dry run exited non-zero"
+out=$(cd "$W" && PATH="$tmp/bin:$PATH" bash scripts/release.sh --version 0.2.0 --dry-run) || fail "dry run exited non-zero"
 for w in "release/v0.2.0" "0.1.1" "0.2.0" "$today"; do
   case "$out" in *"$w"*) ;; *) fail "dry run output lacks '$w': $out" ;; esac
 done

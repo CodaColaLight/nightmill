@@ -9,14 +9,17 @@
 #                                                  and create the GitHub Release from the changelog section;
 #                                                  each step that is already done is skipped, so a run that
 #                                                  failed half way is finished by running it again
-#   --dry-run     print what would happen, change and push nothing
+#   --dry-run     print what would happen, change and push nothing (no fetch: origin/main as last fetched;
+#                 gh must be logged in when the real run would need it)
 #   --no-pr       prepare without pushing or opening the pull request (the branch stays local)
 #   --no-release  publish without creating the GitHub Release (the tag is still pushed)
 #
-# Exit codes: 0 done, 1 refused (one line "refused: <reason>" on stderr), 2 usage error or a missing tool.
-# Needs git, and gh unless --dry-run, --no-pr or --no-release say otherwise. No jq. The repository is the one
-# this script lives in.
+# Exit codes: 0 done, 1 refused (one line "refused: <reason>" on stderr), 2 usage error, a missing tool or an
+# unexpected error. Needs git, and gh unless --no-pr or --no-release say otherwise. No jq. The repository is
+# the one this script lives in.
 set -euo pipefail
+unset CDPATH
+export GH_PROMPT_DISABLED=1
 
 usage() {
   cat >&2 <<'EOF'
@@ -40,11 +43,39 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$version" ] || usage
 
-refuse() { echo "refused: $*" >&2; exit 1; }
-need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1" >&2; exit 2; }; }
+# expected=1 marks an exit the script chose (refused, usage, missing tool); any other non-zero exit is an
+# unexpected error: on_exit removes the temporary files, rolls back a prepare that has started and exits 2.
+expected=0; phase=""; tmpfiles=()
+refuse() { echo "refused: $*" >&2; expected=1; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1" >&2; expected=1; exit 2; }; }
+rollback() {
+  git reset -q --hard HEAD >/dev/null 2>&1 || true
+  git switch -q main >/dev/null 2>&1 || true
+  git branch -D "$rbranch" >/dev/null 2>&1 || true
+  if [ "$phase" = pushed ]; then git push -q origin --delete "$rbranch" >/dev/null 2>&1 || true; fi
+}
+on_exit() {
+  local rc=$?
+  [ ${#tmpfiles[@]} = 0 ] || rm -f "${tmpfiles[@]}"
+  [ "$rc" != 0 ] || return 0
+  [ -z "$phase" ] || rollback
+  if [ "$expected" = 0 ]; then
+    echo "error: a step failed (exit code $rc)${phase:+; release/v$version was rolled back}" >&2
+    exit 2
+  fi
+}
+trap on_exit EXIT
+# newtmp VAR: a new temporary file in VAR, removed by on_exit
+newtmp() { local f; f=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX"); tmpfiles+=("$f"); printf -v "$1" '%s' "$f"; }
+
+[[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+  || refuse "version must be X.Y.Z with digits only and no leading zeros, got '$version'"
 need git
-if [ "$dry" = 0 ]; then
-  if [ "$publish" = 1 ]; then [ "$norel" = 1 ] || need gh; else [ "$nopr" = 1 ] || need gh; fi
+ghneeded=1
+if [ "$publish" = 1 ]; then [ "$norel" = 0 ] || ghneeded=0; else [ "$nopr" = 0 ] || ghneeded=0; fi
+if [ "$ghneeded" = 1 ]; then
+  need gh
+  [ "$dry" = 0 ] || gh auth status >/dev/null 2>&1 || refuse "gh is not logged in (gh auth login)"
 fi
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -122,9 +153,8 @@ remote_tag_commit() {
 
 # --- checks both modes make --------------------------------------------------------------------------------
 
-[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "version must be X.Y.Z with digits only, got '$version'"
 [ -z "$(git status --porcelain)" ] || refuse "working tree has uncommitted changes"
-git fetch -q --no-tags origin main || refuse "cannot fetch origin"
+[ "$dry" = 1 ] || git fetch -q --no-tags origin main || refuse "cannot fetch origin"
 
 # --- publish ---------------------------------------------------------------------------------------------
 
@@ -168,11 +198,10 @@ if [ "$publish" = 1 ]; then
   if [ "$norel" = 0 ] && gh release view "$tag" >/dev/null 2>&1; then
     echo "the GitHub Release $tag already exists"
   elif [ "$norel" = 0 ]; then
-    tmpc=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX"); notes=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
+    newtmp tmpc; newtmp notes
     gshow origin/main:CHANGELOG.md > "$tmpc"
     section "$version" "$tmpc" > "$notes"
     gh release create "$tag" --title "nightmill $version" --notes-file "$notes" --verify-tag --latest
-    rm -f "$tmpc" "$notes"
   fi
   exit 0
 fi
@@ -209,11 +238,10 @@ if [ "$dry" = 1 ]; then
   exit 0
 fi
 
-rollback() { git reset -q --hard HEAD >/dev/null 2>&1 || true; git switch -q main >/dev/null 2>&1 || true; git branch -D "$rbranch" >/dev/null 2>&1 || true; }
+newtmp tmpf
 git switch -q -c "$rbranch"
-trap rollback ERR
+phase=branch
 
-tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
 sed -E "s/^([[:space:]]*\"version\":[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")/\1$version\2/" "$PJ" > "$tmpf"
 cat "$tmpf" > "$PJ"
 # The line ends of release.ps1 (iteration 57, #329): every line ends with CRLF when the file holds a CRLF, else
@@ -237,25 +265,25 @@ LC_ALL=C awk -v BINMODE=3 -v v="$version" -v d="$date" -v lastnl="$lastnl" '
 cat "$tmpf" > CHANGELOG.md
 sed -E "s/^Version [0-9]+\.[0-9]+\.[0-9]+\./Version $version./" README.md > "$tmpf"
 cat "$tmpf" > README.md
-rm -f "$tmpf"
 
 git add "$PJ" CHANGELOG.md README.md
 git commit -q -m "Release $version"
-trap - ERR
 
 if [ "$nopr" = 1 ]; then
   git switch -q main
+  phase=""
   echo "prepared branch $rbranch (not pushed: --no-pr)"
   exit 0
 fi
 
-body=$(mktemp "${TMPDIR:-/tmp}/nightmill-release.XXXXXX")
+newtmp body
 {
   section "$version" CHANGELOG.md
   echo
   echo "After this merges, run \`scripts/release.sh --version $version --publish\` (or \`scripts/release.ps1 -Version $version -Publish\`) to tag it and create the GitHub Release."
 } > "$body"
 git push -q -u origin "$rbranch"
+phase=pushed
 gh pr create --base main --head "$rbranch" --title "Release $version" --body-file "$body"
-rm -f "$body"
+phase=""
 git switch -q main

@@ -127,8 +127,14 @@ try {
 
   Write-Host "== dry run prints the plan and changes nothing"
   Setup
+  # the dry run checks that gh is logged in (#321): a fake gh that is
+  $bin = Join-Path $tmp "bin"
+  New-Item -ItemType Directory -Path $bin -Force | Out-Null
+  Write-Utf8 (Join-Path $bin "gh.cmd") "@echo off`r`nexit /b 0`r`n"
+  $savedPath = $env:PATH; $env:PATH = "$bin;$env:PATH"
   $before = Snap
   $r = Run-Release @("-Version", "0.2.0", "-DryRun")
+  $env:PATH = $savedPath
   if ($r.Code -ne 0) { Fail "dry run exited with $($r.Code): $($r.Err)" }
   foreach ($needle in "release/v0.2.0", "0.1.1", "0.2.0", $today) { if ($r.Out -notlike "*$needle*") { Fail "dry run output lacks '$needle': $($r.Out)" } }
   if ($before -ne (Snap)) { Fail "dry run changed the repository" }

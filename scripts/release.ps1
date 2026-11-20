@@ -8,12 +8,13 @@
 #                                                  and create the GitHub Release from the changelog section;
 #                                                  each step that is already done is skipped, so a run that
 #                                                  failed half way is finished by running it again
-#   -DryRun     print what would happen, change and push nothing
+#   -DryRun     print what would happen, change and push nothing (no fetch: origin/main as last fetched;
+#               gh must be logged in when the real run would need it)
 #   -NoPr       prepare without pushing or opening the pull request (the branch stays local)
 #   -NoRelease  publish without creating the GitHub Release (the tag is still pushed)
 #
 # Exit codes: 0 done, 1 refused (one line "refused: <reason>" on stderr), 2 usage error, a missing tool or an
-# unexpected error. Needs git, and gh unless -DryRun, -NoPr or -NoRelease say otherwise. The repository is the
+# unexpected error. Needs git, and gh unless -NoPr or -NoRelease say otherwise. The repository is the
 # one this script lives in. Same behaviour as release.sh.
 param(
   [string]$Version,
@@ -23,6 +24,7 @@ param(
   [switch]$NoRelease
 )
 $ErrorActionPreference = "Stop"
+$env:GH_PROMPT_DISABLED = "1"
 $utf8 = New-Object System.Text.UTF8Encoding $false
 
 function Refuse([string]$m) { [Console]::Error.WriteLine("refused: $m"); exit 1 }
@@ -36,9 +38,19 @@ function Need([string]$tool) {
 }
 
 if (-not $Version) { Usage }
+if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { Refuse "version must be X.Y.Z with digits only and no leading zeros, got '$Version'" }
 Need git
-if (-not $DryRun) {
-  if ($Publish) { if (-not $NoRelease) { Need gh } } else { if (-not $NoPr) { Need gh } }
+$ghNeeded = if ($Publish) { -not $NoRelease } else { -not $NoPr }
+if ($ghNeeded) {
+  Need gh
+  if ($DryRun) {
+    # Continue for this call only: under Stop a redirected native stderr becomes an exception
+    $ErrorActionPreference = "Continue"
+    $null = & gh auth status 2>&1
+    $ghrc = $LASTEXITCODE
+    $ErrorActionPreference = "Stop"
+    if ($ghrc -ne 0) { Refuse "gh is not logged in (gh auth login)" }
+  }
 }
 
 $root = Split-Path $PSScriptRoot -Parent
@@ -132,10 +144,11 @@ try {
 
   $null = G rev-parse --git-dir
   if ($script:rc -ne 0) { Refuse "$root is not a git repository" }
-  if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { Refuse "version must be X.Y.Z with digits only, got '$Version'" }
   if ((Text (G status --porcelain)).Trim() -ne "") { Refuse "working tree has uncommitted changes" }
-  $null = G fetch -q --no-tags origin main
-  if ($script:rc -ne 0) { Refuse "cannot fetch origin" }
+  if (-not $DryRun) {
+    $null = G fetch -q --no-tags origin main
+    if ($script:rc -ne 0) { Refuse "cannot fetch origin" }
+  }
 
   # --- publish -------------------------------------------------------------------------------------------
 
@@ -190,10 +203,11 @@ try {
     }
     if (-not $NoRelease -and -not $haveRelease) {
       $notes = [IO.Path]::GetTempFileName()
-      [IO.File]::WriteAllText($notes, ((Get-Section $ocl $Version) + "`n"), $utf8)
-      & gh release create $tag --title "nightmill $Version" --notes-file $notes --verify-tag --latest
-      $ghrc = $LASTEXITCODE
-      Remove-Item $notes -ErrorAction SilentlyContinue
+      try {
+        [IO.File]::WriteAllText($notes, ((Get-Section $ocl $Version) + "`n"), $utf8)
+        & gh release create $tag --title "nightmill $Version" --notes-file $notes --verify-tag --latest
+        $ghrc = $LASTEXITCODE
+      } finally { Remove-Item $notes -ErrorAction SilentlyContinue }
       if ($ghrc -ne 0) { throw "gh release create failed" }
     }
     exit 0
@@ -267,15 +281,25 @@ try {
     exit 0
   }
 
+  # a failed push or gh pr create rolls the release back (here and on origin), so a rerun can start again
   $body = [IO.Path]::GetTempFileName()
-  $text = (Get-Section ([IO.File]::ReadAllText((Join-Path $root "CHANGELOG.md"), $utf8)) $Version) + "`n`nAfter this merges, run ``scripts/release.ps1 -Version $Version -Publish`` (or ``scripts/release.sh --version $Version --publish``) to tag it and create the GitHub Release.`n"
-  [IO.File]::WriteAllText($body, $text, $utf8)
-  $null = G push -q -u origin $rbranch
-  if ($script:rc -ne 0) { throw "git push failed" }
-  & gh pr create --base main --head $rbranch --title "Release $Version" --body-file $body
-  $ghrc = $LASTEXITCODE
-  Remove-Item $body -ErrorAction SilentlyContinue
-  if ($ghrc -ne 0) { throw "gh pr create failed" }
+  $pushed = $false
+  try {
+    $text = (Get-Section ([IO.File]::ReadAllText((Join-Path $root "CHANGELOG.md"), $utf8)) $Version) + "`n`nAfter this merges, run ``scripts/release.ps1 -Version $Version -Publish`` (or ``scripts/release.sh --version $Version --publish``) to tag it and create the GitHub Release.`n"
+    [IO.File]::WriteAllText($body, $text, $utf8)
+    $null = G push -q -u origin $rbranch
+    if ($script:rc -ne 0) { throw "git push failed" }
+    $pushed = $true
+    & gh pr create --base main --head $rbranch --title "Release $Version" --body-file $body
+    if ($LASTEXITCODE -ne 0) { throw "gh pr create failed" }
+  }
+  catch {
+    $null = G switch -q main
+    $null = G branch -D $rbranch
+    if ($pushed) { $null = G push -q origin --delete $rbranch }
+    throw ($_.Exception.Message + "; release/v$Version was rolled back")
+  }
+  finally { Remove-Item $body -ErrorAction SilentlyContinue }
   $null = G switch -q main
 }
 catch {

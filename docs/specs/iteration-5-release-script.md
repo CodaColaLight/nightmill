@@ -37,13 +37,15 @@ a version whose manifest, changelog, README and tag disagree.
 
 Files are read and written as UTF-8 without a BOM, and line endings stay as they are. The date is the current
 UTC date, `yyyy-MM-dd`. Exit code 0 on success; 1 with one line `refused: <reason>` on standard error for every
-refusal below; 2 for a usage error or a missing tool (`git`, and `gh` unless `--no-pr` or `--no-release`).
+refusal below; 2 for a usage error, a missing tool (`git`, and `gh` unless `--no-pr` or `--no-release`) or
+an unexpected error.
 
 ### Prepare (`--version X.Y.Z`)
 
 Refuses, in this order, with the reason named, when:
 
-1. the version is not three numbers separated by dots (`X.Y.Z`, digits only);
+1. the version is not three numbers separated by dots (`X.Y.Z`, digits only, no leading zeros: `0.03.0` is
+   refused);
 2. the working tree has uncommitted changes (including untracked files);
 3. the current branch is not `main`, or `main` is not equal to `origin/main` after a fetch;
 4. the version is not greater than the one in `plugin.json` (compared number by number);
@@ -63,9 +65,13 @@ Otherwise, in a new branch `release/vX.Y.Z` made from `main`, it makes exactly t
 Then, unless `--no-pr`: it pushes the branch and runs `gh pr create` with the title `Release X.Y.Z`, the new
 changelog section as the body and a last line telling the maintainer to run the script with `--publish` after
 the merge. It does not enable auto-merge, because releasing is the maintainer's act. It prints the pull request
-URL and switches back to `main`.
+URL and switches back to `main`. When the push or `gh pr create` fails, the release branch is removed again,
+locally and on `origin`, and the script is back on `main`, so a rerun starts from the beginning (#321). Any
+step that fails unexpectedly exits with 2; the temporary files are removed either way. `gh` runs with
+`GH_PROMPT_DISABLED` set, so it never prompts.
 
-With `--dry-run` it performs the refusal checks, prints the plan (the three edits as before and after
+With `--dry-run` it performs the refusal checks without a fetch (against `origin/main` as last fetched),
+checks that `gh` is logged in (`gh auth status`) when the real run would need it, prints the plan (the three edits as before and after
 lines, the branch name, the pull request title) and stops. Nothing is written, created or pushed.
 
 ### Publish (`--version X.Y.Z --publish`)
