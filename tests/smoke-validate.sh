@@ -122,9 +122,10 @@ check "roles not an object" "$roles_arr" 1 "" "error: roles: expected object, go
 check "ranking not an array" "$(edit "$ex" '"ranking": ["haiku", "sonnet", "opus", "fable"]' '"ranking": "opus"')" 1 "" "error: models.ranking: expected array, got string"
 check "ranking empty" "$(edit "$ex" '"ranking": ["haiku", "sonnet", "opus", "fable"]' '"ranking": []')" 1 "" "error: models.ranking: needs at least 1 items, got 0"
 check "ranking entry not a string" "$(edit "$ex" '"ranking": ["haiku", "sonnet", ' '"ranking": ["haiku", 3, ')" 1 "" "error: models.ranking[1]: expected string, got integer"
-check "fix rounds negative" "$(edit "$ex" '"maxFixRounds": 2' '"maxFixRounds": -1')" 1 "" "error: review.maxFixRounds: must be at least 0, got -1"
-check "fix rounds a string" "$(edit "$ex" '"maxFixRounds": 2' '"maxFixRounds": "two"')" 1 "" "error: review.maxFixRounds: expected integer, got string"
-check "zero fix rounds" "$(edit "$ex" '"maxFixRounds": 2' '"maxFixRounds": 0')" 0 "" "0 errors, 0 warnings"
+check "fix rounds negative" "$(edit "$ex" '"maxFixRounds": 3' '"maxFixRounds": -1')" 1 "" "error: review.maxFixRounds: must be at least 0, got -1"
+check "fix rounds a string" "$(edit "$ex" '"maxFixRounds": 3' '"maxFixRounds": "two"')" 1 "" "error: review.maxFixRounds: expected integer, got string"
+check "zero fix rounds" "$(edit "$ex" '"maxFixRounds": 3' '"maxFixRounds": 0')" 0 "" "0 errors, 0 warnings"
+check "two fix rounds" "$(edit "$ex" '"maxFixRounds": 3' '"maxFixRounds": 2')" 0 "" "0 errors, 0 warnings"
 rolecase=$(edit "$ex" '"codeReviewer"' '"codereviewer"')
 check "role key wrong case" "$rolecase" 0 "" 'warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)'
 check "role key wrong case strict" "$rolecase" 1 "--strict" 'warning: roles.codereviewer: unknown key (did you mean "codeReviewer"?)'

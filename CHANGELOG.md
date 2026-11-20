@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Iteration 58 (#332): when the review rounds run out and every open blocking finding names a concrete fix,
+  /spec, /next and /fix keep today's hand-over (the pull request open, auto-merge off, the findings listed) and
+  then propose one extra review round in their final message; it runs, with the same producer and reviewer, only
+  when the maintainer answers `extra round`, at most once per pull request, and the Review section marks it with
+  `Extra rounds used`. A finding that needs a decision (a choice between designs, a story trigger, a conflict with
+  a decision or a spec, a test the tester stands by, no fix named) ends the run as before and the message names the
+  decision; a run nobody answers ends as before. The default of review.maxFixRounds is 3 (was 2); a configuration
+  that sets it keeps its value. No new key, no marker change.
 - Iteration 57 (#329): the bash and PowerShell twins give the same result where they differed. An empty label,
   status name or verification.manualCheckText takes its default in both shells; the issue forms render only
   invariants that are non-empty strings, with their newlines kept; slot --release frees the slot when the local branch

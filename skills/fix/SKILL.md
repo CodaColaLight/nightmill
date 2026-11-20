@@ -180,7 +180,7 @@ reports nothing. In batch mode each bug reports to its own slot.
 | just before each launch of the code reviewer | `codeReviewer` | `code-review` |
 | just before the tester's dispute launch for fix round k ("The tester's files", rule 5) | `tester` | `dispute-<k>` |
 | just before the tester's launch for the test findings of fix round k ("The code review", step 4) | `tester` | `test-finding-<k>` |
-| just before the launch of fix round k | `fixer` | `fix-round-<k>` |
+| just before the launch of fix round k (in "The extra review round" `<k>` is `review.maxFixRounds + 1`) | `fixer` | `fix-round-<k>` |
 | the manual check (step 5), when it applies | `session` | `manual-check` |
 | opening the pull request (step 6) | `session` | `pull-request` |
 | before each watch call (step 7) | `session` | `watch-checks` |
@@ -609,7 +609,10 @@ format, the rounds and the pairing rule are in **Findings and fix rounds** in th
      code finding): launch no fixer and review no more; this review is the last.
 
    Round k is one fix round when the tester or the fixer was launched in it, whatever the number and kinds of
-   findings. No valid block, or an error: stop with
+   findings. With blocking findings and no round left (or the rounds ended by the tester's `stands:`): **When the
+   rounds are used up** in **Findings and fix rounds** of the `workflow` skill applies to the final message of one bug,
+   once the pull request is open (step 6); in "Batch mode" only to the `PR` cell of the final table. No valid block, or
+   an error: stop with
    `Stopped: the code review could not be had: <the reason>. Nothing was opened.` In "Batch mode" this is a stop of
    that bug, handled like a `failed` fixer (skipped), except for a model that cannot be used, which ends the run. A
    `Stopped:` line of the tester's launch for test findings is a skip of that bug in the same way; "Commit what exists"
@@ -674,9 +677,40 @@ format, the rounds and the pairing rule are in **Findings and fix rounds** in th
    do **not** enable auto-merge and say, where step 6 says why auto-merge was withheld,
    `Auto-merge is not enabled: blocking review findings are still open (see Review).`
    Otherwise the rule of step 6 decides, unchanged. Your final message to the maintainer says whether auto-merge is
-   on and, if not, that blocking findings are open.
+   on and, if not, that blocking findings are open. With one bug, when the last review of this run has a blocking
+   finding, the final message is the one of **When the rounds are used up** in the `workflow` skill: the fixable case
+   with its proposal, or the decision case; it never offers a merge. After an extra round the section also has
+   `- Extra rounds used: 1 of 1, accepted by the maintainer` and the `fixed in the extra round:` lines, as the
+   `workflow` skill gives them.
 
 A `partial` result is reviewed like a complete one.
+
+## The extra review round
+
+One bug only (`/fix all` proposes none). Run only when the maintainer answered `extra round` to the proposal of the
+final message in the same session (**When the rounds are used up** in the `workflow` skill: the rule, the bound of one
+per pull request, the messages). It is fix round `review.maxFixRounds + 1` (`<k>`) and follows "The code review" step 4
+for round `<k>` unchanged: the test findings first to the `tester` (report `test-finding-<k>`; a test finding answered
+`stands:` not again), then a fresh fixer (report `fix-round-<k>`) with the code findings, the tester's files guarded by
+rules 3 and 4 of "The tester's files", then one fresh review (report `code-review`; the pairing is not checked again). A
+dispute the fixer raises here is not sent to the tester (no round is left): it stays open under `## Disputed tests`. The
+count of agents, the room on the machine and the gate apply at every launch and before the push.
+
+1. **The checkout.** The slot that holds the branch (held until the merge). Without slots, the session's checkout on the
+   branch, its tree clean (`git status --porcelain --untracked-files=all` prints nothing), else the round does not
+   finish with the reason `the checkout is not clean`.
+2. **The push**, after the review, whether or not it has a blocking finding: `git -C <slot path> push -u origin <branch>`
+   (in the session's checkout without `-C`), never forced.
+3. **The body.** Build it again as step 6 builds it, from what the run holds, now with the extra round in `## Review`,
+   the `How verified` lines of round `<k>` and `## Disputed tests` as the rules give them, write it to a file and set it
+   with `gh pr edit <pr> --body-file <file>`. The blocking-findings line is in the body only when the extra review has a
+   blocking finding.
+4. **Auto-merge.** The auto-merge part of step 6 runs again with its rule and its two merge-step checks unchanged. With
+   auto-merge on, watch the checks (step 7) as after the first opening. The manual check is not run again.
+5. **The final message**: one of the after-the-extra-round messages of the `workflow` skill; no new proposal.
+
+A round that does not finish prints the does-not-finish line of the `workflow` skill, reports `stopped` to the slot, and
+reverts nothing; the status stays Review.
 
 ## Batch mode: `/fix all`
 
@@ -684,6 +718,13 @@ Fixes every Ready bug without asking the maintainer anything, several at the sam
 free slots, the live agent limit and the room on the machine allow, and ends only when every Ready bug has a pull
 request, was skipped with a reason, or is listed as not started. Steps 1 to 6 are the same for each bug, with these
 differences (step 7 does not run: `/fix all` watches no pull request):
+
+- **It proposes no extra round.** It asks nothing, so it proposes no extra round (**When the rounds are used up** in
+  the `workflow` skill). The final table's `PR` cell of a pull request whose last review has a blocking finding names
+  the case instead of `auto-merge off: <why>` (the columns and their order do not change):
+  `#<pr>, auto-merge off: blocking review findings are still open, fixable: a revision is the next step` or
+  `#<pr>, auto-merge off: blocking review findings are still open, a decision is needed: <file>:<line> (<the reason>)`
+  (several joined by `; `).
 
 - **In parallel, one slot per bug.** The session holds four lists: **waiting** (in order), **in flight** (bug, slot,
   next step), **ended** (pull request, skipped, stopped) and **not started**. It runs one pass of the loop below at the
@@ -815,6 +856,8 @@ differences (step 7 does not run: `/fix all` watches no pull request):
   |---|---|---|---|---|---|
   | #<n> <title> | pull request | #<pr>, auto-merge on | <s> freed | <the fixer's Cause line> | check green; manual check done |
   | #<n> <title> | pull request | #<pr>, auto-merge off: <why> | <s> held: <the check of decision 2 that failed> | <Cause> | <...> |
+  | #<n> <title> | pull request | #<pr>, auto-merge off: blocking review findings are still open, fixable: a revision is the next step | <s> freed | <Cause> | <...> |
+  | #<n> <title> | pull request | #<pr>, auto-merge off: blocking review findings are still open, a decision is needed: <file>:<line> (<the reason>) | <s> freed | <Cause> | <...> |
   | #<n> <title> | skipped | - | <s> held: uncommitted files | not reproduced: <the reason> | - |
   | #<n> <title> | skipped | - | <s> held: local commits, not pushed | <why it was skipped> | <...> |
   | #<n> <title> | skipped | - | - | needs a story | - |

@@ -321,7 +321,7 @@ done
 p=properties.review.properties.maxFixRounds
 [ "$(json_get "$p.type")" = integer ] || { echo "FAIL: schema: review.maxFixRounds is not an integer"; fail=1; }
 [ "$(json_get "$p.minimum")" = 0 ] || { echo "FAIL: schema: review.maxFixRounds minimum is not 0"; fail=1; }
-[ "$(json_get "$p.default")" = 2 ] || { echo "FAIL: schema: review.maxFixRounds default is not 2"; fail=1; }
+[ "$(json_get "$p.default")" = 3 ] || { echo "FAIL: schema: review.maxFixRounds default is not 3"; fail=1; }
 [ -n "$(json_get "$p.description")" ] || { echo "FAIL: schema: review.maxFixRounds has no description"; fail=1; }
 for f in templates/nightmill.example.json .claude/nightmill.json; do
   json_load "$f"
@@ -341,7 +341,7 @@ for f in templates/nightmill.example.json .claude/nightmill.json; do
       j=$((j + 1))
     done
     [ "$(json_len models.ranking)" = 4 ] || { echo "FAIL: $f: models.ranking is not the schema default"; fail=1; }
-    [ "$(json_get review.maxFixRounds)" = 2 ] || { echo "FAIL: $f: review.maxFixRounds is not the schema default 2"; fail=1; }
+    [ "$(json_get review.maxFixRounds)" = 3 ] || { echo "FAIL: $f: review.maxFixRounds is not the schema default 3"; fail=1; }
   fi
 done
 for pair in $role_defaults; do
@@ -1731,6 +1731,11 @@ for f in scripts/*.sh scripts/lib/* tests/*.sh; do
     echo "FAIL: $f uses jq outside a comment; read JSON with scripts/lib/json.sh"; fail=1
   fi
 done
+
+echo "== an extra review round is proposed"
+# Iteration 58 (#332): when the review rounds run out on fixable findings, /spec, /next and /fix propose one extra
+# round; review.maxFixRounds defaults to 3. The pins live in tests/test-extra-round.sh.
+bash tests/test-extra-round.sh "$PWD" || fail=1
 
 echo "== shell"
 for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do

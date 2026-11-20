@@ -1,6 +1,6 @@
 # Iteration 58: when the review rounds run out on fixable findings, the skills propose one extra round
 
-Status: draft, awaiting approval (#332)
+Status: delivered in iteration 58 (PR #335)
 
 Story #332, epic #163 (closing the gaps to comparable tools). Today, when `review.maxFixRounds` fix rounds are used up
 and the last review still has a blocking finding, `/spec`, `/next` and `/fix` open the pull request with the findings
