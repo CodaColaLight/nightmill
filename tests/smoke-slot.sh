@@ -2292,7 +2292,7 @@ for content in '{ "slot": 2, "branch": ' null; do
   in_repo tw3 --status
   [ "$rc" = 0 ] || fail "twins marker ($content): --status exited $rc: $out / $err"
   [ -z "$err" ] || fail "twins marker ($content): --status wrote on standard error: $err"
-  printf '%s\n' "$out" | grep -qxF "$(printf 'slot 2  %-15s busy: (the marker is not a JSON object)' 'not created yet')" || fail "twins marker ($content): the --status line of slot 2: $out"
+  grep -qxF "$(printf 'slot 2  %-15s busy: (the marker is not a JSON object)' 'not created yet')" <<<"$out" || fail "twins marker ($content): the --status line of slot 2: $out"
   [ "$(printf '%s\n' "$out" | grep '^slot 1 ')" = "$human1" ] || fail "twins marker ($content): the --status line of slot 1 changed: $out"
   [ -f "$m3" ] || fail "twins marker ($content): the marker was removed"
 done
