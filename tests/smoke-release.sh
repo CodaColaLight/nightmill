@@ -107,8 +107,12 @@ refuses "README without a Version line" "README.md" --version 0.2.0
 
 echo "== dry run prints the plan and changes nothing"
 setup
+# the dry run checks that gh is logged in (#321): a fake gh that is
+mkdir -p "$tmp/bin"; printf '#!/bin/sh
+exit 0
+' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
 before=$(snap)
-out=$(cd "$W" && bash scripts/release.sh --version 0.2.0 --dry-run) || fail "dry run exited non-zero"
+out=$(cd "$W" && PATH="$tmp/bin:$PATH" bash scripts/release.sh --version 0.2.0 --dry-run) || fail "dry run exited non-zero"
 for w in "release/v0.2.0" "0.1.1" "0.2.0" "$today"; do
   case "$out" in *"$w"*) ;; *) fail "dry run output lacks '$w': $out" ;; esac
 done
@@ -172,6 +176,14 @@ rm -f "$O/hooks/pre-receive"
 [ "$(git -C "$O" rev-parse 'v0.2.0^{commit}')" = "$release_commit" ] || fail "the rerun did not push v0.2.0 at the release commit"
 git -C "$W" tag -d v0.2.0 >/dev/null; git -C "$W" tag -a v0.2.0 -m x "$release_commit^"
 refuses "tag at another commit" "tag v0.2.0 already exists at another commit" --version 0.2.0 --publish --no-release
+
+echo "== publish: origin's tags cannot be listed: exit 1 and one refused: line (#321)"
+git -C "$W" remote set-url origin "$tmp/nowhere.git"
+set +e; err=$(cd "$W" && bash scripts/release.sh --version 0.2.0 --publish --no-release --dry-run 2>&1 >/dev/null); rc=$?; set -e
+[ "$rc" = 1 ] || fail "unlistable tags: expected exit code 1, got $rc: $err"
+case "$err" in *"refused: cannot list the tags on origin"*) ;; *) fail "unlistable tags: wrong reason: $err" ;; esac
+[ "$(printf '%s\n' "$err" | grep -c '^refused: ')" = 1 ] || fail "unlistable tags: not exactly one refused: line: $err"
+case "$err" in *"error: "*) fail "unlistable tags: an error line besides the refusal: $err" ;; esac
 
 echo "== the lint notices versions that disagree"
 cp_dir="$tmp/repocopy"; mkdir -p "$cp_dir"
