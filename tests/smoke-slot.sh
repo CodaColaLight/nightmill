@@ -1113,6 +1113,7 @@ fetch unclaimed
 checkout unclaimed" ] || fail "claim 6: the probe cannot tell a claim from a finished marker; the log is: $(tr '\n' '|' < "$tmp/spy.log")"
   git -C "$tmp/work" config --unset core.hooksPath
   git -C "$tmp/work" config --unset remote.origin.uploadpack
+  git -C "$tmp/wt/slot-4" switch -q feat/c6   # --abandon refuses a slot on another branch than its marker (bug 322)
   WORKER_SLOTS=4 bash "$S" --abandon 4 >/dev/null
   git -C "$tmp/work" branch -D feat/c6 feat/c6b >/dev/null
 }

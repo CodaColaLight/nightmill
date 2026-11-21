@@ -55,6 +55,9 @@
 # also when the local branch cannot be deleted. A marker that is not a JSON object is a busy slot in --status (the
 # branch and the other fields empty; --porcelain writes "slot N: the marker is not a JSON object" on standard
 # error), exit 0. Same behaviour as slot.ps1.
+# Checks (bug 322): --release frees a slot only for a merged PR whose last commit is the tip of the local branch, as
+# the reap; --release and --abandon (of a finished take) refuse a slot whose worktree is on another branch;
+# --status creates nothing; a git older than 2.31 is named; gh runs with GH_PROMPT_DISABLED. Same behaviour as slot.ps1.
 set -euo pipefail
 
 usage() {
@@ -97,7 +100,16 @@ fi
 . "$(dirname "${BASH_SOURCE[0]}")/lib/ledger.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/lib/baseconfig.sh"
 
-gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "run slot.sh from inside a git checkout of the project" >&2; exit 1; }
+if ! gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  # --path-format came with git 2.31: an older git is named, not taken for a missing checkout (bug 322)
+  gv=$(git --version 2>/dev/null) || gv=""
+  if [[ "$gv" =~ ([0-9]+)\.([0-9]+) ]] && { [ "${BASH_REMATCH[1]}" -lt 2 ] || { [ "${BASH_REMATCH[1]}" = 2 ] && [ "${BASH_REMATCH[2]}" -lt 31 ]; }; }; then
+    echo "slot.sh needs git 2.31 or newer; this is ${gv#git version }" >&2; exit 1
+  fi
+  echo "run slot.sh from inside a git checkout of the project" >&2; exit 1
+fi
+# gh never asks a question: --reap, --take and --release run unattended (bug 322)
+export GH_PROMPT_DISABLED=1
 main=$(dirname "$gitdir")
 # The configuration is the one on the base branch (iteration 48, lib/baseconfig.sh): origin/HEAD, then git.baseBranch;
 # the working tree's file only without a remote-tracking branch or before the base branch has one.
@@ -121,8 +133,14 @@ q() { json_get "$1"; }
 base_branch=$(q git.baseBranch); base_branch=${base_branch:-main}
 [ -n "$base" ] || base="origin/$base_branch"
 root_rel=$(q worktrees.root); root_rel=${root_rel:-"../$(basename "$main")-wt"}
-mkdir -p "$main/$root_rel"
-root=$(cd "$main/$root_rel" && pwd)
+if [ "$status" = 1 ] && [ ! -d "$main/$root_rel" ]; then
+  # --status only reads (bug 322): a missing root is not created; its path is shown from its parent
+  root_up=$(cd "$(dirname "$main/$root_rel")" 2>/dev/null && pwd) || root_up=$(dirname "$main/$root_rel")
+  root="$root_up/$(basename "$main/$root_rel")"
+else
+  mkdir -p "$main/$root_rel"
+  root=$(cd "$main/$root_rel" && pwd)
+fi
 state="$root/.slots"
 ledger="$state/ledger.tsv"
 # record <kind> <slot> <branch> <name> <skill> <role> <pr> <from> <to> <issues>: one line of the record, stamped now
@@ -292,6 +310,25 @@ sha256() {
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
 
+# pr_at_tip FLAT TIP: the first merged PR of gh's flat JSON, in the order gh printed them, whose head commit is TIP
+# (the tip of the local branch), as PREFIX TAB number (PREFIX for pr_times); empty when none
+pr_at_tip() {
+  printf '%s\n' "$1" | LC_ALL=C awk -F '\t' -v tip="$2" '
+    $1 ~ /^\[[0-9]+\]\.number$/ { k = $1; sub(/\]\.number$/, "", k); num[k] = $3 }
+    $1 ~ /^\[[0-9]+\]\.headRefOid$/ { k = $1; sub(/\]\.headRefOid$/, "", k); oid[k] = $3; order[++cnt] = k }
+    END { for (i = 1; i <= cnt; i++) if (oid[order[i]] == tip) { print order[i] "]\t" num[order[i]]; exit } }'
+}
+# on_branch N DIR BRANCH: the slot's worktree is on the marker's branch or detached (it holds no branch); on another
+# branch one line on standard error and return 1 (bug 322: --release and --abandon never free a slot that holds
+# another branch)
+on_branch() {
+  local cur
+  cur=$(git -C "$2" symbolic-ref -q --short HEAD 2>/dev/null) || cur=""
+  { [ -z "$cur" ] || [ "$cur" = "$3" ]; } && return 0
+  echo "slot $1 is on $cur, not on its branch $3 (switch it back first: git -C '$2' switch $3)" >&2
+  return 1
+}
+
 freed=0
 # reap_all: free every busy slot whose PR has merged (see the header); prints one line per freed slot
 reap_all() {
@@ -321,11 +358,7 @@ reap_all() {
       rm -f "$tmpf" "$errf"; continue
     fi
     rm -f "$tmpf" "$errf"
-    # the first merged PR, in the order gh printed them, whose head commit is the tip of the local branch
-    pr=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' -v tip="$tip" '
-      $1 ~ /^\[[0-9]+\]\.number$/ { k = $1; sub(/\]\.number$/, "", k); num[k] = $3 }
-      $1 ~ /^\[[0-9]+\]\.headRefOid$/ { k = $1; sub(/\]\.headRefOid$/, "", k); oid[k] = $3; order[++cnt] = k }
-      END { for (i = 1; i <= cnt; i++) if (oid[order[i]] == tip) { print order[i] "]\t" num[order[i]]; exit } }')
+    pr=$(pr_at_tip "$flat" "$tip")
     [ -n "$pr" ] || continue
     prkey=${pr%%$'\t'*}; pr=${pr#*$'\t'}
     if [ "$fetched" = 0 ]; then
@@ -804,19 +837,23 @@ if [ "$release" != 0 ]; then
   branch=$(marker_field "$n" branch)
   is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
   [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir" >&2; exit 1; }
+  on_branch "$n" "$dir" "$branch" || exit 1
+  tip=$(git -C "$dir" rev-parse "refs/heads/$branch") || { echo "git rev-parse failed" >&2; exit 1; }
   # a failed git or gh call: its own text, then one line of ours, exit 1 (iteration 57, #329)
   git fetch origin "$base_branch" || { echo "git fetch failed" >&2; exit 1; }
-  prjson=$(gh pr list --state merged --head "$branch" --json number,createdAt,mergedAt,closingIssuesReferences) || { echo "gh pr list failed" >&2; exit 1; }
+  prjson=$(gh pr list --state merged --head "$branch" --json number,headRefOid,createdAt,mergedAt,closingIssuesReferences) || { echo "gh pr list failed" >&2; exit 1; }
   tmpf=$(mktemp "${TMPDIR:-/tmp}/nightmill-slot.XXXXXX"); printf '%s\n' "$prjson" > "$tmpf"
   flat=$(JSON_MODE=flat JSON_FILE="$tmpf" LC_ALL=C awk -f "$JSON_LIB_DIR/json.awk" 2>/dev/null) || flat=""
   rm -f "$tmpf"
-  merged=$(printf '%s\n' "$flat" | LC_ALL=C awk -F '\t' '$1 == "[0].number" && $2 == "number" { print $3 }')
-  [ -n "$merged" ] || { echo "no merged PR for $branch. Merge it first, or free the slot with --abandon $n." >&2; exit 1; }
+  # the merged PR whose head commit is the branch tip, as the reap chooses it (bug 322)
+  pr=$(pr_at_tip "$flat" "$tip")
+  [ -n "$pr" ] || { echo "no merged PR for $branch. Merge it first, or free the slot with --abandon $n." >&2; exit 1; }
+  prkey=${pr%%$'\t'*}; merged=${pr#*$'\t'}
   git -C "$dir" switch --detach "origin/$base_branch" || { echo "git switch failed" >&2; exit 1; }
   # a branch that cannot be deleted (in use elsewhere) does not keep the slot busy; git's error stays visible
   git branch -D "$branch" || true
   rm -f "$(marker "$n")"
-  IFS=$'\037' read -r pr_from pr_to pr_issues <<<"$(pr_times "$flat" "[0]")" || true
+  IFS=$'\037' read -r pr_from pr_to pr_issues <<<"$(pr_times "$flat" "$prkey")" || true
   record free "$n" "$branch" released "" "" "$merged" "$pr_from" "$pr_to" "$pr_issues"
   echo "Slot $n is free (was $branch, PR #$merged)."
   exit 0
@@ -844,6 +881,7 @@ if [ "$abandon" != 0 ]; then
   if [ -d "$dir" ]; then
     is_worktree "$dir" || { broken_line "$n" "$dir" >&2; exit 1; }
     [ "$(dirty_count "$dir")" -eq 0 ] || { echo "slot $n has uncommitted files: $dir (commit, stash or discard them first)" >&2; exit 1; }
+    on_branch "$n" "$dir" "$branch" || exit 1
     git -C "$dir" switch --detach "$base" || { echo "git switch failed" >&2; exit 1; }
   fi
   rm -f "$(marker "$n")"

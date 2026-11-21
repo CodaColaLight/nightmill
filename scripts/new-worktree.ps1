@@ -13,8 +13,19 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+# Continue for this call: Windows PowerShell 5.1 turns git's error text into a terminating error under Stop
+$ErrorActionPreference = "Continue"
 $gitDir = git rev-parse --path-format=absolute --git-common-dir 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "run new-worktree.ps1 from inside a git checkout of the project" }
+$gitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($gitCode -ne 0 -or -not $gitDir) {
+  # --path-format came with git 2.31: an older git is named, not taken for a missing checkout (bug 322)
+  $gv = [string](git --version 2>$null)
+  if ($gv -match '([0-9]+)\.([0-9]+)' -and ([int]$Matches[1] -lt 2 -or ([int]$Matches[1] -eq 2 -and [int]$Matches[2] -lt 31))) {
+    throw "new-worktree.ps1 needs git 2.31 or newer; this is $($gv.Trim() -replace '^git version ', '')"
+  }
+  throw "run new-worktree.ps1 from inside a git checkout of the project"
+}
 $main = Split-Path ([string]$gitDir).Trim() -Parent
 
 $cfgPath = Join-Path $main ".claude\nightmill.json"
