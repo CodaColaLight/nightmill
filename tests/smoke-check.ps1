@@ -13,7 +13,7 @@ $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("nm-chk-" + [guid]::NewGuid(
 New-Item -ItemType Directory $tmp | Out-Null
 $tf = $tmp -replace '\\', '/'
 $clockF = "$tf/clock"
-$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 $env:NIGHTMILL_CLOCK_FILE = $clockF
 foreach ($v in "UPDATE_STATUS_FIXTURES", "UPDATE_DASHBOARD_FIXTURES", "UPDATE_PANEL_FIXTURES", "NIGHTMILL_CHECK_STEPS") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
 
@@ -313,6 +313,141 @@ try {
   if ($r.Log -cne "b,") { Fail "platform linux, only: the steps that ran: $($r.Log)" }
   if ($r.Err.Contains($PNOTE)) { Fail "platform linux, only: a note for a key that -Only does not read: $($r.Err)" }
 
+  Write-Host "== affected"
+  # -Affected (iteration 59): the lint plus the steps the changed paths map to. Six fixture steps l (lint), b1 b2 (bash), p1 p2 (ps),
+  # c (claude), each appending its name to one log. The map (NIGHTMILL_CHECK_MAP) and the paths (NIGHTMILL_CHECK_PATHS) are fixture files.
+  $alog = "$tf/affected.log"
+  $affMap = "$tf/aff.map"
+  Write-Lf "$tmp\aff.map" "map scripts/foo.* b1,p1`nmap templates/t.md b2`nshared scripts/lib/*`nlintonly docs/*`n"
+  function Write-Aff([string]$reasonB1, [string]$reasonP1, [string]$tailB1) {
+    Write-Lf "$tmp\aff-steps.txt" ("l`techo l >> `"$alog`"`tlint`n" +
+      "b1`techo b1 >> `"$alog`"$tailB1`tbash`t$reasonB1`n" +
+      "b2`techo b2 >> `"$alog`"`tbash`n" +
+      "p1`techo p1 >> `"$alog`"`tps`t$reasonP1`n" +
+      "p2`techo p2 >> `"$alog`"`tps`n" +
+      "c`techo c >> `"$alog`"`tclaude`n")
+  }
+  function Aff-Cfg([string]$val) {
+    $pl = if ($val -ceq "-") { "" } else { ", `"platform`": $val" }
+    Write-Lf "$repo\.claude\nightmill.json" "{ `"verification`": { `"check`": `"true`"$pl } }`n"
+  }
+  # Aff-Run <the changed paths, one per line> <check.ps1 arguments> [root] [environment]: the result of -Affected in $repo; Log is what the steps wrote
+  function Aff-Run([string]$paths, [string]$cargs = "", [string]$root = $repo, [hashtable]$extraEnv = @{ NIGHTMILL_CHECK_PATHS = "$tf/aff.paths" }) {
+    Write-Lf "$tmp\aff.paths" $paths
+    Write-Lf "$tmp\affected.log" ""
+    $e = @{ NIGHTMILL_CHECK_MAP = $affMap }
+    foreach ($k in $extraEnv.Keys) { $e[$k] = $extraEnv[$k] }
+    $r = Check "$tf/aff-steps.txt" ("-Affected -Jobs 1 " + $cargs) $root $e
+    $log = (@((Read-Lf "$tmp\affected.log") -split "`n" | Where-Object { $_ -ne "" }) -join ",") + ","
+    $r | Add-Member -NotePropertyName Log -NotePropertyValue $log -PassThru
+  }
+  function Aff-First([int]$k, [int]$c) { "check: AFFECTED, 1 at a time (--jobs 1): $k of 6 steps, changed paths: $c (against NIGHTMILL_CHECK_PATHS); the full check does not run" }
+  Write-Aff "" "" ""
+  Aff-Cfg "-"
+  # the steps the paths map to, in list order, and the lines around them
+  $r = Aff-Run "templates/t.md`ntests/p2`n"
+  if ($r.Code -ne 0) { Fail "affected: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b2,p2,") { Fail "affected: the steps that ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne (Aff-First 3 2)) { Fail "affected: the first line: $($r.Out)" }
+  if (-not (Has-Line $r.Out "affected: templates/t.md -> b2")) { Fail "affected: no 'templates/t.md -> b2' line: $($r.Out)" }
+  if (-not (Has-Line $r.Out "affected: tests/p2 -> p2")) { Fail "affected: no 'tests/p2 -> p2' line: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "AFFECTED CHECK PASSED (3 of 6 steps, changed paths: 2; the full check has not run)") { Fail "affected: the last line: $($r.Out)" }
+  if ($r.Out.Contains("ALL CHECKS PASSED")) { Fail "affected: printed ALL CHECKS PASSED: $($r.Out)" }
+  # no changed path: the lint alone
+  $r = Aff-Run ""
+  if ($r.Code -ne 0) { Fail "affected, no path: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,") { Fail "affected, no path: the steps that ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne (Aff-First 1 0)) { Fail "affected, no path: the first line: $($r.Out)" }
+  # docs: the lint alone
+  $r = Aff-Run "docs/specs/x.md`n"
+  if ($r.Code -ne 0) { Fail "affected, docs: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,") { Fail "affected, docs: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out "affected: docs/specs/x.md -> the lint only")) { Fail "affected, docs: no 'the lint only' line: $($r.Out)" }
+  if ((Head-Line $r.Out) -cne (Aff-First 1 1)) { Fail "affected, docs: the first line: $($r.Out)" }
+  # a shared file and an unknown path: the full check
+  foreach ($p in @("scripts/lib/x.sh", "scripts/lib/x.sh is shared by many steps"), @("other/thing", "other/thing is in no line of the map")) {
+    $r = Aff-Run "$($p[0])`n"
+    if ($r.Code -ne 0) { Fail "affected, $($p[0]): exit $($r.Code): $($r.Out) $($r.Err)" }
+    if ((Head-Line $r.Out) -cne "check: AFFECTED: $($p[1]); running the full check") { Fail "affected, $($p[0]): the first line: $($r.Out)" }
+    if (@($r.Out -split "`n")[1] -cne "check: full, 1 at a time (--jobs 1)") { Fail "affected, $($p[0]): the second line: $($r.Out)" }
+    if ($r.Log -cne "l,b1,b2,p1,p2,c,") { Fail "affected, $($p[0]): the steps that ran: $($r.Log)" }
+    if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "affected, $($p[0]): the last line: $($r.Out)" }
+  }
+  # a changed script runs its tests in both shells, whatever verification.platform says
+  foreach ($plat in '"windows"', '"unix"', '-') {
+    Aff-Cfg $plat
+    $r = Aff-Run "scripts/foo.ps1`n"
+    if ($r.Code -ne 0) { Fail "affected, script, platform ${plat}: exit $($r.Code): $($r.Out) $($r.Err)" }
+    if ($r.Log -cne "l,b1,p1,") { Fail "affected, script, platform ${plat}: the steps that ran: $($r.Log)" }
+    if ($r.Out -cmatch '(?m)^SKIPPED:.*verification\.platform') { Fail "affected, script, platform ${plat}: a platform SKIPPED line: $($r.Out)" }
+  }
+  # what the machine cannot run is listed as skipped
+  Write-Aff "" "no pwsh here" ""
+  Aff-Cfg '"windows"'
+  $r = Aff-Run "scripts/foo.ps1`n"
+  if ($r.Code -ne 0) { Fail "affected, p1 with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b1,") { Fail "affected, p1 with a reason: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out "SKIPPED: no pwsh here")) { Fail "affected, p1 with a reason: no SKIPPED line: $($r.Out)" }
+  Write-Aff "" "" ""
+  # a shared file with a changed script: the full check under the platform, plus the steps the script selected
+  $r = Aff-Run "scripts/lib/x.sh`nscripts/foo.sh`n"
+  if ($r.Code -ne 0) { Fail "affected, shared and script: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b1,p1,p2,c,") { Fail "affected, shared and script: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "affected, shared and script: no platform line for b2: $($r.Out)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running the full check") { Fail "affected, shared and script: the first line: $($r.Out)" }
+  Aff-Cfg "-"
+  # a failing step: the last line and the exit code say it was not the full check
+  Write-Aff "" "" "; exit 1"
+  $r = Aff-Run "scripts/foo.sh`n"
+  if ($r.Code -ne 1) { Fail "affected failing: exit $($r.Code): $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "AFFECTED CHECK FAILED: b1 (the full check has not run)") { Fail "affected failing: the last line: $($r.Out)" }
+  if ($r.Out.Contains("ALL CHECKS PASSED")) { Fail "affected failing: printed ALL CHECKS PASSED: $($r.Out)" }
+  if ($r.Out -cmatch '(?m)^CHECK FAILED: ') { Fail "affected failing: a line starts with CHECK FAILED: $($r.Out)" }
+  Write-Aff "" "" ""
+  # the changed paths from git: committed, unstaged and untracked, against origin/main
+  $g = "$tmp\gitrepo"
+  New-Item -ItemType Directory "$g\tests", "$g\scripts", "$g\.claude", "$g\templates", "$g\docs" | Out-Null
+  Copy-Item "$here\tests\check.sh", "$here\tests\check.ps1" "$g\tests\"
+  Copy-Item "$here\scripts\lib" "$g\scripts\lib" -Recurse
+  Write-Lf "$g\.claude\nightmill.json" "{ `"verification`": { `"check`": `"true`" } }`n"
+  Write-Lf "$g\scripts\foo.sh" "one`n"; Write-Lf "$g\templates\t.md" "one`n"
+  function Git-G([string[]]$gargs) {
+    $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $o = & git -C $g -c user.email=t@example.com -c user.name=t @gargs 2>&1
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $old
+    if ($code -ne 0) { Fail "git $($gargs -join ' '): exit ${code}: $o" }
+  }
+  $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+  & git init -q --bare "$tmp\origin.git" 2>&1 | Out-Null
+  & git init -q $g 2>&1 | Out-Null
+  $ErrorActionPreference = $old
+  Git-G @("symbolic-ref", "HEAD", "refs/heads/main")
+  Git-G @("add", "-A"); Git-G @("commit", "-q", "-m", "base")
+  Git-G @("remote", "add", "origin", "$tmp\origin.git")
+  Git-G @("push", "-q", "origin", "main")
+  Git-G @("checkout", "-q", "-b", "feature")
+  Write-Lf "$g\templates\t.md" "two`n"; Git-G @("add", "-A"); Git-G @("commit", "-q", "-m", "change a template")
+  Write-Lf "$g\scripts\foo.sh" "one`ntwo`n"
+  Write-Lf "$g\docs\n.md" "new`n"
+  $r = Aff-Run "" "" $g @{}
+  if ($r.Code -ne 0) { Fail "affected, git: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED, 1 at a time (--jobs 1): 4 of 6 steps, changed paths: 3 (against origin/main); the full check does not run") { Fail "affected, git: the first line: $($r.Out)" }
+  $affLines = (@($r.Out -split "`n" | Where-Object { $_ -clike "affected:*" }) -join "|")
+  if ($affLines -cne "affected: docs/n.md -> the lint only|affected: scripts/foo.sh -> b1,p1|affected: templates/t.md -> b2") { Fail "affected, git: the affected lines: $($r.Out)" }
+  # a base branch with no origin/<branch>: the paths are unknown, so the full check
+  Write-Lf "$g\.claude\nightmill.json" "{ `"verification`": { `"check`": `"true`" }, `"git`": { `"baseBranch`": `"trunk`" } }`n"
+  $r = Aff-Run "" "" $g @{}
+  if ((Head-Line $r.Out) -cne "check: AFFECTED: the changed paths are unknown (no merge base with origin/trunk); running the full check") { Fail "affected, no merge base: the first line: $($r.Out) $($r.Err)" }
+  # the usage errors (a repeated switch fails in PowerShell's own binding, so it is run through bash with the same arguments)
+  foreach ($a in "-Affected -Quick", "-Affected -Only b") { $null = Usage-Case $a }
+  Write-Lf "$tmp\quick.log" ""
+  $c = Start-Child $bashExe "tests/check.sh --affected --affected" $nrepo @{ NIGHTMILL_CHECK_STEPS = "$tf/quick.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
+  $r = Wait-Child $c
+  if ($r.Code -ne 2) { Fail "usage (--affected --affected): exit $($r.Code): $($r.Out)" }
+  if (-not (Has-Line $r.Err $USAGE)) { Fail "usage (--affected --affected): no usage line on standard error: $($r.Err)" }
+  if ((Qlog-Lines).Count -ne 0) { Fail "usage (--affected --affected): a step ran" }
+
   Write-Host "== two checks at once"
   New-Item -ItemType Directory "$tmp\tmpA", "$tmp\tmpB" | Out-Null
   $psSh = $psExe -replace '\\', '/'   # the steps run under bash -c, which would strip backslashes
@@ -420,6 +555,7 @@ try {
     Copy-Item "$here\.github\workflows\ci.yml" "$d\.github\workflows\"
     Copy-Item "$here\schema\nightmill.schema.json" "$d\schema\"
     Copy-Item "$here\templates\nightmill.example.json" "$d\templates\"
+    Copy-Item "$here\scripts\*.sh", "$here\scripts\*.ps1" "$d\scripts\"
     Copy-Item "$here\scripts\lib" "$d\scripts\lib" -Recurse
     Copy-Item "$here\README.md", "$here\CONTRIBUTING.md" $d
     Copy-Item "$here\skills" "$d\skills" -Recurse
@@ -465,6 +601,20 @@ try {
   Lint-Break "platformreadme" "README.md" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: README.md does not mention verification.platform"
   Lint-Break "platforminit" "skills\init\SKILL.md" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: skills/init/SKILL.md does not mention verification.platform"
   Lint-Break "platformcheck" "tests\check.sh" { param($ls) $ls | ForEach-Object { $_.Replace("verification.platform", "verification-platform") } } "FAIL: tests/check.sh does not mention verification.platform"
+  # the map of tests/check.sh (iteration 59, decision 7): every test step and every script is in it
+  Lint-Break "mapstep" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -cmatch '^map [^ ]+ smoke-hook\.sh$') { continue }; if ($l -cmatch '^map ') { $l = ($l -creplace ',smoke-hook\.sh(?=,|$)', '') -creplace ' smoke-hook\.sh,', ' ' }; $l } } "no path maps to the step smoke-hook.sh"
+  $d = "$tmp\lint-mapscript"
+  Make-Copy $d
+  [System.IO.File]::WriteAllText("$d\scripts\zz-new.sh", "")
+  $r = Lint-In $d
+  $all = $r.Out + $r.Err
+  if ($r.Code -eq 0) { Fail "lint mapscript: passed on a broken copy: $all" }
+  if (-not $all.Contains("scripts/zz-new.sh maps to no step")) { Fail "lint mapscript: no 'scripts/zz-new.sh maps to no step' in: $all" }
+  Remove-Item $d -Recurse -Force
+  Lint-Break "mapname" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# affects: end") { "map README.md smoke-nope.sh" }; $l } } "the map names smoke-nope.sh, which is not a step"
+  Lint-Break "maptwin" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# affects: end") { "map scripts/slot.sh smoke-hook.sh" }; $l } } "scripts/slot.sh and scripts/slot.ps1 map to different steps"
+  Lint-Break "mapshared" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared scripts/lib/*' } } "the map does not have the line shared scripts/lib/*"
+  Lint-Break "mapskill" "skills\check\SKILL.md" { param($ls) $ls | ForEach-Object { $_.Replace("check: AFFECTED", "check: AFFECTEX") } } "skills/check/SKILL.md does not mention check: AFFECTED"
 
   Write-Host "smoke-check: ok"
 } finally {

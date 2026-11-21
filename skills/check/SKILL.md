@@ -15,8 +15,9 @@ with its `Stopped:` line and run nothing. Exit 3: stop with `Stopped: limit: <re
 skill that runs the check (in a run of its own, run nothing more).
 
 Run `verification.check` from the repository root (in a slot worktree:
-`cd <absolute slot path> && <verification.check>`, and `cd <absolute slot path> && <verification.check> --quick` for
-the quick check), as one command, and wait for it to finish.
+`cd <absolute slot path> && <verification.check>`, `cd <absolute slot path> && <verification.check> --quick` for
+the quick check, and `cd <absolute slot path> && <verification.check> --affected` for the affected check), as one
+command, and wait for it to finish.
 
 If anything fails, first tell an environmental failure from a code failure. An environmental failure is not caused by
 the code: no network, a missing tool, a service that is down. Do not change code for it; stop and report what is
@@ -30,3 +31,9 @@ repository ships, the lint and the bash smoke tests only) and reports its last l
 the check before a commit". When its first line does not start with `check: QUICK`, say
 `the check command has no quick mode; running the check` and run `verification.check` as above. The quick check
 never stands for the check before a commit or a pull request.
+
+`/nightmill:check affected` runs `<verification.check> --affected` (the affected check: the lint and the tests of the
+changed paths) and reports its last line. A last line `AFFECTED CHECK PASSED` is enough before a commit and in a fix
+round, never before a release. When its first line does not start with `check: AFFECTED`, say
+`the check command has no affected mode; running the check` and run `verification.check` as above. The fixing rules
+above (at most three runs, an environmental failure versus a code failure) apply to it unchanged.

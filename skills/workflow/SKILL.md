@@ -13,7 +13,8 @@ Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; 
 Read the configuration above first. In this text, *the maintainer* is `maintainer.name`, *the board* is
 GitHub project `github.projectNumber` of `github.owner`, status names come from `board.statuses`, and
 *the check* is `verification.check`; *the quick check* is the check with ` --quick` appended, for a check
-whose first line then starts with `check: QUICK`. Where this text and the configuration disagree, the configuration wins.
+whose first line then starts with `check: QUICK`; *the affected check* is the check with ` --affected` appended, for
+a check whose first line then starts with `check: AFFECTED`. Where this text and the configuration disagree, the configuration wins.
 
 **The configuration** that governs a run is the one on the base branch, shown above, never the file of the branch
 being changed (#111): a pull request's change to `.claude/nightmill.json` governs a run only once it is merged. The
@@ -145,10 +146,19 @@ Run the check (`/nightmill:check`) before every commit. Never commit red. If CI 
 run was green, fix the local loop, not just the test.
 
 While code is being written and before the work is done, an agent may run the quick check instead, as often as it
-likes, to see where it stands. The quick check never stands for the check: the check runs before every commit, before
-every pull request and in every fix round, and a `Check:` line reports the check's last line, never the quick check's.
+likes, to see where it stands. The quick check never stands for the check: the check or the affected check runs before
+every commit, before every pull request and in every fix round, and a `Check:` line reports the last line of the check
+or of the affected check, never the quick check's.
 A run counts as a quick check only when its first line starts with `check: QUICK`; when it does not (a check without
 a quick mode), the agent stops using it for the rest of its task and runs the check instead.
+
+Before a commit and in every fix round (a review's fix round, a check fix round, an extra round), the affected check
+may stand for the check. It runs the tests of what the branch changed against `origin/<git.baseBranch>`. Its last line
+`AFFECTED CHECK PASSED` is a green check for that commit, and a `Check:` line may report it. When its first line
+starts with `check: AFFECTED:`, it ran the full check, and its last line is the full check's. The full check still
+runs before a release, and CI runs every test on the base branch. A run counts as an affected check only when its
+first line starts with `check: AFFECTED`. When it does not (a check without the mode), the agent runs the check
+instead for the rest of its task.
 
 ## Agent roles and models
 

@@ -1090,6 +1090,7 @@ command, auto-merge. `.claude/CLAUDE.md` holds the rules for working on it; `doc
 ```
 bash tests/check.sh         # everything this machine can run, lists what it skipped
 bash tests/check.sh --quick # the lint and the bash smoke tests only, while writing code
+bash tests/check.sh --affected # the lint and the tests of the paths the branch changed
 bash tests/lint.sh          # generic words, JSON, skill frontmatter, shell syntax
 bash tests/smoke-slot.sh    # slot.sh against a throwaway repository
 bash tests/smoke-render.sh  # render-templates.sh
@@ -1147,6 +1148,10 @@ job's wall time and its five slowest workflow steps (read from the jobs API by t
 `actions: read`), and each check's five slowest steps. With `verification.platform` set, `tests/check.sh` runs only
 that platform's tests (the PowerShell tests on `windows`, the bash tests on `unix`), always the lint and the `claude`
 steps, and lists the family it skipped; `--only` ignores the key, and CI runs both families through `--only`.
+`bash tests/check.sh --affected` runs the lint and the tests of the paths changed against `origin/<git.baseBranch>`
+(the map in `tests/check.sh`), the tests of a changed script in both shells; a change to `scripts/lib/` or the check
+itself, or to a path the map does not know, runs the full check. It is enough before a commit and in a fix round; the
+full check runs before a release, and CI runs every test.
 
 CI runs all of them. `tests/check.sh` runs `claude plugin test .` when `claude` is on the PATH and has the
 `plugin test` subcommand, and lists it as skipped otherwise; CI runs it in the `validate` job, which does not block a
