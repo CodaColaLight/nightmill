@@ -6,7 +6,8 @@ Story #339, epic #337 (fast verification loop). It builds on iteration 59 (#338,
 must be implemented and merged first. On a pull request every smoke job of `.github/workflows/ci.yml` runs
 `tests/check.sh --affected --within <its list>`: the steps of its list that the changed paths select; on a push to
 `main` it runs `--only <its list>` as today. Every job still runs on every event, so the three required names always
-report. The check gains `--within` (decision 2) and a selection section in its `--summary` (decision 5). Changes
+report. The check gains `--within` (decision 2) and, for a run with `--within`, a selection section in its `--summary`
+(decision 6). Changes
 `.github/workflows/ci.yml`, `tests/check.sh`, `tests/check.ps1`, `tests/smoke-check.sh`, `tests/smoke-check.ps1`,
 `tests/lint.sh`, `tests/test-ci-parts.sh`, `tests/test-ci-run-steps.sh`, `README.md` and `CHANGELOG.md`.
 
@@ -18,7 +19,7 @@ report. The check gains `--within` (decision 2) and a selection section in its `
 **Not a story trigger.** No status, no board call and no slot marker changes. No config key is added, renamed or
 removed: the check reads `git.baseBranch`, which exists; `CHECK_SELECT` (decision 1) is an environment variable of this
 repository's workflow, not a key of `.claude/nightmill.json`. **Compatible** holds: `tests/check.sh` without `--within`
-prints exactly what iteration 59 makes it print.
+prints, and writes to its `--summary` file, exactly what iteration 59 makes it print and write.
 
 **The manual check does not apply**: nothing under `skills`, `agents` or `hooks` changes. The verification on GitHub
 (under Tests) stands in for it.
@@ -95,19 +96,21 @@ missing: it either runs or the run fails.
 hides jq, so a docs pull request runs no test in the bash job either. The bash job then has exactly two check lines:
 this one, and the one with the other bash steps.
 
-**6. The run summary.** With `--affected` and `--summary <file>`, the section `### tests/check.sh` gets, after its
-`Wall time:` line and before the slowest-steps table, one of:
+**6. The run summary.** With `--affected --within <list>` and `--summary <file>`, the section `### tests/check.sh`
+gets, after its `Wall time:` line and before the slowest-steps table, one of:
 
 - a selective run: `Selection: --affected against <ref>: <k> of <n> steps ran, <n-k> left out (no changed path selects
   them).`, a table `| Changed path | Selects |` with one row per changed path in sorted order, its cell the text after
   ` -> ` of the path's `affected:` line, at most 50 rows and then the line `And <x> more changed paths (the log lists
   every one).`, then `Ran: <names>` and `Left out: <names>` (each name in backticks, comma-separated, in list order, or
   `none`);
-- a fallback: `Selection: --affected ran every --within step: <reason>.` (without `--within`: `Selection: --affected
-  ran the full check: <reason>.`).
+- a fallback: `Selection: --affected ran every --within step: <reason>.`
 
-Each smoke job writes it to `$GITHUB_STEP_SUMMARY` (the bash job twice). A push runs `--only`, whose section does not
-change: nothing is left out. The final job's job table (`tests/ci-jobs-summary.sh`) does not change.
+Without `--within` nothing changes: a plain `--affected` run writes its section exactly as iteration 59 decision 6 has
+it ("`--summary` writes its section as in the other modes"), with no `Selection:` line, table, `Ran:` or `Left out:`.
+
+On a pull request each smoke job runs with `--within`, so it writes the selection section to `$GITHUB_STEP_SUMMARY`
+(the bash job twice). A push runs `--only`, whose section does not change: nothing is left out. The final job's job table (`tests/ci-jobs-summary.sh`) does not change.
 
 **7. A change to the workflow runs everything.** The map of iteration 59 decision 3 gains the line
 `shared .github/workflows/*`, and iteration 59 lint rule 6 pins it beside the four lines it pins, so a pull request
@@ -172,6 +175,9 @@ steps (`l`, `b1`, `b2`, `p1`, `p2`, `c`), its map (`map scripts/foo.* b1,p1`, `m
   the rows ``| `docs/a.md` | none of the --within steps |`` and ``| `scripts/foo.ps1` | b1 |``, `Ran: `b1`` and
   `Left out: `b2``; the fallback run writes `Selection: --affected ran every --within step: scripts/lib/x.sh is shared by
   many steps.`; 51 paths give 50 rows and `And 1 more changed paths (the log lists every one).`
+- Unchanged without `--within`: `--summary <file>` on a plain `--affected` run with the paths `scripts/foo.ps1` and
+  `docs/a.md` writes a section that has its `Wall time:` line and no line
+  beginning `Selection:`, `| Changed path`, `Ran:` or `Left out:`; the same holds for its fallback (`scripts/lib/x.sh`).
 - Usage: `--within b1` without `--affected`, `--affected --within b1 --within b2`, `--affected --within ''` exit 2 with
   the usage line of decision 2; `--affected --within nope` prints `check: no step named nope` and exits 2; the log stays
   empty. The `USAGE` constant of both files becomes that line.
@@ -249,7 +255,8 @@ files about 120, `tests/lint.sh` about 45, the two CI tests about 8, README abou
 
 - No change to the ruleset, to `on:`, to a job name or a timeout, and no macOS or PowerShell 7 job (#155, #156).
 - No job skipped by `if:` or by a path filter; the `validate` job (not required) runs on every event as today.
-- No change to iteration 59's rules without `--within`, to `--only` or `--quick`, or to `verification.platform`.
+- No change to iteration 59's rules without `--within` (its output and its `--summary` section included), to `--only`
+  or `--quick`, or to `verification.platform`.
 - No `NIGHTMILL_CHECK_PATHS` in CI and no fetch by the check.
 - No faster or split tests (#340), and no time budget.
 
