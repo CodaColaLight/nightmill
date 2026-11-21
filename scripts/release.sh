@@ -46,6 +46,8 @@ done
 # expected=1 marks an exit the script chose (refused, usage, missing tool); any other non-zero exit is an
 # unexpected error: on_exit removes the temporary files, rolls back a prepare that has started and exits 2.
 expected=0; phase=""; tmpfiles=()
+# the names newtmp sets with printf -v, assigned here so shellcheck sees them (SC2154)
+tmpc=""; notes=""; tmpf=""; body=""
 refuse() { echo "refused: $*" >&2; expected=1; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1" >&2; expected=1; exit 2; }; }
 rollback() {

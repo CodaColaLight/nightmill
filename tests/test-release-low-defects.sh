@@ -110,7 +110,10 @@ setup; reject_branches
 mkdir -p "$tmp/tmpdir$n"
 TMPDIR="$tmp/tmpdir$n" rel
 [ "$rc" != 0 ] || fail "the push was expected to fail while origin rejects branches"
-left=$(ls "$tmp/tmpdir$n" | grep -c '^nightmill-release' || true)
+left=0
+for f in "$tmp/tmpdir$n"/nightmill-release*; do
+  [ -e "$f" ] && left=$((left + 1))
+done
 [ "$left" = 0 ] || fail "$left temporary file(s) left behind: $(ls "$tmp/tmpdir$n")"
 
 }
