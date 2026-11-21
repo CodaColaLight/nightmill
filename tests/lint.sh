@@ -1381,6 +1381,87 @@ while IFS= read -r l; do
   done
 done < <(grep -E '^[[:space:]]*(- )?name: ' "$chk_ci" || true)
 
+echo "== every script and every test step is in the map"
+# Iteration 59, decision 7: the map of tests/check.sh --affected (between '# affects: begin' and '# affects: end') is
+# well formed, names only steps, names every bash and ps step, maps every script (a twin pair to the same steps), holds
+# the shared and lintonly lines of decision 3, and the skills and the README describe the mode. The matching is the
+# case pattern of the check, in this process (bug #270: no process per path).
+aff_block=""
+aff_nb=$(grep -cx '# affects: begin' tests/check.sh || true)
+aff_ne=$(grep -cx '# affects: end' tests/check.sh || true)
+aff_lb=$(grep -nx '# affects: begin' tests/check.sh | head -n 1 | cut -d: -f1 || true)
+aff_le=$(grep -nx '# affects: end' tests/check.sh | head -n 1 | cut -d: -f1 || true)
+if [ "$aff_nb" = 1 ] && [ "$aff_ne" = 1 ] && [ "$aff_le" -gt "$aff_lb" ]; then
+  aff_block=$(sed -n "$((aff_lb + 1)),$((aff_le - 1))p" tests/check.sh | grep -v '^[[:space:]]*$' || true)
+  if printf '%s\n' "$aff_block" | grep -vE '^(map [^ ]+ [^ ].*|shared [^ ]+|lintonly [^ ]+)$' >/dev/null; then aff_block=""; fi
+fi
+if [ -z "$aff_block" ]; then
+  echo "FAIL: tests/check.sh: the map between '# affects: begin' and '# affects: end' is missing or malformed"; fail=1
+else
+  aff_n=0
+  while IFS= read -r l; do
+    aff_kind[aff_n]=${l%% *}; r=${l#* }; aff_steps[aff_n]=""
+    if [ "${aff_kind[aff_n]}" = map ]; then aff_pat[aff_n]=${r%% *}; aff_steps[aff_n]=",${r#* },"; else aff_pat[aff_n]=$r; fi
+    aff_n=$((aff_n + 1))
+  done <<<"$aff_block"
+  # the steps of the list, in list order, then the two claude steps
+  aff_names=()
+  while read -r _ k b _; do [ -z "$b" ] || aff_names+=("$b"); done <<<"$chk_block"
+  aff_names+=("claude plugin validate" "claude plugin test")
+  aff_all="|"; for b in "${aff_names[@]}"; do aff_all="$aff_all$b|"; done
+  # rule 2: every name of a map line is a step
+  for ((j = 0; j < aff_n; j++)); do
+    [ "${aff_kind[j]}" = map ] || continue
+    r=${aff_steps[j]#,}
+    while [ -n "$r" ]; do
+      x=${r%%,*}; r=${r#*,}
+      case $aff_all in *"|$x|"*) ;; *) echo "FAIL: tests/check.sh: the map names $x, which is not a step"; fail=1 ;; esac
+    done
+  done
+  # rule 3: every bash and ps step is named by a map line
+  while read -r _ k b _; do
+    case $k in bash|ps) ;; *) continue ;; esac
+    hit=""
+    for ((j = 0; j < aff_n; j++)); do case ${aff_steps[j]} in *",$b,"*) hit=1; break ;; esac; done
+    [ -n "$hit" ] || { echo "FAIL: tests/check.sh: no path maps to the step $b"; fail=1; }
+  done <<<"$chk_block"
+  # aff_select <path>: aff_got is what the path selects by decision 4: 'shared', or its steps in list order
+  aff_select() {
+    local p=$1 j x names="," shared=""
+    for ((j = 0; j < aff_n; j++)); do
+      # shellcheck disable=SC2254
+      case $p in
+        ${aff_pat[j]})
+          case ${aff_kind[j]} in shared) shared=1 ;; map) names="$names${aff_steps[j]#,}" ;; esac ;;
+      esac
+    done
+    if [ -n "$shared" ]; then aff_got=shared; return; fi
+    aff_got=""
+    for x in "${aff_names[@]}"; do case $names in *",$x,"*) aff_got="$aff_got,$x" ;; esac; done
+  }
+  # rule 4: every script maps to a step or is shared; rule 5: twins select the same steps
+  for f in scripts/*.sh scripts/*.ps1 scripts/lib/*; do
+    [ -f "$f" ] || continue
+    aff_select "$f"
+    [ -n "$aff_got" ] || { echo "FAIL: tests/check.sh: $f maps to no step"; fail=1; }
+  done
+  for f in scripts/*.sh; do
+    [ -f "$f" ] && [ -f "${f%.sh}.ps1" ] || continue
+    aff_select "$f"; aff_a=$aff_got
+    aff_select "${f%.sh}.ps1"
+    [ "$aff_a" = "$aff_got" ] || { echo "FAIL: tests/check.sh: $f and ${f%.sh}.ps1 map to different steps"; fail=1; }
+  done
+  # rule 6: the lines of decision 3
+  for l in 'shared scripts/lib/*' 'shared tests/check.sh' 'shared tests/check.ps1' 'lintonly docs/*'; do
+    case $'\n'"$aff_block"$'\n' in *$'\n'"$l"$'\n'*) ;; *) echo "FAIL: tests/check.sh: the map does not have the line $l"; fail=1 ;; esac
+  done
+fi
+# rule 7: the skills and the README describe the mode
+for fw in 'skills/workflow/SKILL.md|--affected' 'skills/workflow/SKILL.md|check: AFFECTED' \
+  'skills/check/SKILL.md|--affected' 'skills/check/SKILL.md|check: AFFECTED' 'README.md|--affected'; do
+  grep -qF -- "${fw#*|}" "${fw%%|*}" || { echo "FAIL: ${fw%%|*} does not mention ${fw#*|}"; fail=1; }
+done
+
 echo "== the PowerShell job runs in parts"
 # Iteration 55, decisions 3 and 5: every ps step of the step list runs in exactly one part of the matrix of the job
 # smoke-powershell-part, in list order, smoke-slot.ps1 alone; the job smoke-powershell (the required name) fails unless

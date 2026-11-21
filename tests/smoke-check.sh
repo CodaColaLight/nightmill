@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 echo 1794038400 > "$tmp/clock"
 export NIGHTMILL_CLOCK_FILE="$tmp/clock"
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
@@ -280,6 +280,137 @@ plat_run '"linux"' --only b
 [ "$plat_log" = "b," ] || fail "platform linux, only: the steps that ran: $plat_log"
 if grep -qF "$PNOTE" <<<"$err"; then fail "platform linux, only: a note for a key that --only does not read: $err"; fi
 
+echo "== affected"
+# --affected (iteration 59): the lint plus the steps the changed paths map to. Six fixture steps l (lint), b1 b2 (bash), p1 p2 (ps),
+# c (claude), each appending its name to one log. The map (NIGHTMILL_CHECK_MAP) and the paths (NIGHTMILL_CHECK_PATHS) are fixture files.
+alog="$tmp/affected.log"
+aff_map="$tmp/aff.map"
+printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'shared scripts/lib/*' 'lintonly docs/*' > "$aff_map"
+mk_aff() { # mk_aff <reason of b1> <reason of p1> <tail of b1's command>: the six steps in $tmp/aff-steps.txt
+  {
+    printf 'l\techo l >> "%s"\tlint\n' "$alog"
+    printf 'b1\techo b1 >> "%s"%s\tbash\t%s\n' "$alog" "$3" "$1"
+    printf 'b2\techo b2 >> "%s"\tbash\n' "$alog"
+    printf 'p1\techo p1 >> "%s"\tps\t%s\n' "$alog" "$2"
+    printf 'p2\techo p2 >> "%s"\tps\n' "$alog"
+    printf 'c\techo c >> "%s"\tclaude\n' "$alog"
+  } > "$tmp/aff-steps.txt"
+}
+aff_cfg() { # aff_cfg <platform as JSON, or - for no key>: the configuration of $repo
+  if [ "$1" = - ]; then printf '{ "verification": { "check": "true" } }\n' > "$repo/.claude/nightmill.json"
+  else printf '{ "verification": { "check": "true", "platform": %s } }\n' "$1" > "$repo/.claude/nightmill.json"; fi
+}
+aff_run() { # aff_run <the changed paths, one per line> <args...>: out, err, rc of tests/check.sh --affected in $repo; the log in $aff_log
+  local paths=$1; shift
+  printf '%s' "$paths" > "$tmp/aff.paths"
+  : > "$alog"
+  set +e
+  out=$(NIGHTMILL_CHECK_STEPS="$tmp/aff-steps.txt" NIGHTMILL_CHECK_MAP="$aff_map" NIGHTMILL_CHECK_PATHS="$tmp/aff.paths" bash "$repo/tests/check.sh" --affected --jobs 1 "$@" 2>"$tmp/err.txt"); rc=$?
+  set -e
+  err=$(cat "$tmp/err.txt")
+  aff_log=$(tr '\n' ',' < "$alog")
+}
+aff_first() { echo "check: AFFECTED, 1 at a time (--jobs 1): $1 of 6 steps, changed paths: $2 (against NIGHTMILL_CHECK_PATHS); the full check does not run"; }
+mk_aff "" "" ""
+aff_cfg -
+# the steps the paths map to, in list order, and the lines around them
+aff_run $'templates/t.md\ntests/p2\n'
+[ "$rc" = 0 ] || fail "affected: exit $rc: $out $err"
+[ "$aff_log" = "l,b2,p2," ] || fail "affected: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 3 2)" ] || fail "affected: the first line: $out"
+has_line "$out" 'affected: templates/t.md -> b2' || fail "affected: no 'templates/t.md -> b2' line: $out"
+has_line "$out" 'affected: tests/p2 -> p2' || fail "affected: no 'tests/p2 -> p2' line: $out"
+[ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (3 of 6 steps, changed paths: 2; the full check has not run)" ] || fail "affected: the last line: $out"
+if grep -q 'ALL CHECKS PASSED' <<<"$out"; then fail "affected: printed ALL CHECKS PASSED: $out"; fi
+# no changed path: the lint alone
+aff_run ''
+[ "$rc" = 0 ] || fail "affected, no path: exit $rc: $out $err"
+[ "$aff_log" = "l," ] || fail "affected, no path: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 1 0)" ] || fail "affected, no path: the first line: $out"
+# docs: the lint alone
+aff_run $'docs/specs/x.md\n'
+[ "$rc" = 0 ] || fail "affected, docs: exit $rc: $out $err"
+[ "$aff_log" = "l," ] || fail "affected, docs: the steps that ran: $aff_log"
+has_line "$out" 'affected: docs/specs/x.md -> the lint only' || fail "affected, docs: no 'the lint only' line: $out"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 1 1)" ] || fail "affected, docs: the first line: $out"
+# a shared file and an unknown path: the full check
+for p in 'scripts/lib/x.sh|scripts/lib/x.sh is shared by many steps' 'other/thing|other/thing is in no line of the map'; do
+  aff_run "${p%%|*}"$'\n'
+  [ "$rc" = 0 ] || fail "affected, ${p%%|*}: exit $rc: $out $err"
+  [ "$(head -n 1 <<<"$out")" = "check: AFFECTED: ${p##*|}; running the full check" ] || fail "affected, ${p%%|*}: the first line: $out"
+  [ "$(sed -n 2p <<<"$out")" = "check: full, 1 at a time (--jobs 1)" ] || fail "affected, ${p%%|*}: the second line: $out"
+  [ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "affected, ${p%%|*}: the steps that ran: $aff_log"
+  [ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "affected, ${p%%|*}: the last line: $out"
+done
+# a changed script runs its tests in both shells, whatever verification.platform says
+for plat in '"windows"' '"unix"' -; do
+  aff_cfg "$plat"
+  aff_run $'scripts/foo.ps1\n'
+  [ "$rc" = 0 ] || fail "affected, script, platform $plat: exit $rc: $out $err"
+  [ "$aff_log" = "l,b1,p1," ] || fail "affected, script, platform $plat: the steps that ran: $aff_log"
+  if grep -q '^SKIPPED:.*verification\.platform' <<<"$out"; then fail "affected, script, platform $plat: a platform SKIPPED line: $out"; fi
+done
+# what the machine cannot run is listed as skipped
+mk_aff "" "no pwsh here" ""
+aff_cfg '"windows"'
+aff_run $'scripts/foo.ps1\n'
+[ "$rc" = 0 ] || fail "affected, p1 with a reason: exit $rc: $out $err"
+[ "$aff_log" = "l,b1," ] || fail "affected, p1 with a reason: the steps that ran: $aff_log"
+has_line "$out" 'SKIPPED: no pwsh here' || fail "affected, p1 with a reason: no SKIPPED line: $out"
+mk_aff "" "" ""
+# a shared file with a changed script: the full check under the platform, plus the steps the script selected
+aff_run $'scripts/lib/x.sh\nscripts/foo.sh\n'
+[ "$rc" = 0 ] || fail "affected, shared and script: exit $rc: $out $err"
+[ "$aff_log" = "l,b1,p1,p2,c," ] || fail "affected, shared and script: the steps that ran: $aff_log"
+has_line "$out" "$WIN_LINE" || fail "affected, shared and script: no platform line for b2: $out"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running the full check" ] || fail "affected, shared and script: the first line: $out"
+aff_cfg -
+# a failing step: the last line and the exit code say it was not the full check
+mk_aff "" "" "; exit 1"
+aff_run $'scripts/foo.sh\n'
+[ "$rc" = 1 ] || fail "affected failing: exit $rc: $out"
+[ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK FAILED: b1 (the full check has not run)" ] || fail "affected failing: the last line: $out"
+if grep -q 'ALL CHECKS PASSED' <<<"$out"; then fail "affected failing: printed ALL CHECKS PASSED: $out"; fi
+if grep -q '^CHECK FAILED: ' <<<"$out"; then fail "affected failing: a line starts with CHECK FAILED: $out"; fi
+mk_aff "" "" ""
+# the changed paths from git: committed, unstaged and untracked, against origin/main
+g="$tmp/gitrepo"
+mkdir -p "$g/tests" "$g/scripts" "$g/.claude" "$g/templates"
+cp "$here/tests/check.sh" "$here/tests/check.ps1" "$g/tests/"
+cp -R "$here/scripts/lib" "$g/scripts/lib"
+echo '{ "verification": { "check": "true" } }' > "$g/.claude/nightmill.json"
+echo one > "$g/scripts/foo.sh"; echo one > "$g/templates/t.md"
+gitg() { git -C "$g" -c user.email=t@example.com -c user.name=t "$@"; }
+git init -q --bare "$tmp/origin.git"
+git init -q "$g"
+git -C "$g" symbolic-ref HEAD refs/heads/main
+gitg add -A; gitg commit -q -m base
+gitg remote add origin "$tmp/origin.git"
+gitg push -q origin main
+gitg checkout -q -b feature
+echo two > "$g/templates/t.md"; gitg add -A; gitg commit -q -m "change a template"
+echo two >> "$g/scripts/foo.sh"
+mkdir -p "$g/docs"; echo new > "$g/docs/n.md"
+git_aff() { # git_aff: out, err, rc of the check in $g, without NIGHTMILL_CHECK_PATHS
+  : > "$alog"
+  set +e
+  out=$(cd "$g" && NIGHTMILL_CHECK_STEPS="$tmp/aff-steps.txt" NIGHTMILL_CHECK_MAP="$aff_map" bash tests/check.sh --affected --jobs 1 2>"$tmp/err.txt"); rc=$?
+  set -e
+  err=$(cat "$tmp/err.txt")
+}
+git_aff
+[ "$rc" = 0 ] || fail "affected, git: exit $rc: $out $err"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED, 1 at a time (--jobs 1): 4 of 6 steps, changed paths: 3 (against origin/main); the full check does not run" ] || fail "affected, git: the first line: $out"
+[ "$(grep '^affected:' <<<"$out" | tr '\n' '|')" = "affected: docs/n.md -> the lint only|affected: scripts/foo.sh -> b1,p1|affected: templates/t.md -> b2|" ] || fail "affected, git: the affected lines: $out"
+# a base branch with no origin/<branch>: the paths are unknown, so the full check
+echo '{ "verification": { "check": "true" }, "git": { "baseBranch": "trunk" } }' > "$g/.claude/nightmill.json"
+git_aff
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: the changed paths are unknown (no merge base with origin/trunk); running the full check" ] || fail "affected, no merge base: the first line: $out $err"
+# the usage errors
+usage_case --affected --quick
+usage_case --affected --only b
+usage_case --affected --affected
+
 echo "== two checks at once"
 mkdir -p "$tmp/tmpA" "$tmp/tmpB"
 for r in A B; do
@@ -385,6 +516,7 @@ mkcopy() { # mkcopy <dir>: the files the section reads (every script in tests/, 
   cp "$here/.github/workflows/ci.yml" "$d/.github/workflows/"
   cp "$here/schema/nightmill.schema.json" "$d/schema/"
   cp "$here/templates/nightmill.example.json" "$d/templates/"
+  cp "$here"/scripts/*.sh "$here"/scripts/*.ps1 "$d/scripts/"
   cp -R "$here/scripts/lib" "$d/scripts/lib"
   cp "$here/README.md" "$here/CONTRIBUTING.md" "$d/"
   cp -R "$here/skills" "$d/skills"
@@ -428,5 +560,20 @@ lint_break platformexample templates/nightmill.example.json 's/"platform": "all"
 lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
 lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'
 lint_break platformcheck tests/check.sh 's/verification\.platform/verification-platform/g' 'FAIL: tests/check.sh does not mention verification.platform'
+# the map of tests/check.sh (iteration 59, decision 7): every test step and every script is in it
+lint_break mapstep tests/check.sh '/^map [^ ]* smoke-hook\.sh$/d; /^map /{s/,smoke-hook\.sh,/,/; s/,smoke-hook\.sh$//; s/ smoke-hook\.sh,/ /;}' 'no path maps to the step smoke-hook.sh'
+d="$tmp/lint-mapscript"
+mkcopy "$d"
+: > "$d/scripts/zz-new.sh"
+lint_in "$d"
+[ "$rc" != 0 ] || fail "lint mapscript: passed on a broken copy: $out"
+grep -qF -- 'scripts/zz-new.sh maps to no step' <<<"$out" || fail "lint mapscript: no 'scripts/zz-new.sh maps to no step' in: $out"
+rm -rf "$d"
+lint_break mapname tests/check.sh 's/^# affects: end$/map README.md smoke-nope.sh\
+# affects: end/' 'the map names smoke-nope.sh, which is not a step'
+lint_break maptwin tests/check.sh 's/^# affects: end$/map scripts\/slot.sh smoke-hook.sh\
+# affects: end/' 'scripts/slot.sh and scripts/slot.ps1 map to different steps'
+lint_break mapshared tests/check.sh '/^shared scripts\/lib\/\*$/d' 'the map does not have the line shared scripts/lib/*'
+lint_break mapskill skills/check/SKILL.md 's/check: AFFECTED/check: AFFECTEX/g' 'skills/check/SKILL.md does not mention check: AFFECTED'
 
 echo "smoke-check: ok"

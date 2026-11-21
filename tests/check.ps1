@@ -1,11 +1,13 @@
 # tests/check.ps1 - runs tests/check.sh through Git's bash, for a PowerShell prompt, with the same options.
-#   powershell -ExecutionPolicy Bypass -File tests\check.ps1 [-Quick | -Only <step>[,<step>...]] [-Jobs <1-16>] [-PowerShell powershell|pwsh] [-Summary <file>]
+#   powershell -ExecutionPolicy Bypass -File tests\check.ps1 [-Quick | -Only <step>[,<step>...] | -Affected] [-Jobs <1-16>] [-PowerShell powershell|pwsh] [-Summary <file>]
 #   -Quick       --quick: the lint and the bash smoke tests only; the full check does not run
 #   -Only        --only: exactly the named steps
+#   -Affected    --affected: the lint and the steps the paths changed against origin/<git.baseBranch> map to
+#                (NIGHTMILL_CHECK_PATHS and NIGHTMILL_CHECK_MAP, for the tests, pass through to tests/check.sh)
 #   -Jobs        --jobs: how many steps run at the same time (tests/check.sh checks the value)
 #   -PowerShell  --powershell: the PowerShell for the PowerShell smoke tests
 #   -Summary     --summary: appends the check's wall time and its five slowest steps to this Markdown file
-param([switch]$Quick, [string]$Only, [string]$Jobs, [string]$PowerShell, [string]$Summary)
+param([switch]$Quick, [string]$Only, [switch]$Affected, [string]$Jobs, [string]$PowerShell, [string]$Summary)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $bash = Get-Command bash -ErrorAction SilentlyContinue
@@ -13,6 +15,7 @@ if (-not $bash) { Write-Error "bash not found (Git for Windows provides it)"; ex
 $a = @()
 if ($Quick) { $a += "--quick" }
 if ($PSBoundParameters.ContainsKey("Only")) { $a += "--only"; $a += $Only }
+if ($Affected) { $a += "--affected" }
 if ($PSBoundParameters.ContainsKey("Jobs")) { $a += "--jobs"; $a += $Jobs }
 if ($PSBoundParameters.ContainsKey("PowerShell")) { $a += "--powershell"; $a += $PowerShell }
 if ($PSBoundParameters.ContainsKey("Summary")) { $a += "--summary"; $a += $Summary }
