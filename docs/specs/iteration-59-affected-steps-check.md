@@ -1,6 +1,6 @@
 # Iteration 59: the check runs only the steps a change affects
 
-Status: draft, awaiting approval (#338)
+Status: delivered in iteration 59 (PR #352)
 
 Story #338, epic #337 (fast verification loop). `tests/check.sh` gains a mode, `--affected` (PowerShell `-Affected`),
 that lists the paths changed against `origin/<git.baseBranch>`, maps each one to test steps through one map in

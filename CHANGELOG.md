@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Iteration 59 (#338): the check runs only the steps a change affects. tests/check.sh --affected (check.ps1
+  -Affected) maps the paths changed against origin/<git.baseBranch> to their test steps through one map in
+  tests/check.sh and runs the lint plus those steps; a changed script runs its tests in both shells whatever
+  verification.platform says, a change under docs/ runs the lint alone, and a shared file or an unknown path runs
+  the full check. Its first and last line say the full check has not run. The lint fails on a test step no path
+  maps to and on a script that maps to no step. The workflow and check skills say the affected check is enough
+  before a commit and in a fix round. No config key.
 - Iteration 58 (#332): when the review rounds run out and every open blocking finding names a concrete fix,
   /spec, /next and /fix keep today's hand-over (the pull request open, auto-merge off, the findings listed) and
   then propose one extra review round in their final message; it runs, with the same producer and reviewer, only
