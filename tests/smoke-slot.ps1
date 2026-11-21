@@ -1208,6 +1208,7 @@ m='@M@'; if [ -e "$m" ] && grep -q '"state": "taking"' "$m"; then c=claimed; els
     if ($spy -cne "fetch claimed`ncheckout claimed`ncheckout claimed`nfetch unclaimed`ncheckout unclaimed`n") { Fail "claim 6: the probe cannot tell a claim from a finished marker; the log is: $($spy -replace "`n", '|')" }
     Gq -C $work config --unset core.hooksPath
     Gq -C $work config --unset remote.origin.uploadpack
+    Gq -C "$tmp\wt\slot-4" switch -q feat/c6   # -Abandon refuses a slot on another branch than its marker (bug 322)
     $null = SlotE "-Abandon 4" @{ WORKER_SLOTS = "4" }
     Gq -C $work branch -D feat/c6 feat/c6b
   }

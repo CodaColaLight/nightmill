@@ -163,8 +163,9 @@ run; no skill, agent or extra call writes the record.
   wrote no line.
 - **The gh query of the freeing** asks for three more fields, so the times and the issue come without another call:
   the reap `--json number,headRefOid,createdAt,mergedAt,closingIssuesReferences` (the PR it frees for is chosen as
-  today, by `headRefOid`); the release `--json number,createdAt,mergedAt,closingIssuesReferences`, and it takes the
-  first element, the same PR whose number `-q '.[0].number'` printed. The release's refusal, its exit codes and both
+  today, by `headRefOid`); the release the same fields, and (since bug #322) it takes the first PR whose
+  `headRefOid` is the tip of the local branch, as the reap does (before, the first element). The release's refusal,
+  its exit codes and both
   commands' printed lines stay exactly as they are; a missing field gives an empty field in the line. `--abandon` calls
   no `gh` and writes `pr`, `from`, `to` and `issues` empty.
 

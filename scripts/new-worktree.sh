@@ -21,7 +21,14 @@ while [ $# -gt 0 ]; do
 done
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/json.sh"
-gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "run new-worktree.sh from inside a git checkout of the project" >&2; exit 1; }
+if ! gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  # --path-format came with git 2.31: an older git is named, not taken for a missing checkout (bug 322)
+  gv=$(git --version 2>/dev/null) || gv=""
+  if [[ "$gv" =~ ([0-9]+)\.([0-9]+) ]] && { [ "${BASH_REMATCH[1]}" -lt 2 ] || { [ "${BASH_REMATCH[1]}" = 2 ] && [ "${BASH_REMATCH[2]}" -lt 31 ]; }; }; then
+    echo "new-worktree.sh needs git 2.31 or newer; this is ${gv#git version }" >&2; exit 1
+  fi
+  echo "run new-worktree.sh from inside a git checkout of the project" >&2; exit 1
+fi
 main=$(dirname "$gitdir")
 cfg="$main/.claude/nightmill.json"
 [ -f "$cfg" ] || { echo "no $cfg (run /nightmill:init)" >&2; exit 1; }

@@ -54,6 +54,9 @@
 # -Release frees the slot also when the local branch cannot be deleted. A marker that is not a JSON object is a busy
 # slot in -Status (the branch and the other fields empty; -Porcelain writes "slot N: the marker is not a JSON
 # object" on standard error), exit 0. Same behaviour as slot.sh.
+# Checks (bug 322): -Release frees a slot only for a merged PR whose last commit is the tip of the local branch, as
+# the reap; -Release and -Abandon (of a finished take) refuse a slot whose worktree is on another branch;
+# -Status creates nothing; a git older than 2.31 is named; gh runs with GH_PROMPT_DISABLED. Same behaviour as slot.sh.
 param(
   [string]$Take,
   [string]$Release = "0",
@@ -93,9 +96,22 @@ if ($hasReport) {
 } elseif ($PSBoundParameters.ContainsKey("Skill") -or $PSBoundParameters.ContainsKey("Role")) { Exit-Usage }
 
 # The main checkout, wherever this is run from (it may itself be a worktree).
+# Continue for this call: Windows PowerShell 5.1 turns git's error text into a terminating error under Stop
+$ErrorActionPreference = "Continue"
 $gitDir = git rev-parse --path-format=absolute --git-common-dir 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $gitDir) { throw "run slot.ps1 from inside a git checkout of the project" }
+$gitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($gitCode -ne 0 -or -not $gitDir) {
+  # --path-format came with git 2.31: an older git is named, not taken for a missing checkout (bug 322)
+  $gv = [string](git --version 2>$null)
+  if ($gv -match '([0-9]+)\.([0-9]+)' -and ([int]$Matches[1] -lt 2 -or ([int]$Matches[1] -eq 2 -and [int]$Matches[2] -lt 31))) {
+    throw "slot.ps1 needs git 2.31 or newer; this is $($gv.Trim() -replace '^git version ', '')"
+  }
+  throw "run slot.ps1 from inside a git checkout of the project"
+}
 $main = Split-Path ([string]$gitDir).Trim() -Parent
+# gh never asks a question: -Reap, -Take and -Release run unattended (bug 322)
+$env:GH_PROMPT_DISABLED = "1"
 
 # The configuration is the one on the base branch (iteration 48, lib\baseconfig.ps1): origin/HEAD, then git.baseBranch;
 # the working tree's file only without a remote-tracking branch or before the base branch has one.
@@ -332,6 +348,15 @@ function Test-Worktree($dir) {
 }
 # Get-BrokenLine <n> <dir>: the refusal of a command on a slot whose directory is no git worktree
 function Get-BrokenLine($n, $dir) { "slot $n is broken: $dir is not a git worktree (move what you need out of it, remove it and run git worktree prune)" }
+# Assert-OnBranch <n> <dir> <branch>: the slot's worktree is on the marker's branch or detached (it holds no branch);
+# on another branch one line and exit 1 (bug 322: -Release and -Abandon never free a slot that holds another branch)
+function Assert-OnBranch($n, $dir, [string]$branch) {
+  $r = Invoke-Native "git" @("-C", $dir, "symbolic-ref", "-q", "--short", "HEAD")
+  $cur = if ($r.Code -eq 0) { $r.Out.Trim() } else { "" }
+  if ($cur -and $cur -cne $branch) {
+    Exit-Line "slot $n is on $cur, not on its branch $branch (switch it back first: git -C '$dir' switch $branch)"
+  }
+}
 
 # Get-Claim <n> [marker]: State none (no marker, or a finished one), live or dead, and Pid (the usable pid, 1 to
 # 2147483647, or ""); a taking marker is live while a process with its pid runs on this machine
@@ -976,17 +1001,26 @@ if ($Release -gt 0) {
   $dir = Get-SlotDir $n
   if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
   if (@(git -C $dir status --porcelain).Count -gt 0) { Exit-Line "slot $n has uncommitted files: $dir" }
+  Assert-OnBranch $n $dir ([string]$m.branch)
+  $t = Invoke-GitOut -C $dir rev-parse "refs/heads/$($m.branch)"
+  if ($t.Code -ne 0) { Exit-Line "git rev-parse failed" }
+  $tip = $t.Out.Trim()
   # a failed git or gh call: its own text, then one plain line, exit 1 (iteration 57, #329)
   git fetch origin $baseBranch
   if ($LASTEXITCODE -ne 0) { Exit-Line "git fetch failed" }
   $prOut = $null
   try {
-    $prOut = gh pr list --state merged --head $m.branch --json number,createdAt,mergedAt,closingIssuesReferences
+    $prOut = gh pr list --state merged --head $m.branch --json number,headRefOid,createdAt,mergedAt,closingIssuesReferences
     $ghCode = $LASTEXITCODE
   } catch { [Console]::Error.WriteLine((Get-FirstLine "$($_.Exception.Message)")); $ghCode = 127 }
   if ($ghCode -ne 0) { Exit-Line "gh pr list failed" }
+  # the merged PR whose head commit is the branch tip, as the reap chooses it (bug 322)
   $pr0 = $null
-  try { $pr0 = ConvertFrom-Json -InputObject ((@($prOut) -join "`n")) | ForEach-Object { $_ } | Select-Object -First 1 } catch { $pr0 = $null }
+  try {
+    foreach ($p in @(ConvertFrom-Json -InputObject ((@($prOut) -join "`n")) | ForEach-Object { $_ })) {
+      if ([string]$p.headRefOid -ceq $tip) { $pr0 = $p; break }
+    }
+  } catch { $pr0 = $null }
   $merged = ""
   if ($null -ne $pr0 -and $null -ne $pr0.PSObject.Properties["number"]) { $merged = "$($pr0.number)" }
   if (-not $merged) {
@@ -1027,6 +1061,7 @@ if ($Abandon -gt 0) {
   if (Test-Path -LiteralPath $dir) {
     if (-not (Test-Worktree $dir)) { Exit-Line (Get-BrokenLine $n $dir) }
     if (@(git -C $dir status --porcelain).Count -gt 0) { Exit-Line "slot $n has uncommitted files: $dir (commit, stash or discard them first)" }
+    Assert-OnBranch $n $dir ([string]$m.branch)
     git -C $dir switch --detach $Base
     if ($LASTEXITCODE -ne 0) { Exit-Line "git switch failed" }
   }
