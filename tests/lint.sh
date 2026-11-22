@@ -1380,9 +1380,14 @@ chk_only() {
 }
 # Iteration 60, decision 8 rule 5: the bash job has two check lines with $CHECK_SELECT, the first with the list
 # smoke-json.sh before the step that hides jq, the second with the other bash steps; --only and --affected occur only
-# in the env line of CHECK_SELECT
+# in the env line of CHECK_SELECT. Iteration 64, decision 6: the two lines are counted in the job smoke-bash only
+# (from "  smoke-bash:" to the next line that starts with two spaces and a letter), so the Git Bash job's check line of
+# the same shape does not count; one awk reads the file once (bug #270)
 chk_sel='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT '
-chk_bash_lines=$(grep -nE '^[[:space:]]*(- )?run: bash tests/check\.sh --summary "\$GITHUB_STEP_SUMMARY" \$CHECK_SELECT ' "$chk_ci" || true)
+chk_bash_lines=$(awk -v sel="$chk_sel" '
+  /^  smoke-bash:/ { in_job = 1; next }
+  in_job && /^  [A-Za-z]/ { in_job = 0 }
+  in_job { s = $0; sub(/^[[:space:]]*(- )?/, "", s); if (index(s, sel) == 1) print NR ":" $0 }' "$chk_ci" || true)
 chk_hide=$(grep -nE '^[[:space:]]*- name: Hide jq' "$chk_ci" | head -n 1 | cut -d: -f1 || true)
 chk_l1=$(printf '%s\n' "$chk_bash_lines" | sed -n 1p); chk_l2=$(printf '%s\n' "$chk_bash_lines" | sed -n 2p)
 if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 2 ] || [ -z "$chk_hide" ] ||

@@ -2,7 +2,7 @@
 
 Date: 2026-11-22
 
-Status: proposed (#342)
+Status: accepted 2026-11-22 (#361)
 
 ## Question
 
@@ -160,3 +160,12 @@ Linux/macOS with the check green.
    for a PowerShell prompt. This breaks a project's hand-wired `session-start.ps1` or `guard.ps1` hooks, which it removes
    from its settings; its `.ps1` allow rules become dead and can be deleted. A project pins the release before this one
    until it has done so.
+
+## Decision
+
+Accepted on 2026-11-22 by the maintainer in story #361: **Bash only, with Git Bash on Windows**, the option this record
+recommends. Why: nightmill is to be developed and tested in one shell, with no second PowerShell track to keep in step;
+bash is already needed on Windows for the hooks, the warm-up commands, the skills' injected config and the check, so
+Git for Windows is no new requirement for a Windows project. The migration takes the four steps above, in that order,
+each leaving the plugin working, each one story under epic #337: step 1 is iteration 64 (#361); the follow-up
+stories are #363 (step 2), #364 (step 3) and #365 (step 4).

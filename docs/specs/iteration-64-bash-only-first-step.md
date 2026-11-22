@@ -1,6 +1,6 @@
 # Iteration 64: record 0004 is accepted, and Windows CI runs the bash tests in Git Bash
 
-Status: draft, awaiting approval (#361)
+Status: delivered in iteration 64 (PR #367)
 
 Story #361, epic #337 (fast verification loop). This is the first pull request of the move to bash only, and it
 covers only (a) the acceptance of decision record 0004 with the option **Bash only, with Git Bash on Windows**, the

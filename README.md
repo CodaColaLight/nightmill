@@ -1142,7 +1142,10 @@ order whatever order they finish in, and the time of every step and the total. `
 lint and the bash smoke tests only and says that the full check has not run: use it while writing code, and the full
 check before every commit and every pull request. CI runs the smoke jobs through `tests/check.sh`: the
 PowerShell smoke steps in four parts on four Windows runners at once (`smoke-slot.ps1` alone in one), and the required
-check `PowerShell scripts smoke tests` is a final job that fails unless every part succeeded; the lint fails when a
+check `PowerShell scripts smoke tests` is a final job that fails unless every part succeeded; a further job,
+`Git Bash smoke tests (Windows, not blocking)`, runs every bash test step in Git Bash on a Windows runner (decision
+record 0004, step 1); it is not a required check, and a failing step there shows in its summary without failing the
+job; the lint fails when a
 PowerShell step runs in no part or in two. On a pull request each CI smoke job runs
 `tests/check.sh --affected --within <its list>`: the steps of its list that the changed paths select, or all of them
 when a path is shared or unknown; a push to `main` runs every step. Every required job runs on every event. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
