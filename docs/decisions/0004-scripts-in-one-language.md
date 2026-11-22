@@ -132,7 +132,7 @@ recommends for its Bash tool; the runtime option adds Node for every user who di
 breakage it removes the `.ps1` forms (dead allow rules, hand-wired `.ps1` hooks, the `windows` value of
 `verification.platform`), which the runtime option removes too, along with every bash rule and call line. By lines kept
 it halves the scripts (6440 of 12885) and keeps 12577 of 21714 test lines with no rewrite, where the runtime option
-rewrites about 15000 to 19000 lines from nothing. Against the table it keeps all four Git Bash problems and widens two,
+rewrites about 15000 to 19000 lines from nothing. Against the table it keeps three of the four Git Bash problems (#304 goes with the `.ps1` tests) and widens two,
 because all Windows code then runs in Git Bash; the workarounds and their regression tests exist, and the runtime option
 would not remove #302 without further rewriting. The cost to weigh is the Windows CI job in Git Bash, which is likely
 slower than the four PowerShell parts together. This is a proposal; the maintainer decides.
