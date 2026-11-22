@@ -136,7 +136,25 @@
       "description": "How the internal reviews work.",
       "properties": {
         "maxFixRounds": { "type": "integer", "minimum": 0, "default": 3, "description": "How many times a producer may fix what its reviewer found before the work is handed to the maintainer. 0 hands over after the first review. When the rounds are used up and every open blocking finding names a concrete fix, /spec, /next and /fix propose one extra round to the maintainer, at most one per pull request (workflow skill, Findings and fix rounds)." },
-        "watchChecksMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "Minutes /next, /fix and /spec watch a pull request's checks after enabling auto-merge, per push, before they stop watching and leave it to auto-merge. The watch cannot be turned off." }
+        "watchChecksMinutes": { "type": "integer", "minimum": 1, "default": 30, "description": "Minutes /next, /fix and /spec watch a pull request's checks after enabling auto-merge, per push, before they stop watching and leave it to auto-merge. The watch cannot be turned off." },
+        "fastLane": {
+          "type": "object",
+          "description": "Which bugs /fix fixes in one pass: one fixer writes the regression test and the fix, the affected check runs, and the pull request opens without the tester and the code review. A bug starts in it when its priority is in priorities. It leaves for the long way (the tester, the fixer and the code review, from the start) when its fix changes a path outside paths or in parallel.hotFiles, needs a story trigger, or is partial. Absent: every bug goes the long way.",
+          "properties": {
+            "priorities": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Priorities, names from board.priorities, whose bugs start in the fast lane. A name not in board.priorities matches no bug. Empty: no bug does."
+            },
+            "paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Files or directories, relative to the repository root, that a fast-lane fix may change. A directory covers every path under it, a trailing / is ignored, and there are no wildcards. The regression test counts too, so name the test directory. Empty: every fix leaves the fast lane."
+            }
+          }
+        }
       }
     },
     "git": {
