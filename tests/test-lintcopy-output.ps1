@@ -5,6 +5,12 @@
 # that tree, the smoke script's other steps do not read it), run the copy's smoke-release.ps1 and read its output.
 # Not a smoke script: run it with `powershell -ExecutionPolicy Bypass -File tests/test-lintcopy-output.ps1`.
 # Needs git and bash (like the lint case of smoke-release.ps1); without bash it reports the skip and passes.
+# Time: it copies the repository once with robocopy and runs the copy's whole tests/smoke-release.ps1 in a child
+# powershell.exe, a step the check also runs on its own. That run does its 25 release runs first (each a child
+# powershell.exe for scripts/release.ps1, in 18 throwaway clones; a small part of the time), makes a second robocopy
+# copy and then runs the whole lint once in Git Bash, which fails, as this test wants: that one nested lint run is most
+# of the time. The two copies take next to nothing.
+# Marked slow (iteration 62).
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
 $psExe = (Get-Command powershell).Source

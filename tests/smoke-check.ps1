@@ -4,6 +4,13 @@
 # the config, two checks at once, and the lint section that keeps the check's step list and CI in step.
 # NIGHTMILL_CLOCK_FILE holds one fixed time, so every duration is 0s. Same cases and same expected text as
 # tests/smoke-check.sh (-Jobs 3 for --jobs 3, -Quick, -Only). Runs on Windows PowerShell 5.1 and pwsh.
+# Time: about 60 runs of the check against fixture steps; each starts a powershell.exe for tests/check.ps1, which starts
+# Git's bash for tests/check.sh, which starts one bash -c per fixture step. Then come 33 runs of the lint range, from
+# "== the check runs every smoke script" to "== text from issues is data": one on the unchanged copy, one on a copy
+# with a new script and 31 on broken copies. Each run gets a fresh copy of the repository (every test script, about 100
+# files, scripts/, skills/, ci.yml, the schema, the example, README.md and CONTRIBUTING.md) and starts one bash process
+# for the section. The copies and the lint runs grew with every lint case that was added to the range.
+# Made faster in iteration 62: its lint copies no longer run the agreement cases or the cost test.
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
 $psExe = (Get-Command powershell -ErrorAction SilentlyContinue).Source
@@ -553,6 +560,87 @@ try {
     if ($s -cmatch '(?m)^(Selection:|\| Changed path|Ran:|Left out:)') { Fail "plain affected summary ($pn): a selection line without -Within: $s" }
   }
 
+  # slow steps (iteration 62): the sixth field of a fixture line is slow or empty. A selective -Affected run, with or without
+  # -Within, leaves a slow step out and lists it; the full check, -Only and the fallbacks run it as any step
+  function Write-AffSlow([string]$reasonP1) {
+    Write-Lf "$tmp\aff-steps.txt" ("l`techo l >> `"$alog`"`tlint`n" +
+      "b1`techo b1 >> `"$alog`"`tbash`n" +
+      "b2`techo b2 >> `"$alog`"`tbash`n" +
+      "p1`techo p1 >> `"$alog`"`tps`t$reasonP1`t`tslow`n" +
+      "p2`techo p2 >> `"$alog`"`tps`n" +
+      "c`techo c >> `"$alog`"`tclaude`n")
+  }
+  $SLOW_LEFT = "LEFT OUT: p1 (a slow step; the full check and CI on the base branch run it)"
+  function Times-Names([string]$text) {
+    $names = @(); $on = $false
+    foreach ($l in ($text -split "`n")) {
+      if ($l -ceq "Times:") { $on = $true }
+      if ($on -and $l -ne "") { $names += @($l.Trim() -split '\s+')[0] }
+      if ($l -match '^  total ') { $on = $false }
+    }
+    $names
+  }
+  Aff-Cfg "-"
+  Write-AffSlow ""
+  $r = Aff-Run "scripts/foo.ps1`n"
+  if ($r.Code -ne 0) { Fail "slow, affected: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b1,") { Fail "slow, affected: the steps that ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne (Aff-First 2 1)) { Fail "slow, affected: the first line: $($r.Out)" }
+  if (-not (Has-Line $r.Out "affected: scripts/foo.ps1 -> b1,p1")) { Fail "slow, affected: no 'scripts/foo.ps1 -> b1,p1' line: $($r.Out)" }
+  if (-not (Has-Line $r.Out $SLOW_LEFT)) { Fail "slow, affected: no LEFT OUT line for p1: $($r.Out)" }
+  if (Has-Line $r.Out "== p1") { Fail "slow, affected: a section for the slow step p1: $($r.Out)" }
+  if ((Times-Names $r.Out) -ccontains "p1") { Fail "slow, affected: p1 is in the Times block: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "AFFECTED CHECK PASSED (2 of 6 steps, changed paths: 1; the full check has not run)") { Fail "slow, affected: the last line: $($r.Out)" }
+  # a slow step that cannot run here is listed as left out, not as skipped
+  Write-AffSlow "no pwsh here"
+  $r = Aff-Run "scripts/foo.ps1`n"
+  if ($r.Code -ne 0) { Fail "slow, affected, with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if (-not (Has-Line $r.Out $SLOW_LEFT)) { Fail "slow, affected, with a reason: no LEFT OUT line for p1: $($r.Out)" }
+  if (Has-Line $r.Out "SKIPPED: no pwsh here") { Fail "slow, affected, with a reason: a SKIPPED line for the slow step: $($r.Out)" }
+  Write-AffSlow ""
+  # -Within: the slow step of the list is left out, and the summary says so
+  if (Test-Path $sumf) { Remove-Item $sumf }
+  $r = Aff-Run "scripts/foo.ps1`n" "-Within b1,p1 -Summary `"$tf/aff-summary.md`""
+  if ($r.Code -ne 0) { Fail "slow, within: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "b1,") { Fail "slow, within: the steps that ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne ((Aff-First 1 1) -replace ' of 6 steps', ' of 2 steps')) { Fail "slow, within: the first line: $($r.Out)" }
+  if (-not (Has-Line $r.Out $SLOW_LEFT)) { Fail "slow, within: no LEFT OUT line for p1: $($r.Out)" }
+  if (-not (Test-Path $sumf)) { Fail "slow, within: no summary file was written" }
+  $s = Read-Lf $sumf
+  if (-not (Has-Line $s 'Selection: --affected against NIGHTMILL_CHECK_PATHS: 1 of 2 steps ran, 1 left out (1 slow, 0 selected by no changed path).')) { Fail "slow, within: no Selection line: $s" }
+  if (-not (Has-Line $s 'Slow steps left out: `p1` (a push to the base branch runs them).')) { Fail "slow, within: no 'Slow steps left out' line: $s" }
+  # the places that still run a slow step
+  $planEnv = @{ NIGHTMILL_CHECK_MAP = $affMap }
+  function Plain-Log { (@((Read-Lf "$tmp\affected.log") -split "`n" | Where-Object { $_ -ne "" }) -join ",") + "," }
+  Write-Lf "$tmp\affected.log" ""
+  $r = Check "$tf/aff-steps.txt" "-Jobs 1 -Only p1" $repo $planEnv
+  if ($r.Code -ne 0) { Fail "slow, only: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ((Plain-Log) -cne "p1,") { Fail "slow, only: the steps that ran: $(Plain-Log)" }
+  if ($r.Out -cmatch '(?m)^LEFT OUT:') { Fail "slow, only: a LEFT OUT line: $($r.Out)" }
+  Write-Lf "$tmp\affected.log" ""
+  $r = Check "$tf/aff-steps.txt" "-Jobs 1" $repo $planEnv
+  if ($r.Code -ne 0) { Fail "slow, full check: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ((Plain-Log) -cne "l,b1,b2,p1,p2,c,") { Fail "slow, full check: the steps that ran: $(Plain-Log)" }
+  if ($r.Out -cmatch '(?m)^LEFT OUT:') { Fail "slow, full check: a LEFT OUT line: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "slow, full check: the last line: $($r.Out)" }
+  $r = Aff-Run "scripts/lib/x.sh`n"
+  if ($r.Code -ne 0) { Fail "slow, fallback: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b1,b2,p1,p2,c,") { Fail "slow, fallback: the steps that ran: $($r.Log)" }
+  if ($r.Out -cmatch '(?m)^LEFT OUT:') { Fail "slow, fallback: a LEFT OUT line: $($r.Out)" }
+  $r = Aff-Run "scripts/lib/x.sh`n" "-Within b2,p1"
+  if ($r.Code -ne 0) { Fail "slow, within fallback: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "b2,p1,") { Fail "slow, within fallback: the steps that ran: $($r.Log)" }
+  if (@($r.Out -split "`n")[1] -cnotlike "check: only b2,p1, *") { Fail "slow, within fallback: the second line: $($r.Out)" }
+  if ($r.Out -cmatch '(?m)^LEFT OUT:') { Fail "slow, within fallback: a LEFT OUT line: $($r.Out)" }
+  # the sixth field is slow or empty
+  Write-Lf "$tmp\slow-bad.txt" ("l`techo l >> `"$alog`"`tlint`n" + "p1`techo p1 >> `"$alog`"`tps`t`t`tfast`n")
+  Write-Lf "$tmp\affected.log" ""
+  $r = Check "$tf/slow-bad.txt" "-Jobs 1"
+  if ($r.Code -ne 2) { Fail "slow, bad sixth field: exit $($r.Code), wanted 2: $($r.Out)" }
+  if (-not (Has-Line $r.Err "check: $tf/slow-bad.txt: the sixth field is slow or empty, not fast")) { Fail "slow, bad sixth field: no 'the sixth field is slow or empty, not fast' line: $($r.Err)" }
+  if ((Read-Lf "$tmp\affected.log") -cne "") { Fail "slow, bad sixth field: a step ran: $(Read-Lf "$tmp\affected.log")" }
+  Write-Aff "" "" ""
+
   # the usage errors (a repeated switch fails in PowerShell's own binding, so it is run through bash with the same arguments)
   foreach ($a in "-Affected -Quick", "-Affected -Only b", "-Within b", "-Quick -Within b", "-Only b -Within b") { $null = Usage-Case $a }
   $r = Usage-Case "-Affected -Within nope"
@@ -650,8 +738,14 @@ try {
     if ($onList) { [void]$realList.Add($l) }
     if ($l -ceq '# steps: begin') { $onList = $true }
   }
+  # a step marked slow (iteration 62) ends in ' slow' after its 'first': the mark is removed before the whole-line match
+  $realFirst = (@($realList | ForEach-Object { $_ -creplace ' slow$', '' })) -join "`n"
   foreach ($want in "bash test-spec-template.sh", "bash smoke-slot.sh", "ps smoke-slot.ps1", "ps smoke-check.ps1", "ps smoke-validate.ps1", "ps smoke-release.ps1", "ps smoke-drive.ps1", "ps test-lintcopy-output.ps1") {
-    if (-not (Has-Line ($realList -join "`n") "add $want first")) { Fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh" }
+    if (-not (Has-Line $realFirst "add $want first")) { Fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh" }
+  }
+  # the slow steps are marked in the step list itself (iteration 62, decision 4)
+  foreach ($want in "ps smoke-drive.ps1 first slow", "ps test-lintcopy-output.ps1 first slow", "bash test-lintcopy-output.sh slow") {
+    if (-not (Has-Line ($realList -join "`n") "add $want")) { Fail "slow steps: 'add $want' is not in the step list of tests/check.sh" }
   }
 
   Write-Host "== the lint: the check runs every smoke script"
@@ -740,6 +834,11 @@ try {
   Lint-Break "mapshared" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared scripts/lib/*' } } "the map does not have the line shared scripts/lib/*"
   Lint-Break "cimapci" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared .github/workflows/*' } } "the map does not have the line shared .github/workflows/*"
   Lint-Break "mapskill" "skills\check\SKILL.md" { param($ls) $ls | ForEach-Object { $_.Replace("check: AFFECTED", "check: AFFECTEX") } } "skills/check/SKILL.md does not mention check: AFFECTED"
+  # the slow mark (iteration 62, decision 8): its format, the set of slow steps, the '# Time: ' notes and the release line of the map
+  Lint-Break "slowformat" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq 'add ps smoke-drive.ps1 first slow') { 'add ps smoke-drive.ps1 slow first' } else { $l } } } "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
+  Lint-Break "slowset" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq 'add ps smoke-drive.ps1 first slow') { 'add ps smoke-drive.ps1 first' } else { $l } } } "the steps marked slow are not exactly the slow steps"
+  Lint-Break "slownote" "tests\smoke-drive.ps1" { param($ls) $ls | Where-Object { -not $_.StartsWith('# Time: ') } } "tests/smoke-drive.ps1 has no '# Time: ' note in its header"
+  Lint-Break "mapplugin" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared .claude-plugin/plugin.json' } } "the map does not have the line shared .claude-plugin/plugin.json"
 
   Write-Host "smoke-check: ok"
 } finally {

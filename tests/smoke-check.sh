@@ -517,6 +517,85 @@ for p in $'scripts/foo.ps1\ndocs/a.md\n' $'scripts/lib/x.sh\n'; do
   if grep -qE '^(Selection:|\| Changed path|Ran:|Left out:)' "$sumf"; then fail "plain affected summary (${p%%$'\n'*}): a selection line without --within: $(cat "$sumf")"; fi
 done
 
+# slow steps (iteration 62): the sixth field of a fixture line is slow or empty. A selective --affected run, with or without
+# --within, leaves a slow step out and lists it; the full check, --only and the fallbacks run it as any step
+mk_aff_slow() { # mk_aff_slow <reason of p1>: the six steps of mk_aff, p1 with the sixth field slow
+  {
+    printf 'l\techo l >> "%s"\tlint\n' "$alog"
+    printf 'b1\techo b1 >> "%s"\tbash\n' "$alog"
+    printf 'b2\techo b2 >> "%s"\tbash\n' "$alog"
+    printf 'p1\techo p1 >> "%s"\tps\t%s\t\tslow\n' "$alog" "$1"
+    printf 'p2\techo p2 >> "%s"\tps\n' "$alog"
+    printf 'c\techo c >> "%s"\tclaude\n' "$alog"
+  } > "$tmp/aff-steps.txt"
+}
+SLOW_LEFT='LEFT OUT: p1 (a slow step; the full check and CI on the base branch run it)'
+times_names() { printf '%s\n' "$1" | awk '/^Times:$/ { p = 1 } p && NF { print $1 } /^  total / { p = 0 }'; }
+aff_cfg -
+mk_aff_slow ""
+aff_run $'scripts/foo.ps1\n'
+[ "$rc" = 0 ] || fail "slow, affected: exit $rc: $out $err"
+[ "$aff_log" = "l,b1," ] || fail "slow, affected: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 2 1)" ] || fail "slow, affected: the first line: $out"
+has_line "$out" 'affected: scripts/foo.ps1 -> b1,p1' || fail "slow, affected: no 'scripts/foo.ps1 -> b1,p1' line: $out"
+has_line "$out" "$SLOW_LEFT" || fail "slow, affected: no LEFT OUT line for p1: $out"
+if has_line "$out" '== p1'; then fail "slow, affected: a section for the slow step p1: $out"; fi
+if grep -qx p1 <<<"$(times_names "$out")"; then fail "slow, affected: p1 is in the Times block: $out"; fi
+[ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (2 of 6 steps, changed paths: 1; the full check has not run)" ] || fail "slow, affected: the last line: $out"
+# a slow step that cannot run here is listed as left out, not as skipped
+mk_aff_slow "no pwsh here"
+aff_run $'scripts/foo.ps1\n'
+[ "$rc" = 0 ] || fail "slow, affected, with a reason: exit $rc: $out $err"
+has_line "$out" "$SLOW_LEFT" || fail "slow, affected, with a reason: no LEFT OUT line for p1: $out"
+if has_line "$out" 'SKIPPED: no pwsh here'; then fail "slow, affected, with a reason: a SKIPPED line for the slow step: $out"; fi
+mk_aff_slow ""
+# --within: the slow step of the list is left out, and the summary says so
+rm -f "$sumf"
+aff_run $'scripts/foo.ps1\n' --within b1,p1 --summary "$sumf"
+[ "$rc" = 0 ] || fail "slow, within: exit $rc: $out $err"
+[ "$aff_log" = "b1," ] || fail "slow, within: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 1 1 | sed 's/ of 6 steps/ of 2 steps/')" ] || fail "slow, within: the first line: $out"
+has_line "$out" "$SLOW_LEFT" || fail "slow, within: no LEFT OUT line for p1: $out"
+[ -f "$sumf" ] || fail "slow, within: no summary file was written"
+grep -qxF 'Selection: --affected against NIGHTMILL_CHECK_PATHS: 1 of 2 steps ran, 1 left out (1 slow, 0 selected by no changed path).' "$sumf" || fail "slow, within: no Selection line: $(cat "$sumf")"
+grep -qxF 'Slow steps left out: `p1` (a push to the base branch runs them).' "$sumf" || fail "slow, within: no 'Slow steps left out' line: $(cat "$sumf")"
+# the places that still run a slow step
+aff_plain() { # aff_plain <args...>: out, err, rc of the check in $repo without --affected, on the six steps; the log in $aff_log
+  : > "$alog"
+  set +e
+  out=$(NIGHTMILL_CHECK_STEPS="$tmp/aff-steps.txt" NIGHTMILL_CHECK_MAP="$aff_map" bash "$repo/tests/check.sh" --jobs 1 "$@" 2>"$tmp/err.txt"); rc=$?
+  set -e
+  err=$(cat "$tmp/err.txt")
+  aff_log=$(tr '\n' ',' < "$alog")
+}
+aff_plain --only p1
+[ "$rc" = 0 ] || fail "slow, only: exit $rc: $out $err"
+[ "$aff_log" = "p1," ] || fail "slow, only: the steps that ran: $aff_log"
+if grep -q '^LEFT OUT:' <<<"$out"; then fail "slow, only: a LEFT OUT line: $out"; fi
+aff_plain
+[ "$rc" = 0 ] || fail "slow, full check: exit $rc: $out $err"
+[ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "slow, full check: the steps that ran: $aff_log"
+if grep -q '^LEFT OUT:' <<<"$out"; then fail "slow, full check: a LEFT OUT line: $out"; fi
+[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "slow, full check: the last line: $out"
+aff_run $'scripts/lib/x.sh\n'
+[ "$rc" = 0 ] || fail "slow, fallback: exit $rc: $out $err"
+[ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "slow, fallback: the steps that ran: $aff_log"
+if grep -q '^LEFT OUT:' <<<"$out"; then fail "slow, fallback: a LEFT OUT line: $out"; fi
+aff_run $'scripts/lib/x.sh\n' --within b2,p1
+[ "$rc" = 0 ] || fail "slow, within fallback: exit $rc: $out $err"
+[ "$aff_log" = "b2,p1," ] || fail "slow, within fallback: the steps that ran: $aff_log"
+case "$(sed -n 2p <<<"$out")" in "check: only b2,p1, "*) ;; *) fail "slow, within fallback: the second line: $out" ;; esac
+if grep -q '^LEFT OUT:' <<<"$out"; then fail "slow, within fallback: a LEFT OUT line: $out"; fi
+# the sixth field is slow or empty
+printf 'l\techo l >> "%s"\tlint\n' "$alog" > "$tmp/slow-bad.txt"
+printf 'p1\techo p1 >> "%s"\tps\t\t\tfast\n' "$alog" >> "$tmp/slow-bad.txt"
+: > "$alog"
+run_check "$tmp/slow-bad.txt" --jobs 1
+[ "$rc" = 2 ] || fail "slow, bad sixth field: exit $rc, wanted 2: $out"
+grep -qxF "check: $tmp/slow-bad.txt: the sixth field is slow or empty, not fast" <<<"$err" || fail "slow, bad sixth field: no 'the sixth field is slow or empty, not fast' line: $err"
+[ ! -s "$alog" ] || fail "slow, bad sixth field: a step ran: $(cat "$alog")"
+mk_aff "" "" ""
+
 # the usage errors
 usage_case --affected --quick
 usage_case --affected --only b
@@ -618,9 +697,15 @@ echo "== the slowest steps of the real list start first"
 # The real step list of tests/check.sh (between '# steps: begin' and '# steps: end'): the steps measured slowest in CI
 # (issue 279) carry the 'first' mark. Only these are pinned; more steps may be marked later.
 real_list=$(awk '/^# steps: begin$/{on=1;next} /^# steps: end$/{on=0} on' "$here/tests/check.sh")
+# a step marked slow (iteration 62) ends in ' slow' after its 'first': the mark is removed before the whole-line match
+real_first=$(sed 's/ slow$//' <<<"$real_list")
 for want in "bash test-spec-template.sh" "bash smoke-slot.sh" "ps smoke-slot.ps1" "ps smoke-check.ps1" "ps smoke-validate.ps1" \
             "ps smoke-release.ps1" "ps smoke-drive.ps1" "ps test-lintcopy-output.ps1"; do
-  has_line "$real_list" "add $want first" || fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh"
+  has_line "$real_first" "add $want first" || fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh"
+done
+# the slow steps are marked in the step list itself (iteration 62, decision 4)
+for want in "ps smoke-drive.ps1 first slow" "ps test-lintcopy-output.ps1 first slow" "bash test-lintcopy-output.sh slow"; do
+  has_line "$real_list" "add $want" || fail "slow steps: 'add $want' is not in the step list of tests/check.sh"
 done
 
 echo "== the lint: the check runs every smoke script"
@@ -701,5 +786,10 @@ lint_break maptwin tests/check.sh 's/^# affects: end$/map scripts\/slot.sh smoke
 lint_break mapshared tests/check.sh '/^shared scripts\/lib\/\*$/d' 'the map does not have the line shared scripts/lib/*'
 lint_break cimapci tests/check.sh '/^shared \.github\/workflows\/\*$/d' 'the map does not have the line shared .github/workflows/*'
 lint_break mapskill skills/check/SKILL.md 's/check: AFFECTED/check: AFFECTEX/g' 'skills/check/SKILL.md does not mention check: AFFECTED'
+# the slow mark (iteration 62, decision 8): its format, the set of slow steps, the '# Time: ' notes and the release line of the map
+lint_break slowformat tests/check.sh 's/^add ps smoke-drive\.ps1 first slow$/add ps smoke-drive.ps1 slow first/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
+lint_break slowset tests/check.sh 's/^\(add ps smoke-drive\.ps1 first\) slow$/\1/' 'the steps marked slow are not exactly the slow steps'
+lint_break slownote tests/smoke-drive.ps1 '/^# Time: /d' "tests/smoke-drive.ps1 has no '# Time: ' note in its header"
+lint_break mapplugin tests/check.sh '/^shared \.claude-plugin\/plugin\.json$/d' 'the map does not have the line shared .claude-plugin/plugin.json'
 
 echo "smoke-check: ok"
