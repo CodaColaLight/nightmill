@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.0 (2026-11-22)
+
 - Iteration 64 (#361): decision record 0004 is accepted (bash only, with Git Bash on Windows), and CI gains its first
   migration step: a job that runs every bash test step in Git Bash on a Windows runner (Git Bash smoke tests (Windows,
   not blocking)). It is not a required check and a failing step does not fail it yet; the PowerShell parts, the
