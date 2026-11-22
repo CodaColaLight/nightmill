@@ -3,7 +3,11 @@
 # of tests/check.sh is named in exactly one part of the matrix of the job smoke-powershell-part in
 # .github/workflows/ci.yml, each list is in the order of the step list, smoke-slot.ps1 has a part of its own, the final
 # job smoke-powershell (the required name) fails unless every part succeeded, and only that job has a job-level
-# permissions block (contents: read, actions: read). Prints one FAIL line per broken rule, then runs its own cases on
+# permissions block (contents: read, actions: read). Rule 10 (iteration 64, decision record 0004 step 1): the job
+# smoke-gitbash runs every bash step in Git Bash on a Windows runner and does not block: its name, runs-on: windows-latest,
+# a full-history checkout, no if:, no needs:, and exactly one run step, tests/check.sh $CHECK_SELECT <list>, in a step with
+# shell: bash and continue-on-error: true. Rule 11: that list holds every `add bash` step of tests/check.sh exactly once,
+# nothing else, in the order of the step list. Prints one FAIL line per broken rule, then runs its own cases on
 # scratch copies, each broken once. tests/lint.sh starts it once. With NIGHTMILL_CI_PARTS_RULES_ONLY=1 it checks the
 # rules only and skips its cases: tests/smoke-check.sh/.ps1 set it on their lint copies, so one check runs the cases once
 # (bug #293), as tests/test-lint-agreement-cost.sh bounds the agreement section (bug #270).
@@ -163,6 +167,70 @@ rules() {
   if [ -n "$pm" ] && [ "$pm" != "|contents: read|actions: read" ]; then
     fl "the job smoke-powershell's 'permissions:' block is not exactly 'contents: read' and 'actions: read'"
   fi
+
+  # rule 10: the Git Bash job (iteration 64). A step starts at a line of six spaces, a dash and a space; a compact
+  # `- key: value` counts as the key, and every run line counts, as in the PowerShell part job (bug #296)
+  local gblock gbad="" gname=0 gro=0 gfd=0 gif=0 gneeds=0 gruns=0 grunok=0 grl="" gsh=0 gcoe=0 glist=""
+  local GBRUN='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT '
+  gstep_end() { # the step just read: is it the one run step, with its keys?
+    case "$grl" in
+      "$GBRUN"?*)
+        [ -n "$glist" ] || glist=${grl#"$GBRUN"}
+        if [ "$gsh" = 1 ] && [ "$gcoe" = 1 ]; then grunok=$((grunok + 1)); fi ;;
+    esac
+    gsh=0; gcoe=0; grl=""
+  }
+  gblock=$(block smoke-gitbash)
+  while IFS= read -r l; do
+    t="${l#"${l%%[![:space:]]*}"}"
+    case "$l" in "      - "*) gstep_end ;; esac
+    t=${t#- }
+    case "$l" in
+      "    name: Git Bash smoke tests (Windows, not blocking)") gname=1 ;;
+      "    runs-on: windows-latest") gro=1 ;;
+    esac
+    case "$t" in
+      "fetch-depth: 0") gfd=1 ;;
+      "if:"*) gif=1 ;;
+      "needs:"*) gneeds=1 ;;
+      "shell: bash") gsh=1 ;;
+      "continue-on-error: true") gcoe=1 ;;
+      "run:"*) gruns=$((gruns + 1)); grl=$t ;;
+    esac
+  done <<<"$gblock"
+  gstep_end
+  [ -n "$gblock" ] || gbad="the job smoke-gitbash is missing"
+  [ -n "$gbad" ] || [ "$gname" = 1 ] || gbad="the name line is not 'Git Bash smoke tests (Windows, not blocking)'"
+  [ -n "$gbad" ] || [ "$gro" = 1 ] || gbad="not runs-on: windows-latest"
+  [ -n "$gbad" ] || [ "$gfd" = 1 ] || gbad="no fetch-depth: 0"
+  [ -n "$gbad" ] || [ "$gif" = 0 ] || gbad="an if: line"
+  [ -n "$gbad" ] || [ "$gneeds" = 0 ] || gbad="a needs: line"
+  [ -n "$gbad" ] || [ "$gruns" = 1 ] || gbad="$gruns run steps, not exactly one"
+  [ -n "$gbad" ] || [ "$grunok" = 1 ] || gbad='the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT <list> in a step with shell: bash and continue-on-error: true'
+  [ -z "$gbad" ] || fl "the Git Bash job is malformed ($gbad)"
+
+  # rule 11: the Git Bash list holds every bash step of the step list exactly once, nothing else, in list order
+  local gb=() garr=()
+  while IFS= read -r x; do [ -z "$x" ] || gb[${#gb[@]}]=$x; done < <(awk '/^# steps: begin$/ { on = 1; next } /^# steps: end$/ { on = 0 } on && $1 == "add" && $2 == "bash" { print $3 }' "$chk")
+  [ "${#gb[@]}" -gt 0 ] || fl "tests/check.sh has no bash steps"
+  IFS=, read -r -a garr <<<"$glist"
+  for x in "${gb[@]}"; do
+    cnt=0
+    for n in "${garr[@]}"; do [ "$n" != "$x" ] || cnt=$((cnt + 1)); done
+    if [ "$cnt" = 0 ]; then fl "tests/$x runs in no Git Bash list"
+    elif [ "$cnt" -gt 1 ]; then fl "tests/$x is named more than once in the Git Bash list"; fi
+  done
+  last=-1
+  for n in "${garr[@]}"; do
+    idx=-1; j=0
+    while [ "$j" -lt "${#gb[@]}" ]; do [ "${gb[$j]}" != "$n" ] || { idx=$j; break; }; j=$((j + 1)); done
+    if [ "$idx" = -1 ]; then
+      fl "the Git Bash list names tests/$n, which is not a bash step of tests/check.sh"
+    else
+      if [ "$idx" -lt "$last" ]; then fl "the Git Bash list is not in the order of the step list"; last=999999; fi
+      [ "$last" = 999999 ] || last=$idx
+    fi
+  done
 }
 
 # on the checkout
@@ -230,6 +298,45 @@ case_sed noperm '/^    permissions:$/d;/^      contents: read$/d;/^      actions
 mkcase stepperm > /dev/null
 ci_awk stepperm '/^  [A-Za-z]/ { cur = $1 } { print } cur == "smoke-bash:" && /^    steps:/ && !d { print "      permissions:"; d = 1 }'
 expect stepperm "job smoke-bash has a job-level 'permissions:' block"
+
+# the Git Bash job (iteration 64): each case changes the job smoke-gitbash, or the step list, once. A case whose change
+# did not apply (the job is not in the workflow) fails, so no case passes on a workflow without the job.
+changed() { # changed <name> <file under the root>: the scratch copy differs from the checkout's file
+  if cmp -s "$root/$2" "$tmp/case-$1/$2"; then echo "FAIL: case $1: the change did not apply to $2 (no job smoke-gitbash?)"; fail=1; fi
+}
+gb_case() { # gb_case <name> <sed commands for the lines of the job smoke-gitbash> <expected text>
+  mkcase "$1" > /dev/null
+  ci_sed "$1" "/^  smoke-gitbash:\$/,/^  [A-Za-z]/{
+$2
+}"
+  changed "$1" .github/workflows/ci.yml
+  expect "$1" "$3"
+}
+mkcase gbgone > /dev/null
+ci_awk gbgone '/^  [A-Za-z]/ { skip = ($0 == "  smoke-gitbash:") } !skip'
+changed gbgone .github/workflows/ci.yml
+expect gbgone 'the Git Bash job is malformed'
+gb_case gbubuntu 's/^    runs-on: windows-latest$/    runs-on: ubuntu-latest/' 'the Git Bash job is malformed'
+gb_case gbdepth '/fetch-depth: 0/d' 'the Git Bash job is malformed'
+gb_case gbif "/^    runs-on: /a\\
+    if: github.event_name == 'push'" 'the Git Bash job is malformed'
+gb_case gbcoe '/continue-on-error: true/d' 'the Git Bash job is malformed'
+gb_case gbshell '/shell: bash/d' 'the Git Bash job is malformed'
+gb_case gbtwo '/run: bash tests\/check\.sh/a\
+      - run: echo x' 'the Git Bash job is malformed'
+gb_case gbname 's/ (Windows, not blocking)$//' 'the Git Bash job is malformed'
+gb_case gbneeds '/^    runs-on: /a\
+    needs: smoke-bash' 'the Git Bash job is malformed'
+gb_case gbnoguard 's/smoke-guard\.sh,//' 'tests/smoke-guard.sh runs in no Git Bash list'
+gb_case gbgate2 's/smoke-gate\.sh,/smoke-gate.sh,smoke-gate.sh,/' 'more than once in the Git Bash list'
+mkcase gbnewstep > /dev/null
+f="$tmp/case-gbnewstep/tests/check.sh"
+sed -e 's/^# steps: end$/add bash smoke-new.sh\
+# steps: end/' "$f" > "$f.new" && mv "$f.new" "$f"
+changed gbnewstep tests/check.sh
+expect gbnewstep 'tests/smoke-new.sh runs in no Git Bash list'
+gb_case gbps '/run: bash tests\/check\.sh/s/$/,smoke-slot.ps1/' 'which is not a bash step'
+gb_case gborder 's/smoke-hook\.sh,smoke-release\.sh/smoke-release.sh,smoke-hook.sh/' 'not in the order of the step list'
 
 [ "$fail" = 0 ] || exit 1
 echo "OK: the PowerShell parts"
