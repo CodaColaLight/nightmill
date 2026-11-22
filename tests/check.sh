@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/check.sh - the local equivalent of CI, in one command (verification.check in .claude/nightmill.json).
-#   tests/check.sh [--quick | --only <step>[,<step>...] | --affected] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]
+#   tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]
 # The steps are the lines of the step list below (between '# steps: begin' and '# steps: end'; tests/lint.sh reads it
 # and fails on a smoke script that is not in it), then the two claude steps:
 #   lint                      tests/lint.sh
@@ -21,6 +21,10 @@
 #                  shared <pattern>, lintonly <pattern>; a pattern is a case pattern on the whole path, a changed
 #                  tests/<step> runs itself). A shared path, a path in no line of the map, or no merge base runs the
 #                  full check instead. Never prints the line of a passed full check unless it ran the full check.
+#   --within a,b   with --affected only (iteration 60; CI's smoke jobs on a pull request): of the named steps, those the
+#                  changed paths select (the lint only when it is named; verification.platform does not apply). Where
+#                  --affected alone would run the full check, it runs --only a,b instead. With --summary, the section
+#                  also says which steps ran, which were left out, and why.
 # verification.platform (iteration 56) picks the test family of a full or quick run: windows skips the bash steps,
 # unix skips the ps steps, all (or no key) runs both; the lint and the claude steps run on every platform, and the
 # skipped family is listed as SKIPPED. --only ignores the key and does not read it; --affected does not apply it to
@@ -44,14 +48,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 . scripts/lib/ledger.sh
 . scripts/lib/json.sh
 
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 usage() { echo "$USAGE" >&2; exit 2; }
 whole_1_16() { [[ "$1" =~ ^[1-9][0-9]?$ ]] && [ "$1" -le 16 ]; }
 
-mode=full; only=""; jobs=""; psopt=""; summary=""; seen=" "
+mode=full; only=""; within=""; jobs=""; psopt=""; summary=""; seen=" "
 while [ $# -gt 0 ]; do
   case $1 in
-    --quick|--only|--affected|--jobs|--powershell|--summary)
+    --quick|--only|--affected|--within|--jobs|--powershell|--summary)
       case $seen in *" $1 "*) usage ;; esac
       seen="$seen$1 " ;;
   esac
@@ -59,6 +63,7 @@ while [ $# -gt 0 ]; do
     --quick) mode=quick; shift ;;
     --affected) mode=affected; shift ;;
     --only) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; only=$2; mode=only; shift 2 ;;
+    --within) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; within=$2; shift 2 ;;
     --jobs) [ $# -ge 2 ] || usage; whole_1_16 "$2" || usage; jobs=$2; shift 2 ;;
     --powershell) [ $# -ge 2 ] || usage; case $2 in powershell|pwsh) psopt=$2 ;; *) usage ;; esac; shift 2 ;;
     --summary) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; summary=$2; shift 2 ;;
@@ -67,6 +72,7 @@ while [ $# -gt 0 ]; do
 done
 case $seen in *" --quick "*) case $seen in *" --only "*) usage ;; esac ;; esac
 case $seen in *" --affected "*) case $seen in *" --quick "*|*" --only "*) usage ;; esac ;; esac
+case $seen in *" --within "*) case $seen in *" --affected "*) ;; *) usage ;; esac ;; esac
 
 # The step list: k_kind, k_name, k_first ('first' or empty), k_skip (a reason, or empty), k_cmd (fixture steps only)
 n=0
@@ -190,6 +196,7 @@ affects_map() {
 shared scripts/lib/*
 shared tests/check.sh
 shared tests/check.ps1
+shared .github/workflows/*
 lintonly docs/*
 map .claude-plugin/* claude plugin validate,claude plugin test
 map .claude-plugin/plugin.json smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh,smoke-release.ps1,test-release-resume.ps1,test-release-low-defects.ps1
@@ -286,10 +293,30 @@ else
   fixture=0
 fi
 
+# --within (iteration 60): w_in[i] is 1 for a step of the list, wn is how many steps the list names; a name that is no
+# step is the usage error, as with --only
+wn=0; w_lint=""
+for ((i = 0; i < n; i++)); do w_in[i]=0; done
+if [ -n "$within" ]; then
+  rest=$within,
+  while [ -n "$rest" ]; do
+    want=${rest%%,*}; rest=${rest#*,}
+    [ -n "$want" ] || usage
+    hit=""
+    for ((i = 0; i < n; i++)); do
+      if [ "${k_name[i]}" = "$want" ]; then
+        hit=1
+        if [ "${w_in[i]}" = 0 ]; then w_in[i]=1; wn=$((wn + 1)); [ "${k_kind[i]}" != lint ] || w_lint=1; fi
+      fi
+    done
+    [ -n "$hit" ] || { echo "check: no step named $want" >&2; usage; }
+  done
+fi
+
 # --affected (iteration 59): the changed paths, each turned into steps by the map. aff is selective (the lint and the
 # selected steps run) or full (the full check runs, and its reason is aff_reason); aff_sel[i] is 1 for a step that a
 # changed path selected, and the platform does not apply to it.
-aff=""; aff_reason=""; aff_c=0; aff_ref=""; aff_lines=()
+aff=""; aff_reason=""; aff_c=0; aff_ref=""; aff_lines=(); aff_paths=(); aff_texts=()
 for ((i = 0; i < n; i++)); do aff_sel[i]=0; done
 if [ "$mode" = affected ]; then
   if [ "$fixture" = 1 ]; then
@@ -353,16 +380,33 @@ if [ "$mode" = affected ]; then
       continue
     fi
     case $p in tests/*) names="$names${p#tests/}," ;; esac
-    got=""
+    got=""; got_w=""
     for ((i = 0; i < n; i++)); do
-      case $names in *",${k_name[i]},"*) aff_sel[i]=1; got="$got${got:+,}${k_name[i]}" ;; esac
+      case $names in
+        *",${k_name[i]},"*) aff_sel[i]=1; got="$got${got:+,}${k_name[i]}"
+          [ "${w_in[i]}" = 0 ] || got_w="$got_w${got_w:+,}${k_name[i]}" ;;
+      esac
     done
-    if [ -n "$got" ]; then aff_lines+=("affected: $p -> $got")
-    elif [ -n "$is_lintonly" ]; then aff_lines+=("affected: $p -> the lint only")
-    else [ -n "$aff_reason" ] || aff_reason="$p is in no line of the map"
+    if [ -z "$got" ] && [ -z "$is_lintonly" ]; then
+      [ -n "$aff_reason" ] || aff_reason="$p is in no line of the map"
+      continue
     fi
+    # what the path selects: its steps, the lint only, or (with --within) none of the steps of the list
+    if [ -z "$within" ]; then
+      if [ -n "$got" ]; then sel_text=$got; else sel_text="the lint only"; fi
+    elif [ -n "$got_w" ]; then sel_text=$got_w
+    elif [ -z "$got" ] && [ -n "$w_lint" ]; then sel_text="the lint only"
+    else sel_text="none of the --within steps"
+    fi
+    aff_lines+=("affected: $p -> $sel_text"); aff_paths+=("$p"); aff_texts+=("$sel_text")
   done <<<"$paths"
-  if [ -n "$aff_reason" ]; then aff=full; mode=full; else aff=selective; fi
+  if [ -n "$aff_reason" ]; then
+    aff=full
+    # with --within the fallback is --only <the list> (decision 2, rule 3)
+    if [ -n "$within" ]; then mode=only; only=$within; else mode=full; fi
+  else
+    aff=selective
+  fi
 fi
 
 # The platform (iteration 56): verification.platform windows skips the bash steps, unix the ps steps; the lint and
@@ -391,7 +435,9 @@ for ((i = 0; i < n; i++)); do
     full) sel[i]=1 ;;
     quick) case ${k_kind[i]} in lint|bash) sel[i]=1 ;; *) sel[i]=0 ;; esac ;;
     only) sel[i]=0 ;;
-    affected) if [ "${k_kind[i]}" = lint ]; then sel[i]=1; else sel[i]=${aff_sel[i]}; fi ;;
+    affected)
+      if [ "${k_kind[i]}" = lint ]; then sel[i]=1; else sel[i]=${aff_sel[i]}; fi
+      [ -z "$within" ] || [ "${w_in[i]}" = 1 ] || sel[i]=0 ;;
   esac
 done
 if [ "$mode" = only ]; then
@@ -436,11 +482,14 @@ case $mode in
     [ "$aff" != full ] || echo "check: AFFECTED: $aff_reason; running the full check"
     echo "check: full, $L at a time ($why)" ;;
   affected)
+    # with --within, <n> is the number of steps of the list
     k=0; for ((i = 0; i < n; i++)); do [ "${sel[i]}" = 1 ] && k=$((k + 1)); done
-    echo "check: AFFECTED, $L at a time ($why): $k of $n steps, changed paths: $aff_c (against $aff_ref); the full check does not run"
+    aff_n=$n; [ -z "$within" ] || aff_n=$wn
+    echo "check: AFFECTED, $L at a time ($why): $k of $aff_n steps, changed paths: $aff_c (against $aff_ref); the full check does not run"
     for l in ${aff_lines[@]+"${aff_lines[@]}"}; do printf '%s\n' "$l"; done ;;
   quick) echo "check: QUICK, $L at a time ($why): the lint and the bash smoke tests only; the full check does not run" ;;
   only)
+    [ "$aff" != full ] || echo "check: AFFECTED: $aff_reason; running every --within step"
     names=""
     for ((i = 0; i < n; i++)); do [ "${sel[i]}" = 1 ] && names="$names${names:+,}${k_name[i]}"; done
     echo "check: only $names, $L at a time ($why)" ;;
@@ -482,12 +531,32 @@ times_block() {
   for l in ${times[@]+"${times[@]}"}; do printf '%s\n' "$l"; done
   printf '  %-28s %8s\n' total "$(ledger_duration $((check_end - check_start)))"
 }
+# selection_md: the selection section of a --within run (iteration 60, decision 6), its trailing empty lines cut: which
+# steps ran and which were left out, and why; for the fallback, the reason every step of the list ran
+selection_md() {
+  local i r=0 ran="" left="" nk=0 c=${#aff_paths[@]}
+  if [ "$aff" = full ]; then printf 'Selection: --affected ran every --within step: %s.\n\n' "$aff_reason"; return; fi
+  for ((i = 0; i < n; i++)); do
+    [ "${w_in[i]}" = 1 ] || continue
+    if [ "${sel[i]}" = 1 ]; then ran="$ran${ran:+, }\`${k_name[i]}\`"; nk=$((nk + 1))
+    else left="$left${left:+, }\`${k_name[i]}\`"; fi
+  done
+  printf 'Selection: --affected against %s: %s of %s steps ran, %s left out (no changed path selects them).\n\n' "$aff_ref" "$nk" "$wn" "$((wn - nk))"
+  if [ "$c" -gt 0 ]; then
+    printf '| Changed path | Selects |\n|---|---|\n'
+    for ((r = 0; r < c && r < 50; r++)); do printf '| `%s` | %s |\n' "${aff_paths[r]}" "${aff_texts[r]}"; done
+    [ "$c" -le 50 ] || printf 'And %s more changed paths (the log lists every one).\n' "$((c - 50))"
+    printf '\n'
+  fi
+  printf 'Ran: %s\n\nLeft out: %s\n\n' "${ran:-none}" "${left:-none}"
+}
 # write_summary <file>: appends the wall time and the five slowest steps that ran (most seconds first, a tie in list
 # order) as Markdown (iteration 55, decision 6); a file that cannot be written gets a note on standard error
 write_summary() {
   local sum_file=$1 text verdict=passed k=${#t_names[@]} i row
   [ ${#failed[@]} -eq 0 ] || verdict=FAILED
   text="### tests/check.sh"$'\n\n'"Wall time: $(ledger_duration $((check_end - check_start))) for $k steps, $L at a time: $verdict"$'\n\n'
+  [ -z "$within" ] || text="$text$(selection_md)"$'\n\n'
   if [ "$k" -gt 0 ]; then
     text="$text| Slowest step | Time |"$'\n'"|---|---|"$'\n'
     while IFS=$'\t' read -r _ i; do
@@ -633,7 +702,7 @@ case $mode in
     exit 0 ;;
   affected)
     if [ ${#failed[@]} -gt 0 ]; then echo "AFFECTED CHECK FAILED: ${failed[*]} (the full check has not run)"; exit 1; fi
-    echo "AFFECTED CHECK PASSED ($k of $n steps, changed paths: $aff_c; the full check has not run)"
+    echo "AFFECTED CHECK PASSED ($k of $aff_n steps, changed paths: $aff_c; the full check has not run)"
     exit 0 ;;
 esac
 if [ ${#failed[@]} -gt 0 ]; then echo "CHECK FAILED: ${failed[*]}"; exit 1; fi

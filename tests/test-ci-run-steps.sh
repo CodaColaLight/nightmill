@@ -14,7 +14,7 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-ci-run-steps.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 fail=0
 bad() { echo "FAIL: $*" >&2; fail=1; }
-RULE2='does not run tests/check.sh --only'
+RULE2='does not run tests/check.sh $CHECK_SELECT ${{ matrix.only }}'
 
 [ -f "$here/tests/test-ci-parts.sh" ] || { bad "tests/test-ci-parts.sh does not exist"; exit 1; }
 [ -f "$here/.github/workflows/ci.yml" ] || { bad ".github/workflows/ci.yml does not exist"; exit 1; }
