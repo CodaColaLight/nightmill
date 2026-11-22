@@ -1,6 +1,6 @@
 # Iteration 62: the slowest tests are profiled, and the slow ones leave the per-change check
 
-Status: draft, awaiting approval (#340)
+Status: delivered in iteration 62 (PR #359)
 
 Story #340, epic #337 (fast verification loop). It builds on iteration 59 (`tests/check.sh --affected`, the per-change
 check) and iteration 60 (CI on a pull request runs `--affected --within <its list>`). The three steps the issue names,
