@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 63 (#341): a fast lane in /fix for low-risk bugs. The new key review.fastLane names the priorities whose
+  bugs start in it and the paths a fix may change. In the fast lane one fixer writes the regression test and the
+  fix, the affected check runs, and the pull request opens without the tester and the code review. A fix that
+  changes a path outside the lane's paths or in parallel.hotFiles, needs a story trigger or is partial leaves the
+  lane: its work goes to the stash and the long way starts from the tester. The run and the pull request say which
+  lane a bug took. Without the key nothing changes; auto-merge rules are unchanged.
 - Iteration 62 (#340): the slowest tests are profiled and the slow ones leave the per-change check. A step line of
   tests/check.sh can end in slow; a selective --affected run (with or without --within) leaves every slow step out
   and lists it as LEFT OUT, while the full check, --only, the fallbacks and CI on a push to main still run it, and a
