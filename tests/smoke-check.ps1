@@ -13,7 +13,7 @@ $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("nm-chk-" + [guid]::NewGuid(
 New-Item -ItemType Directory $tmp | Out-Null
 $tf = $tmp -replace '\\', '/'
 $clockF = "$tf/clock"
-$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+$USAGE = 'usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 $env:NIGHTMILL_CLOCK_FILE = $clockF
 foreach ($v in "UPDATE_STATUS_FIXTURES", "UPDATE_DASHBOARD_FIXTURES", "UPDATE_PANEL_FIXTURES", "NIGHTMILL_CHECK_STEPS") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
 
@@ -319,10 +319,10 @@ try {
   $alog = "$tf/affected.log"
   $affMap = "$tf/aff.map"
   Write-Lf "$tmp\aff.map" "map scripts/foo.* b1,p1`nmap templates/t.md b2`nshared scripts/lib/*`nlintonly docs/*`n"
-  function Write-Aff([string]$reasonB1, [string]$reasonP1, [string]$tailB1) {
+  function Write-Aff([string]$reasonB1, [string]$reasonP1, [string]$tailB1, [string]$tailB2 = "") {
     Write-Lf "$tmp\aff-steps.txt" ("l`techo l >> `"$alog`"`tlint`n" +
       "b1`techo b1 >> `"$alog`"$tailB1`tbash`t$reasonB1`n" +
-      "b2`techo b2 >> `"$alog`"`tbash`n" +
+      "b2`techo b2 >> `"$alog`"$tailB2`tbash`n" +
       "p1`techo p1 >> `"$alog`"`tps`t$reasonP1`n" +
       "p2`techo p2 >> `"$alog`"`tps`n" +
       "c`techo c >> `"$alog`"`tclaude`n")
@@ -435,18 +435,136 @@ try {
   if ((Head-Line $r.Out) -cne "check: AFFECTED, 1 at a time (--jobs 1): 4 of 6 steps, changed paths: 3 (against origin/main); the full check does not run") { Fail "affected, git: the first line: $($r.Out)" }
   $affLines = (@($r.Out -split "`n" | Where-Object { $_ -clike "affected:*" }) -join "|")
   if ($affLines -cne "affected: docs/n.md -> the lint only|affected: scripts/foo.sh -> b1,p1|affected: templates/t.md -> b2") { Fail "affected, git: the affected lines: $($r.Out)" }
+  # -Within (iteration 60) with the paths from git: the steps of the list that the changed paths select
+  $r = Aff-Run "" "-Within b1,b2" $g @{}
+  if ($r.Code -ne 0) { Fail "affected within, git: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "b1,b2,") { Fail "affected within, git: the steps that ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED, 1 at a time (--jobs 1): 2 of 2 steps, changed paths: 3 (against origin/main); the full check does not run") { Fail "affected within, git: the first line: $($r.Out)" }
+  $affLines = (@($r.Out -split "`n" | Where-Object { $_ -clike "affected:*" }) -join "|")
+  if ($affLines -cne "affected: docs/n.md -> none of the --within steps|affected: scripts/foo.sh -> b1|affected: templates/t.md -> b2") { Fail "affected within, git: the affected lines: $($r.Out)" }
   # a base branch with no origin/<branch>: the paths are unknown, so the full check
   Write-Lf "$g\.claude\nightmill.json" "{ `"verification`": { `"check`": `"true`" }, `"git`": { `"baseBranch`": `"trunk`" } }`n"
   $r = Aff-Run "" "" $g @{}
   if ((Head-Line $r.Out) -cne "check: AFFECTED: the changed paths are unknown (no merge base with origin/trunk); running the full check") { Fail "affected, no merge base: the first line: $($r.Out) $($r.Err)" }
+  # with -Within the unknown paths run every step of the list, as -Only would
+  $r = Aff-Run "" "-Within b2,p2" $g @{}
+  if ($r.Code -ne 0) { Fail "affected within, no merge base: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED: the changed paths are unknown (no merge base with origin/trunk); running every --within step") { Fail "affected within, no merge base: the first line: $($r.Out) $($r.Err)" }
+  if (@($r.Out -split "`n")[1] -cne "check: only b2,p2, 1 at a time (--jobs 1)") { Fail "affected within, no merge base: the second line: $($r.Out)" }
+  if ($r.Log -cne "b2,p2,") { Fail "affected within, no merge base: the steps that ran: $($r.Log)" }
+
+  # -Within (iteration 60): the steps of the list that the changed paths select; the lint only when the list names it, and
+  # verification.platform does not apply to a selected step
+  Aff-Cfg "-"
+  # a changed script and a changed doc against two bash steps: the script's step of the list, no lint
+  $r = Aff-Run "scripts/foo.ps1`ndocs/a.md`n" "-Within b1,b2"
+  if ($r.Code -ne 0) { Fail "within: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "b1,") { Fail "within: the steps that ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED, 1 at a time (--jobs 1): 1 of 2 steps, changed paths: 2 (against NIGHTMILL_CHECK_PATHS); the full check does not run") { Fail "within: the first line: $($r.Out)" }
+  $affLines = (@($r.Out -split "`n" | Where-Object { $_ -clike "affected:*" }) -join "|")
+  if ($affLines -cne "affected: docs/a.md -> none of the --within steps|affected: scripts/foo.ps1 -> b1") { Fail "within: the affected lines: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "AFFECTED CHECK PASSED (1 of 2 steps, changed paths: 2; the full check has not run)") { Fail "within: the last line: $($r.Out)" }
+  if ($r.Out.Contains("ALL CHECKS PASSED")) { Fail "within: printed ALL CHECKS PASSED: $($r.Out)" }
+  # the PowerShell steps of the list: a changed script selects p1 even where verification.platform is unix
+  Aff-Cfg '"unix"'
+  $r = Aff-Run "scripts/foo.ps1`ndocs/a.md`n" "-Within p1,p2"
+  if ($r.Code -ne 0) { Fail "within, unix: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "p1,") { Fail "within, unix: the steps that ran: $($r.Log)" }
+  # the bash steps of the list: a changed script selects b1 even where verification.platform is windows
+  Aff-Cfg '"windows"'
+  $r = Aff-Run "scripts/foo.ps1`ndocs/a.md`n" "-Within b1,b2"
+  if ($r.Code -ne 0) { Fail "within, windows: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "b1,") { Fail "within, windows: the steps that ran: $($r.Log)" }
+  if ($r.Out -cmatch '(?m)^SKIPPED:.*verification\.platform') { Fail "within, windows: a platform SKIPPED line: $($r.Out)" }
+  Aff-Cfg "-"
+  # a docs-only change: no step of a test list runs, and the run passes
+  $r = Aff-Run "docs/a.md`n" "-Within b1,p1"
+  if ($r.Code -ne 0) { Fail "within, docs only: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne ",") { Fail "within, docs only: a step ran: $($r.Log)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED, 1 at a time (--jobs 1): 0 of 2 steps, changed paths: 1 (against NIGHTMILL_CHECK_PATHS); the full check does not run") { Fail "within, docs only: the first line: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "AFFECTED CHECK PASSED (0 of 2 steps, changed paths: 1; the full check has not run)") { Fail "within, docs only: the last line: $($r.Out)" }
+  # the lint runs only when the list names it
+  $r = Aff-Run "docs/a.md`n" "-Within l,b1"
+  if ($r.Code -ne 0) { Fail "within, docs and the lint: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,") { Fail "within, docs and the lint: the steps that ran: $($r.Log)" }
+  # a shared path: every step of the list runs, as -Only, whatever verification.platform says
+  Aff-Cfg '"windows"'
+  $r = Aff-Run "scripts/lib/x.sh`n" "-Within b2,p2"
+  if ($r.Code -ne 0) { Fail "within, shared: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running every --within step") { Fail "within, shared: the first line: $($r.Out)" }
+  if (@($r.Out -split "`n")[1] -cne "check: only b2,p2, 1 at a time (--jobs 1)") { Fail "within, shared: the second line: $($r.Out)" }
+  if ($r.Log -cne "b2,p2,") { Fail "within, shared: the steps that ran: $($r.Log)" }
+  if ((Last-Line $r.Out) -cne "SELECTED CHECKS PASSED (2 of 6 steps; the full check has not run)") { Fail "within, shared: the last line: $($r.Out)" }
+  # a path in no line of the map: every step of the list runs
+  $r = Aff-Run "other/thing`n" "-Within b1,b2"
+  if ($r.Code -ne 0) { Fail "within, unknown path: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ((Head-Line $r.Out) -cne "check: AFFECTED: other/thing is in no line of the map; running every --within step") { Fail "within, unknown path: the first line: $($r.Out)" }
+  if ($r.Log -cne "b1,b2,") { Fail "within, unknown path: the steps that ran: $($r.Log)" }
+  # a failing step of the fallback: the verdict is the one of -Only
+  Write-Aff "" "" "" "; exit 1"
+  $r = Aff-Run "scripts/lib/x.sh`n" "-Within b2,p2"
+  if ($r.Code -ne 1) { Fail "within, shared and failing: exit $($r.Code): $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "SELECTED CHECKS FAILED: b2 (the full check has not run)") { Fail "within, shared and failing: the last line: $($r.Out)" }
+  Write-Aff "" "" ""
+  Aff-Cfg "-"
+  # the summary: which steps ran, which were left out, and why
+  function Line-No([string]$text, [string]$line) { $i = 0; foreach ($l in ($text -split "`n")) { $i++; if ($l -ceq $line) { return $i } }; return 0 }
+  $sumf = "$tmp\aff-summary.md"
+  if (Test-Path $sumf) { Remove-Item $sumf }
+  $r = Aff-Run "scripts/foo.ps1`ndocs/a.md`n" "-Within b1,b2 -Summary `"$tf/aff-summary.md`""
+  if ($r.Code -ne 0) { Fail "within summary: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if (-not (Test-Path $sumf)) { Fail "within summary: no summary file was written" }
+  $s = Read-Lf $sumf
+  $wWall = 0; $i = 0; foreach ($l in ($s -split "`n")) { $i++; if ($wWall -eq 0 -and $l.StartsWith("Wall time: ")) { $wWall = $i } }
+  $wSel = Line-No $s 'Selection: --affected against NIGHTMILL_CHECK_PATHS: 1 of 2 steps ran, 1 left out (no changed path selects them).'
+  $wHead = Line-No $s '| Changed path | Selects |'
+  $wR1 = Line-No $s '| `docs/a.md` | none of the --within steps |'
+  $wR2 = Line-No $s '| `scripts/foo.ps1` | b1 |'
+  $wRan = Line-No $s 'Ran: `b1`'
+  $wLeft = Line-No $s 'Left out: `b2`'
+  $wSlow = Line-No $s '| Slowest step | Time |'
+  foreach ($v in $wWall, $wSel, $wHead, $wR1, $wR2, $wRan, $wLeft, $wSlow) { if ($v -eq 0) { Fail "within summary: a line is missing from the summary: $s" } }
+  if (-not ($wWall -lt $wSel -and $wSel -lt $wHead -and $wHead -lt $wR1 -and $wR1 -lt $wR2 -and $wR2 -lt $wRan -and $wRan -lt $wLeft -and $wLeft -lt $wSlow)) {
+    Fail "within summary: the lines are not in the order wall time, selection, table in path order, ran, left out, slowest steps: $s"
+  }
+  # the fallback says why every step of the list ran
+  Remove-Item $sumf
+  $r = Aff-Run "scripts/lib/x.sh`n" "-Within b2,p2 -Summary `"$tf/aff-summary.md`""
+  if ($r.Code -ne 0) { Fail "within summary, fallback: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if (-not (Has-Line (Read-Lf $sumf) 'Selection: --affected ran every --within step: scripts/lib/x.sh is shared by many steps.')) { Fail "within summary, fallback: no Selection line: $(Read-Lf $sumf)" }
+  # more than fifty changed paths: fifty rows, then the count of the rest
+  $many = ""; foreach ($q in 1..51) { $many += ("docs/p{0:D2}.md`n" -f $q) }
+  Remove-Item $sumf
+  $r = Aff-Run $many "-Within b1,b2 -Summary `"$tf/aff-summary.md`""
+  if ($r.Code -ne 0) { Fail "within summary, 51 paths: exit $($r.Code): $($r.Out) $($r.Err)" }
+  $s = Read-Lf $sumf
+  if (@($s -split "`n" | Where-Object { $_ -cmatch '^\| `docs/p' }).Count -ne 50) { Fail "within summary, 51 paths: not 50 rows: $s" }
+  if (-not (Has-Line $s 'And 1 more changed paths (the log lists every one).')) { Fail "within summary, 51 paths: no 'And 1 more' line: $s" }
+  if ($s.Contains("docs/p51.md")) { Fail "within summary, 51 paths: the 51st path has a row: $s" }
+  if (@($r.Out -split "`n" | Where-Object { $_ -clike "affected: *" }).Count -ne 51) { Fail "within summary, 51 paths: the log does not list every path: $($r.Out)" }
+  # without -Within the section is the one of -Affected alone: the wall time, and no selection lines
+  foreach ($p in "scripts/foo.ps1`ndocs/a.md`n", "scripts/lib/x.sh`n") {
+    Remove-Item $sumf -ErrorAction SilentlyContinue
+    $r = Aff-Run $p "-Summary `"$tf/aff-summary.md`""
+    $pn = ($p -split "`n")[0]
+    if ($r.Code -ne 0) { Fail "plain affected summary ($pn): exit $($r.Code): $($r.Out) $($r.Err)" }
+    $s = Read-Lf $sumf
+    if ($s -cnotmatch '(?m)^Wall time: ') { Fail "plain affected summary ($pn): no Wall time line: $s" }
+    if ($s -cmatch '(?m)^(Selection:|\| Changed path|Ran:|Left out:)') { Fail "plain affected summary ($pn): a selection line without -Within: $s" }
+  }
+
   # the usage errors (a repeated switch fails in PowerShell's own binding, so it is run through bash with the same arguments)
-  foreach ($a in "-Affected -Quick", "-Affected -Only b") { $null = Usage-Case $a }
-  Write-Lf "$tmp\quick.log" ""
-  $c = Start-Child $bashExe "tests/check.sh --affected --affected" $nrepo @{ NIGHTMILL_CHECK_STEPS = "$tf/quick.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
-  $r = Wait-Child $c
-  if ($r.Code -ne 2) { Fail "usage (--affected --affected): exit $($r.Code): $($r.Out)" }
-  if (-not (Has-Line $r.Err $USAGE)) { Fail "usage (--affected --affected): no usage line on standard error: $($r.Err)" }
-  if ((Qlog-Lines).Count -ne 0) { Fail "usage (--affected --affected): a step ran" }
+  foreach ($a in "-Affected -Quick", "-Affected -Only b", "-Within b", "-Quick -Within b", "-Only b -Within b") { $null = Usage-Case $a }
+  $r = Usage-Case "-Affected -Within nope"
+  if (-not (Has-Line $r.Err "check: no step named nope")) { Fail "usage: no 'no step named nope' line for -Within: $($r.Err)" }
+  foreach ($a in @("--affected", "--affected"), @("--affected", "--within", "b", "--within", "c"), @("--affected", "--within", '""'), @("--affected", "--within")) {
+    Write-Lf "$tmp\quick.log" ""
+    $c = Start-Child $bashExe ("tests/check.sh " + ($a -join " ")) $nrepo @{ NIGHTMILL_CHECK_STEPS = "$tf/quick.txt"; NIGHTMILL_CLOCK_FILE = $clockF }
+    $r = Wait-Child $c
+    if ($r.Code -ne 2) { Fail "usage ($($a -join ' ')): exit $($r.Code): $($r.Out)" }
+    if (-not (Has-Line $r.Err $USAGE)) { Fail "usage ($($a -join ' ')): no usage line on standard error: $($r.Err)" }
+    if ((Qlog-Lines).Count -ne 0) { Fail "usage ($($a -join ' ')): a step ran" }
+  }
 
   Write-Host "== two checks at once"
   New-Item -ItemType Directory "$tmp\tmpA", "$tmp\tmpB" | Out-Null
@@ -590,11 +708,17 @@ try {
   Lint-Break "twopassed" "tests\check.sh" { param($ls) $ls; 'echo "ALL CHECKS PASSED"' } "FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place"
   Lint-Break "cibash" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("smoke-hook.sh,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh"
   Lint-Break "cips" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*only: smoke-hook.ps1,*') { $l.Replace("smoke-hook.ps1,", "") } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-hook.ps1 runs in no PowerShell part"
-  Lint-Break "cijson" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("--only ", "--only smoke-json.sh,") } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice"
+  Lint-Break "cijson" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*' -and $l -like '*smoke-hook.sh*') { $l.Replace('$CHECK_SELECT ', '$CHECK_SELECT smoke-json.sh,') } else { $l } } } "FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice"
   Lint-Break "ciswap" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*run: bash tests/check.sh --summary*') { $l.Replace("smoke-hook.sh,smoke-release.sh", "smoke-release.sh,smoke-hook.sh") } else { $l } } } "FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list"
   Lint-Break "cidirect" $CI { param($ls) $ls; "      - run: bash tests/smoke-render.sh" } "FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh"
   Lint-Break "cirename" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: bash scripts smoke tests", "name: bash scripts smoke") } } "the required job bash scripts smoke tests is missing"
   Lint-Break "cibegins" $CI { param($ls) $ls | ForEach-Object { $_.Replace("name: claude plugin validate (not blocking)", "name: PowerShell scripts smoke tests (1)") } } "FAIL: .github/workflows/ci.yml: the job name 'PowerShell scripts smoke tests (1)' begins with the required name 'PowerShell scripts smoke tests'"
+  # CI selects the steps a pull request affects, and every required job runs on every event (iteration 60, decision 8)
+  Lint-Break "cienv" $CI { param($ls) foreach ($l in $ls) { if ($l -like '*CHECK_SELECT:*') { $l.Replace("'--only'", "'--quick'") } else { $l } } } "FAIL: .github/workflows/ci.yml: the env block is not exactly the line"
+  Lint-Break "cipaths" $CI { param($ls) foreach ($l in $ls) { $l; if ($l -ceq '  pull_request:') { "    paths-ignore: ['docs/**']" } } } "FAIL: .github/workflows/ci.yml: the 'on:' block is not exactly push to main and pull_request"
+  Lint-Break "ciif" $CI { param($ls) foreach ($l in $ls) { $l; if ($l -ceq '    name: Lint (generic, JSON, skills, shell)') { "    if: github.event_name == 'push'" } } } "job lint has an 'if:'"
+  Lint-Break "cidepth" $CI { param($ls) $job = ''; foreach ($l in $ls) { if ($l -cmatch '^  [A-Za-z]') { $job = $l.Trim() }; if ($job -ceq 'smoke-bash:' -and $l -clike '*fetch-depth: 0*') { continue }; $l } } "job smoke-bash does not check out with fetch-depth: 0"
+  Lint-Break "cijsondirect" $CI { param($ls) foreach ($l in $ls) { if ($l -clike '*$CHECK_SELECT smoke-json.sh') { '      - run: bash tests/smoke-json.sh' } else { $l } } } 'the bash smoke job does not run tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-json.sh, then the other bash steps'
   # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
   Lint-Break "platformschema" "schema\nightmill.schema.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform"', '"platformx"') } } 'FAIL: schema: verification.platform is not a string'
   Lint-Break "platformexample" "templates\nightmill.example.json" { param($ls) $ls | ForEach-Object { $_.Replace('"platform": "all"', '"platform": "unix"') } } "FAIL: templates/nightmill.example.json does not mention verification.platform all"
@@ -614,6 +738,7 @@ try {
   Lint-Break "mapname" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# affects: end") { "map README.md smoke-nope.sh" }; $l } } "the map names smoke-nope.sh, which is not a step"
   Lint-Break "maptwin" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# affects: end") { "map scripts/slot.sh smoke-hook.sh" }; $l } } "scripts/slot.sh and scripts/slot.ps1 map to different steps"
   Lint-Break "mapshared" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared scripts/lib/*' } } "the map does not have the line shared scripts/lib/*"
+  Lint-Break "cimapci" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared .github/workflows/*' } } "the map does not have the line shared .github/workflows/*"
   Lint-Break "mapskill" "skills\check\SKILL.md" { param($ls) $ls | ForEach-Object { $_.Replace("check: AFFECTED", "check: AFFECTEX") } } "skills/check/SKILL.md does not mention check: AFFECTED"
 
   Write-Host "smoke-check: ok"

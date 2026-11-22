@@ -42,7 +42,7 @@ rules() {
       "only: "*) onlys[${#onlys[@]}]=${t#only: } ;;
       "run: "*|"- run: "*) # every run step counts, the compact form `- run: ...` too (bug #296)
         runs=$((runs + 1))
-        if [ "$t" = 'run: bash tests/check.sh --powershell powershell --summary "$GITHUB_STEP_SUMMARY" --only ${{ matrix.only }}' ] && { [ "$prev" = "shell: bash" ] || [ "$prev" = "- shell: bash" ]; }; then runok=$((runok + 1)); fi ;;
+        if [ "$t" = 'run: bash tests/check.sh --powershell powershell --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}' ] && { [ "$prev" = "shell: bash" ] || [ "$prev" = "- shell: bash" ]; }; then runok=$((runok + 1)); fi ;;
     esac
     [ -z "$t" ] || prev=$t
   done <<<"$pblock"
@@ -65,7 +65,7 @@ rules() {
   fi
   [ -z "$bad" ] || fl "the PowerShell parts are malformed ($bad)"
   if [ "$runs" != 1 ] || [ "$runok" != 1 ]; then
-    fl 'the PowerShell part job does not run tests/check.sh --only ${{ matrix.only }}'
+    fl 'the PowerShell part job does not run tests/check.sh $CHECK_SELECT ${{ matrix.only }}'
   fi
 
   # the ps steps of the step list, in list order
@@ -217,9 +217,9 @@ case_sed noalways '/^    if: always()$/d' 'does not fail unless every part succe
 case_sed nosuccess '/\[ "\$PARTS" = success \]/d' 'does not fail unless every part succeeded'
 case_sed numbers 's/- part: 3$/- part: X/;s/- part: 4$/- part: 3/;s/- part: X$/- part: 4/' 'malformed'
 case_sed of5 's/part \${{ matrix.part }} of 4/part ${{ matrix.part }} of 5/' 'malformed'
-case_sed norunonly '/run: bash tests\/check\.sh --powershell powershell/s/ --only \${{ matrix.only }}//' 'does not run tests/check.sh --only ${{ matrix.only }}'
+case_sed norunonly '/run: bash tests\/check\.sh --powershell powershell/s/ \$CHECK_SELECT \${{ matrix.only }}//' 'does not run tests/check.sh $CHECK_SELECT ${{ matrix.only }}'
 case_sed dashrun '/run: bash tests\/check\.sh --powershell powershell/a\
-      - run: echo x' 'does not run tests/check.sh --only ${{ matrix.only }}'
+      - run: echo x' 'does not run tests/check.sh $CHECK_SELECT ${{ matrix.only }}'
 mkcase leadperm > /dev/null
 ci_awk leadperm '/^  [A-Za-z]/ { cur = $1 } { print } cur == "lint:" && /^    name:/ { print "    permissions:"; print "      contents: read" }'
 expect leadperm "job lint has a job-level 'permissions:' block"

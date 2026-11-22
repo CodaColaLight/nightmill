@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 echo 1794038400 > "$tmp/clock"
 export NIGHTMILL_CLOCK_FILE="$tmp/clock"
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
@@ -286,11 +286,11 @@ echo "== affected"
 alog="$tmp/affected.log"
 aff_map="$tmp/aff.map"
 printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'shared scripts/lib/*' 'lintonly docs/*' > "$aff_map"
-mk_aff() { # mk_aff <reason of b1> <reason of p1> <tail of b1's command>: the six steps in $tmp/aff-steps.txt
+mk_aff() { # mk_aff <reason of b1> <reason of p1> <tail of b1's command> [<tail of b2's command>]: the six steps in $tmp/aff-steps.txt
   {
     printf 'l\techo l >> "%s"\tlint\n' "$alog"
     printf 'b1\techo b1 >> "%s"%s\tbash\t%s\n' "$alog" "$3" "$1"
-    printf 'b2\techo b2 >> "%s"\tbash\n' "$alog"
+    printf 'b2\techo b2 >> "%s"%s\tbash\n' "$alog" "${4:-}"
     printf 'p1\techo p1 >> "%s"\tps\t%s\n' "$alog" "$2"
     printf 'p2\techo p2 >> "%s"\tps\n' "$alog"
     printf 'c\techo c >> "%s"\tclaude\n' "$alog"
@@ -391,25 +391,144 @@ gitg checkout -q -b feature
 echo two > "$g/templates/t.md"; gitg add -A; gitg commit -q -m "change a template"
 echo two >> "$g/scripts/foo.sh"
 mkdir -p "$g/docs"; echo new > "$g/docs/n.md"
-git_aff() { # git_aff: out, err, rc of the check in $g, without NIGHTMILL_CHECK_PATHS
+git_aff() { # git_aff <args...>: out, err, rc of the check in $g, without NIGHTMILL_CHECK_PATHS; the log in $aff_log
   : > "$alog"
   set +e
-  out=$(cd "$g" && NIGHTMILL_CHECK_STEPS="$tmp/aff-steps.txt" NIGHTMILL_CHECK_MAP="$aff_map" bash tests/check.sh --affected --jobs 1 2>"$tmp/err.txt"); rc=$?
+  out=$(cd "$g" && NIGHTMILL_CHECK_STEPS="$tmp/aff-steps.txt" NIGHTMILL_CHECK_MAP="$aff_map" bash tests/check.sh --affected --jobs 1 "$@" 2>"$tmp/err.txt"); rc=$?
   set -e
   err=$(cat "$tmp/err.txt")
+  aff_log=$(tr '\n' ',' < "$alog")
 }
 git_aff
 [ "$rc" = 0 ] || fail "affected, git: exit $rc: $out $err"
 [ "$(head -n 1 <<<"$out")" = "check: AFFECTED, 1 at a time (--jobs 1): 4 of 6 steps, changed paths: 3 (against origin/main); the full check does not run" ] || fail "affected, git: the first line: $out"
 [ "$(grep '^affected:' <<<"$out" | tr '\n' '|')" = "affected: docs/n.md -> the lint only|affected: scripts/foo.sh -> b1,p1|affected: templates/t.md -> b2|" ] || fail "affected, git: the affected lines: $out"
+# --within (iteration 60) with the paths from git: the steps of the list that the changed paths select
+git_aff --within b1,b2
+[ "$rc" = 0 ] || fail "affected within, git: exit $rc: $out $err"
+[ "$aff_log" = "b1,b2," ] || fail "affected within, git: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED, 1 at a time (--jobs 1): 2 of 2 steps, changed paths: 3 (against origin/main); the full check does not run" ] || fail "affected within, git: the first line: $out"
+[ "$(grep '^affected:' <<<"$out" | tr '\n' '|')" = "affected: docs/n.md -> none of the --within steps|affected: scripts/foo.sh -> b1|affected: templates/t.md -> b2|" ] || fail "affected within, git: the affected lines: $out"
 # a base branch with no origin/<branch>: the paths are unknown, so the full check
 echo '{ "verification": { "check": "true" }, "git": { "baseBranch": "trunk" } }' > "$g/.claude/nightmill.json"
 git_aff
 [ "$(head -n 1 <<<"$out")" = "check: AFFECTED: the changed paths are unknown (no merge base with origin/trunk); running the full check" ] || fail "affected, no merge base: the first line: $out $err"
+# with --within the unknown paths run every step of the list, as --only would
+git_aff --within b2,p2
+[ "$rc" = 0 ] || fail "affected within, no merge base: exit $rc: $out $err"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: the changed paths are unknown (no merge base with origin/trunk); running every --within step" ] || fail "affected within, no merge base: the first line: $out $err"
+[ "$(sed -n 2p <<<"$out")" = "check: only b2,p2, 1 at a time (--jobs 1)" ] || fail "affected within, no merge base: the second line: $out"
+[ "$aff_log" = "b2,p2," ] || fail "affected within, no merge base: the steps that ran: $aff_log"
+
+# --within (iteration 60): the steps of the list that the changed paths select; the lint only when the list names it, and
+# verification.platform does not apply to a selected step
+aff_cfg -
+# a changed script and a changed doc against two bash steps: the script's step of the list, no lint
+aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within b1,b2
+[ "$rc" = 0 ] || fail "within: exit $rc: $out $err"
+[ "$aff_log" = "b1," ] || fail "within: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 1 2 | sed 's/ of 6 steps/ of 2 steps/')" ] || fail "within: the first line: $out"
+[ "$(grep '^affected:' <<<"$out" | tr '\n' '|')" = "affected: docs/a.md -> none of the --within steps|affected: scripts/foo.ps1 -> b1|" ] || fail "within: the affected lines: $out"
+[ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (1 of 2 steps, changed paths: 2; the full check has not run)" ] || fail "within: the last line: $out"
+if grep -q 'ALL CHECKS PASSED' <<<"$out"; then fail "within: printed ALL CHECKS PASSED: $out"; fi
+# the PowerShell steps of the list: a changed script selects p1 even where verification.platform is unix
+aff_cfg '"unix"'
+aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within p1,p2
+[ "$rc" = 0 ] || fail "within, unix: exit $rc: $out $err"
+[ "$aff_log" = "p1," ] || fail "within, unix: the steps that ran: $aff_log"
+# the bash steps of the list: a changed script selects b1 even where verification.platform is windows
+aff_cfg '"windows"'
+aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within b1,b2
+[ "$rc" = 0 ] || fail "within, windows: exit $rc: $out $err"
+[ "$aff_log" = "b1," ] || fail "within, windows: the steps that ran: $aff_log"
+if grep -q '^SKIPPED:.*verification\.platform' <<<"$out"; then fail "within, windows: a platform SKIPPED line: $out"; fi
+aff_cfg -
+# a docs-only change: no step of a test list runs, and the run passes
+aff_run $'docs/a.md\n' --within b1,p1
+[ "$rc" = 0 ] || fail "within, docs only: exit $rc: $out $err"
+[ -z "$aff_log" ] || fail "within, docs only: a step ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED, 1 at a time (--jobs 1): 0 of 2 steps, changed paths: 1 (against NIGHTMILL_CHECK_PATHS); the full check does not run" ] || fail "within, docs only: the first line: $out"
+[ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (0 of 2 steps, changed paths: 1; the full check has not run)" ] || fail "within, docs only: the last line: $out"
+# the lint runs only when the list names it
+aff_run $'docs/a.md\n' --within l,b1
+[ "$rc" = 0 ] || fail "within, docs and the lint: exit $rc: $out $err"
+[ "$aff_log" = "l," ] || fail "within, docs and the lint: the steps that ran: $aff_log"
+# a shared path: every step of the list runs, as --only, whatever verification.platform says
+aff_cfg '"windows"'
+aff_run $'scripts/lib/x.sh\n' --within b2,p2
+[ "$rc" = 0 ] || fail "within, shared: exit $rc: $out $err"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running every --within step" ] || fail "within, shared: the first line: $out"
+[ "$(sed -n 2p <<<"$out")" = "check: only b2,p2, 1 at a time (--jobs 1)" ] || fail "within, shared: the second line: $out"
+[ "$aff_log" = "b2,p2," ] || fail "within, shared: the steps that ran: $aff_log"
+[ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS PASSED (2 of 6 steps; the full check has not run)" ] || fail "within, shared: the last line: $out"
+# a path in no line of the map: every step of the list runs
+aff_run $'other/thing\n' --within b1,b2
+[ "$rc" = 0 ] || fail "within, unknown path: exit $rc: $out $err"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: other/thing is in no line of the map; running every --within step" ] || fail "within, unknown path: the first line: $out"
+[ "$aff_log" = "b1,b2," ] || fail "within, unknown path: the steps that ran: $aff_log"
+# a failing step of the fallback: the verdict is the one of --only
+mk_aff "" "" "" "; exit 1"
+aff_run $'scripts/lib/x.sh\n' --within b2,p2
+[ "$rc" = 1 ] || fail "within, shared and failing: exit $rc: $out"
+[ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS FAILED: b2 (the full check has not run)" ] || fail "within, shared and failing: the last line: $out"
+mk_aff "" "" ""
+aff_cfg -
+# the summary: which steps ran, which were left out, and why
+sumf="$tmp/aff-summary.md"
+line_no() { grep -nxF -- "$1" "$sumf" | head -n 1 | cut -d: -f1; }
+rm -f "$sumf"
+aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within b1,b2 --summary "$sumf"
+[ "$rc" = 0 ] || fail "within summary: exit $rc: $out $err"
+[ -f "$sumf" ] || fail "within summary: no summary file was written"
+w_wall=$(grep -n '^Wall time: ' "$sumf" | head -n 1 | cut -d: -f1)
+w_sel=$(line_no 'Selection: --affected against NIGHTMILL_CHECK_PATHS: 1 of 2 steps ran, 1 left out (no changed path selects them).')
+w_head=$(line_no '| Changed path | Selects |')
+w_r1=$(line_no '| `docs/a.md` | none of the --within steps |')
+w_r2=$(line_no '| `scripts/foo.ps1` | b1 |')
+w_ran=$(line_no 'Ran: `b1`')
+w_left=$(line_no 'Left out: `b2`')
+w_slow=$(line_no '| Slowest step | Time |')
+for v in "$w_wall" "$w_sel" "$w_head" "$w_r1" "$w_r2" "$w_ran" "$w_left" "$w_slow"; do
+  [ -n "$v" ] || fail "within summary: a line is missing from the summary: $(cat "$sumf")"
+done
+[ "$w_wall" -lt "$w_sel" ] && [ "$w_sel" -lt "$w_head" ] && [ "$w_head" -lt "$w_r1" ] && [ "$w_r1" -lt "$w_r2" ] &&
+  [ "$w_r2" -lt "$w_ran" ] && [ "$w_ran" -lt "$w_left" ] && [ "$w_left" -lt "$w_slow" ] ||
+  fail "within summary: the lines are not in the order wall time, selection, table in path order, ran, left out, slowest steps: $(cat "$sumf")"
+# the fallback says why every step of the list ran
+rm -f "$sumf"
+aff_run $'scripts/lib/x.sh\n' --within b2,p2 --summary "$sumf"
+[ "$rc" = 0 ] || fail "within summary, fallback: exit $rc: $out $err"
+grep -qxF 'Selection: --affected ran every --within step: scripts/lib/x.sh is shared by many steps.' "$sumf" || fail "within summary, fallback: no Selection line: $(cat "$sumf")"
+# more than fifty changed paths: fifty rows, then the count of the rest
+many=""; for ((q = 1; q <= 51; q++)); do many="$many$(printf 'docs/p%02d.md' "$q")"$'\n'; done
+rm -f "$sumf"
+aff_run "$many" --within b1,b2 --summary "$sumf"
+[ "$rc" = 0 ] || fail "within summary, 51 paths: exit $rc: $out $err"
+[ "$(grep -c '^| `docs/p' "$sumf")" = 50 ] || fail "within summary, 51 paths: not 50 rows: $(cat "$sumf")"
+grep -qxF 'And 1 more changed paths (the log lists every one).' "$sumf" || fail "within summary, 51 paths: no 'And 1 more' line: $(cat "$sumf")"
+if grep -qF 'docs/p51.md' "$sumf"; then fail "within summary, 51 paths: the 51st path has a row: $(cat "$sumf")"; fi
+[ "$(grep -c '^affected: ' <<<"$out")" = 51 ] || fail "within summary, 51 paths: the log does not list every path: $out"
+# without --within the section is the one of --affected alone: the wall time, and no selection lines
+for p in $'scripts/foo.ps1\ndocs/a.md\n' $'scripts/lib/x.sh\n'; do
+  rm -f "$sumf"
+  aff_run "$p" --summary "$sumf"
+  [ "$rc" = 0 ] || fail "plain affected summary (${p%%$'\n'*}): exit $rc: $out $err"
+  grep -q '^Wall time: ' "$sumf" || fail "plain affected summary (${p%%$'\n'*}): no Wall time line: $(cat "$sumf")"
+  if grep -qE '^(Selection:|\| Changed path|Ran:|Left out:)' "$sumf"; then fail "plain affected summary (${p%%$'\n'*}): a selection line without --within: $(cat "$sumf")"; fi
+done
+
 # the usage errors
 usage_case --affected --quick
 usage_case --affected --only b
 usage_case --affected --affected
+usage_case --within b
+usage_case --quick --within b
+usage_case --only b --within b
+usage_case --affected --within b --within c
+usage_case --affected --within ''
+usage_case --affected --within
+usage_case --affected --within nope
+grep -qxF 'check: no step named nope' <<<"$err" || fail "usage: no 'no step named nope' line for --within: $err"
 
 echo "== two checks at once"
 mkdir -p "$tmp/tmpA" "$tmp/tmpB"
@@ -548,12 +667,18 @@ lint_break twopassed tests/check.sh '$a\
 echo "ALL CHECKS PASSED"' 'FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place'
 lint_break cibash .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,//' 'FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh'
 lint_break cips .github/workflows/ci.yml '/^ *only: smoke-hook\.ps1,/s/smoke-hook\.ps1,//' 'FAIL: .github/workflows/ci.yml: tests/smoke-hook.ps1 runs in no PowerShell part'
-lint_break cijson .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/--only /--only smoke-json.sh,/' 'FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice'
+lint_break cijson .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary.*smoke-hook\.sh/s/\$CHECK_SELECT /\$CHECK_SELECT smoke-json.sh,/' 'FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice'
 lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,smoke-release\.sh/smoke-release.sh,smoke-hook.sh/' 'FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list'
 lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'
 lint_break cibegins .github/workflows/ci.yml 's/name: claude plugin validate (not blocking)/name: PowerShell scripts smoke tests (1)/' "FAIL: .github/workflows/ci.yml: the job name 'PowerShell scripts smoke tests (1)' begins with the required name 'PowerShell scripts smoke tests'"
+# CI selects the steps a pull request affects, and every required job runs on every event (iteration 60, decision 8)
+lint_break cienv .github/workflows/ci.yml $'/CHECK_SELECT:/s/\'--only\'/\'--quick\'/' 'FAIL: .github/workflows/ci.yml: the env block is not exactly the line'
+lint_break cipaths .github/workflows/ci.yml $'/^  pull_request:$/a\\\n\\    paths-ignore: [\'docs/**\']' "FAIL: .github/workflows/ci.yml: the 'on:' block is not exactly push to main and pull_request"
+lint_break ciif .github/workflows/ci.yml $'/^    name: Lint (generic, JSON, skills, shell)$/a\\\n\\    if: github.event_name == \'push\'' "job lint has an 'if:'"
+lint_break cidepth .github/workflows/ci.yml '/^  smoke-bash:$/,/^  smoke-powershell-part:$/{/fetch-depth: 0/d;}' 'job smoke-bash does not check out with fetch-depth: 0'
+lint_break cijsondirect .github/workflows/ci.yml '/\$CHECK_SELECT smoke-json\.sh$/s/run: .*/run: bash tests\/smoke-json.sh/' 'the bash smoke job does not run tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-json.sh, then the other bash steps'
 # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
 lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema: verification.platform is not a string'
 lint_break platformexample templates/nightmill.example.json 's/"platform": "all"/"platform": "unix"/' 'FAIL: templates/nightmill.example.json does not mention verification.platform all'
@@ -574,6 +699,7 @@ lint_break mapname tests/check.sh 's/^# affects: end$/map README.md smoke-nope.s
 lint_break maptwin tests/check.sh 's/^# affects: end$/map scripts\/slot.sh smoke-hook.sh\
 # affects: end/' 'scripts/slot.sh and scripts/slot.ps1 map to different steps'
 lint_break mapshared tests/check.sh '/^shared scripts\/lib\/\*$/d' 'the map does not have the line shared scripts/lib/*'
+lint_break cimapci tests/check.sh '/^shared \.github\/workflows\/\*$/d' 'the map does not have the line shared .github/workflows/*'
 lint_break mapskill skills/check/SKILL.md 's/check: AFFECTED/check: AFFECTEX/g' 'skills/check/SKILL.md does not mention check: AFFECTED'
 
 echo "smoke-check: ok"

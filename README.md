@@ -1139,10 +1139,12 @@ claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 processors; `--jobs N` for one run; 1 runs them one after another, as before), prints each step whole and in a fixed
 order whatever order they finish in, and the time of every step and the total. `bash tests/check.sh --quick` runs the
 lint and the bash smoke tests only and says that the full check has not run: use it while writing code, and the full
-check before every commit and every pull request. CI runs the smoke jobs through `tests/check.sh --only`: the
+check before every commit and every pull request. CI runs the smoke jobs through `tests/check.sh`: the
 PowerShell smoke steps in four parts on four Windows runners at once (`smoke-slot.ps1` alone in one), and the required
 check `PowerShell scripts smoke tests` is a final job that fails unless every part succeeded; the lint fails when a
-PowerShell step runs in no part or in two. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
+PowerShell step runs in no part or in two. On a pull request each CI smoke job runs
+`tests/check.sh --affected --within <its list>`: the steps of its list that the changed paths select, or all of them
+when a path is shared or unknown; a push to `main` runs every step. Every required job runs on every event. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
 appends the check's wall time and its five slowest steps to a Markdown file; each CI run's summary page shows every
 job's wall time and its five slowest workflow steps (read from the jobs API by the final job, the one job with
 `actions: read`), and each check's five slowest steps. With `verification.platform` set, `tests/check.sh` runs only

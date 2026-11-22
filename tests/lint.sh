@@ -1285,7 +1285,7 @@ echo "== the check runs every smoke script"
 # Iteration 42, decision 11: the step list of tests/check.sh (between '# steps: begin' and '# steps: end') runs every
 # smoke script once, in its own shell; the check has one place that prints the all-passed line; the key and the quick
 # mode are wired in the schema, the example, the README, the contributor guide and the skills; and CI runs its smoke
-# jobs through tests/check.sh --only: the bash job with a list equal to the step list's bash steps, the PowerShell job
+# jobs through tests/check.sh $CHECK_SELECT (--only, or --affected --within on a pull request): the bash job with a list equal to the step list's bash steps, the PowerShell job
 # in parts (iteration 55; the parts are checked in the next section), and no other job name begins with a required one.
 chk_block=""
 chk_nb=$(grep -cx '# steps: begin' tests/check.sh || true)
@@ -1356,17 +1356,26 @@ chk_only() {
     echo "FAIL: $chk_ci: the --only list is not in the order of the step list"; fail=1
   fi
 }
-chk_bash_lines=$(grep -E '^[[:space:]]*(- )?run: bash tests/check\.sh --summary "\$GITHUB_STEP_SUMMARY" --only ' "$chk_ci" || true)
-if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 1 ]; then
-  echo "FAIL: $chk_ci: the bash smoke job does not run tests/check.sh --summary \"\$GITHUB_STEP_SUMMARY\" --only"; fail=1
+# Iteration 60, decision 8 rule 5: the bash job has two check lines with $CHECK_SELECT, the first with the list
+# smoke-json.sh before the step that hides jq, the second with the other bash steps; --only and --affected occur only
+# in the env line of CHECK_SELECT
+chk_sel='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT '
+chk_bash_lines=$(grep -nE '^[[:space:]]*(- )?run: bash tests/check\.sh --summary "\$GITHUB_STEP_SUMMARY" \$CHECK_SELECT ' "$chk_ci" || true)
+chk_hide=$(grep -nE '^[[:space:]]*- name: Hide jq' "$chk_ci" | head -n 1 | cut -d: -f1 || true)
+chk_l1=$(printf '%s\n' "$chk_bash_lines" | sed -n 1p); chk_l2=$(printf '%s\n' "$chk_bash_lines" | sed -n 2p)
+if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 2 ] || [ -z "$chk_hide" ] ||
+  [ "${chk_l1##*"$chk_sel"}" != smoke-json.sh ] || [ "${chk_l1%%:*}" -ge "$chk_hide" ]; then
+  echo "FAIL: $chk_ci: the bash smoke job does not run tests/check.sh --summary \"\$GITHUB_STEP_SUMMARY\" \$CHECK_SELECT smoke-json.sh, then the other bash steps"; fail=1
 elif [ -n "$chk_block" ]; then
   chk_want_bash=$(printf '%s\n' "$chk_block" | awk '$2 == "bash" && $3 != "smoke-json.sh" { print $3 }' | tr '\n' ' ')
-  chk_only "$chk_want_bash" "${chk_bash_lines##*--only }"
+  chk_only "$chk_want_bash" "${chk_l2##*"$chk_sel"}"
 fi
-[ "$(grep -cE '^[[:space:]]*(- )?run: bash tests/smoke-json\.sh$' "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci runs tests/smoke-json.sh outside tests/check.sh"; fail=1; }
+chk_env_line="  CHECK_SELECT: \${{ github.event_name == 'pull_request' && '--affected --within' || '--only' }}"
+if grep -E -e '--only|--affected' "$chk_ci" | grep -vxF -- "$chk_env_line" >/dev/null; then
+  echo "FAIL: $chk_ci: --only or --affected occurs outside the env line of CHECK_SELECT"; fail=1
+fi
 while IFS= read -r l; do
   x=$(printf '%s\n' "$l" | grep -oE 'tests/smoke-[A-Za-z0-9._-]+' | head -n 1 || true)
-  case $l in *'run: bash tests/smoke-json.sh') continue ;; esac
   echo "FAIL: $chk_ci runs ${x:-a smoke file} outside tests/check.sh"; fail=1
 done < <(grep -E 'run: bash tests/smoke-|-File tests/smoke-' "$chk_ci" || true)
 for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'PowerShell scripts smoke tests'; do
@@ -1452,7 +1461,8 @@ else
     [ "$aff_a" = "$aff_got" ] || { echo "FAIL: tests/check.sh: $f and ${f%.sh}.ps1 map to different steps"; fail=1; }
   done
   # rule 6: the lines of decision 3
-  for l in 'shared scripts/lib/*' 'shared tests/check.sh' 'shared tests/check.ps1' 'lintonly docs/*'; do
+  # (iteration 60, decision 7: a change to the workflow runs every step of every list)
+  for l in 'shared scripts/lib/*' 'shared tests/check.sh' 'shared tests/check.ps1' 'lintonly docs/*' 'shared .github/workflows/*'; do
     case $'\n'"$aff_block"$'\n' in *$'\n'"$l"$'\n'*) ;; *) echo "FAIL: tests/check.sh: the map does not have the line $l"; fail=1 ;; esac
   done
 fi
@@ -1481,6 +1491,39 @@ echo "== the job-name rule says begins with"
 # in tests/smoke-check.sh/.ps1; tests/test-ci-job-name-rule.sh checks that the iteration 55 spec words it the same way.
 # The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it (#293).
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-job-name-rule.sh || fail=1
+
+echo "== CI selects the steps a pull request affects"
+# Iteration 60, decision 8: on a pull request every smoke job runs tests/check.sh --affected --within <its list>, on
+# every other event --only <its list>, through one workflow variable (1); every job starts on every event, so the
+# three required names always report: no path filter on 'on:' (2), no 'if:' on a required job or its steps but the
+# if: always() of smoke-powershell (3); the smoke jobs fetch the history, so origin/main exists (4). One awk pass
+# (bug #270: no process per line); it assumes the block style ci.yml uses (jobs at 2 spaces, job keys at 4).
+ci_sel_env="  CHECK_SELECT: \${{ github.event_name == 'pull_request' && '--affected --within' || '--only' }}"
+while IFS= read -r l; do
+  case $l in
+    env) echo "FAIL: $chk_ci: the env block is not exactly the line '$ci_sel_env'"; fail=1 ;;
+    on) echo "FAIL: $chk_ci: the 'on:' block is not exactly push to main and pull_request (a path filter would leave a required job unreported)"; fail=1 ;;
+    if\ *) echo "FAIL: $chk_ci: job ${l#if } has an 'if:' (a required job runs on every event)"; fail=1 ;;
+    depth\ *) echo "FAIL: $chk_ci: job ${l#depth } does not check out with fetch-depth: 0 (the changed paths need origin/main)"; fail=1 ;;
+  esac
+done < <(LC_ALL=C awk -v want="$ci_sel_env" '
+  { sub(/\r$/, "") }
+  # the column-0 blocks env: and on:
+  /^[^[:space:]#]/ { blk = $0; if (blk == "env:") nenv++; if (blk == "on:") non++ }
+  blk == "env:" && /^[[:space:]]/ { env[++ne] = $0 }
+  blk == "on:" && /^[[:space:]]/ { on[++no] = $0 }
+  # the jobs
+  blk == "jobs:" && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
+  blk != "jobs:" { job = "" }
+  job != "" && /^    if:/ { if (!(job == "smoke-powershell" && $0 == "    if: always()") && !bad[job]++) print "if " job }
+  job != "" && /^      +(- )?if:/ && (job == "lint" || job == "smoke-bash" || job == "smoke-powershell-part") && !bad[job]++ { print "if " job }
+  job != "" && /^[[:space:]]+fetch-depth: 0[[:space:]]*$/ { depth[job] = 1 }
+  END {
+    if (nenv != 1 || ne != 1 || env[1] != want) print "env"
+    if (non != 1 || no != 3 || on[1] != "  push:" || on[2] != "    branches: [main]" || on[3] != "  pull_request:") print "on"
+    if (!depth["smoke-bash"]) print "depth smoke-bash"
+    if (!depth["smoke-powershell-part"]) print "depth smoke-powershell-part"
+  }' "$chk_ci")
 
 echo "== the lists and the shell twins agree"
 # Iteration 51 (#157): the README lists every smoke file, every tests/smoke-*.sh has a .ps1 twin (except the listed
