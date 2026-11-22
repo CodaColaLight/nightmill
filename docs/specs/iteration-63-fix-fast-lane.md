@@ -1,6 +1,6 @@
 # Iteration 63: a fast lane in /fix for low-risk bugs
 
-Status: draft, awaiting approval (#341)
+Status: delivered in iteration 63 (PR #362)
 
 Story #341, epic #337 (fast verification loop). A new config key, `review.fastLane`, names the priorities whose bugs
 start in a fast lane and the paths a fast-lane fix may change. In the fast lane `/fix` launches one agent, in the role

@@ -1886,6 +1886,12 @@ echo "== an extra review round is proposed"
 # round; review.maxFixRounds defaults to 3. The pins live in tests/test-extra-round.sh.
 bash tests/test-extra-round.sh "$PWD" || fail=1
 
+echo "== the fast lane of /fix"
+# Iteration 63 (#341): review.fastLane sends low-risk bugs through /fix in one pass; a fix that leaves the lane's
+# paths, touches a hot file, needs a story trigger or is partial goes the long way. The pins live in
+# tests/test-fast-lane.sh.
+bash tests/test-fast-lane.sh "$PWD" || fail=1
+
 echo "== shell"
 for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }

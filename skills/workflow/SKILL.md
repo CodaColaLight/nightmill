@@ -172,7 +172,7 @@ Seven roles do the work of a story. Each runs as a subagent on the model the con
 | `tester` | writes the failing tests from the approved spec, before the implementer, and a bug's regression test from the report, before the fixer | the tests | `codeReviewer`, with the change |
 | `implementer` | writes the code of an Approved story | the change | `codeReviewer` |
 | `codeReviewer` | reviews the change before the pull request opens | findings on the change | the maintainer |
-| `fixer` | fixes a bug | the fix and its regression test | `codeReviewer` |
+| `fixer` | fixes a bug | the fix and its regression test | `codeReviewer` (not in the fast lane of /fix) |
 | `worker` | does a mechanical, fully specified job | the job's result, read back by the caller | the caller |
 
 A reviewer ranks at least as high as each role it reviews: `specReviewer` over `specWriter`, `codeReviewer` over
@@ -228,7 +228,9 @@ The check fix rounds after a red check of the open pull request (**Watching the 
 counted apart from these, per pull request over every run, and bounded by the same `review.maxFixRounds`.
 In `/next` and `/fix` the same rounds also pay for a dispute over a tester's test (the tester answers, then a new
 producer runs) and for a round undone because the producer changed the tester's tests: each costs one of
-`review.maxFixRounds`, and `Fix rounds used` counts them. In `/next` and `/fix` a blocking finding of the code reviewer
+`review.maxFixRounds`, and `Fix rounds used` counts them. A bug that stays in the fast lane of `/fix`
+(`review.fastLane`) has no code review, no fix round and no `## Review` section; its pull request says so in its
+`Lane:` line. In `/next` and `/fix` a blocking finding of the code reviewer
 whose text begins with `test: ` is a test finding, whatever file it names: it goes to the `tester`, the others to the
 producer, in the same fix round, which costs one of `review.maxFixRounds` whatever it holds; a test finding the tester
 answered `stands:` is not sent to it again, and a round in which the tester answered every test finding `stands:`, added

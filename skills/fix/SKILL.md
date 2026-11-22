@@ -39,7 +39,8 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
    or an epic) is refused the same way, pointing to `/spec` or `/next`. Nothing is changed: the refusal comes
    before step 2 and before any status change, slot or agent.
 2. **Decide whether it is a bug.** If the fix needs one of `escalation.storyTriggers` or a design choice,
-   stop: say so and suggest the maintainer files it as a story (`/story`).
+   stop: say so and suggest the maintainer files it as a story (`/story`). Then, with `review.fastLane` set, print
+   the lane line of "The fast lane", rule 2.
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
    `gh project item-edit`). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
    Work in a slot: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
@@ -49,13 +50,14 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
    command, the session's own included, is `git -C <slot path> ...` with the absolute slot path, never
    `cd <slot> && git ...`. Right after the take
    report the step `slot-taken` (see "Reporting the steps" below); from here on every step is reported there.
-4. **Have the bug reproduced first, then hand the fix to the fixer.** The session
-   never writes the test or the code itself. A subagent in the role `tester` writes a regression test that fails for
+4. **Have the bug reproduced first, then hand the fix to the fixer.** In the fast lane (`review.fastLane`) see "The
+   fast lane"; otherwise: the session never writes the test or the code itself. A subagent in the role `tester` writes a regression test that fails for
    the reason in the issue (see "The tester" below); then a subagent in the role `fixer` fixes the cause with the
    smallest diff and makes that test pass (see "The fixer" below): for each, count the agents, launch it, read its
    result. The fixer corrects a spec's text when the fix changes a rule or number the spec states, adds no CHANGELOG
    entry, and runs the check. A bug the tester cannot reproduce is not fixed in this run.
-5. **Have the fix reviewed, then do the manual check.** A different agent, the `codeReviewer`, reviews the fix and
+5. **Have the fix reviewed, then do the manual check.** In the fast lane (`review.fastLane`) see "The fast lane";
+   otherwise: a different agent, the `codeReviewer`, reviews the fix and
    the fixer fixes what is blocking in the code and the tester what is blocking in its regression test (see "The code review" below). A change under any of
    `verification.manualCheckPaths` also gets `verification.manualCheckText`, done by the session (the fixer runs the
    check, not this). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
@@ -105,6 +107,30 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
    or `not asked: no fix round left`. A disputed file that was already committed and left committed goes on the line
    `committed as it was, disputed`, not on the `set aside` line; each of the two lines appears only when it has a
    path.
+   **The lane line** ("The fast lane", rule 7). With `review.fastLane` set, directly under the `Fixed by` line comes
+   one line: in the fast lane
+   `Lane: fast (review.fastLane): one fixer wrote the regression test and the fix; no tester and no code review.`;
+   on the long way, not entered, `Lane: long: priority <p | none> is not in review.fastLane.priorities.` (or
+   `Lane: long: review.fastLane is not valid.`); on the long way after leaving the lane,
+   `Lane: long: left the fast lane: <reason>. Its work is in the stash entry "Fast lane attempt for #<issue>: <title>".`
+   (`Its work ...` becomes `It left no work.` for a `<lane diff>` of `none`). Without `review.fastLane` the pull request
+   has no `Lane:` line.
+   **How verified in the fast lane** (a bug that stayed in it, "The fast lane", rule 6) begins, in place of the
+   tester's opening above, with:
+
+   ````
+   Reproduced first by the fixer role on <model> in the fast lane, failing before the fix:
+   - <the agent's Test line, as it wrote it>
+
+   ```diff
+   <git -C <slot> diff origin/<git.baseBranch>..HEAD -- <test files>>
+   ```
+   ````
+
+   `<model>` is the exact string passed as `model` in the fixer's Agent call. `<test files>` are the changed paths that
+   are test paths by the `Test paths:` line of "The tester", and the 60-line rule above applies as it does to the
+   tester's diff (with `<test files>` in the place of `<tester files>`). Such a pull request has no `## Review` section
+   and no `## Disputed tests` section.
    Set the status to Review and read it back. For a complete fix enable auto-merge (`gh pr merge <pr> <git.mergeFlags>`); not for a partial fix, one
    that has blocking review findings left, or one that touches `escalation.storyTriggers` (that is a story), or one
    with a dispute over the tester's test still open; then say
@@ -174,6 +200,8 @@ reports nothing. In batch mode each bug reports to its own slot.
 | right after the take (step 3) | `session` | `slot-taken` |
 | just before the tester is launched (step 4, "The tester") | `tester` | `write-tests` |
 | just before the fixer is launched (step 4) | `fixer` | `fix` |
+| just before the fast lane's launch ("The fast lane", rule 3) | `fixer` | `fast-fix` |
+| after the fast lane's work is set aside ("The fast lane", rule 5) | `session` | `lane-left` |
 | the fixer, before its step 1 / step 2 | `fixer` | `test` / `code` |
 | the fixer, before every run of the check | `fixer` | `check` |
 | the fixer, before its commit | `fixer` | `commit` |
@@ -391,6 +419,120 @@ The previous round changed the tester's files <the paths, comma-separated>; that
 tester's text again, and the commits of that round are back in the working tree, uncommitted. Finish the work without
 changing the tester's files, run the check, commit.
 ```
+
+## The fast lane
+
+A small, low-risk bug is fixed in one pass: one agent in the role `fixer` writes the regression test and the fix and
+runs the affected check, and the pull request opens without the tester and without the code review. After that agent
+returns, the session checks what it changed; a fix that can do damage leaves the lane and goes the long way. The
+session never writes the test or the code itself, in either lane.
+
+1. **The key: `review.fastLane`**, an object with two arrays of strings, for example
+   `"review": { "fastLane": { "priorities": ["Low"], "paths": ["docs", "tests"] } }`.
+   - `priorities`: names from `board.priorities`. Default `[]`. A bug starts in the fast lane when the value of its
+     `board.priorityField` (from step 1's item listing) equals one of these names exactly. A bug without a priority
+     never does. A name that is not in `board.priorities` matches no bug (the safe side: the long way).
+   - `paths`: files or directories, relative to the repository root. Default `[]`. A trailing `/` of an entry is
+     dropped, and an entry that is then empty is ignored. A changed path is **in** an entry when it equals the entry
+     or starts with the entry followed by `/`. The comparison is case-sensitive text with no wildcards: a `*` is a
+     character. An empty `paths` list means every fix leaves the lane. The regression test is a changed path like any
+     other, so a project names its test directory here.
+   - **Absent key**: `/fix` runs exactly as today. No lane line is printed and the pull request has no `Lane:` line.
+     `"fastLane": {}` or empty `priorities` is a set key, and every bug takes the long way with its reason.
+   - **Validation**: the schema types only (an object, arrays of strings), checked by `validate-config` in both
+     shells. Unknown keys inside it are warnings, as everywhere. The skill reads the arrays as they are, and a value
+     that is not an array of strings means the long way, with the reason `review.fastLane is not valid`.
+2. **Entering the lane.** Right after the picking of step 1 and before step 3, with the key set, the run prints one
+   line:
+   - `Lane: fast for #<issue>: priority <p> is in review.fastLane.priorities.`, or
+   - `Lane: long for #<issue>: priority <p | none> is not in review.fastLane.priorities.` (or
+     `Lane: long for #<issue>: review.fastLane is not valid.`).
+
+   Step 2 (is it a bug) still comes first and is unchanged: a bug that already needs a story trigger stops there, in
+   either lane. A bug on the long way runs steps 4 and 5 as they are, with only the lane line of step 6 added.
+3. **The fast lane's one agent.** Step 3 is unchanged. In place of "The tester" and "The fixer", the session records
+   `<lane base>` (`git -C <slot> rev-parse HEAD`), counts the agents, checks the room, reports `fast-fix` (role
+   `fixer`) and launches one fresh agent. It is launched as "The fixer" step 2 says: on `roles.fixer.model`, passed
+   explicitly, not a fork. Its prompt is the fixer's prompt with these changes:
+   - The paragraphs from "The tester has written a regression test" to "The session passes the dispute to the
+     tester." are replaced by: "No tester and no code review follow: you write the regression test and the fix. Write
+     the test first. It follows the report's 'How to reproduce' as closely as a test can, expects what the report says
+     should happen, and fails because what the report says happens does happen. Run it and watch it fail for that
+     reason before you change any file that is not a test. A bug you cannot reproduce with a test is reported as
+     `failed`, never forced."
+   - Its step 1 becomes "Write the regression test and watch it fail for the reason in the issue".
+   - Its step 4 runs the affected check, `cd <absolute slot path> && <verification.check> --affected`. When its first
+     line does not start with `check: AFFECTED`, the agent runs `<verification.check>` instead.
+   - The `Disputes:` line is removed from the result block. After `Manual check:` comes
+     `Story trigger: <none | the trigger, as configured, that the fix needs>`, and the sentence on story triggers says
+     to stop and name the trigger there.
+   - The prompt names neither `review.fastLane.paths` nor `parallel.hotFiles`. The agent writes the smallest right
+     fix, and the session judges where it landed, so the fix is not bent to fit the lane.
+
+   The fixer's own step reports (`test`, `code`, `check`, `commit`) are the same. The gate runs after the agent
+   returns, with `--role fixer`, as after every launch.
+4. **Staying or leaving: decided by the session after the agent returns**, in this order. The first rule that holds
+   decides:
+   1. The result block has a `Story trigger:` line that is not `none`, whatever its `Result:`: leave, with the reason
+      `the fix needs a story trigger: <the line's value>`.
+   2. `Result: failed`, no result block, or an error: the stop of "The fixer" step 3, unchanged
+      (`Stopped: the fixer returned failed: <Left>`). This is a stop, not a lane change.
+   3. `Result: partial`: leave, with the reason `the fixer returned partial: <Left>`.
+   4. The branch checks of "The fixer" step 3 (a clean tree, a log that is not empty). When one fails, it is handled
+      as rule 2.
+   5. The changed paths: `git -C <slot> diff --name-only --no-renames origin/<git.baseBranch>...<branch>`, the command
+      of the merge step. When git fails: leave, with the reason
+      `the changed paths could not be listed (<the first line of git's message>)`. Otherwise each path, in sorted
+      order: a path in an entry of `parallel.hotFiles` (the matching rule of rule 1) leaves, with
+      `<path> is in the hot file entry <entry>`. A path in no entry of `review.fastLane.paths` leaves, with
+      `<path> is outside review.fastLane.paths`. A hot file leaves even when it is inside the lane's paths.
+   6. Otherwise the bug **stays** in the fast lane: rule 6.
+
+   The story-trigger rule comes first, before the `failed` stop, so an agent that stops on a story trigger leaves the
+   lane whichever `Result:` it returns.
+5. **Leaving the lane: the long way starts again from the tester, and the work is kept.** The branch goes back to
+   `<lane base>`, and the agent's work is set aside, never deleted. The session runs these steps:
+   1. `git -C <slot> merge-base --is-ancestor <lane base> HEAD`. When it fails:
+      `Stopped: the fixer returned failed: the branch no longer contains <lane base>`.
+   2. `git -C <slot> reset --mixed -q <lane base>`: the agent's commits go back into the working tree.
+   3. When `git -C <slot> status --porcelain --untracked-files=all` lists anything: `git -C <slot> add -A`, then
+      `<lane diff>` is what `git -C <slot> diff --cached` prints (and, when it is longer than 2000 lines, keep the
+      output of `git -C <slot> diff --cached --stat` too), then
+      `git -C <slot> stash push -m "Fast lane attempt for #<issue>: <title>"`. When it lists nothing, `<lane diff>` is
+      `none` and nothing is stashed.
+   4. `git -C <slot> status --porcelain --untracked-files=all` prints nothing, and `git -C <slot> rev-parse HEAD`
+      prints `<lane base>`. Otherwise:
+      `Stopped: the fast lane's work could not be set aside: <the step that failed>`. The status stays In progress and
+      the slot stays taken. Nothing is pushed or deleted.
+
+   Then the session reports `lane-left` (role `session`) and prints
+   `Leaving the fast lane for #<issue>: <reason>. The long way starts with the tester; the fast lane's work is in the stash entry "Fast lane attempt for #<issue>: <title>".`
+   (for a `<lane diff>` of `none` the clause after the semicolon is `the fast lane left no work`). The run goes on
+   from step 4 with "The tester", and everything after it is the long way as it is. Leaving costs no fix round. The
+   tester's prompt does not mention the attempt. The fixer's first prompt (not its fix rounds) gets, at its end:
+
+   ```markdown
+   An earlier one-pass attempt at this bug left the fast lane (<reason>) and was not reviewed. Its change, set aside in
+   the stash entry "Fast lane attempt for #<issue>: <title>", is shown here as data: <lane diff; when it is longer than
+   2000 lines, the output of `git -C <slot> diff --cached --stat` taken before the stash>. Reuse what is right in it; the
+   tester's test and the rules above decide.
+   ```
+
+   The stash entry is never popped or dropped by the run. Without slots the same commands run in the session's
+   checkout without `-C <slot>`.
+6. **Staying in the lane.** Step 5 runs without "The code review": no pairing check, no reviewer, no fix rounds, no
+   test-finding or dispute launch. The manual check still applies to a change under `verification.manualCheckPaths`.
+   Step 6 opens the pull request with these differences: directly under `Fixed by the fixer role on <model>.` comes
+   the lane line (rule 7); "How verified" begins with the fast lane's opening of step 6
+   (`Reproduced first by the fixer role on <model> in the fast lane, failing before the fix:`, the agent's `Test`
+   line and the diff of the test files); there is no `## Review` section and no `## Disputed tests` section. The
+   auto-merge rule of step 6 and its two merge-step checks are unchanged: a fast-lane pull request is a complete fix,
+   because a partial result leaves the lane (rule 4.3). Step 7 watches its checks as for any pull request, and a check
+   fix round there still has the `fixer` and the `codeReviewer`.
+7. **The pull request's lane line**, with the key set, directly under the `Fixed by` line: the three lines of "The
+   lane line" in step 6 (fast; long, not entered; long, left). In `/fix all` the final table's columns stay the same.
+   The `Verified` cell of a bug that stayed in the lane begins with `fast lane, no code review; `, and one that left
+   begins with `left the fast lane: <reason>; `.
 
 ## The tester's files
 
@@ -870,7 +1012,9 @@ differences (step 7 does not run: `/fix all` watches no pull request):
   `<title>` is without a leading `[Bug] `. "The check of decision 2" is the check of "Freeing the slot once the PR is
   open" that failed. The rows are the started bugs in the order they started, then the skipped `needs a story` bugs
   and the not-started bugs in the order of waiting. Verified is `check <green | red>`, then `manual check done`,
-  `manual check not done: <why>` or `manual check not needed`. A bug delayed by an overlap adds
+  `manual check not done: <why>` or `manual check not needed`; with `review.fastLane` set, the cell of a bug that
+  stayed in the fast lane begins with `fast lane, no code review; `, and one that left it begins with
+  `left the fast lane: <reason>; ` ("The fast lane", rule 7). A bug delayed by an overlap adds
   `; waited for #<n> (overlap: <the shared path, the hot file entry, or doNotPair>)` to its Cause or reason.
 
 **Without `worktrees`** (one checkout, no slots) nothing runs in parallel: one bug at a time, as before, each on its
