@@ -1,6 +1,6 @@
 # Iteration 60: CI runs only the steps a pull request's paths affect
 
-Status: draft, awaiting approval (#339)
+Status: delivered in iteration 60 (PR #354)
 
 Story #339, epic #337 (fast verification loop). It builds on iteration 59 (#338, `tests/check.sh --affected`), which
 must be implemented and merged first. On a pull request every smoke job of `.github/workflows/ci.yml` runs

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Iteration 60 (#339): CI runs only the steps a pull request's paths affect. tests/check.sh --within <list>
+  (check.ps1 -Within) limits --affected to the steps of a list; ci.yml passes it on a pull request through one
+  CHECK_SELECT line (and --only on a push, so a push still runs everything), and the smoke-bash and
+  smoke-powershell-part jobs check out the full history. The jobs and their names stay, so the required checks always
+  report; a step left out shows in the run summary under Selection, Ran and Left out, and a shared file, an unknown path
+  or no merge base runs every step of the list. smoke-json goes through the check. The lint fails when ci.yml stops
+  passing the selection. No config key.
 - Iteration 59 (#338): the check runs only the steps a change affects. tests/check.sh --affected (check.ps1
   -Affected) maps the paths changed against origin/<git.baseBranch> to their test steps through one map in
   tests/check.sh and runs the lint plus those steps; a changed script runs its tests in both shells whatever
