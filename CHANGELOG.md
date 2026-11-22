@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0 (2026-11-22)
+
 - Iteration 60 (#339): CI runs only the steps a pull request's paths affect. tests/check.sh --within <list>
   (check.ps1 -Within) limits --affected to the steps of a list; ci.yml passes it on a pull request through one
   CHECK_SELECT line (and --only on a push, so a push still runs everything), and the smoke-bash and
