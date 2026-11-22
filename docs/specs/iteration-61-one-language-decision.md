@@ -21,8 +21,9 @@ on it is the decision, and the maintainer merges it.
 marker format does not change: the change is one Markdown file under `docs/decisions/` and one changelog bullet.
 **Compatible** holds trivially. **No manual check**: nothing under `skills/`, `agents/` or `hooks/` changes. **No
 shell, no smoke step**: no script changes, so **Both shells** holds in this iteration whatever the record recommends.
-Under iteration 59's `--affected` a change under `docs/` runs the lint alone; `CHANGELOG.md` is outside `docs/`, so
-whatever the map gives for it runs.
+Under iteration 59's `--affected` a change under `docs/` runs the lint alone (`lintonly docs/*` in `tests/check.sh`);
+`CHANGELOG.md` is outside `docs/` and maps to the release and changelog steps (`smoke-release`, `test-release-*`,
+`test-changelog-*`, in both shells where they exist), which run.
 
 ## Facts this rests on
 
@@ -68,7 +69,8 @@ Measured on `main` at 1509b29 on 2026-11-21 with `find ... | xargs cat | wc -l` 
      `## Facts`), and that the record leaves the migration to follow-up stories.
    - `## Facts`: every number of this spec's **Facts this rests on**, measured again on the record's own base commit,
      which it names with the commands used; a number that changed is stated with its new value. The CI times come
-     from the newest green run on `main` (`gh run view <id> --json jobs`), with its id.
+     from the newest green run on `main` in which every job ran (after iteration 60 a run can skip jobs)
+     (`gh run view <id> --json jobs`), with its id.
    - `## Options`: one `###` subsection per option, in this order: `Keep both`, `Bash only, with Git Bash on Windows`,
      `One implementation in a runtime Claude Code brings`. Each states, in three bold-labelled lines: **Install**
      (what a user on Windows and on Linux/macOS must install beyond Claude Code, `git` and `gh`); **Breaks** (what an
@@ -143,8 +145,9 @@ No automated test reads the record; the code reviewer checks it against decision
 
 ## Risks
 
-- The numbers drift while iterations 59 and 60 merge (both add steps and lines). Decision 2 limits it: the record
-  measures on its own base commit and names it.
+- The numbers drift: iteration 60 (CI runs only the affected jobs, 91da238) merged after the facts above were
+  measured, and changes the CI times and the test lines. Decision 2 limits it: the record measures on its own base
+  commit and names it, and takes the CI times from the newest green run on `main` that ran every job.
 - The runtime option rests on what Claude Code documents, which can change; the record quotes and links its source.
 - The pull request waits on the maintainer and holds no hot file, so it blocks no other story.
 
