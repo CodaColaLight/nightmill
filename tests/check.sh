@@ -12,7 +12,9 @@
 # are capped at the machine's processors, and any UPDATE_*_FIXTURES=1 makes L 1. With L = 1 the steps run one after
 # another in the foreground; with more, each step's output goes to a file of its own and is printed whole, in the
 # order of the list, whatever order the steps finish in. The steps marked 'first' are started before the others. The
-# two claude steps run one after the other in one job.
+# two claude steps run one after the other in one job. A step line is add <kind> <name>[ first][ slow]: a step marked
+# 'slow' (iteration 62) does not run in a selective --affected run (with or without --within), which lists it as
+# LEFT OUT:; the full check, --only and the fallbacks of --affected run it as any step.
 #   --quick        the lint and the bash smoke tests only; never prints the line of a passed full check
 #   --only a,b     exactly the named steps (CI runs its smoke jobs this way)
 #   --affected     the lint and the steps the paths changed against origin/<git.baseBranch> map to (iteration 59): the
@@ -37,9 +39,10 @@
 # Exit code is non-zero when any step that ran failed (2 for a usage error). Skipped steps are listed at the end. Each
 # result line carries the step's time, and a Times: block after the last step lists every step's time and the total
 # (iteration 41; the total is the wall time from the start to the end of the last step).
-# For the tests only: NIGHTMILL_CHECK_STEPS names a file of <name> TAB <command> [TAB <kind> [TAB <reason> [TAB first]]]
-# lines (kind lint, bash, ps or claude; bash when left out; a step with a reason is not run and is listed as SKIPPED:
-# <reason>; first marks a step to start first, as in the step list; empty fields keep their place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
+# For the tests only: NIGHTMILL_CHECK_STEPS names a file of <name> TAB <command> [TAB <kind> [TAB <reason> [TAB first
+# [TAB slow]]]] lines (kind lint, bash, ps or claude; bash when left out; a step with a reason is not run and is listed
+# as SKIPPED: <reason>; first marks a step to start first and slow marks a slow step, as in the step list; empty fields
+# keep their place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
 # scripts/lib/ledger.sh) is the clock the times are read from. With NIGHTMILL_CHECK_STEPS set, NIGHTMILL_CHECK_MAP
 # names a file of map lines read instead of the map below (unset: an empty map). NIGHTMILL_CHECK_PATHS names a file
 # whose lines are the changed paths of --affected; git is then not called. CI sets none of them.
@@ -74,10 +77,20 @@ case $seen in *" --quick "*) case $seen in *" --only "*) usage ;; esac ;; esac
 case $seen in *" --affected "*) case $seen in *" --quick "*|*" --only "*) usage ;; esac ;; esac
 case $seen in *" --within "*) case $seen in *" --affected "*) ;; *) usage ;; esac ;; esac
 
-# The step list: k_kind, k_name, k_first ('first' or empty), k_skip (a reason, or empty), k_cmd (fixture steps only)
+# The step list: k_kind, k_name, k_first ('first' or empty), k_slow ('slow' or empty), k_skip (a reason, or empty),
+# k_cmd (fixture steps only)
 n=0
-add() { # add <kind> <name> [first]
-  k_kind[n]=$1; k_name[n]=$2; k_first[n]=${3:-}; k_skip[n]=""; k_cmd[n]=""; n=$((n + 1))
+add() { # add <kind> <name> [first] [slow]
+  local marks="${*:3}"
+  case $marks in
+    ""|first|slow|"first slow") ;;
+    *) echo "check: the step list is malformed: add $*" >&2; exit 2 ;;
+  esac
+  k_kind[n]=$1; k_name[n]=$2; k_first[n]=""; k_slow[n]=""; k_skip[n]=""; k_cmd[n]=""
+  case $marks in first*) k_first[n]=first ;; esac
+  # a lint or claude step is never slow
+  case $marks in *slow) case $1 in bash|ps) k_slow[n]=slow ;; esac ;; esac
+  n=$((n + 1))
 }
 
 ps=""
@@ -106,7 +119,7 @@ add bash smoke-dashboard.sh
 add bash smoke-panel.sh
 add bash smoke-stages.sh
 add bash smoke-check.sh
-add bash test-lintcopy-output.sh
+add bash test-lintcopy-output.sh slow
 add bash test-lint-pipefail.sh
 add bash test-release-resume.sh
 add bash test-release-low-defects.sh
@@ -153,7 +166,7 @@ add ps smoke-dashboard.ps1
 add ps smoke-panel.ps1
 add ps smoke-stages.ps1
 add ps smoke-check.ps1 first
-add ps test-lintcopy-output.ps1 first
+add ps test-lintcopy-output.ps1 first slow
 add ps test-release-resume.ps1
 add ps test-release-low-defects.ps1
 add ps test-json-bom.ps1
@@ -162,7 +175,7 @@ add ps test-status-controls.ps1
 add ps test-smoke-slot-tar.ps1
 add ps test-slot-low-defects.ps1
 add ps smoke-guard.ps1
-add ps smoke-drive.ps1 first
+add ps smoke-drive.ps1 first slow
 add ps smoke-gate.ps1
 add ps smoke-history.ps1
 # steps: end
@@ -197,6 +210,7 @@ shared scripts/lib/*
 shared tests/check.sh
 shared tests/check.ps1
 shared .github/workflows/*
+shared .claude-plugin/plugin.json
 lintonly docs/*
 map .claude-plugin/* claude plugin validate,claude plugin test
 map .claude-plugin/plugin.json smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh,smoke-release.ps1,test-release-resume.ps1,test-release-low-defects.ps1
@@ -280,11 +294,12 @@ if [ -n "${NIGHTMILL_CHECK_STEPS:-}" ]; then
     f=(); while :; do
       case $f_line in *$'\t'*) f+=("${f_line%%$'\t'*}"); f_line=${f_line#*$'\t'} ;; *) f+=("$f_line"); break ;; esac
     done
-    f_name=${f[0]}; f_cmd=${f[1]:-}; f_kind=${f[2]:-}; f_reason=${f[3]:-}; f_first=${f[4]:-}
+    f_name=${f[0]}; f_cmd=${f[1]:-}; f_kind=${f[2]:-}; f_reason=${f[3]:-}; f_first=${f[4]:-}; f_slow=${f[5]:-}
     [ -n "$f_name" ] || continue
     case ${f_kind:-bash} in lint|bash|ps|claude) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: unknown kind $f_kind" >&2; exit 2 ;; esac
     case $f_first in ""|first) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the fifth field is first or empty, not $f_first" >&2; exit 2 ;; esac
-    add "${f_kind:-bash}" "$f_name" $f_first
+    case $f_slow in ""|slow) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the sixth field is slow or empty, not $f_slow" >&2; exit 2 ;; esac
+    add "${f_kind:-bash}" "$f_name" $f_first $f_slow
     k_cmd[n - 1]=$f_cmd; k_skip[n - 1]=$f_reason
   done < "$NIGHTMILL_CHECK_STEPS"
   fixture=1
@@ -452,6 +467,15 @@ if [ "$mode" = only ]; then
     [ -n "$hit" ] || { echo "check: no step named $want" >&2; usage; }
   done
 fi
+# A selective --affected run leaves out every selected step marked slow (iteration 62, decision 5): it does not run,
+# is not counted and is listed as LEFT OUT: (k_left[i] is 1), even with a skip reason
+n_left=0
+for ((i = 0; i < n; i++)); do
+  k_left[i]=0
+  if [ "$mode" = affected ] && [ "${sel[i]}" = 1 ] && [ "${k_slow[i]}" = slow ]; then
+    sel[i]=0; k_left[i]=1; n_left=$((n_left + 1))
+  fi
+done
 
 # The limit L and why
 if [ -n "$jobs" ]; then
@@ -534,14 +558,20 @@ times_block() {
 # selection_md: the selection section of a --within run (iteration 60, decision 6), its trailing empty lines cut: which
 # steps ran and which were left out, and why; for the fallback, the reason every step of the list ran
 selection_md() {
-  local i r=0 ran="" left="" nk=0 c=${#aff_paths[@]}
+  local i r=0 ran="" left="" slow="" ns=0 nk=0 c=${#aff_paths[@]}
   if [ "$aff" = full ]; then printf 'Selection: --affected ran every --within step: %s.\n\n' "$aff_reason"; return; fi
   for ((i = 0; i < n; i++)); do
     [ "${w_in[i]}" = 1 ] || continue
     if [ "${sel[i]}" = 1 ]; then ran="$ran${ran:+, }\`${k_name[i]}\`"; nk=$((nk + 1))
     else left="$left${left:+, }\`${k_name[i]}\`"; fi
+    if [ "${k_left[i]}" = 1 ]; then slow="$slow${slow:+, }\`${k_name[i]}\`"; ns=$((ns + 1)); fi
   done
-  printf 'Selection: --affected against %s: %s of %s steps ran, %s left out (no changed path selects them).\n\n' "$aff_ref" "$nk" "$wn" "$((wn - nk))"
+  if [ "$ns" -gt 0 ]; then
+    # iteration 62, decision 9: the slow steps left out are counted apart
+    printf 'Selection: --affected against %s: %s of %s steps ran, %s left out (%s slow, %s selected by no changed path).\n\n' "$aff_ref" "$nk" "$wn" "$((wn - nk))" "$ns" "$((wn - nk - ns))"
+  else
+    printf 'Selection: --affected against %s: %s of %s steps ran, %s left out (no changed path selects them).\n\n' "$aff_ref" "$nk" "$wn" "$((wn - nk))"
+  fi
   if [ "$c" -gt 0 ]; then
     printf '| Changed path | Selects |\n|---|---|\n'
     for ((r = 0; r < c && r < 50; r++)); do printf '| `%s` | %s |\n' "${aff_paths[r]}" "${aff_texts[r]}"; done
@@ -549,6 +579,7 @@ selection_md() {
     printf '\n'
   fi
   printf 'Ran: %s\n\nLeft out: %s\n\n' "${ran:-none}" "${left:-none}"
+  [ "$ns" = 0 ] || printf 'Slow steps left out: %s (a push to the base branch runs them).\n\n' "$slow"
 }
 # write_summary <file>: appends the wall time and the five slowest steps that ran (most seconds first, a tie in list
 # order) as Markdown (iteration 55, decision 6); a file that cannot be written gets a note on standard error
@@ -688,6 +719,11 @@ for ((i = 0; i < n; i++)); do
   case $shown in *"|${k_skip[i]}|"*) continue ;; esac
   shown="$shown${k_skip[i]}|"
   echo "SKIPPED: ${k_skip[i]}"
+done
+# the slow steps a selective --affected run left out, in list order (iteration 62, decision 9)
+for ((i = 0; i < n; i++)); do
+  [ "${k_left[i]}" = 1 ] || continue
+  echo "LEFT OUT: ${k_name[i]} (a slow step; the full check and CI on the base branch run it)"
 done
 [ -z "$summary" ] || write_summary "$summary"
 case $mode in

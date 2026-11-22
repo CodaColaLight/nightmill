@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 62 (#340): the slowest tests are profiled and the slow ones leave the per-change check. A step line of
+  tests/check.sh can end in slow; a selective --affected run (with or without --within) leaves every slow step out
+  and lists it as LEFT OUT, while the full check, --only, the fallbacks and CI on a push to main still run it, and a
+  release pull request runs every step (shared .claude-plugin/plugin.json). smoke-drive.ps1 and
+  test-lintcopy-output.sh/.ps1 are slow; smoke-check.sh/.ps1 no longer run the agreement cases on each lint copy.
+  Each profiled test says in its header where its time goes. No config key.
 ## 0.8.0 (2026-11-22)
 
 - Iteration 60 (#339): CI runs only the steps a pull request's paths affect. tests/check.sh --within <list>

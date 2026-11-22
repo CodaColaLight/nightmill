@@ -4,6 +4,13 @@
 # Method: copy the repository without .git, add a JSON file that does not parse (the lint then fails on any copy of
 # that tree, the smoke tests' other steps do not read it), run the copy's smoke script and read its output.
 # Not a smoke script: run it with `bash tests/test-lintcopy-output.sh`. Needs bash, git, tar and awk.
+# Time: it copies the repository twice with tar and runs, in turn, a whole smoke script on each copy (smoke-status.sh
+# and smoke-release.sh), then four more whole scripts, which the check also runs on their own: test-spec-template.sh
+# under a bash shim, test-lint-agreement-cases.sh (the control of the second bash shim), test-ci-parts.sh and
+# smoke-check.sh under a cp shim. That is six runs of a bash script in all, and the run of smoke-check.sh nests 33 runs
+# of the lint section, each on a fresh copy of the repository. The shims add one more process to every call of cp or
+# bash under them.
+# Marked slow (iteration 62).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-test-lintcopy-output.XXXXXX")
@@ -100,6 +107,30 @@ done
 exec "$real_cp" "\$@"
 SHIM
 chmod +x "$cpshim/cp"
+# Regression test for #340: the lint copies of tests/smoke-check.sh (29 of them) ran the agreement cases and the agreement
+# cost test each, which the lint step runs once: smoke-check.ps1 took 20m32s in CI. They check the rules only now
+# (NIGHTMILL_CI_PARTS_RULES_ONLY). The cost is counted, not timed: a second shim, named bash, in the same folder as the cp
+# shim, logs every call whose first argument ends in tests/test-lint-agreement-cases.sh or tests/test-lint-agreement-cost.sh
+# and passes every call to the real bash unchanged. The bound is 0 calls for the run of tests/smoke-check.sh below, and a
+# direct run of the cases file through the shim is the control that the shim sees such a call.
+agrlog="$tmp/agreement-calls.log"; : > "$agrlog"
+cat > "$cpshim/bash" <<SHIM
+#!/bin/sh
+case "\${1:-}" in
+  *tests/test-lint-agreement-cases.sh|*tests/test-lint-agreement-cost.sh) echo "\$1" >> "$agrlog" ;;
+esac
+exec "$real_bash" "\$@"
+SHIM
+chmod +x "$cpshim/bash"
+set +e
+(cd "$here" && PATH="$cpshim:$PATH" bash tests/test-lint-agreement-cases.sh "$here" >/dev/null 2>&1)
+set -e
+control_calls=$(wc -l < "$agrlog" | tr -d ' ')
+if [ "$control_calls" != 1 ]; then
+  echo "FAIL: the bash shim logged $control_calls calls of one direct run, so the count proves nothing"
+  bad=1
+fi
+: > "$agrlog"
 set +e
 parts_out=$(cd "$here" && PATH="$cpshim:$PATH" bash tests/test-ci-parts.sh "$here" 2>&1); parts_rc=$?
 set -e
@@ -108,7 +139,7 @@ if [ "$parts_rc" != 0 ] || [ "$one_run" -lt 5 ]; then
   echo "FAIL: one run of tests/test-ci-parts.sh (exit $parts_rc) logged $one_run case copies, so the count proves nothing: $(printf '%s\n' "$parts_out" | tail -n 3)"
   bad=1
 fi
-: > "$cplog"
+: > "$cplog"; : > "$agrlog"
 set +e
 check_out=$(cd "$here" && PATH="$cpshim:$PATH" bash tests/smoke-check.sh 2>&1); check_rc=$?
 set -e
@@ -119,6 +150,11 @@ if [ "$check_rc" != 0 ]; then
 fi
 if [ "$one_run" -ge 5 ] && [ "$check_runs" -gt "$one_run" ]; then
   echo "FAIL: tests/smoke-check.sh runs the cases of tests/test-ci-parts.sh $check_runs case copies in all; at most $one_run (one run of the cases, #293)"
+  bad=1
+fi
+agr_runs=$(wc -l < "$agrlog" | tr -d ' ')
+if [ "$agr_runs" != 0 ]; then
+  echo "FAIL: tests/smoke-check.sh starts the agreement cases or cost test $agr_runs times on its lint copies; 0 expected (the lint runs them once, #340)"
   bad=1
 fi
 # No PowerShell runs here, so the .ps1 half is a text check: a code line (not a comment) of tests/smoke-check.ps1 that

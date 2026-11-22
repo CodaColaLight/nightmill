@@ -1153,7 +1153,9 @@ steps, and lists the family it skipped; `--only` ignores the key, and CI runs bo
 `bash tests/check.sh --affected` runs the lint and the tests of the paths changed against `origin/<git.baseBranch>`
 (the map in `tests/check.sh`), the tests of a changed script in both shells; a change to `scripts/lib/` or the check
 itself, or to a path the map does not know, runs the full check. It is enough before a commit and in a fix round; the
-full check runs before a release, and CI runs every test.
+full check runs before a release, and CI runs every test. A step marked `slow` in the step list of `tests/check.sh`
+does not run in a selective `--affected` run, which lists it as `LEFT OUT:`. The full check, `--only` and CI on a push
+to `main` run it, and a release pull request runs every step (it changes `.claude-plugin/plugin.json`).
 
 CI runs all of them. `tests/check.sh` runs `claude plugin test .` when `claude` is on the PATH and has the
 `plugin test` subcommand, and lists it as skipped otherwise; CI runs it in the `validate` job, which does not block a

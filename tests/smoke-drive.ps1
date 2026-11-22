@@ -2,6 +2,13 @@
 # docs/specs/iteration-52-unattended-driver.md, "Tests"): the same cases as tests/smoke-drive.sh, except `signal`
 # (bash only), and the cases of iteration 53 (#165, docs/specs/iteration-53-run-limits.md). The fakes are .cmd files that call a .ps1, first on the PATH. Each case runs the driver in a child
 # powershell process in the main checkout.
+# Time: 39 cases, each with a throwaway bare origin and a clone made by about ten git processes (a small part of the
+# time), then one run of scripts/drive.ps1 in a child powershell.exe (nearly all of it). The driver starts its siblings
+# as further powershell.exe processes (slot.ps1 -Reap, slot.ps1 -Status -Porcelain, room.ps1, gate.ps1 before every
+# step, history.ps1), and every call of the fake gh and the fake claude is a .cmd that starts one more powershell.exe:
+# about ten such calls per case, nearly 400 in all. The time is Windows PowerShell process starts, which are the
+# driver's own design under test; it copies no repository and nests no run of the lint or of the check.
+# Marked slow (iteration 62).
 $ErrorActionPreference = "Stop"
 $here = Split-Path $PSScriptRoot -Parent
 $D = Join-Path $here "scripts\drive.ps1"

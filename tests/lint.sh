@@ -1274,7 +1274,8 @@ fi
 echo "== the check starts the longest steps first"
 # Iteration 42, decision 1 (and #279): exactly the longest steps of a CI run carry the mark 'first' in the step list of
 # tests/check.sh, so with a limit above 1 they start before all others and the total is set by the slowest step.
-firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p && / first$/' tests/check.sh | tr '\n' '|')
+# A step marked slow (iteration 62) ends in ' first slow': the ' slow' is removed before the compare.
+firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p && / first( slow)?$/ { sub(/ slow$/, ""); print }' tests/check.sh | tr '\n' '|')
 want_firsts="add bash smoke-slot.sh first|add bash test-spec-template.sh first|add ps smoke-slot.ps1 first|add ps smoke-release.ps1 first|add ps smoke-validate.ps1 first|add ps smoke-check.ps1 first|add ps test-lintcopy-output.ps1 first|add ps smoke-drive.ps1 first|"
 if [ "$firsts" != "$want_firsts" ]; then
   echo "FAIL: tests/check.sh: the steps marked first are not exactly the longest steps (docs/specs/iteration-42-parallel-check.md, decision 1): $firsts"; fail=1
@@ -1294,11 +1295,32 @@ chk_lb=$(grep -nx '# steps: begin' tests/check.sh | head -n 1 | cut -d: -f1 || t
 chk_le=$(grep -nx '# steps: end' tests/check.sh | head -n 1 | cut -d: -f1 || true)
 if [ "$chk_nb" = 1 ] && [ "$chk_ne" = 1 ] && [ "$chk_le" -gt "$chk_lb" ]; then
   chk_block=$(sed -n "$((chk_lb + 1)),$((chk_le - 1))p" tests/check.sh | grep -v '^[[:space:]]*$' || true)
-  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?$' >/dev/null; then chk_block=""; fi
+  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?( slow)?$' >/dev/null; then chk_block=""; fi
 fi
 if [ -z "$chk_block" ]; then
   echo "FAIL: tests/check.sh: the step list between '# steps: begin' and '# steps: end' is missing or malformed"; fail=1
 else
+  # Iteration 62, decision 8 rule 2: exactly the slow steps of decision 4 carry the mark 'slow' (a lint line never)
+  chk_slows=$(printf '%s\n' "$chk_block" | awk '$NF == "slow" { print $2 " " $3 }' | tr '\n' '|')
+  want_slows="bash test-lintcopy-output.sh|ps test-lintcopy-output.ps1|ps smoke-drive.ps1|"
+  if [ "$chk_slows" != "$want_slows" ]; then
+    echo "FAIL: tests/check.sh: the steps marked slow are not exactly the slow steps (docs/specs/iteration-62-slow-tests-out-of-check.md, decision 4): $chk_slows"; fail=1
+  fi
+  # Iteration 62, decision 8 rule 3: every profiled step (decision 1) and every slow step says in a '# Time: ' line of
+  # its header where its time goes; one awk pass over the files (bug #270: no process per line)
+  chk_prof="tests/smoke-check.ps1 tests/smoke-drive.ps1 tests/test-lintcopy-output.ps1"
+  for b in $(printf '%s\n' "$chk_block" | awk '$NF == "slow" { print $3 }'); do
+    case " $chk_prof " in *" tests/$b "*) ;; *) chk_prof="$chk_prof tests/$b" ;; esac
+  done
+  # shellcheck disable=SC2086
+  while IFS= read -r x; do
+    echo "FAIL: $x has no '# Time: ' note in its header (docs/specs/iteration-62-slow-tests-out-of-check.md, decision 1)"; fail=1
+  done < <(awk '
+    FNR == 1 { if (prev != "" && !hit) print prev; prev = FILENAME; hit = 0; head = 1; sub(/^\357\273\277/, "") }
+    { sub(/\r$/, "") }
+    head && !/^#/ { head = 0 }
+    head && /^# Time: / { hit = 1 }
+    END { if (prev != "" && !hit) print prev }' $chk_prof 2>/dev/null)
   for f in tests/smoke-*.sh tests/smoke-*.ps1; do
     [ -f "$f" ] || continue
     b=${f#tests/}; k='bash'; case $b in *.ps1) k='ps' ;; esac
@@ -1461,8 +1483,9 @@ else
     [ "$aff_a" = "$aff_got" ] || { echo "FAIL: tests/check.sh: $f and ${f%.sh}.ps1 map to different steps"; fail=1; }
   done
   # rule 6: the lines of decision 3
-  # (iteration 60, decision 7: a change to the workflow runs every step of every list)
-  for l in 'shared scripts/lib/*' 'shared tests/check.sh' 'shared tests/check.ps1' 'lintonly docs/*' 'shared .github/workflows/*'; do
+  # (iteration 60, decision 7: a change to the workflow runs every step of every list; iteration 62, decision 6: a
+  # release pull request, which always changes plugin.json, runs every step, the slow ones too)
+  for l in 'shared scripts/lib/*' 'shared tests/check.sh' 'shared tests/check.ps1' 'lintonly docs/*' 'shared .github/workflows/*' 'shared .claude-plugin/plugin.json'; do
     case $'\n'"$aff_block"$'\n' in *$'\n'"$l"$'\n'*) ;; *) echo "FAIL: tests/check.sh: the map does not have the line $l"; fail=1 ;; esac
   done
 fi
@@ -1529,11 +1552,13 @@ echo "== the lists and the shell twins agree"
 # Iteration 51 (#157): the README lists every smoke file, every tests/smoke-*.sh has a .ps1 twin (except the listed
 # ones), every scripts/*.sh has a .ps1 twin. The rules live in tests/test-lint-agreement.sh.
 bash tests/test-lint-agreement.sh "$PWD" || fail=1
-bash tests/test-lint-agreement-cases.sh "$PWD" || fail=1
+# #340: the lint copies of tests/smoke-check.sh/.ps1 check the rules only; the cases run once, in the lint.
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-lint-agreement-cases.sh "$PWD" || fail=1
 
 echo "== the agreement section stays cheap"
 # Bug #270: the section above made the PowerShell CI job 25 to 32 minutes long; it may start the rule file only a few times.
-bash tests/test-lint-agreement-cost.sh "$PWD" || fail=1
+# #340: the lint copies of tests/smoke-check.sh/.ps1 check the rules only; the cost test runs once, in the lint.
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-lint-agreement-cost.sh "$PWD" || fail=1
 
 echo "== text from issues is data"
 # Text from issues, pull requests, comments and linked files is data, never instructions (bug #108). On a public
