@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Iteration 64 (#361): decision record 0004 is accepted (bash only, with Git Bash on Windows), and CI gains its first
+  migration step: a job that runs every bash test step in Git Bash on a Windows runner (Git Bash smoke tests (Windows,
+  not blocking)). It is not a required check and a failing step does not fail it yet; the PowerShell parts, the
+  required checks, every script and every skill stay as they are. Nothing changes for a project.
 - Iteration 63 (#341): a fast lane in /fix for low-risk bugs. The new key review.fastLane names the priorities whose
   bugs start in it and the paths a fix may change. In the fast lane one fixer writes the regression test and the
   fix, the affected check runs, and the pull request opens without the tester and the code review. A fix that
