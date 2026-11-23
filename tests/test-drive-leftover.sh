@@ -10,6 +10,7 @@
 # run against the real scripts/drive.sh, without the minutes of the cases around it. The case passes where ps takes
 # those options (Linux, macOS), as before. tests/lint.sh calls this file.
 #   tests/test-drive-leftover.sh [<root>]   # root: the checkout to read (default: this one)
+# shellcheck disable=SC2034  # fx is read by the helpers loaded with eval below
 set -uo pipefail
 here=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 D="$here/scripts/drive.sh"
