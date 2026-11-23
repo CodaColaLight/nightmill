@@ -1909,6 +1909,13 @@ echo "== the jq cross-check of smoke-json.sh passes when jq prints CRLF line end
 # lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-smoke-json-jq-crlf.sh "$PWD" || fail=1
 
+echo "== the driver ends the background process a step leaves behind"
+# Bug #374: tests/smoke-drive.sh, the case "left behind", failed in Git Bash on Windows: the driver lists the step's
+# process group with ps -A -o, which the ps of Git Bash does not take, so it ended nothing and the step's background
+# process stayed alive. tests/test-drive-leftover.sh runs that case (read from the smoke test) alone. The lint copies
+# of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-drive-leftover.sh "$PWD" || fail=1
+
 echo "== shell"
 for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }

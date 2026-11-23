@@ -142,7 +142,14 @@ on_exit() {
 }
 trap on_exit EXIT
 
-alive_in() { ps -A -o pid= -o pgid= 2>/dev/null | LC_ALL=C awk -v g="$1" '$2 == g { print $1 }'; }
+# alive_in <pgid>: the pids of the group; the ps of Git Bash (MSYS) takes neither -A nor -o, so there it reads
+# ps -el (PID PPID PGID ..., a row may start with a one-letter state) (#374)
+alive_in() {
+  local out
+  out=$(ps -A -o pid= -o pgid= 2>/dev/null) ||
+    out=$(ps -el 2>/dev/null | LC_ALL=C awk 'NR > 1 { if ($1 !~ /^[0-9]+$/) $1 = ""; $0 = $0; print $1, $3 }')
+  printf '%s\n' "$out" | LC_ALL=C awk -v g="$1" '$2 == g { print $1 }'
+}
 # end_group <pgid>: TERM to what is left of a step's group, KILL after 5 seconds; adds to left_total and not_ended
 end_group() {
   local g=$1 pids n i

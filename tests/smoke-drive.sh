@@ -340,7 +340,7 @@ audit "left behind"
 new_case; board board-loop.tsv; script "hang"
 (cd "$main" && PATH="$tmp/bin:$PATH" exec bash "$D") > "$c/out.txt" 2> "$c/err.txt" &
 dpid=$!
-for _ in $(seq 1 40); do [ -s "$BGPID" ] && break; sleep 0.25; done
+for _ in $(seq 1 240); do [ -s "$BGPID" ] && break; sleep 0.25; done   # 60 s: in Git Bash the step starts after ~15 s (#374)
 [ -s "$BGPID" ] || { kill "$dpid" 2>/dev/null; fail "signal: the step never started"; }
 kill -TERM "$dpid"
 wait "$dpid"; code=$?
