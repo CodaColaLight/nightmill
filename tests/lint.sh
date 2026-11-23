@@ -1903,6 +1903,12 @@ echo "== a take killed in its warm-up leaves the claim with the pid it recorded"
 # smoke test) alone. The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-slot-killed-take.sh "$PWD" || fail=1
 
+echo "== the jq cross-check of smoke-json.sh passes when jq prints CRLF line ends"
+# Bug #372: tests/smoke-json.sh failed in Git Bash on Windows because a native jq.exe ends every line with CRLF
+# unless it is given -b. tests/test-smoke-json-jq-crlf.sh runs smoke-json.sh with a stand-in that prints CRLF. The
+# lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-smoke-json-jq-crlf.sh "$PWD" || fail=1
+
 echo "== shell"
 for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }
