@@ -10,6 +10,7 @@
 # twelve minutes of the sections before it. Where there is no /proc/<pid>/winpid (Linux, macOS) the two ids are the
 # same and the case passes, as it did before. tests/lint.sh calls this file.
 #   tests/test-slot-killed-take.sh [<root>]   # root: the checkout to read (default: this one)
+# shellcheck disable=SC2034  # i_rc, i_last, i_gate, i_p, bg_pids and gate_cmd are read by the helpers loaded with eval below
 set -euo pipefail
 here=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-killedtake.XXXXXX")
