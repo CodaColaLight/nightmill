@@ -133,6 +133,7 @@ echo "== cross-check against jq"
 if ! command -v jq >/dev/null 2>&1; then
   echo "(jq not installed, cross-check skipped)"
 else
+  # -b: a native jq.exe writes every LF as CRLF otherwise (#372); jq ignores it elsewhere
   cfg="$here/templates/nightmill.example.json"
   json_load "$cfg"
   for p in git.baseBranch worktrees.root worktrees.slots verification.check verification.manualCheckText \
@@ -140,21 +141,23 @@ else
            worktrees.warmup[0].lockfile worktrees.warmup[5].dir worktrees.runHints[0] worktrees.runHints[1] \
            areas[0] areas[4] invariants[0] invariants[1] worktrees.ports.server worktrees.ports.client \
            github.projectNumber github.owner maintainer.name verification.benchRule labels.nothing worktrees.nothing.x; do
-    eq "jq cross-check json_get $p" "$(jq -r ".$p // empty" "$cfg")" "$(json_get "$p")"
+    eq "jq cross-check json_get $p" "$(jq -b -r ".$p // empty" "$cfg")" "$(json_get "$p")"
   done
   for p in areas invariants worktrees.warmup worktrees.runHints worktrees.ports nothing; do
-    eq "jq cross-check json_len $p" "$(jq -r ".$p // [] | length" "$cfg")" "$(json_len "$p")"
+    eq "jq cross-check json_len $p" "$(jq -b -r ".$p // [] | length" "$cfg")" "$(json_len "$p")"
   done
   for p in worktrees worktrees.ports labels github; do
-    eq "jq cross-check json_keys $p" "$(jq -r ".$p | keys_unsorted[]" "$cfg")" "$(json_keys "$p")"
+    eq "jq cross-check json_keys $p" "$(jq -b -r ".$p | keys_unsorted[]" "$cfg")" "$(json_keys "$p")"
   done
-  eq "jq cross-check json_keys of the root" "$(jq -r 'keys_unsorted[]' "$cfg")" "$(json_keys '')"
+  eq "jq cross-check json_keys of the root" "$(jq -b -r 'keys_unsorted[]' "$cfg")" "$(json_keys '')"
   json_load "$tmp/fixture.json"
   for k in s q nl u nfrac t; do
-    eq "jq cross-check fixture $k" "$(jq -r ".$k // empty" "$tmp/fixture.json")" "$(json_get "$k")"
+    # the dot keeps nl's trailing CR, which Git Bash strips from a command substitution that ends in CRLF
+    jqv=$(jq -b -r ".$k // empty" "$tmp/fixture.json"; echo .)
+    eq "jq cross-check fixture $k" "${jqv%$'\n.'}" "$(json_get "$k")"
   done
   for v in 'plain' 'a "q" \ b' $'tab\there' 'é — 😀' 'back\slash' 'both "x" and \y'; do
-    eq "jq cross-check json_quote [$v]" "$(jq -nr --arg s "$v" '$s | tojson')" "$(json_quote "$v")"
+    eq "jq cross-check json_quote [$v]" "$(jq -b -nr --arg s "$v" '$s | tojson')" "$(json_quote "$v")"
   done
 fi
 
