@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# A stand-in for the jq calls of tests/smoke-json.sh (fixture of tests/test-smoke-json-jq-crlf.sh), built on the
+# parser under test (scripts/lib/json.sh, found through $NIGHTMILL_ROOT). A native jq.exe on Windows ends every
+# line it prints with CRLF unless -b / --binary is given; this stand-in does the same for the key lists, and
+# answers the other calls with plain LF.
+set -euo pipefail
+. "$NIGHTMILL_ROOT/scripts/lib/json.sh"
+binary=0
+args=()
+for a in "$@"; do
+  case "$a" in
+    -b|--binary) binary=1 ;;
+    *) args+=("$a") ;;
+  esac
+done
+set -- "${args[@]}"
+if [ "$1" = "-nr" ] && [ "$2" = "--arg" ]; then json_quote "$4"; exit 0; fi
+[ "$1" = "-r" ] || { echo "stand-in: unsupported call: $*" >&2; exit 2; }
+expr=$2 file=${3:-}
+case "$expr" in
+  "keys_unsorted[]") path="" ;;
+  *" | keys_unsorted[]") path=${expr#.}; path=${path% | keys_unsorted[]} ;;
+  *) path="" ;;
+esac
+case "$expr" in
+  *"keys_unsorted[]")
+    json_load "$file"
+    while IFS= read -r k; do
+      if [ "$binary" = 1 ]; then printf '%s\n' "$k"; else printf '%s\r\n' "$k"; fi
+    done <<KEYS
+$(json_keys "$path")
+KEYS
+    ;;
+  *" // empty") json_load "$file"; p=${expr#.}; json_get "${p% // empty}"; echo ;;
+  *" // [] | length") json_load "$file"; p=${expr#.}; json_len "${p% // [] | length}" ;;
+  *) echo "stand-in: unsupported expression: $expr" >&2; exit 2 ;;
+esac
