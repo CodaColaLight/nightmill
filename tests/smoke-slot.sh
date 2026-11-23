@@ -1679,22 +1679,23 @@ intr_case3() {
 
 # 4 killed without a chance to clean up: a dead claim, as in iteration 34
 intr_case4() {
-  local since size
+  local since size pid
   i_clean feat/i5
   write_cfg "[ { \"command\": \"$(i_pidgate)\" } ]"
   i_start i5 --take feat/i5 --slot 1
   waitfor 1 taking
   i_poll "the warm-up's pid file" i_sign_gatepid
+  pid=$(bg_winpid "$i_p") # while the take lives: once it is reaped, /proc/<pid>/winpid is gone
   size=$(wc -c < "$tmp/i5.err" | tr -d ' ')
   i_sign KILL
   i_end i5
   [ "$(wc -c < "$tmp/i5.err" | tr -d ' ')" = "$size" ] || fail "interruption 4: the killed take wrote a line: $(cat "$tmp/i5.err")"
   i_gone "interruption 4" "$tmp/gate.pid"
   since=$(mget 1 since)
-  taking_text 1 feat/i5 "$since" "$(bg_winpid "$i_p")" > "$tmp/want.json"
+  taking_text 1 feat/i5 "$since" "$pid" > "$tmp/want.json"
   c_same "$tmp/want.json" "$(marker 1)" "interruption 4"
   rep --status
-  grep -qF "taking: feat/i5 since $since (process $(bg_winpid "$i_p") has ended; free it with --abandon 1)" <<<"$out" || fail "interruption 4: status: $out"
+  grep -qF "taking: feat/i5 since $since (process $pid has ended; free it with --abandon 1)" <<<"$out" || fail "interruption 4: status: $out"
   [ "$(c_porc9 1)" = take-died ] || fail "interruption 4: porcelain field 9 is '$(c_porc9 1)'"
   rep --abandon 1
   [ "$rc" = 0 ] && [[ "$out" == "Slot 1 is free (was feat/i5, a take that did not finish; "* ]] || fail "interruption 4: --abandon (exit $rc): $out / $err"

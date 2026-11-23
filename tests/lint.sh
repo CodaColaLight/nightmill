@@ -1897,6 +1897,12 @@ echo "== the fast lane of /fix"
 # tests/test-fast-lane.sh.
 bash tests/test-fast-lane.sh "$PWD" || fail=1
 
+echo "== a take killed in its warm-up leaves the claim with the pid it recorded"
+# Bug #373: tests/smoke-slot.sh, interruption case 4, failed in Git Bash on Windows because the case asked for the
+# killed take's Windows pid after the take was reaped. tests/test-slot-killed-take.sh runs that case (read from the
+# smoke test) alone. The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
+[ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-slot-killed-take.sh "$PWD" || fail=1
+
 echo "== shell"
 for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do
   bash -n "$f" || { echo "FAIL: $f does not parse"; fail=1; }
