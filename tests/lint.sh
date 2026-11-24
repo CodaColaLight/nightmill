@@ -1419,7 +1419,8 @@ done < <(grep -E '^[[:space:]]*(- )?name: ' "$chk_ci" || true)
 
 echo "== every script and every test step is in the map"
 # Iteration 59, decision 7: the map of tests/check.sh --affected (between '# affects: begin' and '# affects: end') is
-# well formed, names only steps, names every bash and ps step, maps every script (a twin pair to the same steps), holds
+# well formed, names only steps, names every bash and ps step, maps every script (a twin pair to the same steps) and
+# every file under tests/fixtures/ (bug #379), holds
 # the shared and lintonly lines of decision 3, and the skills and the README describe the mode. The matching is the
 # case pattern of the check, in this process (bug #270: no process per path).
 aff_block=""
@@ -1487,6 +1488,25 @@ else
     aff_select "${f%.sh}.ps1"
     [ "$aff_a" = "$aff_got" ] || { echo "FAIL: tests/check.sh: $f and ${f%.sh}.ps1 map to different steps"; fail=1; }
   done
+  # rule 4b (bug #379): every file under tests/fixtures/ maps to a step, is shared or is lintonly, else a change to it
+  # makes --affected run the full check; one failure per fixture directory, naming the path
+  aff_fixdirs="|"
+  if [ -d tests/fixtures ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      fd=${f#tests/fixtures/}; fd=tests/fixtures/${fd%%/*}
+      case $aff_fixdirs in *"|$fd|"*) continue ;; esac
+      aff_select "$f"
+      if [ -z "$aff_got" ]; then
+        for ((j = 0; j < aff_n; j++)); do
+          [ "${aff_kind[j]}" = lintonly ] || continue
+          # shellcheck disable=SC2254
+          case $f in ${aff_pat[j]}) aff_got=lintonly; break ;; esac
+        done
+      fi
+      [ -n "$aff_got" ] || { echo "FAIL: tests/check.sh: $f is in no line of the map (add a line: map $fd/* <the steps that read it>)"; fail=1; aff_fixdirs="$aff_fixdirs$fd|"; }
+    done < <(find tests/fixtures -type f | LC_ALL=C sort)
+  fi
   # rule 6: the lines of decision 3
   # (iteration 60, decision 7: a change to the workflow runs every step of every list; iteration 62, decision 6: a
   # release pull request, which always changes plugin.json, runs every step, the slow ones too)

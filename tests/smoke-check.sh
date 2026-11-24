@@ -779,6 +779,16 @@ lint_in "$d"
 [ "$rc" != 0 ] || fail "lint mapscript: passed on a broken copy: $out"
 grep -qF -- 'scripts/zz-new.sh maps to no step' <<<"$out" || fail "lint mapscript: no 'scripts/zz-new.sh maps to no step' in: $out"
 rm -rf "$d"
+# bug #379: a directory of fixtures under tests/fixtures/ that no map line names makes --affected run the full check, so
+# the lint fails on it and names the path (the repository as it is, with its map lines, passes: the case above)
+d="$tmp/lint-mapfixture"
+mkcopy "$d"
+mkdir -p "$d/tests/fixtures/zz-new-case"
+: > "$d/tests/fixtures/zz-new-case/x"
+lint_in "$d"
+[ "$rc" != 0 ] || fail "lint mapfixture: passed on a copy with tests/fixtures/zz-new-case/x in no line of the map: $out"
+grep -E '^FAIL: .*tests/fixtures/zz-new-case' <<<"$out" >/dev/null || fail "lint mapfixture: no FAIL line naming tests/fixtures/zz-new-case in: $out"
+rm -rf "$d"
 lint_break mapname tests/check.sh 's/^# affects: end$/map README.md smoke-nope.sh\
 # affects: end/' 'the map names smoke-nope.sh, which is not a step'
 lint_break maptwin tests/check.sh 's/^# affects: end$/map scripts\/slot.sh smoke-hook.sh\

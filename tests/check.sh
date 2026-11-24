@@ -270,6 +270,7 @@ map tests/fixtures/drive/* smoke-drive.sh
 map tests/fixtures/gate/* smoke-gate.sh,smoke-history.sh
 map tests/fixtures/history/* smoke-history.sh,smoke-history.ps1
 map tests/fixtures/panel/* smoke-panel.sh,smoke-panel.ps1
+map tests/fixtures/smoke-json-crlf/* lint
 map tests/fixtures/stages/* smoke-stages.sh,smoke-stages.ps1
 map tests/fixtures/status-controls/* test-status-controls.sh,test-status-controls.ps1
 map tests/fixtures/status/* smoke-status.sh,smoke-dashboard.sh,test-mktemp-template.sh,smoke-status.ps1,smoke-dashboard.ps1

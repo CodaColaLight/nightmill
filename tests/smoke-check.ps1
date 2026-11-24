@@ -829,6 +829,17 @@ try {
   if ($r.Code -eq 0) { Fail "lint mapscript: passed on a broken copy: $all" }
   if (-not $all.Contains("scripts/zz-new.sh maps to no step")) { Fail "lint mapscript: no 'scripts/zz-new.sh maps to no step' in: $all" }
   Remove-Item $d -Recurse -Force
+  # bug #379: a directory of fixtures under tests/fixtures/ that no map line names makes --affected run the full check, so
+  # the lint fails on it and names the path
+  $d = "$tmp\lint-mapfixture"
+  Make-Copy $d
+  New-Item -ItemType Directory "$d\tests\fixtures\zz-new-case" -Force | Out-Null
+  [System.IO.File]::WriteAllText("$d\tests\fixtures\zz-new-case\x", "")
+  $r = Lint-In $d
+  $all = $r.Out + $r.Err
+  if ($r.Code -eq 0) { Fail "lint mapfixture: passed on a copy with tests/fixtures/zz-new-case/x in no line of the map: $all" }
+  if ($all -notmatch '(?m)^FAIL: .*tests/fixtures/zz-new-case') { Fail "lint mapfixture: no FAIL line naming tests/fixtures/zz-new-case in: $all" }
+  Remove-Item $d -Recurse -Force
   Lint-Break "mapname" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# affects: end") { "map README.md smoke-nope.sh" }; $l } } "the map names smoke-nope.sh, which is not a step"
   Lint-Break "maptwin" "tests\check.sh" { param($ls) foreach ($l in $ls) { if ($l -ceq "# affects: end") { "map scripts/slot.sh smoke-hook.sh" }; $l } } "scripts/slot.sh and scripts/slot.ps1 map to different steps"
   Lint-Break "mapshared" "tests\check.sh" { param($ls) $ls | Where-Object { $_ -cne 'shared scripts/lib/*' } } "the map does not have the line shared scripts/lib/*"
