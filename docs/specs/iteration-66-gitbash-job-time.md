@@ -1,4 +1,4 @@
-# Iteration 66: the Git Bash CI job runs its full step list within 17 minutes
+# Iteration 66: the Git Bash CI job runs in parts and finishes within 17 minutes
 
 Status: draft, awaiting approval (#382)
 
@@ -8,13 +8,15 @@ required check, but only after a full run is green and takes at most 17 minutes 
 decision 7). A full run takes about an hour today. This iteration measures where the time of the slowest steps goes.
 The measurement is its first deliverable, and the implementer writes it into this spec (`## Measurements`). The
 iteration then cuts the time by fixed rules, in a fixed order: the nested step `test-lintcopy-output.sh` comes off the
-job's list (decision 3); the measured sections that start many processes are rewritten to start fewer, with the same
-cases (decision 4); and the work stops when the budget of decision 2 is met, or as `partial` when it is not
-(decision 5). Changes `docs/specs/iteration-66-gitbash-job-time.md` (the measurements), `.github/workflows/ci.yml` (the
-Git Bash list), `tests/test-ci-parts.sh` (rule 11), the bash tests that decision 4 rewrites (from
-`tests/smoke-slot.sh`, `tests/smoke-status.sh`, `tests/smoke-check.sh`, `tests/test-guard-rules.sh`,
-`tests/smoke-release.sh`, `tests/smoke-validate.sh` and any other step decision 1 measures), `README.md` and
-`CHANGELOG.md`.
+job's list (decision 3); the job is split into parts that run at once on several Windows runners, by a rule on the
+measured step times, with a final job that fails unless every part succeeded, as iteration 55 did for PowerShell
+(decision 5); the measured sections that start many processes, in the parts that still miss the budget, are rewritten
+to start fewer, with the same cases (decision 4); and the work stops when the budget of decision 2 is met, or as
+`partial` when it is not (decision 5). Changes `docs/specs/iteration-66-gitbash-job-time.md` (the measurements),
+`.github/workflows/ci.yml` (the Git Bash part job and the final job), `tests/test-ci-parts.sh` (rules 10 and 11),
+`tests/lint.sh` (one line of the `if:` rule), the bash tests that decision 4 rewrites (from `tests/smoke-slot.sh`,
+`tests/smoke-status.sh`, `tests/smoke-check.sh`, `tests/test-guard-rules.sh`, `tests/smoke-release.sh`,
+`tests/smoke-validate.sh` and any other step decision 1 measures), `README.md` and `CHANGELOG.md`.
 
 **Never auto-merged.** The pull request changes `.github/workflows/ci.yml`, so the implementer opens it without `--auto`
 and the maintainer merges it by hand, as in iterations 60 and 64.
@@ -23,15 +25,15 @@ and the maintainer merges it by hand, as in iterations 60 and 64.
 
 **Not a story trigger.** *Status flow*: no status, no board call and no decision record changes. *Config key*: none is
 added, renamed or removed. `verification.checkJobs` and `verification.platform` keep their values and meaning, and the
-job's step list belongs to this repository's CI, not to a project. *Slot marker*: no script that writes a marker
-changes its behaviour (decision 6). **Compatible** holds: a project reads nothing that changes.
+job's step list and parts belong to this repository's CI, not to a project. *Slot marker*: no script that writes a
+marker changes its behaviour (decision 6). **Compatible** holds: a project reads nothing that changes.
 
 **The manual check does not apply.** `verification.manualCheckPaths` is `skills`, `agents`, `hooks`, and no file under
 them changes. In its place the maintainer looks at the pull request's own CI runs (Tests, "On the pull request's run").
 
 **Shells.** The changes are to bash tests and to CI. No `.ps1` file changes, so no PowerShell script changes its
-behaviour (out of scope) and the PowerShell tests run as before. A script under `scripts/` changes only under decision
-6's rule, which keeps its behaviour, so its PowerShell twin needs no change and **Both shells** still holds. The smoke
+behaviour (out of scope) and the PowerShell tests run as before. No file under `scripts/` changes either (decision 6),
+so the "Two shells" rule of `.claude/CLAUDE.md` is not touched and **Both shells** still holds. The smoke
 steps involved are those decision 4 rewrites. Each keeps its cases, and the Ubuntu job `bash scripts smoke tests` runs
 it as before.
 
@@ -57,7 +59,8 @@ Read on `main` at c5ffdb7 ("fix: the lint fails on a fixture directory that no m
   `test-guard-rules.sh` 16m19s, `smoke-release.sh` 13m10s and `smoke-validate.sh` 12m48s. Together that is 137m53s.
   With 4 steps at a time, a 17-minute wall time holds at most 68 step-minutes, so the seven took about twice that
   before the other 41 steps ran. Six of the seven take more than 12 minutes each, close to the budget on their own.
-  Whether a step is faster when nothing runs beside it is not known.
+  Whether a step is faster when nothing runs beside it is not known. The 41 others took at most about 99
+  step-minutes together (4 times 59m12s, less the seven), so a split needs several runners, not two.
 - **Where the time may go, by reading the code** (to be confirmed by decision 1). These are counts, not timings.
   - `test-lintcopy-output.sh` (175 lines): its `# Time:` note (iteration 62) says it copies the repository twice with
     tar and runs six whole bash scripts. Three of them are steps of the list: `smoke-status.sh`, `smoke-release.sh`
@@ -77,18 +80,40 @@ Read on `main` at c5ffdb7 ("fix: the lint fails on a fixture directory that no m
 - **The earlier Git Bash failures are fixed.** The three steps that iteration 65's Facts found red on the runner are
   fixed on `main`: `smoke-json.sh` (#372, PR #377), `smoke-slot.sh` (#373, PR #375) and `smoke-drive.sh` (#374,
   PR #378).
+- **The precedent for parts (iteration 55).** The PowerShell steps run in the matrix job `smoke-powershell-part`
+  (`name: PowerShell smoke part ${{ matrix.part }} of 4`, `fail-fast: false`, one `- part: <k>` / `only: <list>` pair
+  per part, one run step `... $CHECK_SELECT ${{ matrix.only }}`), and the final job `smoke-powershell` carries the
+  required name, `needs:` the part job, has `if: always()`, and fails unless `needs.smoke-powershell-part.result` is
+  `success`. The parts live in the workflow: `tests/check.sh` has no part option (iteration 55 decision 3).
+  `tests/test-ci-parts.sh` rules 1 to 8 pin that job pair; `tests/test-ci-job-times.sh` finds the final job's steps by
+  their names (`- name: Job times`, `- name: Every part succeeded`).
+- **The selection per part (iteration 60).** Each part runs `$CHECK_SELECT <its list>`: on a push `--only <list>`, on a
+  pull request `--affected --within <list>`. A part whose list no changed path selects runs 0 steps and passes
+  (iteration 60 decision 4); a shared path runs the part's whole list (its decision 2, the fallback, with the summary
+  line `Selection: --affected ran every --within step: <reason>.`).
+- **What the lint pins of CI.** `tests/lint.sh` line 1566: a job key `    if:` is allowed only as `    if: always()` in
+  `smoke-powershell`; any other gives `job <id> has an 'if:' (a required job runs on every event)`. Lines 1408 to
+  1418: the three required names are each the `name:` of exactly one job, and no other job's name begins with one of
+  them. Lines 1722 and 1799: the `Required check` comment occurs exactly 3 times. Lines 1749 to 1766: every job has a
+  `timeout-minutes` from 1 to 360. Rule 8 of `tests/test-ci-parts.sh`: only `smoke-powershell` has a job-level
+  `permissions:` block (with `actions: read`, which its job table needs; iteration 55 decision 11).
+- **Runners** (by GitHub's documentation, not read for this spec): the standard Windows runner of a public repository
+  has 4 processors, so `L` is 4 in each part; the Free plan runs at most 20 jobs of an account at once. A run today
+  starts 8 jobs at once (`lint`, `smoke-bash`, 4 PowerShell parts, `smoke-gitbash`, `validate`).
 - **What the specs already fix.** Iteration 64 decision 3: the job runs every bash step and has no skip list, "a skip
-  list would guess at what nobody has measured". Iteration 64 decision 4: the iteration that makes the job required
-  splits it into parts first when it is over the budget. Iteration 65 decision 7 (draft): the job becomes
-  `Git Bash scripts smoke tests` and lands only when a full run is green, its summary ends
-  `SELECTED CHECKS PASSED (48 of <M> steps; ...)`, and its wall time is at most 17 minutes. Iteration 62: a profiled
-  step says where its time goes in a `# Time: ` note, and the seconds go into the pull request.
+  list would guess at what nobody has measured" (superseded for the one measured step `test-lintcopy-output.sh` by
+  decision 3 of this spec). Iteration 64 decision 4: the iteration that makes the job required
+  splits it into parts first when it is over the budget, "by the measured step times, as iteration 55 did for
+  PowerShell". Iteration 65 decision 7 (draft): the job becomes `Git Bash scripts smoke tests` and lands only when a
+  full run is green, its summary ends `SELECTED CHECKS PASSED (48 of <M> steps; ...)`, and its wall time is at most 17
+  minutes. Iteration 62: a profiled step says where its time goes in a `# Time: ` note, and the seconds go into the
+  pull request.
 - **The test files stay generic.** No bash test branches on the platform, so Ubuntu and Git Bash run the same cases.
 
 ## Measurements
 
 Filled in by the implementer (decision 1) before any test changes, and completed in the same pull request. It holds
-three tables and one paragraph.
+four tables and one paragraph.
 
 **Cost of one process** (local Git Bash, 200 runs each, total and per run):
 
@@ -104,10 +129,18 @@ three tables and one paragraph.
 | Step | Section (`== ` header) | Alone, local Git Bash | Share of the step | What it starts (by reading) | Why it costs (process-bound, lint, wait, other) | Action (decision 4) |
 |---|---|---|---|---|---|---|
 
-**Steps in CI** (the Git Bash job's `Times:` block, before and after, and the Ubuntu job's time for the same step):
+**Steps in CI** (one row per step of the job's list; `t` is decision 5's input; the Git Bash job's `Times:` blocks,
+before and after, and the Ubuntu job's time for the same step):
 
-| Step | Git Bash before (45235773214) | Git Bash after (final run) | Ubuntu (45235773214) |
-|---|---|---|---|
+| Step | Git Bash before, `t` (45235773214) | Part | Git Bash after (final run) | Ubuntu (45235773214) |
+|---|---|---|---|---|
+
+**Parts** (decision 5; one row per part):
+
+| Part | Steps | Sum of `t` | Largest `t` | Estimate | `Wall time:` (final run) | Job time (final run) |
+|---|---|---|---|---|---|---|
+
+followed by one line: the chain of the final run (decision 2), with its run id.
 
 **Summary paragraph**: which sections cost the most, and why, in at most eight sentences.
 
@@ -117,10 +150,12 @@ three tables and one paragraph.
 choose how the time is cut. A spec is written before the work, and no per-section timing exists yet, so nothing is
 invented here. The measurement is the implementation's first deliverable. The choice is made now, as rules (decisions
 2 to 5) that the implementer applies to what it measures, with fixed numbers. The rules do not depend on the timings.
-The timings only decide which sections decision 4 rewrites and when decision 5 stops the work.
+The timings only decide the parts of decision 5, which sections decision 4 rewrites, and when decision 5 stops the
+work.
 
 - *What is measured*: the seven steps of Facts, and every other bash step whose time in the `Times:` block of the Git
-  Bash job of run 45235773214 is 5m00s or more (read with `gh run view 45235773214 --log`, read only).
+  Bash job of run 45235773214 is 5m00s or more (read with `gh run view 45235773214 --log`, read only). The same block
+  gives every step's `t` for decision 5 (the table "Steps in CI").
 - *Where*: locally, in Git Bash on this Windows machine, each step alone, nothing else of the check running. One
   measured run per step, from the repository root, through this timestamper. It lives in the scratchpad and is never
   committed:
@@ -137,30 +172,46 @@ The timings only decide which sections decision 4 rewrites and when decision 5 s
   lint-bound, wait-bound or other, and the row says which.
 - The Ubuntu column comes from the same run's job `bash scripts smoke tests`. A step far slower in Git Bash than on
   Ubuntu points at process starts.
-- The implementer commits the filled tables with the first change of decision 4, so the reviewer reads each rewrite
-  against the row that chose it. The "after" column and the summary paragraph are completed from the final run.
+- The implementer commits the filled tables with the split of decision 5, the first change, so the reviewer reads the
+  parts and each later rewrite against the rows that chose them. The "after" columns, the chain line and the summary
+  paragraph are completed from the final run.
 
 **2. The budget.** The time a required check is allowed is **17 minutes**: iteration 64 decision 5, the 16m59s of the
-PowerShell chain it is to replace. The iteration has met it when the final commit of the pull request has two full runs
-of the Git Bash job: the run its push starts, and one re-run of that job. Every bash step of the job's list runs
-(`$CHECK_SELECT` takes the fallback, because the pull request changes `ci.yml`). In each of the two runs:
+PowerShell chain it is to replace. The check a pull request waits for is the final job (decision 5), so the budget
+holds for the chain of the Git Bash jobs, not for one part. The iteration has met it when the final commit of the pull
+request has two full runs of the Git Bash jobs: the run its push starts, and one re-run of that run
+(`gh run rerun <id>`). Every bash step of the job's list runs (`$CHECK_SELECT` takes the fallback in every part,
+because the pull request changes `ci.yml`). In each of the two runs:
 
-- the check step passes, with the summary ending `SELECTED CHECKS PASSED (<k> of <M> steps; the full check has not run)`,
-  where `<k>` is the length of the job's list;
-- the check's `Wall time:` in the job's `### tests/check.sh` section is at most **14m00s**;
-- the job's own time in the run's job list, from start to completion, is at most **17m00s**.
+- every part's check step passes, with the summary ending
+  `SELECTED CHECKS PASSED (<k> of <M> steps; the full check has not run)`, where `<k>` is the length of the part's
+  list, and the `<k>` of all parts add up to the length of the job's list (47, decision 3);
+- every part's `Wall time:` in its `### tests/check.sh` section is at most **14m00s**;
+- every part's own time in the run's job list, from start to completion, is at most **17m00s**;
+- the job `Git Bash smoke tests (Windows, not blocking)` has the conclusion `success`, and the **chain**, from the
+  earliest start of a Git Bash part to the completion of that final job, is at most **17m00s**. The times are read
+  with `gh run view <id> --json jobs` (read only).
 
-The 14m00s leaves 3 minutes for the runner's start, the full-history checkout, and the spread between two runs of the
-same commit. A run that only just meets 17 minutes would make a required check fail by chance. `continue-on-error`
-stays and the timeout stays 360. Making the job blocking, and its timeout, belong to iteration 65 decision 7.
+The 14m00s leaves 3 minutes for the runner's start, the full-history checkout, the final job, and the spread between
+two runs of the same commit. A run that only just meets 17 minutes would make a required check fail by chance. A part
+that waits in the queue for a runner counts: the chain is what a pull request waits for. `continue-on-error` stays on
+each part's check step, and the parts' timeout stays 360. Making the jobs blocking, and their timeout, belong to
+iteration 65 decision 7 (decision 8).
 
-**3. A smaller list: `test-lintcopy-output.sh` comes off the Git Bash job.** The job's list becomes every `add bash`
-step of `tests/check.sh` except the steps on the list `gitbash_out`, which is exactly `test-lintcopy-output.sh`. That
-makes 47 steps, in list order.
+**3. A smaller list: `test-lintcopy-output.sh` comes off the Git Bash job.** The job's list (the parts' lists
+together) becomes every `add bash` step of `tests/check.sh` except the steps on the list `gitbash_out`, which is
+exactly `test-lintcopy-output.sh`. That makes 47 steps.
+
+- *Iteration 64 decision 3, superseded for this one step*: that decision runs every bash step in the job, with no
+  skip list, because "a skip list would guess at what nobody has measured". For `test-lintcopy-output.sh` that reason
+  no longer holds: the step was measured, 34m40s in run 45235773214, about half of it re-running three other steps of
+  the same job (below). So this decision supersedes iteration 64 decision 3 for that step only. For every other step
+  iteration 64 decision 3 still holds (the job runs it, and none is skipped on Windows), and so does its rule that a
+  step failing in Git Bash is a bug of its own (decision 5).
 
 - *Why this step*: it alone took 34m40s, twice the budget. Half of it is whole runs of `smoke-status.sh`,
   `smoke-release.sh` and `smoke-check.sh` on copies, and the same job runs each of them as a step of its own. No cut
-  of its own sections brings it under 17 minutes unless those three steps get faster too.
+  of its own sections, and no part, brings it under 17 minutes unless those three steps get faster too.
 - *What coverage it gives up*: the regression checks it holds, run in Git Bash on Windows. They are #217 (a smoke test
   prints the lint's `FAIL:` lines when the lint fails on its copy), #280 (`test-spec-template.sh` starts no nested
   lint), #293 (`smoke-check.sh`'s lint copies skip the CI-parts cases) and #340 (no agreement cases on the lint copies).
@@ -169,13 +220,15 @@ makes 47 steps, in list order.
   runs it on every push to `main` and on every pull request that changes a shared path. Locally,
   `bash tests/check.sh --only test-lintcopy-output.sh` runs it. Its PowerShell twin stays in its part.
 - *No other step comes off the list.* Each other step starts at least one script, hook or check run that only it
-  starts. A further step comes off only if the maintainer adds it to this decision (Left).
-- `tests/test-ci-parts.sh` rule 11 learns the list (Tests). `tests/check.sh`, the slow mark and the Ubuntu job's list
-  do not change. Iteration 62 decision 7 (the `--only` lists of `smoke-bash` and the parts name every step) still
+  starts. A further step comes off only when this decision lists it, with its coverage written here.
+- `tests/test-ci-parts.sh` rule 11 learns the list (decision 7). `tests/check.sh`, the slow mark and the Ubuntu job's
+  list do not change. Iteration 62 decision 7 (the `--only` lists of `smoke-bash` and the parts name every step) still
   holds. It does not cover the Git Bash job.
 
-**4. Fewer processes, with the same cases.** For every measured section of 60 s or more alone, taken in order of time
-(largest first), the implementer does exactly one of these, and the section's row in `## Measurements` says which:
+**4. Fewer processes, with the same cases.** After the split (decision 5), for every measured section of 60 s or more
+alone that belongs to a step of a part that misses decision 2's numbers on the latest full run, taken in order of time
+(largest first), the implementer does exactly one of these, until decision 2 holds, and the section's row in
+`## Measurements` says which (a section that was never reached says `not needed`):
 
 - **rewrite** a process-bound section so that it starts fewer processes, with these means only:
   - a builtin (parameter expansion, `case`, `printf -v`, `read`, `[[ ]]`) in place of `$(...)`, `sed`, `tr`, `grep` or
@@ -204,132 +257,333 @@ What every rewrite keeps, for each changed test file:
   `OSTYPE` or `MSYSTEM` test is added. No bound of a wait loop is lowered, and no expected text changes.
 - A bash smoke file that says "Same cases as smoke-<x>.ps1" stays true. Its `.ps1` twin does not change.
 
-**5. When to stop.** After each round of rewrites the implementer pushes, and the pull request's run is a full run
-(decision 2).
+**5. The split into parts, and when to stop** (the maintainer's decision for this iteration: split the job now, and
+accept `partial` first). The split gives up no coverage: every step of the job's list still runs in Git Bash on a
+Windows runner, exactly once per run, with the same `L` of 4.
 
-- **Done**: decision 2 holds on the final commit. The implementer fills the "after" column and the summary paragraph,
-  and no further section is rewritten.
-- **Partial**: every measured section of 60 s or more has its action (rewrite or keep), and decision 2 still fails. The
-  implementer then does not split the job, does not take more steps off the list, and does not lower a check. It
-  reports `partial` with criterion 3 unmet and gives the final run's id, its `Wall time:`, the job's time and the five
-  slowest steps. The rest is filed with `/story` as a new story under #337, linked to #382, following the workflow's
-  rule for a story only partly done. That story chooses between a split into parts (iteration 64 decision 4) and
-  further cuts, and the maintainer decides (Left). The rewrites done so far stay in the pull request, since they keep
-  every case.
+*The rule for the parts.* `t(s)` is step `s`'s time in the `Times:` block of the Git Bash job of run 45235773214
+(decision 1), for each of the 47 steps of decision 3. A step that has no line there gets its time in the Git Bash job
+of the latest push run on `main` that ran it, else 5m00s.
+
+1. **Alone.** Every step with `t` of 12m00s or more gets a part of its own. These parts come first, numbered from 1 in
+   order of `t`, largest first (equal `t`: list order). They are the list `gitbash_alone` (decision 7). By the Facts
+   these are 6: `smoke-slot.sh`, `smoke-status.sh`, `smoke-check.sh`, `test-guard-rules.sh`, `smoke-release.sh` and
+   `smoke-validate.sh`.
+2. **Packed.** The other steps go into `P` further parts, by largest first: sorted by `t`, largest first (equal `t`:
+   list order), each step goes into the packed part with the smallest sum of `t` so far (equal sums: the lower part
+   number). `P` is the smallest number from 1 up for which every packed part's sum of `t` is at most **48m00s** (4
+   steps at a time for 12 minutes) and its largest `t` below 12m00s. By the Facts `P` is about 3.
+3. **How many.** `N` is the number of alone parts plus `P`, at least 2 and at most **10**. When the rule gives more
+   than 10, `P` becomes `10` minus the alone parts and step 2 runs again with that `P` and no 48m00s limit. When it
+   gives 1, `P` is 2. The 10 keeps one run at no more than 19 jobs at once (Facts: the 7 other jobs that start at
+   once, the PowerShell final job, the `N` parts and the Git Bash final job), under the 20 an account runs at once.
+4. Each part's list is in step-list order. The **estimate** of a part is the larger of its largest `t` and its sum of
+   `t` divided by 4; the table "Parts" shows it. `t` was timed with 3 other steps beside it on the same runner, so a
+   part with fewer steps is not expected to be slower than its estimate.
+
+*The jobs*, written exactly so, after `smoke-powershell` and before `validate`, in place of today's `smoke-gitbash`
+(`<N>` the number of parts, one `- part:` / `only:` pair per part, `<list k>` part `k`'s steps comma-separated; the
+comment lines wrapped at 120 columns):
+
+```yaml
+  smoke-gitbash-part:
+    # The bash steps in Git Bash on Windows runners, in parts (iterations 64 and 66; decision record 0004, migration
+    # step 1). Not a required check, and its check step does not fail the part: the job smoke-gitbash below fails
+    # unless every part succeeded.
+    name: Git Bash smoke part ${{ matrix.part }} of <N>
+    runs-on: windows-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: 1
+            only: <list 1>
+          - part: 2
+            only: <list 2>
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - shell: bash
+        continue-on-error: true
+        run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}
+
+  smoke-gitbash:
+    # The Git Bash parts together (iteration 66). Not a required check until iteration 65 makes it one.
+    name: Git Bash smoke tests (Windows, not blocking)
+    needs: smoke-gitbash-part
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every Git Bash part succeeded
+        env:
+          PARTS: ${{ needs.smoke-gitbash-part.result }}
+        run: |
+          echo "the Git Bash parts: $PARTS"
+          [ "$PARTS" = success ] || { echo "FAIL: a Git Bash part did not succeed ($PARTS)"; exit 1; }
+```
+
+- The final job needs no checkout and no `permissions:` block, and gets no job table: that step needs `actions: read`,
+  which only `smoke-powershell` has (iteration 55 decision 11; Not done). Its step is not named
+  `Every part succeeded`, so `tests/test-ci-job-times.sh`, which finds that name, reads only `smoke-powershell`.
+- `CHECK_SELECT` and `--within` work per part as in the PowerShell parts (Facts): on a pull request each part checks
+  the steps of its own list that the changed paths select, a part with none runs 0 steps and passes, and a shared path
+  runs the part's whole list. On a push each part runs `--only <its list>`. `tests/check.sh` does not change: no part
+  option, no group field in the step list (iteration 55 decision 3).
+- While the check steps keep `continue-on-error: true`, a part succeeds even when a step fails, so the final job fails
+  only when a part is cancelled, times out or cannot start. Iteration 65 removes `continue-on-error` (decision 8).
+
+*The order of the work*:
+
+1. Decision 1's measurement; then the split by the rule, committed with the filled tables. The pull request's run is a
+   full run (decision 2).
+2. **One rebalance.** When a part misses decision 2's numbers on that run, the implementer may compute the rule once
+   more, with `t` now each step's time in the `Times:` block of its part on that run, and change the lists (and
+   `gitbash_alone`) once. No further rebalance.
+3. Decision 4, round by round, on the parts that still miss; each round is pushed and is a full run.
+
+*When to stop*:
+
+- **Done**: decision 2 holds on the final commit. The implementer fills the "after" columns, the chain line and the
+  summary paragraph, and no further section is rewritten.
+- **Partial**: every measured section of 60 s or more in the steps of the parts that miss has its action (rewrite or
+  keep), and decision 2 still fails. The implementer then adds no part beyond the rule's `N` (at most 10), takes no
+  more steps off the list, and lowers no check. It reports `partial` with criterion 3 unmet and gives the final run's
+  id, each part's `Wall time:` and job time, the chain, and the five slowest steps of each part that misses. The rest
+  (criterion 3: a full run of the Git Bash jobs within the budget) is filed with `/story` as a new story under #337,
+  linked to #382, following the workflow's rule for a story only partly done; the pull request says so. The split, the
+  list and the rewrites done so far stay in the pull request: they keep every case and shorten the job.
 - A step that fails in Git Bash is not a time problem. The implementer lists it with its first `FAIL` line, does not
   fix it here, and it becomes a bug of its own (iteration 64 decision 3). Decision 2 cannot hold while it fails.
 
-**6. Scripts under `scripts/`.** The cuts are made in the tests. A file under `scripts/` changes only when its row in
-`## Measurements` shows that the script's own process starts cost the section 60 s or more. Even then it changes only
-so that, for every input of its smoke tests, its standard output, standard error, exit code and the files it writes
-(markers included) stay byte for byte the same. Its smoke tests in both shells then pass unchanged, and its `.ps1`
-twin does not change. A change that cannot keep that is not made here. Its row says "keep (needs a behaviour change)".
+**6. Scripts under `scripts/` stay as they are.** The cuts are made in the tests and in CI only. No file under
+`scripts/` (`scripts/lib/` included) changes in this iteration. *Why this choice*: the issue's agent note ("A change
+to a script in `scripts/` needs both shells until #363 freezes the PowerShell twins") and `.claude/CLAUDE.md` "Two
+shells" ("a change to a script in `scripts/` is made in both the `.ps1` and the `.sh`") require a change to a script to
+be made in both shells, and the out of scope of the issue forbids a change to the behaviour of a PowerShell script.
+Changing only the `.sh` would depart from that rule; changing both would put PowerShell work into an iteration about
+bash time. Leaving `scripts/` alone departs from no rule.
+
+- *When a measured section's cost sits in a script under `scripts/`* (its row in `## Measurements` shows that the
+  script's own process starts cost the section 60 s or more): the implementer leaves the script as it is. Decision 4
+  may still rewrite the test around it (fewer calls of the script only where a case does not need them, with the same
+  cases). The row's action is "keep (cost in `scripts/<name>.sh`, follow-up)".
+- When decision 2 then fails, the iteration ends `partial` (decision 5), and the report and the follow-up story under
+  #337 name each such script and its section's time, so that story changes the script in both shells (or in bash
+  only, once #363 has frozen the PowerShell twins).
+
+**7. What pins the two jobs.** No new process in the lint (bug #270): the rules stay in `tests/test-ci-parts.sh`,
+which the lint starts once and the lint copies run with `NIGHTMILL_CI_PARTS_RULES_ONLY=1`. Every text has the prefix
+`FAIL: .github/workflows/ci.yml: `.
+
+- **Rule 10 becomes two.** *10a, the parts*: the block of `smoke-gitbash-part` exists; it has the job keys
+  `name: Git Bash smoke part ${{ matrix.part }} of <n>` (`<n>` a whole number) and `runs-on: windows-latest`,
+  `fail-fast: false`, `fetch-depth: 0`, no line `if:` and no line `needs:`, at least two parts, the `- part:` and
+  `only:` lines in pairs, `<n>` equal to the number of parts, the part numbers 1 to `<n>` in order, and exactly one run
+  step (every `run:` and `- run:` line counts), whose line is
+  `run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}` in a step with
+  `shell: bash` and `continue-on-error: true`. Else `the Git Bash parts are malformed (<what>)`, `<what>` one of:
+  `the job smoke-gitbash-part is missing`, `the name line is not 'Git Bash smoke part ${{ matrix.part }} of <N>'`,
+  `not runs-on: windows-latest`, `no fail-fast: false`, `no fetch-depth: 0`, `an if: line`, `a needs: line`,
+  `fewer than two parts`, `the part and only lines are not in pairs`, `the name says <n> parts, the matrix has <m>`,
+  `the part numbers are not 1 to <m> in order`, `<k> run steps, not exactly one`, or
+  `the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }} in a step with shell: bash and continue-on-error: true`.
+  *10b, the final job*: the block of `smoke-gitbash` has the lines `    name: Git Bash smoke tests (Windows, not
+  blocking)`, `    needs: smoke-gitbash-part`, `    if: always()` and `    runs-on: ubuntu-latest`, a line
+  `PARTS: ${{ needs.smoke-gitbash-part.result }}` and a line that begins `[ "$PARTS" = success ] || {`, and no line
+  that contains `tests/check.sh`. Else `the Git Bash job is malformed (<what>)`, `<what>` one of
+  `the job smoke-gitbash is missing`, `missing: <the line without its indent>`, or `it runs tests/check.sh`.
+- **Rule 11**: every `add bash` step of the step list that is not on `gitbash_out` is named in exactly one part's
+  `only:` list, each list is in step-list order, every name on `gitbash_alone` is the only step of its part, and both
+  lists name only bash steps. The texts: `tests/<x> runs in no Git Bash part`;
+  `tests/<x> runs in more than one Git Bash part`;
+  `Git Bash part <k> names tests/<x>, which is not a bash step of tests/check.sh`;
+  `Git Bash part <k> names tests/<x>, which the Git Bash job leaves out (docs/specs/iteration-66-gitbash-job-time.md, decision 3)`;
+  `Git Bash part <k>: the --only list is not in the order of the step list`;
+  `Git Bash part <k>: tests/<x> shares its part (docs/specs/iteration-66-gitbash-job-time.md, decision 5)`;
+  `the Git Bash job leaves out tests/<x>, which is not a bash step of tests/check.sh`;
+  `tests/<x> is to run alone, but it runs in no Git Bash part`. The lists `gitbash_out` and `gitbash_alone` are
+  variables of `tests/test-ci-parts.sh`, one name per line; `gitbash_alone` holds the alone parts of decision 5's rule
+  (after the rebalance, if any).
+- The header comment's sentences on rules 10 and 11 say what 10a, 10b and 11 pin, naming iteration 66.
+- `tests/lint.sh`, `== CI selects the steps a pull request affects` (Facts, line 1566): the allowed job key
+  `    if: always()` holds in `smoke-powershell` and `smoke-gitbash`, no other job; the comment above it says "the
+  if: always() of smoke-powershell and smoke-gitbash (3)". No text of the lint changes, and no `lint_break` is added
+  (each costs a lint copy, against this story's goal). The three required names, their comment and its count of 3 do
+  not change: no job of this iteration is required, and neither new name begins with a required name.
+
+**8. The required-check names, and what iteration 65 decision 7 must change.** The ruleset is changed by the
+maintainer by hand (iteration 65 decision 6), not here. When iteration 65 makes the Git Bash jobs required, the ruleset
+needs exactly **one** new name, `Git Bash scripts smoke tests`, carried by the final job `smoke-gitbash`, as
+`PowerShell scripts smoke tests` is by `smoke-powershell`. The part names `Git Bash smoke part <k> of <N>` are never
+required, so the number of parts can change later without a ruleset change, and none begins with a required name.
+This iteration does not edit iteration 65's spec. Before #363's `/next`, its spec is revised (`/spec` on #363) so that
+decision 7 says:
+
+- `.github/workflows/ci.yml`: the `Required check` comment and `name: Git Bash scripts smoke tests` go on the final job
+  `smoke-gitbash`; the comments of both Git Bash jobs drop "not a required check"; `continue-on-error: true` is removed
+  from the check step of `smoke-gitbash-part`; `timeout-minutes` of `smoke-gitbash-part` is 3 times the longest part's
+  measured job time, rounded up to whole minutes, at most 360; the final job keeps 5.
+- `tests/test-ci-parts.sh`: rule 10a wants the run step with `shell: bash` and no `continue-on-error:` line; rule 10b
+  wants `    name: Git Bash scripts smoke tests`; the cases `gbcoe` and `gbname` change with them (Tests of this spec).
+- The measurement rule: in place of "its summary ends `SELECTED CHECKS PASSED (48 of <M> steps; ...)`, and its wall
+  time is at most 17 minutes", every part's summary ends `SELECTED CHECKS PASSED (<k> of <M> steps; ...)` with the
+  `<k>` adding up to 47, and decision 2 of this spec holds (each part's `Wall time:` at most 14m00s, the chain at most
+  17m00s). Its Tests line "with 48 steps in its summary" changes the same way.
+- `tests/lint.sh`: the fourth required name and the comment count of 4, as decision 7 has them; the `if: always()` of
+  `smoke-gitbash` is already allowed (decision 7 here).
+- README: the job sentence starts from this iteration's text (Files touched), not today's.
 
 ## Criteria and rules
 
 | # | Acceptance criterion | Rule (decision or section) |
 |---|---|---|
 | 1 | The time of each section of the slowest bash steps is measured in Git Bash on Windows, and the result (which sections cost the most, and why) is written in the spec | Decision 1; `## Measurements` (filled by the implementer) |
-| 2 | The spec chooses how the time is cut (cheaper scenarios, fewer processes, a split of steps, or a smaller step list for the job) and says what coverage each choice gives up | Decisions 3 (a smaller list, its coverage given up), 4 (fewer processes and lighter lint copies, no coverage given up) and 5 (no split in this iteration); decision 6 |
-| 3 | A full run of the Git Bash job, with every step it has to run, finishes within the time a required check is allowed | Decision 2 (17m00s, 14m00s, two runs); decision 3 (the list it has to run); decision 5 (done or partial) |
-| 4 | No scenario is dropped without the spec saying which behaviour it covered and where that is tested now | Decision 3 (`test-lintcopy-output.sh`: what it covers, where it runs now); decision 4 (no case dropped, and how that is checked) |
-| 5 | The check stays green on Linux and in the PowerShell jobs | Decisions 4 and 6 (same cases, no `.ps1` change); Tests (criterion 5) |
+| 2 | The spec chooses how the time is cut (cheaper scenarios, fewer processes, a split of steps, or a smaller step list for the job) and says what coverage each choice gives up | Decisions 3 (a smaller list, its coverage given up), 5 (a split into parts by the measured times, no coverage given up), 4 (fewer processes and lighter lint copies, no coverage given up) and 6 |
+| 3 | A full run of the Git Bash job, with every step it has to run, finishes within the time a required check is allowed | Decision 2 (the chain 17m00s, each part 14m00s, two runs); decision 3 (the list it has to run); decision 5 (the parts, done or partial); decision 8 (the name to require) |
+| 4 | No scenario is dropped without the spec saying which behaviour it covered and where that is tested now | Decision 3 (`test-lintcopy-output.sh`: what it covers, where it runs now); decision 4 (no case dropped, and how that is checked); decision 5 (every step still runs once); decision 7 (the pins) |
+| 5 | The check stays green on Linux and in the PowerShell jobs | Decisions 4 and 6 (same cases, no `.ps1` change); decision 7 (the lint and the PowerShell pins unchanged); Tests (criterion 5) |
 
 ## Tests
 
 - Criterion 1: no test reads the measurements. The code reviewer checks that `## Measurements` has every table filled
-  for every step decision 1 names, that each section of 60 s or more has an action, and that the summary paragraph
-  names the costliest sections and their cause. The implementer pastes the raw timestamper output of each measured step
-  into "How verified" (collapsed), so the reviewer can check the tables against it.
-- Criterion 2 and 4, the list: **`tests/test-ci-parts.sh`** rule 11 gets the list `gitbash_out` (one name per line,
-  exactly `test-lintcopy-output.sh`). A bash step that is on `gitbash_out` is expected in no Git Bash list, and every
-  other bash step as today. New texts, each with the prefix `FAIL: .github/workflows/ci.yml: `:
-  `the Git Bash list names tests/<x>, which the Git Bash job leaves out (docs/specs/iteration-66-gitbash-job-time.md, decision 3)`
-  for a left-out step that is on the list, and
-  `the Git Bash job leaves out tests/<x>, which is not a bash step of tests/check.sh` for a name on `gitbash_out` that
-  is not a bash step. Rule 11 passes on the checkout. New cases, each on a scratch copy changed once:
-  - `test-lintcopy-output.sh,` put back after `smoke-check.sh,` in the Git Bash list: `which the Git Bash job leaves out`;
-  - `gitbash_out` given `smoke-nope.sh`: `which is not a bash step of tests/check.sh`.
+  for every step decision 1 names, that the table "Parts" follows decision 5's rule from the `t` column (the
+  reviewer recomputes it), that each section of 60 s or more in a part that missed has an action, and that the summary
+  paragraph names the costliest sections and their cause. The implementer pastes the raw timestamper output of each
+  measured step into "How verified" (collapsed), so the reviewer can check the tables against it.
+- Criteria 2 and 4, the parts and the list: **`tests/test-ci-parts.sh`**, rules 10a, 10b and 11 of decision 7 pass on
+  the checkout. The cases of rule 10 and 11, each on a scratch copy changed once (the existing `changed` guard stays,
+  so no case passes on a workflow without the jobs); `gb_case` edits the lines of `smoke-gitbash-part`, and a new
+  `gbf_case` those of `smoke-gitbash`:
+  - kept, retargeted to `smoke-gitbash-part`, each expecting `the Git Bash parts are malformed`: `gbgone` (the part job
+    removed), `gbubuntu`, `gbdepth`, `gbif`, `gbcoe`, `gbshell`, `gbtwo`, `gbname` (` of <N>$` becomes ` of X`),
+    `gbneeds`;
+  - new, each expecting `the Git Bash parts are malformed`: `gbfailfast` (`fail-fast: false` removed), `gbof` (the name
+    says one part more than the matrix), `gbnumbers` (the last two part numbers swapped), `gbonlyrun` (
+    ` ${{ matrix.only }}` removed from the run line);
+  - new, for the final job, each expecting `the Git Bash job is malformed`: `gbfgone` (the job removed), `gbfname`
+    (` (Windows, not blocking)` removed), `gbfalways` (`if: always()` removed), `gbfneeds` (the `needs:` line removed),
+    `gbfsuccess` (the `[ "$PARTS" = success ]` line removed), `gbfcheck` (a step `- run: bash tests/check.sh --only
+    smoke-json.sh` added: it must not count as a part, `it runs tests/check.sh`);
+  - kept with the new texts: `gbnoguard` (`smoke-guard.sh,` removed from its part) expects
+    `tests/smoke-guard.sh runs in no Git Bash part`; `gbgate2` (`smoke-gate.sh` named twice in its part) expects
+    `more than one Git Bash part`; `gbnewstep` expects `tests/smoke-new.sh runs in no Git Bash part`; `gbps`
+    (`,smoke-slot.ps1` appended to the last part's list) expects `which is not a bash step`; `gborder` (two steps of
+    one packed part swapped) expects `not in the order of the step list`;
+  - new: `gblintcopy` (`test-lintcopy-output.sh` added to a packed part, in list order) expects
+    `which the Git Bash job leaves out`; `gbalone` (a short step moved into the part of the first name on
+    `gitbash_alone`, in list order) expects `shares its part`;
+  - new, on an unchanged scratch copy, with `rules` called in a subshell that sets the list first (`rules` reads
+    `gitbash_out` and `gitbash_alone` as shell variables, so a case can set them without copying the test):
+    `gbout` (`gitbash_out` set to `smoke-nope.sh`) expects `which is not a bash step of tests/check.sh`; `gbalonenope`
+    (`gitbash_alone` given the extra name `smoke-nope.sh`) expects
+    `tests/smoke-nope.sh is to run alone, but it runs in no Git Bash part`.
 
-  The existing cases (`gbnoguard`, `gbgate2`, `gbnewstep` and the rest) keep their expected text. The header comment's
-  sentence on rule 11 says "every `add bash` step but those the Git Bash job leaves out (iteration 66)".
+  The PowerShell cases (`noguard` to `stepperm`) keep their expected texts. `tests/test-ci-job-times.sh` passes
+  unchanged.
 - Criterion 4, the cases: for each test file decision 4 changes, the implementer puts into "How verified" the
   `diff` of its `grep -E '^[[:space:]]*echo "== '` output before and after (empty), and the count of failure texts
   before and after, with none missing. The code reviewer checks the rewrites against the means of decision 4 and that
   no wait bound, expected text or platform branch changed.
-- Criterion 3: **on the pull request's run**, by the maintainer before merging by hand. The job
-  `Git Bash smoke tests (Windows, not blocking)` has, in two runs of the final commit, a summary that begins with
-  `Selection: --affected ran every --within step: .github/workflows/ci.yml is shared by many steps.`, lists 47 steps,
-  and ends `SELECTED CHECKS PASSED (47 of <M> steps; the full check has not run)`, with `Wall time:` at most 14m00s
-  and the job's time at most 17m00s. "How verified" gives both run ids and the numbers. After the merge, the push run on
-  `main` runs the job with `--only` (`check: only ...`), a third full run.
+- Criterion 3: **on the pull request's run**, by the maintainer before merging by hand. In two runs of the final commit
+  (decision 2): each `Git Bash smoke part <k> of <N>` has a summary that begins with
+  `Selection: --affected ran every --within step:` and ends
+  `SELECTED CHECKS PASSED (<k> of <M> steps; the full check has not run)`, the `<k>` adding up to 47, each `Wall time:`
+  at most 14m00s and each job time at most 17m00s; `Git Bash smoke tests (Windows, not blocking)` is `success`; the
+  chain is at most 17m00s. "How verified" gives both run ids, each part's numbers and the chain. After the merge, the
+  push run on `main` runs every part with `--only` (`check: only ...`), a third full run.
 - Criterion 5: `bash tests/check.sh` is green on the branch, and the implementer puts its last line and its `Times:`
   total into "How verified". On the pull request's run, `Lint (generic, JSON, skills, shell)`,
   `bash scripts smoke tests` (which still runs `test-lintcopy-output.sh`) and `PowerShell scripts smoke tests` are
-  green. The code reviewer checks that `git diff origin/main --stat` lists no `.ps1` file and only the files of "Files
-  touched".
+  green. The code reviewer checks that `git diff origin/main --stat` lists no `.ps1` file, no file under `scripts/`, and only
+  the files of "Files touched".
 
 ## Files touched
 
 - `docs/specs/iteration-66-gitbash-job-time.md`: `## Measurements` filled (decision 1).
-- `.github/workflows/ci.yml`: job `smoke-gitbash`. `test-lintcopy-output.sh,` comes out of its list (decision 3), and
-  its comment's first line names iteration 66 (`# The bash steps in Git Bash on a Windows runner (iteration 64; decision
-  record 0004, migration step 1), test-lintcopy-output.sh left out (iteration 66).`, wrapped at 120 columns). Nothing
-  else in the file changes.
-- `tests/test-ci-parts.sh`: `gitbash_out`, rule 11, the two cases and the header comment (Tests).
+- `.github/workflows/ci.yml`: the job `smoke-gitbash` is replaced by the two jobs of decision 5, in the same place,
+  with the lists of decision 5's rule (without `test-lintcopy-output.sh`, decision 3). Nothing else in the file
+  changes.
+- `tests/test-ci-parts.sh`: `gitbash_out`, `gitbash_alone`, rules 10a, 10b and 11, the cases and the header comment
+  (decision 7, Tests).
+- `tests/lint.sh`: the `if: always()` condition of line 1566 and its comment (decision 7).
 - The bash tests decision 4 rewrites, each named in `## Measurements`. These are expected among `tests/smoke-slot.sh`,
   `tests/smoke-status.sh`, `tests/smoke-check.sh`, `tests/test-guard-rules.sh`, `tests/smoke-release.sh` and
-  `tests/smoke-validate.sh`. A rewrite of `tests/lint.sh` follows decision 4's lint-copy rule only.
-- A file under `scripts/` only under decision 6, its `.ps1` twin never.
-- `README.md`, under `## Developing nightmill`: "runs every bash test step in Git Bash on a Windows runner (decision
-  record 0004, step 1)" becomes "runs every bash test step but `test-lintcopy-output.sh` in Git Bash on a Windows runner
-  (decision record 0004, step 1; the bash job runs that one)".
+  `tests/smoke-validate.sh`. A rewrite of `tests/lint.sh` follows decision 4's lint-copy rule only. None, when the split
+  alone meets the budget.
+- No file under `scripts/` (decision 6).
+- `README.md`, under `## Developing nightmill`: "a further job, `Git Bash smoke tests (Windows, not blocking)`, runs
+  every bash test step in Git Bash on a Windows runner (decision record 0004, step 1); it is not a required check, and a
+  failing step there shows in its summary without failing the job;" becomes "the bash test steps but
+  `test-lintcopy-output.sh` (the bash job runs that one) run in Git Bash in <N> parts on <N> Windows runners at once
+  (decision record 0004, step 1), the longest steps alone in theirs, and a further job,
+  `Git Bash smoke tests (Windows, not blocking)`, fails unless every part succeeded; it is not a required check, and a
+  failing step shows in its part's summary without failing the part;", with `<N>` written as a word, as "four parts"
+  is.
 - `CHANGELOG.md`, one bullet under `Unreleased`:
 
   ```
-  - Iteration 66 (#382): the Git Bash CI job runs its full step list within 17 minutes, the time a required check is
-    allowed. The slowest bash steps are measured section by section in Git Bash on Windows (the spec holds the
-    numbers); their costliest sections start fewer processes with the same cases, and test-lintcopy-output.sh, which
-    nests whole runs of three other steps, leaves the Git Bash job (the Ubuntu bash job still runs it). No config key.
+  - Iteration 66 (#382): the Git Bash CI job runs in parts on several Windows runners at once, the longest steps alone
+    in theirs, and a final job, Git Bash smoke tests (Windows, not blocking), fails unless every part succeeded; the
+    whole job finishes within 17 minutes, the time a required check is allowed. The slowest bash steps are measured
+    section by section in Git Bash on Windows (the spec holds the numbers); their costliest sections start fewer
+    processes with the same cases, and test-lintcopy-output.sh, which nests whole runs of three other steps, leaves
+    the Git Bash job (the Ubuntu bash job still runs it). No config key.
   ```
 
-  If the iteration ends `partial` (decision 5), "runs its full step list within 17 minutes, the time a required check
-  is allowed" becomes "is faster", and "The rest follows in #<new story>." is added.
+  When decision 4 rewrote no section, "their costliest sections start fewer processes with the same cases, and" is
+  left out. If the iteration ends `partial` (decision 5), "the whole job finishes within 17 minutes, the time a
+  required check is allowed" becomes "the whole job finishes sooner", and "The rest follows in #<new story>." is added.
 
-Not touched: `tests/check.sh` (its step list, marks and map), the other jobs of `ci.yml`, every `.ps1` file,
-`tests/check.ps1`, `.claude/nightmill.json`, the schema, every skill, agent and hook, `docs/decisions/`.
+Not touched: `tests/check.sh` (its step list, marks and map), the other jobs of `ci.yml`, `tests/test-ci-job-times.sh`,
+every `.ps1` file, `tests/check.ps1`, `.claude/nightmill.json`, the schema, every skill, agent and hook,
+`docs/decisions/`, and the spec of iteration 65 (decision 8).
 
 ## Risks
 
-- **The budget is not reached.** By the Facts, the seven steps took about twice the step-minutes 17 minutes allows,
-  before the 41 others. Fewer processes may not cut that much. Decision 5 then ends the iteration as `partial`, with a
-  measured basis for a split. Left item 1 lets the maintainer choose the split now.
+- **The budget is not reached.** By the Facts, six steps took more than 12 minutes each with 3 others beside them, and
+  a part cannot end before its longest step. Whether `smoke-slot.sh` (25m43s) runs under 14 minutes alone on a runner
+  is not known. A part of its own may not be enough, and fewer processes may not cut that much. Decision 5 then ends
+  the iteration as `partial`, with the split delivered and a measured basis for the next story.
+- **More runners, more queueing.** About 9 Git Bash parts make one run about 17 jobs at once. Two pull requests at once
+  exceed the 20 an account runs at once (Facts, not read here), and a part that waits for a runner lengthens the chain.
+  The cap of 10 parts bounds one run. Decision 2 counts the wait, so a run that queues shows it.
 - **A rewrite changes what a case tests.** Decision 4 allows only listed means, keeps headers, texts and cases, and the
   Ubuntu job runs the same files. A rewrite that gets a case wrong goes red there.
 - **`test-lintcopy-output.sh` counts what `smoke-check.sh` starts** (#293, #340). A rewrite of `smoke-check.sh` can
   change those counts. It stays green only when the counted calls stay at their bound. The Ubuntu job runs it.
 - **A shared fixture leaks between cases.** A fixture repository built once and copied per case must be copied, never
   used in place. A case that changes the fixture changes only its copy.
-- **Local times are not CI times.** The local alone times choose the sections. Only the CI runs of decision 2 decide
-  whether the budget is met.
+- **Local times are not CI times.** The local alone times choose the sections, and the CI times of a run with 4 steps
+  at a time choose the parts. Only the CI runs of decision 2 decide whether the budget is met.
 - **Runner spread.** Windows runners differ from run to run. The 3-minute margin and the second run of decision 2 bound
-  that. A later slowdown shows in the summary of every push run.
+  that. A later slowdown shows in each part's summary on every push run.
+- **The parts go stale.** A step that gets slower later is not moved by any test; `gitbash_alone` only keeps the alone
+  steps alone. Each part's summary shows its time, as the PowerShell parts' do.
 
 ## Size estimate
 
-`L` is likely, but it depends on the measurement. Fixed parts: `ci.yml` about 3 lines, `tests/test-ci-parts.sh` about
-30, `## Measurements` about 40 to 60, README 2, CHANGELOG 5, so about 85. The rewrites of decision 4 are not known
-before decision 1. At 30 to 60 changed lines per rewritten section and 5 to 8 sections, they add 150 to 480, so
-about 235 to 565 in all.
+`L` is likely. Fixed parts: `ci.yml` about 40 lines (two jobs, a pair of lines per part), `tests/test-ci-parts.sh`
+about 130 (rules 10a, 10b and 11 about 80, the cases about 40, the header 10), `tests/lint.sh` 2, `## Measurements`
+about 60 to 80, README 6, CHANGELOG 6, so about 245 to 265: `M` when the split alone meets the budget. The rewrites of
+decision 4 are not known before decision 1. At 30 to 60 changed lines per rewritten section and 0 to 8 sections, they
+add 0 to 480, so about 245 to 745 in all.
 
 ## Not done
 
-- Making the job blocking or required, renaming it, changing its timeout, or changing the ruleset (#363).
-- Splitting the job into parts, or changing `verification.checkJobs` or `--jobs` for it (decision 5, Left).
-- Leaving any step but `test-lintcopy-output.sh` off the Git Bash list, a skip list, or a platform branch in a test.
+- Making the jobs blocking or required, renaming them for the ruleset, changing the parts' timeout from 360, or
+  changing the ruleset (#363, decision 8).
+- Editing iteration 65's spec (decision 8 says what its revision changes).
+- More than 10 parts, a part option or a group field in `tests/check.sh` (iteration 55 decision 3), or changing
+  `verification.checkJobs` or `--jobs` for the parts.
+- A job table (`tests/ci-jobs-summary.sh`) in the Git Bash final job, or any job-level `permissions:` for it.
+- Leaving any step but `test-lintcopy-output.sh` off the Git Bash list (no entry of `gitbash_out` beyond it unless
+  decision 3 names it), or a platform branch in a test.
 - Removing, merging or weakening a case, lowering a wait bound, or changing an expected text.
-- Any change to a `.ps1` file (#365 removes them; they are frozen once #363 merges), or a behaviour change of a script
-  under `scripts/`.
+- Any change to a `.ps1` file (#365 removes them; they are frozen once #363 merges), or any change to a file under
+  `scripts/` (decision 6: a slow section whose cost sits in a script goes to the follow-up story).
 - Fixing a bash step that fails in Git Bash (it becomes a bug).
 - A permanent per-section timer in the check or a lint on test times (the epic's time budget is a story of its own).
 - `# Time: ` notes for the rewritten steps (iteration 62's notes stay as they are).
@@ -337,19 +591,10 @@ about 235 to 565 in all.
 
 ## Left
 
-1. **Split now, or `partial` first (needs the maintainer).** By the Facts, reaching 17 minutes with one job means
-   cutting about half of the step-minutes. Iteration 64 decision 4 foresaw a split into parts when the job is over the
-   budget. This spec does not split. A split changes what iteration 65 decision 7 pins (one job, one run step, one name
-   to require), and it should be chosen on measured step times. Approving the spec as written accepts decision 5's
-   `partial` outcome. The maintainer may instead add a split as a stage after decision 4, which would also amend
-   iteration 65 decision 7.
-2. **Iteration 65's "48".** Iteration 65 decision 7 (draft) expects the job's summary to end
-   `SELECTED CHECKS PASSED (48 of <M> steps; ...)`. With decision 3 the job runs 47 steps. This spec does not edit
-   iteration 65. Its text needs "47", or "every step of the job's list", before its `/next`.
-3. **The spec holds numbers its implementer writes.** The issue asks the spec to hold the measurement, so decision 1
-   has the implementer fill `## Measurements` in the implementation's pull request. The maintainer approves the rules
-   now and reads the numbers in the pull request. If the maintainer prefers, the measurement can be a separate step
-   before approval: a measurement-only pull request, then this spec revised with its numbers.
-4. **Further steps off the list.** Decision 3 leaves out only `test-lintcopy-output.sh`. If the measurement shows
-   another step that tests only repository text (for example the text sections of `test-guard-rules.sh`), the
-   maintainer may add it to decision 3, with its coverage written there.
+1. **Iteration 65's spec must be revised before #363's `/next`.** Its decision 7 pins one job, one run step, one
+   `continue-on-error` and 48 steps; with this iteration the Git Bash check is a part job and a final job over 47
+   steps. Decision 8 lists what the revision changes. This spec does not edit iteration 65's file, so the revision is a
+   `/spec` run on #363 (or the maintainer's edit) once this spec is approved.
+2. **The runner limits are from documentation, not read here.** The cap of 10 parts rests on 20 jobs at once and 4
+   processors per Windows runner (Facts). If the account's limits differ, the cap is the number to change, in this
+   spec, before `/next`.
