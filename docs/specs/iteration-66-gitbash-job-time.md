@@ -183,9 +183,11 @@ request has two full runs of the Git Bash jobs: the run its push starts, and one
 (`gh run rerun <id>`). Every bash step of the job's list runs (`$CHECK_SELECT` takes the fallback in every part,
 because the pull request changes `ci.yml`). In each of the two runs:
 
-- every part's check step passes, with the summary ending
+- every part's check step passes: the last line of the check step's log (stdout, not the job summary) is
   `SELECTED CHECKS PASSED (<k> of <M> steps; the full check has not run)`, where `<k>` is the length of the part's
   list, and the `<k>` of all parts add up to the length of the job's list (47, decision 3);
+- every part's job summary has, inside its `### tests/check.sh` section, the line
+  `Selection: --affected ran every --within step: <reason>.` (the fallback);
 - every part's `Wall time:` in its `### tests/check.sh` section is at most **14m00s**;
 - every part's own time in the run's job list, from start to completion, is at most **17m00s**;
 - the job `Git Bash smoke tests (Windows, not blocking)` has the conclusion `success`, and the **chain**, from the
@@ -429,8 +431,8 @@ decision 7 says:
 - `tests/test-ci-parts.sh`: rule 10a wants the run step with `shell: bash` and no `continue-on-error:` line; rule 10b
   wants `    name: Git Bash scripts smoke tests`; the cases `gbcoe` and `gbname` change with them (Tests of this spec).
 - The measurement rule: in place of "its summary ends `SELECTED CHECKS PASSED (48 of <M> steps; ...)`, and its wall
-  time is at most 17 minutes", every part's summary ends `SELECTED CHECKS PASSED (<k> of <M> steps; ...)` with the
-  `<k>` adding up to 47, and decision 2 of this spec holds (each part's `Wall time:` at most 14m00s, the chain at most
+  time is at most 17 minutes", the last line of every part's check step log is
+  `SELECTED CHECKS PASSED (<k> of <M> steps; ...)` with the `<k>` adding up to 47, and decision 2 of this spec holds (each part's `Wall time:` at most 14m00s, the chain at most
   17m00s). Its Tests line "with 48 steps in its summary" changes the same way.
 - `tests/lint.sh`: the fourth required name and the comment count of 4, as decision 7 has them; the `if: always()` of
   `smoke-gitbash` is already allowed (decision 7 here).
@@ -488,8 +490,8 @@ decision 7 says:
   before and after, with none missing. The code reviewer checks the rewrites against the means of decision 4 and that
   no wait bound, expected text or platform branch changed.
 - Criterion 3: **on the pull request's run**, by the maintainer before merging by hand. In two runs of the final commit
-  (decision 2): each `Git Bash smoke part <k> of <N>` has a summary that begins with
-  `Selection: --affected ran every --within step:` and ends
+  (decision 2): each `Git Bash smoke part <k> of <N>` has a job summary whose `### tests/check.sh` section holds the
+  line `Selection: --affected ran every --within step: <reason>.`, and a check step whose log ends with the line
   `SELECTED CHECKS PASSED (<k> of <M> steps; the full check has not run)`, the `<k>` adding up to 47, each `Wall time:`
   at most 14m00s and each job time at most 17m00s; `Git Bash smoke tests (Windows, not blocking)` is `success`; the
   chain is at most 17m00s. "How verified" gives both run ids, each part's numbers and the chain. After the merge, the
