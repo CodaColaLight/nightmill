@@ -1,6 +1,6 @@
 # Iteration 66: the Git Bash CI job runs in parts and finishes within 17 minutes
 
-Status: draft, awaiting approval (#382)
+Status: delivered in iteration 66 (PR #384)
 
 Story #382, epic #337 (fast verification loop). It supersedes bug #376. Iteration 64 (#361) added the job
 `smoke-gitbash`, which runs every bash test step in Git Bash on a Windows runner. Iteration 65 (#363) is to make it a
