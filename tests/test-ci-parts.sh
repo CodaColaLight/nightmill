@@ -268,8 +268,7 @@ rules() {
   local gb=()
   while IFS= read -r x; do [ -z "$x" ] || gb[${#gb[@]}]=$x; done < <(awk '/^# steps: begin$/ { on = 1; next } /^# steps: end$/ { on = 0 } on && $1 == "add" && $2 == "bash" { print $3 }' "$chk")
   [ "${#gb[@]}" -gt 0 ] || fl "tests/check.sh has no bash steps"
-  local gbn gball
-  printf -v gball '%s\n' "${gb[@]}"
+  local gbn
   gbcount() { # gbcount <name>: sets gbn to the number of places the only lists name the step (no subshell: slow in Git Bash)
     local q p
     gbn=0
