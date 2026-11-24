@@ -113,36 +113,150 @@ Read on `main` at c5ffdb7 ("fix: the lint fails on a fixture directory that no m
 ## Measurements
 
 Filled in by the implementer (decision 1) before any test changes, and completed in the same pull request. It holds
-four tables and one paragraph.
+four tables and one paragraph. Measured on 2026-11-24 in Git Bash on the maintainer's Windows machine, from the slot's
+root, one step at a time with nothing else of the check running, through the timestamper of decision 1 (in the
+scratchpad, not committed). `smoke-slot.sh`'s first run ended red in `== interruption (iteration 36)` after 1684 s
+(the timestamper keeps only the `== ` lines, so its `FAIL:` line is not known); its sections up to there were within
+about 10% of the second run, which passed and is the one in the table (the same pipeline with one `tee` added to keep
+the output). The local machine is slower than a runner for some steps (`smoke-drive.sh` 27m06s alone here, 6m10s in
+CI with three steps beside it), so the local times choose the sections and the CI times choose the parts (Risks).
 
 **Cost of one process** (local Git Bash, 200 runs each, total and per run):
 
 | What | 200 runs | Per run |
 |---|---|---|
-| `/usr/bin/true` | | |
-| `x=$(printf y)` (a subshell) | | |
-| `git --version` | | |
-| `git init -q` plus one `git commit` in a fresh folder | | |
+| `/usr/bin/true` | 8.8 s | 44 ms |
+| `x=$(printf y)` (a subshell) | 5.1 s | 26 ms |
+| `git --version` | 15.7 s | 79 ms |
+| `git init -q` plus one `git commit` in a fresh folder | 59.3 s | 296 ms |
 
-**Sections** (one block of rows per measured step):
+**Sections** (one block of rows per measured step; every section of 60 s or more has a row of its own, the rest of
+each step is one row; the seconds are the timestamper's; a step without `== ` headers is one row):
 
 | Step | Section (`== ` header) | Alone, local Git Bash | Share of the step | What it starts (by reading) | Why it costs (process-bound, lint, wait, other) | Action (decision 4) |
 |---|---|---|---|---|---|---|
+| `smoke-slot.sh` (2185 s) | automatic release | 245 s | 11% | 18 lines that run `scripts/slot.sh` (in `prepare` and `cleanup`, called per case), 13 `git` lines, 37 `$(...)` | process-bound: dozens of runs of `slot.sh`, each starting tens of `git` and helper processes (at 26 to 79 ms each) | pending CI |
+| `smoke-slot.sh` | capacity | 287 s | 13% | 29 `slot.sh` lines, 10 `git` lines, 54 `$(...)` | process-bound (`slot.sh` runs) | pending CI |
+| `smoke-slot.sh` | reports | 290 s | 13% | 14 `slot.sh` lines, several in loops over the report steps, 64 `$(...)` | process-bound (`slot.sh --report` runs, each reading and writing the marker) | pending CI |
+| `smoke-slot.sh` | claim (iteration 34) | 507 s | 23% | 32 `slot.sh` lines, 56 `git` lines, 134 `$(...)`, 4 polling waits (`sleep 0.1` under a counter) | process-bound, with some waiting in the polls | pending CI |
+| `smoke-slot.sh` | marker retries (iteration 35) | 246 s | 11% | 6 `slot.sh` lines in loops over retry counts, 11 `git` lines, 4 polling waits | process-bound, with some waiting | pending CI |
+| `smoke-slot.sh` | interruption (iteration 36) | 157 s | 7% | 2 `slot.sh` lines run per signal case in the background, 12 `git` lines, 5 waits: polls of `sleep 0.1` (bounded to 60 s and 5 s) and the asserted `sleep 1` | wait-bound in part (the polls until the take is killed and ends), the rest process-bound | pending CI |
+| `smoke-slot.sh` | the record (iteration 41) | 103 s | 5% | 6 `slot.sh` lines, 5 `git` lines, 43 `$(...)` | process-bound | pending CI |
+| `smoke-slot.sh` | the other 16 sections | 348 s together, at most 52 s each | 16% | `slot.sh` and `git` calls | process-bound | below 60 s each |
+| `smoke-status.sh` (1803 s) | json | 122 s | 7% | runs of `scripts/status.sh --json` on fixture boards (a `gh` stub), 14 `$(...)` | process-bound (`status.sh`'s own process starts) | pending CI |
+| `smoke-status.sh` | json --all | 72 s | 4% | `status.sh --json --all` runs | process-bound | pending CI |
+| `smoke-status.sh` | the text form and the porcelain form are unchanged | 70 s | 4% | `status.sh` runs in the three forms | process-bound | pending CI |
+| `smoke-status.sh` | the lint notices a status script that changes the board | 1245 s | 69% | one `tar` copy of the repository and two whole runs of `tests/lint.sh` on it (unchanged, then broken) | lint: two whole lints, about 620 s each | pending CI |
+| `smoke-status.sh` | the other 19 sections | 293 s together, at most 53 s each | 16% | `status.sh` runs | process-bound | below 60 s each |
+| `smoke-check.sh` (1567 s) | two checks at once | 71 s | 5% | two `tests/check.sh` runs at once on fixture steps | process-bound (`check.sh` starts) | pending CI |
+| `smoke-check.sh` | the lint: the check runs every smoke script | 1396 s | 89% | one section of `tests/lint.sh` run 34 times (1 unchanged and 33 `lint_break` copies), each on a fresh `cp` copy of `tests/`, `scripts/`, `skills/` and the CI files, each with a rules-only run of `tests/test-ci-parts.sh` | lint: 34 runs of one lint section, about 41 s each | pending CI |
+| `smoke-check.sh` | the other 9 sections | 99 s together, at most 51 s each | 6% | `check.sh` runs on fixture steps | process-bound | below 60 s each |
+| `test-guard-rules.sh` (1685 s) | no rule matches a command the skills write | 1053 s | 62% | for 3 branches, 320 spans with 364 sub-commands: per sub-command one `$(printf \| sed)` and 23 `$(unbody ...)`, per span a `fill` (`sed`) and `split_cmds` (`awk`): about 26 000 subshells | process-bound: 26 000 subshells at 26 ms are about 680 s, more than half | pending CI |
+| `test-guard-rules.sh` | no guard refusal matches a command the skills write | 627 s | 37% | per span (320) and per GraphQL document: one `fill`, one `$(gjesc ...)` and one run of `scripts/guard.sh` with a `gh` stub | process-bound, most of it in `scripts/guard.sh`'s own starts (about 2 s per run) | pending CI |
+| `test-guard-rules.sh` | the other 6 sections | 5 s together | 0% | text checks | other | below 60 s each |
+| `smoke-release.sh` (1357 s) | the lint notices versions that disagree | 1275 s | 94% | one `tar` copy and two whole runs of `tests/lint.sh` | lint: two whole lints | pending CI |
+| `smoke-release.sh` | the other 7 sections | 79 s together, at most 34 s each | 6% | runs of `scripts/release.sh` on fixture repositories, 37 `git` lines | process-bound | below 60 s each |
+| `smoke-validate.sh` (1306 s) | the lint notices a schema keyword the validator does not support | 621 s | 48% | one `tar` copy and one whole run of `tests/lint.sh` | lint: one whole lint | pending CI |
+| `smoke-validate.sh` | the lint notices a role the workflow skill does not name | 623 s | 48% | one more `tar` copy and one more whole lint | lint: one whole lint | pending CI |
+| `smoke-validate.sh` | the other 14 sections | 61 s together, at most 11 s each | 5% | runs of `scripts/validate-config.sh` | process-bound | below 60 s each |
+| `test-lintcopy-output.sh` (4575 s) | (no `== ` headers): the whole step | 4575 s | 100% | two `tar` copies, whole runs of `smoke-status.sh`, `smoke-release.sh`, `smoke-check.sh`, `test-spec-template.sh` and `test-ci-parts.sh` (with shims that count calls), and their nested lints | lint: the nested whole lints and lint sections of three other steps | not needed (off the job, decision 3) |
+| `smoke-control.sh` (752 s) | 3. hold in the cooldown | 74 s | 10% | 7 runs of `scripts/control.sh` (each runs the load and slot scripts) | process-bound, in `scripts/control.sh` | pending CI |
+| `smoke-control.sh` | 6. bounds | 84 s | 11% | 7 `control.sh` lines, one in a loop | process-bound, in `scripts/control.sh` | pending CI |
+| `smoke-control.sh` | 7. steady, and the slot count is raised only by a new limit above it | 87 s | 12% | 7 `control.sh` runs | process-bound, in `scripts/control.sh` | pending CI |
+| `smoke-control.sh` | 9. report only decides the same and changes nothing | 163 s | 22% | 3 `control.sh` lines over the scenarios, with report-only runs | process-bound, in `scripts/control.sh` | pending CI |
+| `smoke-control.sh` | 12. unusable config values fall back | 143 s | 19% | 6 `control.sh` lines in 4 loops over bad values | process-bound, in `scripts/control.sh` | pending CI |
+| `smoke-control.sh` | the other 9 sections | 200 s together, at most 41 s each | 27% | `control.sh` runs | process-bound | below 60 s each |
+| `test-spec-template.sh` (720 s) | the lint checks the headings of specs from iteration 40 on | 718 s | 100% | one whole run of `tests/lint.sh` and runs of its spec section alone on spec fixtures | lint | pending CI |
+| `test-spec-template.sh` | the other 2 sections | 2 s together | 0% | text checks | other | below 60 s each |
+| `smoke-drive.sh` (1626 s) | (no `== ` headers): the whole step | 1626 s | 100% | 38 `new_case` fixtures (a bare `git init`, a `clone`, a commit and a push each) and runs of `scripts/drive.sh` with `gh` and `claude` stubs | process-bound: the 38 fixtures are about 25 s of `git`, the rest is in `scripts/drive.sh`'s runs | pending CI |
+| `smoke-load.sh` (458 s) | the suggestion and its reason (scenarios b to g and i) | 114 s | 25% | `scripts/load.sh` runs over the fixture scenarios | process-bound, in `scripts/load.sh` | pending CI |
+| `smoke-load.sh` | unusable config values fall back to the default | 103 s | 22% | 3 `load.sh` lines in 3 loops over bad values | process-bound, in `scripts/load.sh` | pending CI |
+| `smoke-load.sh` | an unusable fixture stops the command | 62 s | 14% | `load.sh` runs on broken fixtures | process-bound, in `scripts/load.sh` | pending CI |
+| `smoke-load.sh` | the other 10 sections | 179 s together, at most 47 s each | 39% | `load.sh` runs | process-bound | below 60 s each |
 
 **Steps in CI** (one row per step of the job's list; `t` is decision 5's input; the Git Bash job's `Times:` blocks,
-before and after, and the Ubuntu job's time for the same step):
+before and after, and the Ubuntu job's time for the same step; the Ubuntu times are those of the job
+`bash scripts smoke tests` of the same run, `smoke-json.sh` from its own step):
 
 | Step | Git Bash before, `t` (45235773214) | Part | Git Bash after (final run) | Ubuntu (45235773214) |
 |---|---|---|---|---|
+| `smoke-json.sh` | 16s | 7 | pending | 1s |
+| `smoke-hook.sh` | 1s | 7 | pending | 0s |
+| `smoke-release.sh` | 13m10s | 5 | pending | 1m50s |
+| `smoke-slot.sh` | 25m43s | 1 | pending | 1m33s |
+| `smoke-render.sh` | 34s | 7 | pending | 2s |
+| `smoke-validate.sh` | 12m48s | 6 | pending | 1m49s |
+| `smoke-status.sh` | 18m29s | 2 | pending | 2m06s |
+| `smoke-template-board.sh` | 59s | 7 | pending | 3s |
+| `smoke-models.sh` | 15s | 7 | pending | 1s |
+| `smoke-load.sh` | 5m13s | 7 | pending | 15s |
+| `smoke-room.sh` | 58s | 7 | pending | 11s |
+| `smoke-control.sh` | 8m49s | 7 | pending | 24s |
+| `smoke-dashboard.sh` | 3m28s | 7 | pending | 8s |
+| `smoke-panel.sh` | 1m54s | 7 | pending | 4s |
+| `smoke-stages.sh` | 21s | 7 | pending | 2s |
+| `smoke-check.sh` | 16m44s | 3 | pending | 1m05s |
+| `test-lintcopy-output.sh` | 34m40s | none (decision 3) | not run | 3m13s |
+| `test-lint-pipefail.sh` | 10s | 7 | pending | 0s |
+| `test-release-resume.sh` | 41s | 7 | pending | 2s |
+| `test-release-low-defects.sh` | 42s | 7 | pending | 2s |
+| `test-json-bom.sh` | 1s | 7 | pending | 0s |
+| `test-render-quoting.sh` | 4s | 7 | pending | 0s |
+| `test-changelog-refs.sh` | 0s | 7 | pending | 0s |
+| `test-check-skill.sh` | 0s | 7 | pending | 0s |
+| `test-status-controls.sh` | 9s | 7 | pending | 1s |
+| `test-worker-merge.sh` | 0s | 7 | pending | 0s |
+| `test-script-modes.sh` | 4s | 7 | pending | 1s |
+| `test-fix-pick.sh` | 0s | 7 | pending | 0s |
+| `test-changelog-coverage.sh` | 1s | 7 | pending | 0s |
+| `test-json-speed.sh` | 4s | 7 | pending | 2s |
+| `test-mktemp-template.sh` | 19s | 7 | pending | 1s |
+| `test-skill-config-fallback.sh` | 13s | 7 | pending | 1s |
+| `test-slot-number.sh` | 25s | 7 | pending | 2s |
+| `test-board-listing.sh` | 5s | 7 | pending | 0s |
+| `test-resume-stuck.sh` | 1s | 7 | pending | 1s |
+| `test-story-dedup.sh` | 0s | 7 | pending | 0s |
+| `test-interrupt-docs.sh` | 2s | 7 | pending | 0s |
+| `test-spec-template.sh` | 6m37s | 7 | pending | 58s |
+| `smoke-guard.sh` | 1m56s | 7 | pending | 5s |
+| `test-watch-checks.sh` | 8s | 7 | pending | 1s |
+| `test-guard-rules.sh` | 16m19s | 4 | pending | 48s |
+| `smoke-drive.sh` | 6m10s | 7 | pending | 43s |
+| `smoke-gate.sh` | 2m21s | 7 | pending | 6s |
+| `smoke-history.sh` | 1m28s | 7 | pending | 4s |
+| `test-ci-summary.sh` | 7s | 7 | pending | 1s |
+| `test-baseconfig-pathconv.sh` | 4s | 7 | pending | 0s |
+| `test-restricted-path-git.sh` | 7s | 7 | pending | 1s |
+| `test-slot-low-defects.sh` | 48s | 7 | pending | 2s |
 
-**Parts** (decision 5; one row per part):
+**Parts** (decision 5; one row per part). Rule 1 gives the six alone parts of the Facts. Rule 2 gives `P` = 1: the
+other 41 steps sum to 45m35s, under 48m00s, and the largest of them, `smoke-control.sh`, is 8m49s, under 12m00s. So
+`N` is 7 (rule 3), not the "about 3" packed parts the spec guessed before the measurement.
 
 | Part | Steps | Sum of `t` | Largest `t` | Estimate | `Wall time:` (final run) | Job time (final run) |
 |---|---|---|---|---|---|---|
+| 1 | `smoke-slot.sh` | 25m43s | 25m43s | 25m43s | pending | pending |
+| 2 | `smoke-status.sh` | 18m29s | 18m29s | 18m29s | pending | pending |
+| 3 | `smoke-check.sh` | 16m44s | 16m44s | 16m44s | pending | pending |
+| 4 | `test-guard-rules.sh` | 16m19s | 16m19s | 16m19s | pending | pending |
+| 5 | `smoke-release.sh` | 13m10s | 13m10s | 13m10s | pending | pending |
+| 6 | `smoke-validate.sh` | 12m48s | 12m48s | 12m48s | pending | pending |
+| 7 | the other 41 steps of the list, in list order | 45m35s | 8m49s (`smoke-control.sh`) | 11m24s | pending | pending |
 
-followed by one line: the chain of the final run (decision 2), with its run id.
+The chain of the final run (decision 2): pending (run id pending).
 
-**Summary paragraph**: which sections cost the most, and why, in at most eight sentences.
+**Summary paragraph**: The costliest sections are the whole lints on a copy of the repository: two in each of
+`smoke-status.sh`, `smoke-release.sh` and `smoke-validate.sh` (about 620 s each here, 69% to 96% of those steps), 34
+runs of one lint section in `smoke-check.sh` (1396 s, 89%), and one in `test-spec-template.sh` (718 s); they are
+lint-bound, and the lint itself starts many processes. Next comes `test-guard-rules.sh`, whose two rule sections
+(1053 s and 627 s) start about 26 000 subshells and one `scripts/guard.sh` run per span: process-bound, the first in
+the test, the second mostly in the script. `smoke-slot.sh` has no single large section: six sections of 157 s to 507
+s, all runs of `scripts/slot.sh` and `git`, are 79% of its 2185 s, process-bound, with the interruption polls as the
+only waits. `smoke-control.sh`, `smoke-load.sh` and `smoke-drive.sh` spend their time in runs of their scripts. One
+process costs 26 ms (a subshell) to 79 ms (`git`) here, which is why the steps are much slower in Git Bash than on
+Ubuntu (7 to 20 times for the seven slowest). By the estimates, the split alone leaves parts 1 to 4 over the 14m00s of
+decision 2 and parts 5 and 6 close to it, so decision 4's rounds are expected to be needed on those parts (pending the
+pull request's CI run).
 
 ## Decisions
 
