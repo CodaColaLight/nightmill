@@ -255,10 +255,15 @@ rules() {
     for gw in '    name: Git Bash smoke tests (Windows, not blocking)' '    needs: smoke-gitbash-part' '    if: always()' '    runs-on: ubuntu-latest'; do
       grep -qxF -- "$gw" <<<"$gfblock" || { gbad="missing: ${gw#    }"; break; }
     done
-    [ -n "$gbad" ] || grep -qE '^ *PARTS: \$\{\{ needs\.smoke-gitbash-part\.result \}\}$' <<<"$gfblock" ||
+    if [ -n "$gbad" ]; then
+      :
+    elif ! grep -qE '^ *PARTS: \$\{\{ needs\.smoke-gitbash-part\.result \}\}$' <<<"$gfblock"; then
       gbad='missing: PARTS: ${{ needs.smoke-gitbash-part.result }}'
-    [ -n "$gbad" ] || grep -qE '^ *\[ "\$PARTS" = success \] \|\| \{' <<<"$gfblock" || gbad='missing: [ "$PARTS" = success ] || {'
-    [ -n "$gbad" ] || ! grep -qF 'tests/check.sh' <<<"$gfblock" || gbad="it runs tests/check.sh"
+    elif ! grep -qE '^ *\[ "\$PARTS" = success \] \|\| \{' <<<"$gfblock"; then
+      gbad='missing: [ "$PARTS" = success ] || {'
+    elif grep -qF 'tests/check.sh' <<<"$gfblock"; then
+      gbad="it runs tests/check.sh"
+    fi
   fi
   [ -z "$gbad" ] || fl "the Git Bash job is malformed ($gbad)"
 
