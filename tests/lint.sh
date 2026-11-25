@@ -1544,8 +1544,9 @@ echo "== CI selects the steps a pull request affects"
 # Iteration 60, decision 8: on a pull request every smoke job runs tests/check.sh --affected --within <its list>, on
 # every other event --only <its list>, through one workflow variable (1); every job starts on every event, so the
 # three required names always report: no path filter on 'on:' (2), no 'if:' on a required job or its steps but the
-# if: always() of smoke-powershell (3); the smoke jobs fetch the history, so origin/main exists (4). One awk pass
-# (bug #270: no process per line); it assumes the block style ci.yml uses (jobs at 2 spaces, job keys at 4).
+# if: always() of smoke-powershell and smoke-gitbash (3); the smoke jobs fetch the history, so origin/main exists
+# (4). One awk pass (bug #270: no process per line); it assumes the block style ci.yml uses (jobs at 2 spaces, job
+# keys at 4).
 ci_sel_env="  CHECK_SELECT: \${{ github.event_name == 'pull_request' && '--affected --within' || '--only' }}"
 while IFS= read -r l; do
   case $l in
@@ -1563,7 +1564,7 @@ done < <(LC_ALL=C awk -v want="$ci_sel_env" '
   # the jobs
   blk == "jobs:" && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
   blk != "jobs:" { job = "" }
-  job != "" && /^    if:/ { if (!(job == "smoke-powershell" && $0 == "    if: always()") && !bad[job]++) print "if " job }
+  job != "" && /^    if:/ { if (!((job == "smoke-powershell" || job == "smoke-gitbash") && $0 == "    if: always()") && !bad[job]++) print "if " job }
   job != "" && /^      +(- )?if:/ && (job == "lint" || job == "smoke-bash" || job == "smoke-powershell-part") && !bad[job]++ { print "if " job }
   job != "" && /^[[:space:]]+fetch-depth: 0[[:space:]]*$/ { depth[job] = 1 }
   END {

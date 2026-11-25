@@ -99,19 +99,53 @@ jobs:
             | bash tests/ci-jobs-summary.sh --parts 'PowerShell smoke part ' --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             >> "$GITHUB_STEP_SUMMARY"
 
-  smoke-gitbash:
-    # The bash steps in Git Bash on a Windows runner (iteration 64; decision record 0004, migration step 1). Not a
-    # required check, and its check step does not fail the job, until a later iteration makes it required.
-    name: Git Bash smoke tests (Windows, not blocking)
+  smoke-gitbash-part:
+    # The bash steps in Git Bash on Windows runners, in parts (iterations 64 and 66; decision record 0004, migration
+    # step 1). Not a required check, and its check step does not fail the part: the job smoke-gitbash below fails
+    # unless every part succeeded.
+    name: Git Bash smoke part ${{ matrix.part }} of 7
     runs-on: windows-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: 1
+            only: smoke-slot.sh
+          - part: 2
+            only: smoke-status.sh
+          - part: 3
+            only: smoke-check.sh
+          - part: 4
+            only: test-guard-rules.sh
+          - part: 5
+            only: smoke-release.sh
+          - part: 6
+            only: smoke-validate.sh
+          - part: 7
+            only: smoke-json.sh,smoke-hook.sh,smoke-render.sh,smoke-template-board.sh,smoke-models.sh,smoke-load.sh,smoke-room.sh,smoke-control.sh,smoke-dashboard.sh,smoke-panel.sh,smoke-stages.sh,test-lint-pipefail.sh,test-release-resume.sh,test-release-low-defects.sh,test-json-bom.sh,test-render-quoting.sh,test-changelog-refs.sh,test-check-skill.sh,test-status-controls.sh,test-worker-merge.sh,test-script-modes.sh,test-fix-pick.sh,test-changelog-coverage.sh,test-json-speed.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,test-board-listing.sh,test-resume-stuck.sh,test-story-dedup.sh,test-interrupt-docs.sh,test-spec-template.sh,smoke-guard.sh,test-watch-checks.sh,smoke-drive.sh,smoke-gate.sh,smoke-history.sh,test-ci-summary.sh,test-baseconfig-pathconv.sh,test-restricted-path-git.sh,test-slot-low-defects.sh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - shell: bash
         continue-on-error: true
-        run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-json.sh,smoke-hook.sh,smoke-release.sh,smoke-slot.sh,smoke-render.sh,smoke-validate.sh,smoke-status.sh,smoke-template-board.sh,smoke-models.sh,smoke-load.sh,smoke-room.sh,smoke-control.sh,smoke-dashboard.sh,smoke-panel.sh,smoke-stages.sh,smoke-check.sh,test-lintcopy-output.sh,test-lint-pipefail.sh,test-release-resume.sh,test-release-low-defects.sh,test-json-bom.sh,test-render-quoting.sh,test-changelog-refs.sh,test-check-skill.sh,test-status-controls.sh,test-worker-merge.sh,test-script-modes.sh,test-fix-pick.sh,test-changelog-coverage.sh,test-json-speed.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,test-board-listing.sh,test-resume-stuck.sh,test-story-dedup.sh,test-interrupt-docs.sh,test-spec-template.sh,smoke-guard.sh,test-watch-checks.sh,test-guard-rules.sh,smoke-drive.sh,smoke-gate.sh,smoke-history.sh,test-ci-summary.sh,test-baseconfig-pathconv.sh,test-restricted-path-git.sh,test-slot-low-defects.sh
+        run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}
+
+  smoke-gitbash:
+    # The Git Bash parts together (iteration 66). Not a required check until iteration 65 makes it one.
+    name: Git Bash smoke tests (Windows, not blocking)
+    needs: smoke-gitbash-part
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every Git Bash part succeeded
+        env:
+          PARTS: ${{ needs.smoke-gitbash-part.result }}
+        run: |
+          echo "the Git Bash parts: $PARTS"
+          [ "$PARTS" = success ] || { echo "FAIL: a Git Bash part did not succeed ($PARTS)"; exit 1; }
 
   validate:
     name: claude plugin validate (not blocking)

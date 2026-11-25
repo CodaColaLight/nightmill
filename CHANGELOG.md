@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Iteration 66 (#382): the Git Bash CI job runs in parts on several Windows runners at once, the longest steps alone
+  in theirs, and a final job, Git Bash smoke tests (Windows, not blocking), fails unless every part succeeded; the
+  whole job finishes sooner. The slowest bash steps are measured section by section in Git Bash on Windows (the spec
+  holds the numbers), and test-lintcopy-output.sh, which nests whole runs of three other steps, leaves the Git Bash job
+  (the Ubuntu bash job still runs it). No config key.
+
 ## 0.9.0 (2026-11-22)
 
 - Iteration 64 (#361): decision record 0004 is accepted (bash only, with Git Bash on Windows), and CI gains its first
