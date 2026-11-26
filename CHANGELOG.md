@@ -4,10 +4,10 @@
 
 - Iteration 65 (#363): the invariant Both shells becomes Bash only (decision record 0004, step 2): every script is
   bash and runs in bash on Linux and macOS and in Git Bash on Windows. The PowerShell files are frozen, not removed:
-  they still ship and work, the lint fails on a new one, and it no longer asks a new bash script or smoke test for a
-  PowerShell twin. verification.platform keeps its values and default, but windows now runs the bash tests in Git
-  Bash and skips the PowerShell tests, as unix does; all still runs both. A Windows project now needs Git for Windows
-  (which brings Git Bash) for the check, as its hooks already do.
+  they still ship and work, and no new one is added (a rule for people and reviewers; the lint check for it, and the
+  end of the lint's twin rules, come in a follow-up). verification.platform keeps its values and default, but windows
+  now runs the bash tests in Git Bash and skips the PowerShell tests, as unix does; all still runs both. A Windows
+  project now needs Git for Windows (which brings Git Bash) for the check, as its hooks already do.
 - Iteration 66 (#382): the Git Bash CI job runs in parts on several Windows runners at once, the longest steps alone
   in theirs, and a final job, Git Bash smoke tests (Windows, not blocking), fails unless every part succeeded; the
   whole job finishes sooner. The slowest bash steps are measured section by section in Git Bash on Windows (the spec
