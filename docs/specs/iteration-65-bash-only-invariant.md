@@ -1,6 +1,6 @@
 # Iteration 65: the Both shells invariant becomes Bash only, and verification.platform windows runs the bash tests
 
-Status: draft, awaiting approval (#363)
+Status: delivered in iteration 65 (PR #389)
 
 Story #363, epic #337 (fast verification loop): step 2 of the migration outline of decision record 0004 (accepted in
 #361; step 1 was iteration 64, and iteration 66 split its Git Bash job into parts). The invariant **Both shells**
