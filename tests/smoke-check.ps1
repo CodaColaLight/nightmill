@@ -218,10 +218,10 @@ try {
   if ((Head-Line $r.Out) -cne "check: full, 1 at a time (UPDATE_PANEL_FIXTURES is set)") { Fail "config UPDATE: the header: $($r.Out)" }
 
   Write-Host "== the platform from the config"
-  # verification.platform (iteration 56): windows skips the bash steps, unix skips the ps steps, the lint and the claude steps
-  # always run, -Only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
+  # verification.platform (iteration 56, meaning changed in iteration 65): windows and unix both skip the ps steps (the scripts are
+  # bash only; on Windows the bash tests run in Git Bash), all runs both, the lint and the claude steps always run, -Only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
   $plog = "$tf/platform.log"
-  $WIN_LINE = "SKIPPED: bash tests (verification.platform is windows)"
+  $WIN_LINE = "SKIPPED: PowerShell tests (verification.platform is windows)"
   $UNIX_LINE = "SKIPPED: PowerShell tests (verification.platform is unix)"
   $PNOTE = "check: verification.platform must be windows, unix or all; running both families"
   function Write-Plat([string]$reasonB, [string]$reasonP) {
@@ -241,14 +241,15 @@ try {
   }
   function Skipped-Lines([string]$text) { @($text -split "`n" | Where-Object { $_ -clike "SKIPPED:*" }) }
   Write-Plat "" ""
-  # windows: the PowerShell tests only
+  # windows: the bash tests (in Git Bash), not the PowerShell tests
   $r = Plat-Run '"windows"'
   if ($r.Code -ne 0) { Fail "platform windows: exit $($r.Code): $($r.Out) $($r.Err)" }
-  if ($r.Log -cne "l,p,c,") { Fail "platform windows: the steps that ran: $($r.Log)" }
+  if ($r.Log -cne "l,b,c,") { Fail "platform windows: the steps that ran: $($r.Log)" }
   if (@(Skipped-Lines $r.Out) -join "|" -cne $WIN_LINE) { Fail "platform windows: the SKIPPED lines are not just '$WIN_LINE': $($r.Out)" }
-  if (Has-Line $r.Out "== b") { Fail "platform windows: a section for the skipped bash step: $($r.Out)" }
+  if (Has-Line $r.Out "== p") { Fail "platform windows: a section for the skipped ps step: $($r.Out)" }
   if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform windows: the last line: $($r.Out)" }
-  # unix: the bash tests only
+  if ($r.Err -ne "") { Fail "platform windows: standard error is not empty: $($r.Err)" }
+  # unix: the bash tests, not the PowerShell tests
   $r = Plat-Run '"unix"'
   if ($r.Code -ne 0) { Fail "platform unix: exit $($r.Code): $($r.Out) $($r.Err)" }
   if ($r.Log -cne "l,b,c,") { Fail "platform unix: the steps that ran: $($r.Log)" }
@@ -257,22 +258,23 @@ try {
   if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform unix: the last line: $($r.Out)" }
   # the platform's reason replaces the step's own reason
   Write-Plat "" "no pwsh here"
+  $r = Plat-Run '"windows"'
+  if ($r.Code -ne 0) { Fail "platform windows, p with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,b,c,") { Fail "platform windows, p with a reason: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "platform windows, p with a reason: no platform line: $($r.Out)" }
+  if (Has-Line $r.Out "SKIPPED: no pwsh here") { Fail "platform windows, p with a reason: the step's own reason was printed: $($r.Out)" }
   $r = Plat-Run '"unix"'
   if ($r.Code -ne 0) { Fail "platform unix, p with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
   if ($r.Log -cne "l,b,c,") { Fail "platform unix, p with a reason: the steps that ran: $($r.Log)" }
   if (-not (Has-Line $r.Out $UNIX_LINE)) { Fail "platform unix, p with a reason: no platform line: $($r.Out)" }
   if (Has-Line $r.Out "SKIPPED: no pwsh here") { Fail "platform unix, p with a reason: the step's own reason was printed: $($r.Out)" }
+  # a skipped step of the kept family keeps its own reason, and both lines print in list order
   Write-Plat "other reason" ""
   $r = Plat-Run '"windows"'
-  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "platform windows, b with a reason: no platform line: $($r.Out)" }
-  if (Has-Line $r.Out "SKIPPED: other reason") { Fail "platform windows, b with a reason: the step's own reason was printed: $($r.Out)" }
-  # a skipped step of the kept family keeps its own reason, and both lines print in list order
-  Write-Plat "" "no pwsh here"
-  $r = Plat-Run '"windows"'
-  if ($r.Code -ne 0) { Fail "platform windows, p with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
-  if ($r.Log -cne "l,c,") { Fail "platform windows, p with a reason: the steps that ran: $($r.Log)" }
-  if (@(Skipped-Lines $r.Out) -join "|" -cne "$WIN_LINE|SKIPPED: no pwsh here") { Fail "platform windows, p with a reason: the SKIPPED lines or their order: $($r.Out)" }
-  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform windows, p with a reason: the last line: $($r.Out)" }
+  if ($r.Code -ne 0) { Fail "platform windows, b with a reason: exit $($r.Code): $($r.Out) $($r.Err)" }
+  if ($r.Log -cne "l,c,") { Fail "platform windows, b with a reason: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out) -join "|" -cne "SKIPPED: other reason|$WIN_LINE") { Fail "platform windows, b with a reason: the SKIPPED lines or their order: $($r.Out)" }
+  if ((Last-Line $r.Out) -cne "ALL CHECKS PASSED") { Fail "platform windows, b with a reason: the last line: $($r.Out)" }
   # all and no key: today's behaviour, both families, nothing skipped, nothing on standard error
   Write-Plat "" ""
   $r = Plat-Run '"all"'
@@ -299,8 +301,8 @@ try {
   $QUICK_LAST = "QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)"
   $r = Plat-Run '"windows"' "-Quick"
   if ($r.Code -ne 0) { Fail "platform windows, quick: exit $($r.Code): $($r.Out) $($r.Err)" }
-  if ($r.Log -cne "l,") { Fail "platform windows, quick: the steps that ran: $($r.Log)" }
-  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "platform windows, quick: no platform line: $($r.Out)" }
+  if ($r.Log -cne "l,b,") { Fail "platform windows, quick: the steps that ran: $($r.Log)" }
+  if (@(Skipped-Lines $r.Out).Count -ne 0) { Fail "platform windows, quick: a SKIPPED line: $($r.Out)" }
   if ((Last-Line $r.Out) -cne $QUICK_LAST) { Fail "platform windows, quick: the last line: $($r.Out)" }
   $r = Plat-Run '"unix"' "-Quick"
   if ($r.Code -ne 0) { Fail "platform unix, quick: exit $($r.Code): $($r.Out) $($r.Err)" }
@@ -399,8 +401,8 @@ try {
   # a shared file with a changed script: the full check under the platform, plus the steps the script selected
   $r = Aff-Run "scripts/lib/x.sh`nscripts/foo.sh`n"
   if ($r.Code -ne 0) { Fail "affected, shared and script: exit $($r.Code): $($r.Out) $($r.Err)" }
-  if ($r.Log -cne "l,b1,p1,p2,c,") { Fail "affected, shared and script: the steps that ran: $($r.Log)" }
-  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "affected, shared and script: no platform line for b2: $($r.Out)" }
+  if ($r.Log -cne "l,b1,b2,p1,c,") { Fail "affected, shared and script: the steps that ran: $($r.Log)" }
+  if (-not (Has-Line $r.Out $WIN_LINE)) { Fail "affected, shared and script: no platform line for p2: $($r.Out)" }
   if ((Head-Line $r.Out) -cne "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running the full check") { Fail "affected, shared and script: the first line: $($r.Out)" }
   Aff-Cfg "-"
   # a failing step: the last line and the exit code say it was not the full check

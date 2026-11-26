@@ -1344,6 +1344,11 @@ pf=properties.verification.properties.platform
 [ "$(json_get "$pf.type")" = string ] || { echo "FAIL: schema: verification.platform is not a string"; fail=1; }
 [ "$(json_get "$pf.default")" = all ] || { echo "FAIL: schema: verification.platform default is not all"; fail=1; }
 [ -n "$(json_get "$pf.description")" ] || { echo "FAIL: schema: verification.platform has no description"; fail=1; }
+# Iteration 65 (#363): windows runs the bash tests in Git Bash
+case "$(json_get "$pf.description")" in
+  *'windows runs the bash tests in Git Bash'*) ;;
+  *) echo "FAIL: schema: verification.platform's description does not say windows runs the bash tests in Git Bash"; fail=1 ;;
+esac
 for j in 0 1 2; do
   case $j in 0) m=all ;; 1) m=windows ;; 2) m=unix ;; esac
   [ "$(json_get "$pf.enum[$j]")" = "$m" ] || { echo "FAIL: schema: verification.platform enum[$j] is not $m"; fail=1; }
@@ -1936,6 +1941,31 @@ echo "== the driver ends the background process a step leaves behind"
 # process stayed alive. tests/test-drive-leftover.sh runs that case (read from the smoke test) alone. The lint copies
 # of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-drive-leftover.sh "$PWD" || fail=1
+
+echo "== the invariant is Bash only (#363)"
+# Iteration 65 (#363, decision record 0004 step 2): the invariant Both shells becomes Bash only, one text in the project
+# config, the two issue forms (rendered from the config), the project instructions and CONTRIBUTING.md. Earlier issues
+# keep their old checkbox text; the files below do not.
+bash_only='Bash only — every script is bash and behaves the same in bash on Linux and macOS and in Git Bash on Windows; the PowerShell files are frozen, and no new one is added'
+json_load .claude/nightmill.json
+bo_n=$(json_len invariants); bo_have=0; bo_both=0; bo_i=0
+while [ "$bo_i" -lt "$bo_n" ]; do
+  bo_v=$(json_get "invariants[$bo_i]")
+  [ "$bo_v" = "$bash_only" ] && bo_have=$((bo_have + 1))
+  case "$bo_v" in 'Both shells'*) bo_both=$((bo_both + 1)) ;; esac
+  bo_i=$((bo_i + 1))
+done
+[ "$bo_have" = 1 ] || { echo "FAIL: .claude/nightmill.json: no invariant is the Bash only text"; fail=1; }
+[ "$bo_both" = 0 ] || { echo "FAIL: .claude/nightmill.json: an invariant still begins with Both shells"; fail=1; }
+for bo_f in story.yml bug.yml; do
+  bo_p=.github/ISSUE_TEMPLATE/$bo_f
+  [ "$(grep -cxF -- "        - label: \"$bash_only\"" "$bo_p" 2>/dev/null || true)" = 1 ] || { echo "FAIL: $bo_p does not carry the Bash only invariant"; fail=1; }
+  if grep -qF -- 'Both shells —' "$bo_p" 2>/dev/null; then echo "FAIL: $bo_p still carries the Both shells invariant"; fail=1; fi
+done
+for bo_p in .claude/CLAUDE.md CONTRIBUTING.md; do
+  grep -q -- '^- \*\*Bash only\.\*\*' "$bo_p" 2>/dev/null || { echo "FAIL: $bo_p has no Bash only rule"; fail=1; }
+  if grep -qF -- '**Two shells.**' "$bo_p" 2>/dev/null; then echo "FAIL: $bo_p still has the Two shells rule"; fail=1; fi
+done
 
 echo "== shell"
 for f in scripts/*.sh scripts/lib/*.sh tests/*.sh; do

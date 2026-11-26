@@ -26,9 +26,11 @@ twice (installed and `--plugin-dir`) in one session; they shadow each other.
 
 - **Generic.** `tests/lint.sh` fails on any word from the private word list (`tests/forbidden-words.local.txt`): the name of the project
   nightmill was extracted from, its maintainer, its domain. That holds for issues and specs too.
-- **Two shells.** A change to a script in `scripts/` is made in both the `.ps1` and the `.sh`, with a
-  smoke step in both `tests/smoke-*.ps1` and `tests/smoke-*.sh`. `tests/check.sh` runs what the machine
-  can run and lists what it skipped; CI runs all of it (bash on Ubuntu, PowerShell on Windows).
+- **Bash only.** A script in `scripts/` is bash and runs in bash on Linux and macOS and in Git Bash on Windows
+  (decision record 0004); a change to one has a smoke step in `tests/smoke-*.sh`. The PowerShell files are frozen
+  until they are removed (#365): no new one is added (the lint fails on it), and an existing one changes only to fix
+  a bug in it or to keep its own test green. `tests/check.sh` runs what the machine can run and lists what it
+  skipped; CI runs all of it (bash on Ubuntu; on Windows the bash tests in Git Bash and the PowerShell tests).
 - **Config keys are a contract.** A new key goes into `schema/nightmill.schema.json` with a description
   and a default, into `templates/nightmill.example.json`, and into the README's configuration table.
   Renaming or removing one is a story, never a bug fix.

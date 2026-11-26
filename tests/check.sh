@@ -27,8 +27,9 @@
 #                  changed paths select (the lint only when it is named; verification.platform does not apply). Where
 #                  --affected alone would run the full check, it runs --only a,b instead. With --summary, the section
 #                  also says which steps ran, which were left out, and why.
-# verification.platform (iteration 56) picks the test family of a full or quick run: windows skips the bash steps,
-# unix skips the ps steps, all (or no key) runs both; the lint and the claude steps run on every platform, and the
+# verification.platform (iteration 56, iteration 65) picks the test families of a full or quick run: windows and unix
+# skip the ps steps (the scripts are bash only, decision record 0004: on Windows the bash tests run in Git Bash), all
+# (or no key) runs both; the lint and the claude steps run on every platform, and the
 # skipped family is listed as SKIPPED. --only ignores the key and does not read it; --affected does not apply it to
 # a step that a changed path selected (so a changed script runs its tests in both shells).
 #   --jobs N       the limit for this run, 1 to 16, not capped
@@ -425,7 +426,8 @@ if [ "$mode" = affected ]; then
   fi
 fi
 
-# The platform (iteration 56): verification.platform windows skips the bash steps, unix the ps steps; the lint and
+# The platform (iteration 56, iteration 65): verification.platform windows and unix skip the ps steps (the scripts are
+# bash only, decision record 0004: on Windows the bash tests run in Git Bash), all (or no key) runs both; the lint and
 # the claude steps belong to neither family. --only does not read it, nor does a selective --affected; when
 # --affected runs the full check, the key does not apply to a step that a changed path selected.
 if [ "$mode" != only ] && [ "$mode" != affected ] && [ -f .claude/nightmill.json ] &&
@@ -433,7 +435,7 @@ if [ "$mode" != only ] && [ "$mode" != affected ] && [ -f .claude/nightmill.json
   # json_get gives a number or a boolean as its text, which is never one of the three words
   plat=$(json_get verification.platform); plat_kind=""; plat_reason=""
   case $plat in
-    windows) plat_kind=bash; plat_reason="bash tests (verification.platform is windows)" ;;
+    windows) plat_kind=ps; plat_reason="PowerShell tests (verification.platform is windows)" ;;
     unix) plat_kind="ps"; plat_reason="PowerShell tests (verification.platform is unix)" ;;
     all) ;;
     *) echo "check: verification.platform must be windows, unix or all; running both families" >&2 ;;
