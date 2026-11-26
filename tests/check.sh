@@ -435,7 +435,7 @@ if [ "$mode" != only ] && [ "$mode" != affected ] && [ -f .claude/nightmill.json
   # json_get gives a number or a boolean as its text, which is never one of the three words
   plat=$(json_get verification.platform); plat_kind=""; plat_reason=""
   case $plat in
-    windows) plat_kind=ps; plat_reason="PowerShell tests (verification.platform is windows)" ;;
+    windows) plat_kind="ps"; plat_reason="PowerShell tests (verification.platform is windows)" ;;
     unix) plat_kind="ps"; plat_reason="PowerShell tests (verification.platform is unix)" ;;
     all) ;;
     *) echo "check: verification.platform must be windows, unix or all; running both families" >&2 ;;
