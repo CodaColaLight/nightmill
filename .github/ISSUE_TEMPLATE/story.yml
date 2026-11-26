@@ -51,7 +51,7 @@ body:
           required: false
         - label: "Fixed flow — the eight statuses and who sets them change only with a decision record"
           required: false
-        - label: "Both shells — every script exists in PowerShell and bash and behaves the same"
+        - label: "Bash only — every script is bash and behaves the same in bash on Linux and macOS and in Git Bash on Windows; the PowerShell files are frozen, and no new one is added"
           required: false
         - label: "Config-driven — a project-specific value lives in .claude/nightmill.json, never in a skill or script"
           required: false

@@ -23,7 +23,7 @@
   "invariants": [
     "Generic — no word from the private word list anywhere in the repository",
     "Fixed flow — the eight statuses and who sets them change only with a decision record",
-    "Both shells — every script exists in PowerShell and bash and behaves the same",
+    "Bash only — every script is bash and behaves the same in bash on Linux and macOS and in Git Bash on Windows; the PowerShell files are frozen, and no new one is added",
     "Config-driven — a project-specific value lives in .claude/nightmill.json, never in a skill or script",
     "Compatible — slot markers and config keys stay readable by the previous version"
   ],
@@ -38,7 +38,7 @@
     "check": "bash tests/check.sh",
     "manualCheckPaths": ["skills", "agents", "hooks"],
     "manualCheckText": "Run the changed skill in a real project with `claude --plugin-dir <this checkout>` and watch it take the right steps",
-    "benchRule": "A script that runs in the smoke tests keeps its scenario there; a new script flag gets a smoke step in both shells",
+    "benchRule": "A script that runs in the smoke tests keeps its scenario there; a new script flag gets a smoke step in the bash tests",
     "checkJobs": 4,
     "platform": "windows"
   },

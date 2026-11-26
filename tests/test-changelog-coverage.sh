@@ -42,5 +42,17 @@ for d in skills agents scripts hooks; do
   fi
 done
 
+# (d) iteration 65 (#363): the entry says what a Windows project now needs. The entry is the bullet from its
+# '- Iteration 65 (' line to the next bullet or heading, wherever a release has moved it.
+it65=$(awk '/^- Iteration 65 \(/{on=1; print; next} on && /^(- |## )/{on=0} on' CHANGELOG.md | tr '\n' ' ' | tr -s ' ')
+if [ -z "${it65}" ]; then
+  echo "FAIL: CHANGELOG.md has no entry for iteration 65"
+  fail=1
+else
+  for w in '#363' 'Bash only' 'frozen' 'Git for Windows' 'Git Bash'; do
+    grep -qF -- "${w}" <<<"${it65}" || { echo "FAIL: the iteration 65 entry does not say ${w}"; fail=1; }
+  done
+fi
+
 [ "${fail}" -eq 0 ] && echo "OK: changelog coverage"
 exit "${fail}"

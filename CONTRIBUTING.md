@@ -47,12 +47,12 @@ The full check runs the lint, the bash smoke tests, the PowerShell smoke tests (
 `verification.checkJobs` steps at once (default 4, never more than the processors; `--jobs 1` runs them one after
 another) and lists what it skipped. `bash tests/check.sh --quick` runs the lint and the bash smoke tests only: it is
 for the loop while you write code and is never the check before a commit or a pull request. CI runs all of them, the
-bash ones on Ubuntu and the PowerShell ones on Windows, so a skipped test is not a reason to leave a change untested.
+bash ones on Ubuntu and in Git Bash on Windows, the PowerShell ones on Windows, so a skipped test is not a reason to leave a change untested.
 
 The rules a change has to keep:
 
-- **Two shells.** Every script exists in PowerShell and in bash and behaves the same, with a smoke step in
-  both test families.
+- **Bash only.** Every script is bash and behaves the same in bash on Linux and macOS and in Git Bash on Windows,
+  with a smoke step in the bash tests. The PowerShell files are frozen: no new one is added.
 - **Config keys are a contract.** A new key goes into the schema with a description and a default, into the
   example file and into the README's configuration table. Renaming or removing a key is a story of its own.
 - **The status flow is fixed.** The eight statuses and who sets them change only with a decision record in

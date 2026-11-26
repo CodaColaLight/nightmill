@@ -393,7 +393,7 @@ The schema documents every key; the short version:
 | `board` | Field names, status names, priority order |
 | `labels`, `areas`, `invariants` | Label scheme, area options, the project's rules (rendered into the issue forms) |
 | `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
-| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it), and which test family the check runs (`platform`: `windows`, `unix` or `all`, default `all`, for a check that reads it) |
+| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it), and which test families the check runs (`platform`: `windows` and `unix` run the bash tests, on Windows in Git Bash from Git for Windows; `all` runs the bash and the PowerShell tests; default `all`, for a check that reads it) |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`, an alias the Agent tool takes: `sonnet`, `opus`, `haiku` or `fable`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
@@ -1152,9 +1152,9 @@ PowerShell step runs in no part or in two. On a pull request each CI smoke job r
 when a path is shared or unknown; a push to `main` runs every step. Every required job runs on every event. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
 appends the check's wall time and its five slowest steps to a Markdown file; each CI run's summary page shows every
 job's wall time and its five slowest workflow steps (read from the jobs API by the final job, the one job with
-`actions: read`), and each check's five slowest steps. With `verification.platform` set, `tests/check.sh` runs only
-that platform's tests (the PowerShell tests on `windows`, the bash tests on `unix`), always the lint and the `claude`
-steps, and lists the family it skipped; `--only` ignores the key, and CI runs both families through `--only`.
+`actions: read`), and each check's five slowest steps. With `verification.platform` set to `windows` or `unix`,
+`tests/check.sh` runs the bash tests (in Git Bash on Windows) and not the PowerShell tests, always the lint and the
+`claude` steps, and lists the family it skipped; `--only` ignores the key, and CI runs both families through `--only`.
 `bash tests/check.sh --affected` runs the lint and the tests of the paths changed against `origin/<git.baseBranch>`
 (the map in `tests/check.sh`), the tests of a changed script in both shells; a change to `scripts/lib/` or the check
 itself, or to a path the map does not know, runs the full check. It is enough before a commit and in a fix round; the

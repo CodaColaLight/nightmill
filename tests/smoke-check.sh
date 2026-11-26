@@ -172,10 +172,10 @@ out=$(UPDATE_PANEL_FIXTURES=1 NIGHTMILL_CHECK_STEPS="$tmp/one-step.txt" bash "$r
 [ "$(head -n 1 <<<"$out")" = "check: full, 1 at a time (UPDATE_PANEL_FIXTURES is set)" ] || fail "config UPDATE: the header: $out"
 
 echo "== the platform from the config"
-# verification.platform (iteration 56): windows skips the bash steps, unix skips the ps steps, the lint and the claude steps
-# always run, --only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
+# verification.platform (iteration 56, meaning changed in iteration 65): windows and unix both skip the ps steps (the scripts are
+# bash only; on Windows the bash tests run in Git Bash), all runs both, the lint and the claude steps always run, --only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
 plog="$tmp/platform.log"
-WIN_LINE='SKIPPED: bash tests (verification.platform is windows)'
+WIN_LINE='SKIPPED: PowerShell tests (verification.platform is windows)'
 UNIX_LINE='SKIPPED: PowerShell tests (verification.platform is unix)'
 PNOTE='check: verification.platform must be windows, unix or all; running both families'
 mk_plat() { # mk_plat <reason of b> <reason of p>: the four steps in $tmp/plat.txt
@@ -199,15 +199,16 @@ plat_run() { # plat_run <platform as JSON, or - for no key> <check.sh arguments.
 }
 skipped_lines() { grep -c '^SKIPPED:' <<<"$1" || true; }
 mk_plat "" ""
-# windows: the PowerShell tests only
+# windows: the bash tests (in Git Bash), not the PowerShell tests
 plat_run '"windows"'
 [ "$rc" = 0 ] || fail "platform windows: exit $rc: $out $err"
-[ "$plat_log" = "l,p,c," ] || fail "platform windows: the steps that ran: $plat_log"
+[ "$plat_log" = "l,b,c," ] || fail "platform windows: the steps that ran: $plat_log"
 [ "$(grep -cxF -- "$WIN_LINE" <<<"$out")" = 1 ] || fail "platform windows: not one '$WIN_LINE' line: $out"
 [ "$(skipped_lines "$out")" = 1 ] || fail "platform windows: more SKIPPED lines than the platform's: $out"
-if grep -qx '== b' <<<"$out"; then fail "platform windows: a section for the skipped bash step: $out"; fi
+if grep -qx '== p' <<<"$out"; then fail "platform windows: a section for the skipped ps step: $out"; fi
 [ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows: the last line: $out"
-# unix: the bash tests only
+[ -z "$err" ] || fail "platform windows: standard error is not empty: $err"
+# unix: the bash tests, not the PowerShell tests
 plat_run '"unix"'
 [ "$rc" = 0 ] || fail "platform unix: exit $rc: $out $err"
 [ "$plat_log" = "l,b,c," ] || fail "platform unix: the steps that ran: $plat_log"
@@ -217,22 +218,23 @@ if grep -qx '== p' <<<"$out"; then fail "platform unix: a section for the skippe
 [ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform unix: the last line: $out"
 # the platform's reason replaces the step's own reason
 mk_plat "" "no pwsh here"
+plat_run '"windows"'
+[ "$rc" = 0 ] || fail "platform windows, p with a reason: exit $rc: $out $err"
+[ "$plat_log" = "l,b,c," ] || fail "platform windows, p with a reason: the steps that ran: $plat_log"
+has_line "$out" "$WIN_LINE" || fail "platform windows, p with a reason: no platform line: $out"
+if has_line "$out" 'SKIPPED: no pwsh here'; then fail "platform windows, p with a reason: the step's own reason was printed: $out"; fi
 plat_run '"unix"'
 [ "$rc" = 0 ] || fail "platform unix, p with a reason: exit $rc: $out $err"
 [ "$plat_log" = "l,b,c," ] || fail "platform unix, p with a reason: the steps that ran: $plat_log"
 has_line "$out" "$UNIX_LINE" || fail "platform unix, p with a reason: no platform line: $out"
 if has_line "$out" 'SKIPPED: no pwsh here'; then fail "platform unix, p with a reason: the step's own reason was printed: $out"; fi
+# a skipped step of the kept family keeps its own reason, and both lines print in list order
 mk_plat "other reason" ""
 plat_run '"windows"'
-has_line "$out" "$WIN_LINE" || fail "platform windows, b with a reason: no platform line: $out"
-if has_line "$out" 'SKIPPED: other reason'; then fail "platform windows, b with a reason: the step's own reason was printed: $out"; fi
-# a skipped step of the kept family keeps its own reason, and both lines print in list order
-mk_plat "" "no pwsh here"
-plat_run '"windows"'
-[ "$rc" = 0 ] || fail "platform windows, p with a reason: exit $rc: $out $err"
-[ "$plat_log" = "l,c," ] || fail "platform windows, p with a reason: the steps that ran: $plat_log"
-[ "$(grep '^SKIPPED:' <<<"$out" | tr '\n' '|')" = "$WIN_LINE|SKIPPED: no pwsh here|" ] || fail "platform windows, p with a reason: the SKIPPED lines or their order: $out"
-[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows, p with a reason: the last line: $out"
+[ "$rc" = 0 ] || fail "platform windows, b with a reason: exit $rc: $out $err"
+[ "$plat_log" = "l,c," ] || fail "platform windows, b with a reason: the steps that ran: $plat_log"
+[ "$(grep '^SKIPPED:' <<<"$out" | tr '\n' '|')" = "SKIPPED: other reason|$WIN_LINE|" ] || fail "platform windows, b with a reason: the SKIPPED lines or their order: $out"
+[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows, b with a reason: the last line: $out"
 # all and no key: today's behaviour, both families, nothing skipped, nothing on standard error
 mk_plat "" ""
 plat_run '"all"'
@@ -259,8 +261,8 @@ done
 QUICK_LAST='QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)'
 plat_run '"windows"' --quick
 [ "$rc" = 0 ] || fail "platform windows, quick: exit $rc: $out $err"
-[ "$plat_log" = "l," ] || fail "platform windows, quick: the steps that ran: $plat_log"
-has_line "$out" "$WIN_LINE" || fail "platform windows, quick: no platform line: $out"
+[ "$plat_log" = "l,b," ] || fail "platform windows, quick: the steps that ran: $plat_log"
+[ "$(skipped_lines "$out")" = 0 ] || fail "platform windows, quick: a SKIPPED line: $out"
 [ "$(tail -n 1 <<<"$out")" = "$QUICK_LAST" ] || fail "platform windows, quick: the last line: $out"
 plat_run '"unix"' --quick
 [ "$rc" = 0 ] || fail "platform unix, quick: exit $rc: $out $err"
@@ -361,8 +363,8 @@ mk_aff "" "" ""
 # a shared file with a changed script: the full check under the platform, plus the steps the script selected
 aff_run $'scripts/lib/x.sh\nscripts/foo.sh\n'
 [ "$rc" = 0 ] || fail "affected, shared and script: exit $rc: $out $err"
-[ "$aff_log" = "l,b1,p1,p2,c," ] || fail "affected, shared and script: the steps that ran: $aff_log"
-has_line "$out" "$WIN_LINE" || fail "affected, shared and script: no platform line for b2: $out"
+[ "$aff_log" = "l,b1,b2,p1,c," ] || fail "affected, shared and script: the steps that ran: $aff_log"
+has_line "$out" "$WIN_LINE" || fail "affected, shared and script: no platform line for p2: $out"
 [ "$(head -n 1 <<<"$out")" = "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running the full check" ] || fail "affected, shared and script: the first line: $out"
 aff_cfg -
 # a failing step: the last line and the exit code say it was not the full check
@@ -770,6 +772,8 @@ lint_break platformexample templates/nightmill.example.json 's/"platform": "all"
 lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
 lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'
 lint_break platformcheck tests/check.sh 's/verification\.platform/verification-platform/g' 'FAIL: tests/check.sh does not mention verification.platform'
+# windows runs the bash tests in Git Bash (iteration 65)
+lint_break platformmeaning schema/nightmill.schema.json 's/windows runs the bash tests in Git Bash/windows runs the PowerShell tests/' 'does not say windows runs the bash tests in Git Bash'
 # the map of tests/check.sh (iteration 59, decision 7): every test step and every script is in it
 lint_break mapstep tests/check.sh '/^map [^ ]* smoke-hook\.sh$/d; /^map /{s/,smoke-hook\.sh,/,/; s/,smoke-hook\.sh$//; s/ smoke-hook\.sh,/ /;}' 'no path maps to the step smoke-hook.sh'
 d="$tmp/lint-mapscript"
