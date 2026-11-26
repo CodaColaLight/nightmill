@@ -3,13 +3,14 @@
 Status: draft, awaiting approval (#363)
 
 Story #363, epic #337 (fast verification loop): step 2 of the migration outline of decision record 0004 (accepted in
-#361; step 1 was iteration 64). The invariant **Both shells** becomes **Bash only** (bash on Linux and macOS, Git Bash
-on Windows), with one text in the project config, the project instructions and the issue forms. The PowerShell files
-are frozen: they stay and keep working, but no new one is added, and the lint fails on one; the lint stops asking a new
-bash script or smoke test for a PowerShell twin. `verification.platform` keeps its key, values and default, but
-`windows` now runs the bash tests (in Git Bash) and skips the PowerShell tests, as `unix` does; `all` still runs both. The
-Git Bash CI job of iteration 64 is made blocking and named for the ruleset, which the maintainer changes by hand
-(decision 7, which lands only after a measured green run). Changes `.claude/nightmill.json`, `.claude/CLAUDE.md`,
+#361; step 1 was iteration 64, and iteration 66 split its Git Bash job into parts). The invariant **Both shells**
+becomes **Bash only** (bash on Linux and macOS, Git Bash on Windows), with one text in the project config, the project
+instructions and the issue forms. The PowerShell files are frozen: they stay and keep working, but no new one is
+added, and the lint fails on one; the lint stops asking a new bash script or smoke test for a PowerShell twin.
+`verification.platform` keeps its key, values and default, but `windows` now runs the bash tests (in Git Bash) and
+skips the PowerShell tests, as `unix` does; `all` still runs both. The Git Bash CI jobs of iterations 64 and 66 become
+blocking, and their final job takes the name the maintainer adds to the ruleset by hand (decision 7, which lands only
+after measured green runs within the budget). Changes `.claude/nightmill.json`, `.claude/CLAUDE.md`,
 `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/story.yml`, `.github/ISSUE_TEMPLATE/bug.yml`, `schema/nightmill.schema.json`,
 `README.md`, `CHANGELOG.md`, `tests/check.sh`, `tests/lint.sh`, `tests/test-lint-agreement.sh`,
 `tests/test-lint-agreement-cases.sh`, `tests/smoke-check.sh`, `tests/smoke-check.ps1`, and with decision 7
@@ -35,8 +36,9 @@ previous version with `windows` keeps running the PowerShell tests there; on thi
 value becomes invalid (decision 4).
 
 **The manual check does not apply**: `verification.manualCheckPaths` is `skills`, `agents`, `hooks`, and no file under
-them changes. `skills/init/SKILL.md` still describes the old meaning of `windows` in its question 8; it is left to #364
-(Left). The maintainer's look at the pull request's run stands in (Tests, "On the pull request's run").
+them changes. `skills/init/SKILL.md` still describes the old meaning of `windows` in its question 8; iteration 67
+(#364) changes it (Left). The maintainer's look at the pull request's runs stands in (Tests, "On the pull request's
+run").
 
 **Shells.** This iteration changes the invariant itself. No script in `scripts/` changes. The changed tests are bash
 (`tests/lint.sh`, `tests/test-lint-agreement*.sh`, `tests/test-ci-parts.sh`, `tests/smoke-check.sh`) plus one
@@ -48,53 +50,66 @@ with another that changes the schema.
 
 ## Facts this rests on
 
-Read on `main` at 4bcd383 (`Release 0.9.0 (#369)`) on 2026-11-23. CI runs and pull request #367 read with
-`gh run list`, `gh run view` and `gh pr view` (read only).
+Read on `main` at d3fc83a (`docs: iteration 67 spec (#364) (#385)`) on 2026-11-26. CI runs, pull request #384 and
+issue #382 read with `gh run list`, `gh run view`, `gh pr view` and `gh issue view` (read only).
 
 - **Where the invariant's text lives** (`grep -rn 'Both shells\|Two shells'`, outside `docs/`): `.claude/nightmill.json`
   line 26 (`invariants[2]`, `"Both shells — every script exists in PowerShell and bash and behaves the same"`);
   `.github/ISSUE_TEMPLATE/story.yml` line 54 and `bug.yml` line 50 (the same text as `- label: "..."`, rendered from the
   config by `scripts/render-templates.*`; no lint ties form and config); the rule `- **Two shells.**` of
   `.claude/CLAUDE.md` (line 29) and of `CONTRIBUTING.md` (line 54). `templates/nightmill.example.json`,
-  `templates/ISSUE_TEMPLATE/*.yml` and `templates/CLAUDE.snippet.md` do not carry it (the example's invariants are
-  generic examples; the template forms hold a placeholder). `.claude/nightmill.json` `verification.benchRule` ends
-  "a new script flag gets a smoke step in both shells"; it is handed to the agents by `/next` and `/fix`.
-- **Where `verification.platform` is read or described**: `tests/check.sh` (header lines 30 to 33, the block at lines
-  427 to 445; `windows` sets `plat_kind=bash` and the reason `bash tests (verification.platform is windows)`, `unix`
-  `plat_kind=ps` and `PowerShell tests (verification.platform is unix)`, `all` nothing, anything else the note
-  `check: verification.platform must be windows, unix or all; running both families`; it acts only in a full or quick
-  run, never under `--only` or a selective `--affected`, and never on a step a changed path selected); the schema
+  `templates/ISSUE_TEMPLATE/*.yml` and `templates/CLAUDE.snippet.md` do not carry it. `.claude/nightmill.json`
+  `verification.benchRule` (line 41) ends "a new script flag gets a smoke step in both shells".
+- **Where `verification.platform` is read or described**: `tests/check.sh` (header lines 30 to 33; the block from line
+  428, whose `windows)` line 436 sets `plat_kind=bash` and the reason `bash tests (verification.platform is windows)`;
+  `unix` sets `plat_kind="ps"` and `PowerShell tests (verification.platform is unix)`, `all` nothing, anything else the
+  note `check: verification.platform must be windows, unix or all; running both families`; it acts only in a full or
+  quick run, never under `--only` or a selective `--affected`, and never on a step a changed path selected); the schema
   (line 95); `templates/nightmill.example.json` (`"platform": "all"`); `README.md` (the `verification` row, line 396,
-  and lines 1154 to 1156); `skills/init/SKILL.md` (lines 42 and 56); `.claude/nightmill.json` (`"platform": "windows"`);
-  `tests/lint.sh` (lines 1341 to 1356: type, default `all`, enum order, a description, the example's `all`, and that
-  `README.md`, `skills/init/SKILL.md` and `tests/check.sh` mention the key); the cases `== the platform from the config`
-  and the `--affected`/`--within` cases of `tests/smoke-check.sh` and `.ps1`; `tests/smoke-validate.sh` and `.ps1`
-  (`== verification.platform is windows, unix or all`). CI never reads the key (`--only` and `--within`).
-- **The twin lint** is iteration 51's `tests/test-lint-agreement.sh` (started once by `tests/lint.sh`, section
-  `== the lists and the shell twins agree`; its cases in `tests/test-lint-agreement-cases.sh`, which sources it): besides
-  the README's smoke list it fails `tests/<x>.sh has no PowerShell twin tests/<x>.ps1` (except `smoke-json.sh`, the one
-  entry of `twin_exceptions`), the two exception texts, and `scripts/<x>.sh has no PowerShell twin scripts/<x>.ps1`.
-  Iteration 57's lint section (`the PowerShell scripts read the config with exact keys (#329)`, `Select-ExactKeys` in
-  every `scripts/*.ps1` and `scripts/lib/*.ps1` that reads the config) only reads existing `.ps1` files.
-- **PowerShell files**: `git ls-files '*.ps1'` lists 54: 19 in `scripts/`, 4 in `scripts/lib/`, 29 in `tests/`, 2 in
-  `tools/`. No `.psm1` or `.psd1`.
-- **The Git Bash job** (`smoke-gitbash`, `name: Git Bash smoke tests (Windows, not blocking)`, `timeout-minutes: 360`,
-  its check step with `continue-on-error: true`). PR #367's "How verified" left the first measurement "to be added", and
-  the timeout is still 360. The two push runs on `main` since: run 45079116338 (on e8303ba) and run 45080452382 (on
-  4bcd383). In both the job is `success` only because of `continue-on-error`: its verdict is
-  `SELECTED CHECKS FAILED: smoke-json.sh smoke-slot.sh smoke-drive.sh (the full check has not run)`, with the first
-  `FAIL` lines `jq cross-check json_keys worktrees: expected [root ...`, `interruption 4: the marker changed: {` and
-  `left behind: the step's background process is still alive`; its wall time was 38 min 52 s and 32 min 13 s. Iteration
-  64's budget for a full run is 17 minutes (its decision 5). No issue was filed for these three failures (`gh issue list
-  --search "Git Bash"`).
-- **The required checks** are pinned by `tests/lint.sh`: the three names in `== the check runs every smoke script`
-  (lines 1408 and 1414) and in rule 4 of the CI section (the heredoc at line 1776), the `Required check` comment exactly
-  3 times (line 1779); `tests/test-ci-parts.sh` rule 10 pins the Git Bash job's name and its `continue-on-error: true`.
-  Iteration 64 decision 4: the iteration that makes the job required removes `continue-on-error`, gives it a name to
-  require with the comment and the lint's list, and "when it is over the budget, that iteration first splits the job
-  into parts by the measured step times".
-- **Iteration 56** (Facts and decision 2): the full check in Git Bash on Windows took 2 to 3 hours on the maintainer's
-  machine, which is why `windows` skipped the bash family.
+  and lines 1155 to 1157); `skills/init/SKILL.md` (lines 42 and 56); `.claude/nightmill.json` (`"platform": "windows"`,
+  line 43); `tests/lint.sh` (lines 1341 to 1356, in the section `== the check runs every smoke script`); the case
+  `== the platform from the config` (line 174, `WIN_LINE` line 178) and the `--affected` cases of
+  `tests/smoke-check.sh`, and the same in `tests/smoke-check.ps1` (lines 220 and 224); `tests/smoke-validate.sh` and
+  `.ps1`. CI never reads the key (`--only` and `--within`).
+- **The twin lint** is iteration 51's `tests/test-lint-agreement.sh` (main body `check "$root"`, line 102; started once
+  by `tests/lint.sh`, section `== the lists and the shell twins agree`, line 1577; its cases in
+  `tests/test-lint-agreement-cases.sh`): besides the README's smoke list it fails
+  `tests/<x>.sh has no PowerShell twin tests/<x>.ps1` (except `smoke-json.sh`, the one entry of `twin_exceptions`), the
+  two exception texts, and `scripts/<x>.sh has no PowerShell twin scripts/<x>.ps1`. Iteration 57's section
+  (`Select-ExactKeys`) only reads existing `.ps1` files.
+- **PowerShell files**: `git ls-files '*.ps1' '*.psm1' '*.psd1'` lists 54: 19 in `scripts/`, 4 in `scripts/lib/`, 29
+  in `tests/`, 2 in `tools/`. No `.psm1` or `.psd1`.
+- **The Git Bash jobs** (iteration 66, PR #384, merged as 5da00ec): `smoke-gitbash-part`
+  (`name: Git Bash smoke part ${{ matrix.part }} of 7`, `timeout-minutes: 360`, its check step with `shell: bash` and
+  `continue-on-error: true`; parts 1 to 6 one step each, `smoke-slot.sh`, `smoke-status.sh`, `smoke-check.sh`,
+  `test-guard-rules.sh`, `smoke-release.sh`, `smoke-validate.sh`, part 7 the other 41) and the final job `smoke-gitbash`
+  (comment `# The Git Bash parts together (iteration 66). Not a required check until iteration 65 makes it one.`,
+  `name: Git Bash smoke tests (Windows, not blocking)`, `needs: smoke-gitbash-part`, `if: always()`, ubuntu,
+  `timeout-minutes: 5`). 47 of the 48 bash steps of `tests/check.sh` run there; `test-lintcopy-output.sh` runs on
+  Ubuntu only (iteration 66 decision 3).
+- **The steps are green in Git Bash now; the time is not.** The three failures the first draft of this spec found
+  (`smoke-json.sh`, `smoke-slot.sh`, `smoke-drive.sh`) are fixed (#372, #373, #374). In both push runs on `main` since
+  iteration 66, 45681905654 (on 5da00ec) and 45691258685 (on d3fc83a), every part's check step ends
+  `SELECTED CHECKS PASSED (<k> of 78 steps; the full check has not run)`, the `<k>` adding up to 47, and the final job
+  is `success`. Against iteration 66 decision 2 (each part's `Wall time:` at most 14m00s, the chain at most 17m00s),
+  read from the `Times:` totals (the same span as `Wall time:`) and the job times: part 7 took 20m36s and 19m39s (job
+  20m50s and 19m52s), part 1 14m36s and 12m06s, every other part at most 12m15s; the chain took 20m56s and 19m58s.
+  Part 7's slowest steps in 45691258685: `smoke-drive.sh` 11m42s, `smoke-control.sh` 8m48s, `test-spec-template.sh`
+  8m05s, `smoke-load.sh` 5m06s, `smoke-dashboard.sh` 3m21s. Pull request #384's last run, 45677230884, had part 7 at
+  17m31s and a chain of 17m54s. PR #384 says the budget was not met yet and left the rebalance and the rewrites of
+  iteration 66 decisions 4 and 5 to later rounds; #382 is closed, and no story for the rest was filed.
+- **The required checks** are pinned by `tests/lint.sh`: the three names in the two loops of
+  `== the check runs every smoke script` (lines 1408 and 1414) and in the heredoc of rule 4 (line 1794), the
+  `Required check` comment exactly 3 times (line 1800), the comments at lines 1546 and 1715 say "three". The
+  `if: always()` of `smoke-gitbash` is already allowed (line 1567). `tests/test-ci-parts.sh` rule 10a pins the part
+  job's check step with `continue-on-error: true` (line 246) and rule 10b the name
+  `    name: Git Bash smoke tests (Windows, not blocking)` (line 255); its cases `gbcoe` (line 436) and `gbfname` (line
+  460) break those.
+- **The local cost on Windows.** Today `windows` skips the bash steps, so PR #384's local full check (1h40m) ran no
+  bash step. Iteration 56 recorded 2 to 3 hours for the full check in Git Bash on the maintainer's machine. Iteration
+  66's local measurements, each step alone: `test-lintcopy-output.sh` 4575 s, `smoke-slot.sh` 2185 s, `smoke-check.sh`
+  1567 s, one whole lint about 620 s; `smoke-slot.sh` went red once in `== interruption (iteration 36)` and passed on a
+  second run.
 
 ## Decisions
 
@@ -127,8 +142,7 @@ opposite; earlier issues keep their old checkbox text.
   `- **Bash only.** Every script is bash and behaves the same in bash on Linux and macOS and in Git Bash on Windows,`
   `  with a smoke step in the bash tests. The PowerShell files are frozen: no new one is added.`; in the paragraph above
   it, "CI runs all of them, the bash ones on Ubuntu and the PowerShell ones on Windows" becomes "CI runs all of them,
-  the bash ones on Ubuntu and in Git Bash on Windows, the PowerShell ones on Windows". The lint's words for that file
-  (`PowerShell`, `bash`) are still there.
+  the bash ones on Ubuntu and in Git Bash on Windows, the PowerShell ones on Windows".
 - `.claude/nightmill.json` `verification.benchRule` ends "a new script flag gets a smoke step in the bash tests"
   instead of "in both shells".
 
@@ -141,17 +155,17 @@ opposite; earlier issues keep their old checkbox text.
 | `all`, no key, no or unreadable config | both families, as today | nothing, no note |
 | any other value | both families, as today | nothing; the note `check: verification.platform must be windows, unix or all; running both families` (unchanged) |
 
-- In code: the `windows)` line of the `case` becomes `windows) plat_kind=ps; plat_reason="PowerShell tests (verification.platform is windows)" ;;`.
+- In code: line 436 becomes `    windows) plat_kind=ps; plat_reason="PowerShell tests (verification.platform is windows)" ;;`.
   The reason replaces a step's own reason, as for `unix` today. Everything else stays: `--only` and a selective
   `--affected` do not read the key; when `--affected` runs the full check, the key does not apply to a step a changed
   path selected; the verdict and `Times:` lines are unchanged.
 - `--quick` with `windows`: the lint and every `bash` step, no `SKIPPED:` line (the `ps` steps are left out by the
   quick mode, not skipped), as with `unix` today. The quick header and last lines stay word for word.
-- The header comment (lines 30 to 33) and the block comment (lines 427 to 429) say: "windows and unix skip the ps steps
+- The header comment (lines 30 to 33) and the block comment (from line 428) say: "windows and unix skip the ps steps
   (the scripts are bash only, decision record 0004: on Windows the bash tests run in Git Bash), all (or no key) runs
   both".
 - Why both `windows` and `unix` remain, with the same effect: removing or renaming a value would break a config that
-  sets it (a story of its own, and record 0004's step 4 or later decides whether the key goes).
+  sets it (a story of its own; record 0004's step 4 or later decides whether the key goes).
 
 **4. The schema, the example and the README.**
 
@@ -179,15 +193,19 @@ opposite; earlier issues keep their old checkbox text.
 - *Frozen* means: no new PowerShell file (a file whose name ends in `.ps1`, `.psm1` or `.psd1`, in any case) is added
   anywhere in the repository; an existing one may change only to fix a bug in it or to keep its own test green (a rule
   for people and reviewers, not checked by the lint); removing one is allowed (#365 removes them).
-- `tests/test-lint-agreement.sh` gets a list `frozen_ps1`, one path per line relative to the root: exactly the output of
-  `git ls-files '*.ps1' '*.psm1' '*.psd1'` on the implementation's base commit (54 lines at 4bcd383), sorted, and a
-  function `frozen <root>` that lists every such file under `<root>` with
+- `tests/test-lint-agreement.sh` gets a list `frozen_ps1`, one path per line relative to the root, and a function
+  `frozen <root>` that lists every such file under `<root>` with
   `find "$r" \( -path "$r/.git" -o -path "$r/tmp" \) -prune -o -type f \( -iname '*.ps1' -o -iname '*.psm1' -o -iname '*.psd1' \) -print`,
   untracked files included, and for each path not on the list prints on standard error exactly
   `FAIL: <path> is a new PowerShell file; the PowerShell files are frozen (decision record 0004): write it in bash`
   and returns 1 when it printed any. A listed path that no longer exists is not a failure. The file's main body runs
   `frozen "$root"` after `check "$root"` (no new process, bug #270); `check` itself does not call it, so the sourced
   cases keep their scratch trees.
+- *How the list is taken*: at implementation time, as the first change, the implementer pastes the sorted output of
+  `git ls-files '*.ps1' '*.psm1' '*.psd1'` run on the branch's base commit (`git merge-base HEAD origin/main`) and
+  nothing else; 54 lines at d3fc83a. "How verified" names the base commit and the count; the code reviewer compares
+  the list with that command's output on the same commit. A `.ps1` that `main` gains after the base commit makes the
+  lint fail after a rebase, which is the freeze working.
 - The twin rules go, because they demand the opposite: the loop that prints `tests/<x>.sh has no PowerShell twin
   tests/<x>.ps1`, the list `twin_exceptions` with the two texts about it, and the loop that prints `scripts/<x>.sh has
   no PowerShell twin scripts/<x>.ps1`. The README list rules stay, and so does the OK line `OK: lists and twins agree`.
@@ -198,98 +216,81 @@ opposite; earlier issues keep their old checkbox text.
 
 **6. The required check: what this repository's text and code do, and what the maintainer does.** The ruleset of
 `main` is changed by the maintainer by hand; no code of this iteration changes it. The pull request says, in its own
-section `## Ruleset`, the change to make: add the status check `Git Bash scripts smoke tests` to the required checks of
-the ruleset on `main`, after this pull request is merged (so that open pull requests without the job are not held), and
-names the run id or ids of decision 7's measurement. Those ids are measured on the pull request's own run, never taken
-from this spec.
+section `## Ruleset`, the change to make: add the status check `Git Bash scripts smoke tests` (the final job; never a
+part's name, iteration 66 decision 8) to the required checks of the ruleset on `main`, after this pull request is
+merged (so that open pull requests without the job are not held), and names the run ids of decision 7's measurement.
+Those ids are measured on the pull request's own runs, never taken from this spec.
 
-**7. The Git Bash job becomes blocking, only after a measured green run** (iteration 64 decision 4). Its changes:
+**7. The Git Bash jobs become blocking, only after measured green runs within the budget** (iteration 64 decision 4,
+iteration 66 decision 8). Its changes:
 
-- `.github/workflows/ci.yml`, job `smoke-gitbash`: its two-line comment becomes `# The bash steps in Git Bash on a
-  Windows runner (decision record 0004). A required check of main once the maintainer adds it to the ruleset.`; the line
-  directly above `name:` is the comment `    # Required check: the ruleset on main requires this name; renaming it
-  blocks every pull request.`; `name: Git Bash scripts smoke tests`; the step's `continue-on-error: true` is removed;
-  `timeout-minutes` is 3 times the measured wall time, rounded up to whole minutes, at most 360 (iteration 64
-  decision 5). The job keeps no `if:`, no `needs`, no job-level `permissions:`.
-- `tests/lint.sh`: the name `Git Bash scripts smoke tests` joins the three required names in the two loops of
-  `== the check runs every smoke script` and in the heredoc of rule 4; the comment count is 4, with the text
-  `(exactly 4 expected, one per required job)`.
-- `tests/test-ci-parts.sh` rule 10: the name line is `    name: Git Bash scripts smoke tests`; the run step's step has
-  `shell: bash` and no `continue-on-error:` line, and any `continue-on-error:` line in the job is malformed (the texts:
-  `the name line is not 'Git Bash scripts smoke tests'`, and `the run step is not a run: bash tests/check.sh --summary
-  "$GITHUB_STEP_SUMMARY" $CHECK_SELECT <list> in a step with shell: bash and no continue-on-error`). Rule 11 and the
-  header comment's rule 11 are unchanged; the header's sentence on rule 10 says "and blocks".
-- README, `## Developing nightmill`: "a further job, `Git Bash smoke tests (Windows, not blocking)`, runs every bash test
-  step in Git Bash on a Windows runner (decision record 0004, step 1); it is not a required check, and a failing step
-  there shows in its summary without failing the job;" becomes "the required check `Git Bash scripts smoke tests` runs
-  every bash test step in Git Bash on a Windows runner (decision record 0004) and fails on a failing step;".
+- `.github/workflows/ci.yml`, job `smoke-gitbash-part`: its three comment lines become the two lines
+  `    # The bash steps in Git Bash on Windows runners, in parts (iterations 64 to 66, decision record 0004); the job` and
+  `    # smoke-gitbash below carries the required name and fails unless every part succeeded.`; the check step's
+  `continue-on-error: true` is removed; `timeout-minutes` is 3 times the longest part's job time on the first run that
+  meets the rule below, rounded up to whole minutes, at most 360. Its name, matrix, lists and run line stay.
+- Job `smoke-gitbash`: its comment line is replaced by the one line
+  `    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.` directly above
+  `    name: Git Bash scripts smoke tests`; `needs`, `if: always()`, `runs-on`, `timeout-minutes: 5` and its step stay.
+- `tests/test-ci-parts.sh` rule 10a: the run step's step has `shell: bash` and no `continue-on-error:` line, and a line
+  of the part job whose key (after the indent and `- `) is `continue-on-error:` gives `<what>` `a continue-on-error:
+  line`; the run step's text becomes `the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY"
+  $CHECK_SELECT ${{ matrix.only }} in a step with shell: bash and no continue-on-error`. Rule 10b wants
+  `    name: Git Bash scripts smoke tests` in place of today's name. The header comment says the parts "block" (not "do
+  not block"), "no continue-on-error", and that the final job is the required check `Git Bash scripts smoke tests`.
+- `tests/lint.sh` (the implementer's change, decision 7 only): the name `Git Bash scripts smoke tests` joins the three
+  required names in the loops at lines 1408 and 1414 and in the heredoc of rule 4; the comment count is 4, with the text
+  `(exactly 4 expected, one per required job)`; the comments at lines 1546 and 1715 say "four".
+- README, `## Developing nightmill`: "and a further job, `Git Bash smoke tests (Windows, not blocking)`, fails unless
+  every part succeeded; it is not a required check, and a failing step shows in its part's summary without failing the
+  part;" becomes "and the required check `Git Bash scripts smoke tests` is a final job that fails unless every part
+  succeeded; a failing step fails its part;", and "(decision record 0004, step 1)" in the same sentence becomes
+  "(decision record 0004)".
 - `.claude/CLAUDE.md`, rule "CI and merging": "a PR merges only when the lint and both smoke-test jobs pass" becomes
-  "a PR merges only when the lint and the three smoke-test jobs (bash, PowerShell, Git Bash) pass".
+  "a PR merges only when the lint and the three smoke-test checks (bash, PowerShell, Git Bash) pass".
 
-The measurement: this pull request changes `ci.yml`, a shared path, so its own run runs all 48 bash steps in the job.
-**The rule (closed; no other budget and no other exception applies):** decision 7 lands only when the pull request's
-own full run of the job, with `continue-on-error` removed, has the conclusion `success`, its summary ends
-`SELECTED CHECKS PASSED (48 of <M> steps; the full check has not run)`, and its wall time is at most 17 minutes, the
-budget of iteration 64 decision 5. Then the implementer puts into "How verified" the run id, the job's wall time, its
-`Wall time:` line and five slowest steps, sets the timeout, and cites the second run that the timeout commit starts.
-**The fallback, when any of the three conditions fails:** decision 7 does not land. The implementer takes every change
-of this decision out of the branch again (the job, the lint, `test-ci-parts.sh`, the README job sentence, the CLAUDE.md
-"CI and merging" sentence and the changelog's last sentence stay as on `main`), does not fix a failing bash test and
-does not split the job here, reports `partial` with criterion 4 unmet, giving the run id, the wall time and each
-failing step with its first `FAIL` line, and files the remainder (criterion 4: the job made blocking and required after
-a measured green run within the budget) as a new story under #337 with `/story`, linked to #363, as the workflow's rule
-for a story only partly done says; the pull request says so and leaves criterion 4 unticked. Criteria 1, 2, 3 and 5 are
-delivered without it. By the Facts (two red runs of 32 and 39 minutes), approving this spec as written accepts this
-fallback unless the job changes before the implementation (Left item 1).
+**The rule (closed; no other budget and no other exception applies).** The pull request changes `ci.yml` and
+`tests/check.sh`, shared paths, so every part runs its whole list. Decision 7 lands only when iteration 66 decision 2
+holds, with `continue-on-error` removed and the new name, on the final commit of the pull request in two full runs (the
+run its push starts and one re-run, `gh run rerun <id>`): every part's check step log ends
+`SELECTED CHECKS PASSED (<k> of <M> steps; the full check has not run)` with the `<k>` adding up to 47; every part's
+summary has `Selection: --affected ran every --within step: <reason>.`; every part's `Wall time:` is at most 14m00s
+and its job time at most 17m00s; `Git Bash scripts smoke tests` is `success`; the chain, from the earliest start of a
+part to the completion of the final job, is at most 17m00s (`gh run view <id> --json jobs`). "How verified" gives both
+run ids, each part's `Wall time:` and job time, the chain, part 7's five slowest steps, and the timeout with the job
+time it comes from.
 
-**8. The check stays green, and the changelog.** `bash tests/check.sh` passes on the branch. The rule is needed: today
-`tests/check.sh` line 435 makes `windows` skip every `bash` step in a full run, so on a Windows machine with this
-repository's `windows` the local full check has never run the 48 bash steps; with decision 3 it runs them in Git Bash,
-`smoke-json.sh`, `smoke-slot.sh` and `smoke-drive.sh` among them (the three that fail on the Windows runner, Facts).
-**The rule for the implementer (closed), when `bash tests/check.sh` on the branch is red only because of one or more
-of `smoke-json.sh`, `smoke-slot.sh` and `smoke-drive.sh`** (its last line `CHECK FAILED:` names no other step). It
-follows `/next`'s rule for a story only partly done (its step 8, and the `Result: partial` of "The implementer"); `/next`
-does not resume #363.
+**The fallback, when the rule fails:** decision 7 does not land. The implementer takes its own changes of this decision
+out again (the jobs, the lint's names and count, the README job sentence, the CLAUDE.md "CI and merging" sentence and
+the changelog's last sentence stay as on `main`), and sets the tester's `tests/test-ci-parts.sh` aside with `/next`'s
+stash, listed as `unmet: tests/test-ci-parts.sh (criterion 4)`. It does not rebalance or split the parts, does not
+rewrite a test for time and does not fix a failing step here. It reports `partial` with criterion 4 unmet, giving the
+run ids, each part's numbers, the chain, and each failing step with its first `FAIL` line. The session files the rest
+(criterion 4: the jobs blocking and required after measured green runs within the budget) with `/story` as a new story
+under #337, linked to #363, as the workflow's rule for a story only partly done says; the pull request says so and
+leaves criterion 4 unticked. Criteria 1, 2, 3 and 5 are delivered without it. By the Facts (a chain of 19m58s to
+20m56s on `main`), approving this spec as written most likely means this fallback (Left item 1).
 
-- *What the implementer does.* It does not fix the three steps (Not done stays), does not skip them (no skip list, no
-  reason, no change to `verification.platform`), and does not commit red. It takes criterion 2 out of the branch: its
-  own uncommitted changes of decisions 3 and 4 (the `windows)` line and the two comments of `tests/check.sh`, the
-  schema description, the README row and platform sentence) go back to `main`'s text, so `tests/check.sh` treats
-  `windows` as on `main` and the three steps run on this machine exactly as often as they do on `main` (not at all in
-  a full run). The tester's files that hold criterion 2's tests, `tests/smoke-check.sh`, `tests/smoke-check.ps1` and
-  `tests/lint.sh`, are set aside with the stash of `/next` (`Unmet tests for #363: <title>`) and listed under Left as
-  `unmet: <path> (criterion 2)`. It runs the full check again; when it is green it commits, and puts the stash back.
-  A check that is still red, or red at the first run with any other step, is the implementer's own failure to fix, as
-  for any change. It reports `Result: partial`; `Check:` is the green last line; `Left` holds the `unmet:` lines and,
-  for the bugs below, the first run's `CHECK FAILED:` line and each failing step's first `FAIL` line.
-- *What the partial pull request holds and ticks.* **Criterion 3** is delivered and ticked (decision 5;
-  `tests/test-lint-agreement.sh` and `tests/test-lint-agreement-cases.sh` hold only its tests). The changes of
-  **criterion 1** (decisions 1 and 2: the config, the two forms, `CLAUDE.md`, `CONTRIBUTING.md`, the `benchRule`) are
-  committed, since they do not depend on decision 3, but criterion 1 is **not met and not ticked**: its test is the new
-  section of `tests/lint.sh`, a file that also holds criterion 2's test and so stays uncommitted as a whole (`/next`'s
-  rule for a shared file). **Criterion 2** cannot be delivered without a green full check that runs the bash steps on
-  Windows. **Criterion 5** is not met: the check is green, but "a Windows project needs Git for Windows" is true only
-  with criterion 2. **Criterion 4** falls back by decision 7 (its run fails the same three steps). The session adds
-  this bullet under `Unreleased` instead of the one of Files touched (step 5 of `/next`):
+**8. The check stays green, and what the local check on Windows costs.** `bash tests/check.sh` passes on the branch.
+With decision 3 this repository's `windows` makes the local full check run the 48 bash steps in Git Bash and skip the
+`ps` steps: expected 2 to 3 hours (iteration 56), at least the 4575 s of `test-lintcopy-output.sh` alone (Facts).
+`--affected` is no shortcut here: the change touches `tests/check.sh` and `ci.yml`, so it runs the full check, and so
+does `--quick` in effect (every bash step).
 
-  ```
-  - Iteration 65 (#363), partly done: the invariant Both shells becomes Bash only (decision record 0004, step 2):
-    every script is bash and runs in bash on Linux and macOS and in Git Bash on Windows. The PowerShell files are
-    frozen, not removed: they still ship and work, the lint fails on a new one, and it no longer asks a new bash script
-    or smoke test for a PowerShell twin. The new meaning of verification.platform and the required Git Bash check
-    follow in a new story under #337.
-  ```
-
-  The pull request still says `Closes #363`, opens without auto-merge (it is partial and a story trigger), and names
-  the new story and the three bugs.
-- *What the session files* (the implementer touches no issue). (a) One bug per failing step, from the bug form, each
-  with its first `FAIL` line and the run (local, and the Git Bash CI run ids of Facts); they are fixed through `/fix`
-  once the maintainer sets them Ready. (b) The rest of #363 as one new story under #337 with `/story`, linked to #363
-  both ways, the pull request saying so (step 8 of `/next`): criteria 1, 2, 4 and 5 of #363 as its criteria, this spec
-  named as its source, the paths, the stash's message and the copied text of the set-aside tests (step 8), and the line
-  that the three bugs must be merged before its `/next` starts. When decision 7's fallback also applies, its remainder
-  is part of this one story, not a second one. The maintainer approves the new story only after the three fixes are
-  merged.
+- *The tester* runs only the test files it writes, never the full check: `bash tests/lint.sh` (about 10 minutes in Git
+  Bash), `bash tests/test-ci-parts.sh`, `bash tests/test-lint-agreement-cases.sh` and
+  `bash tests/check.sh --only smoke-check.sh` (about 26 minutes), each in the background; `tests/smoke-check.ps1` is
+  run with `bash tests/check.sh --only smoke-check.ps1`, which this machine can run.
+- *The implementer*, while working, runs the same files; then the full check once, in the background, before the
+  commit, and again before each later commit (a fix round). It keeps the commits few: one for the iteration, one per
+  fix round. "How verified" gives the last line, the `Times:` total and the `SKIPPED:` lines.
+- *When the full check is red*: a failing step whose file this iteration changes (`smoke-check.sh`, or the lint and
+  what it starts) is the implementer's to fix, as for any change. Any other failing step is run once more alone with
+  `bash tests/check.sh --only <step>`; when that passes (an intermittent failure, as `smoke-slot.sh` had in iteration
+  66), the implementer runs the full check again and commits only on a green run. When the step fails again, the
+  failure is not caused by this change: the implementer commits nothing, skips nothing, changes no reason and no
+  `verification.platform`, and returns `failed` with the step and its first `FAIL` line under Left (`/next`'s rule for
+  a failure not caused by the change). The session files it as a bug; #363 waits for its fix.
 
 The CHANGELOG bullet is under Files touched; its last sentence is written only when decision 7 lands.
 
@@ -313,8 +314,8 @@ The CHANGELOG bullet is under Files touched; its last sentence is written only w
   `FAIL: .github/ISSUE_TEMPLATE/<f> does not carry the Bash only invariant`, or `... still carries the Both shells
   invariant`); `.claude/CLAUDE.md` and `CONTRIBUTING.md` each have a line that begins `- **Bash only.**` and none with
   `**Two shells.**` (else `FAIL: <file> has no Bash only rule`, or `FAIL: <file> still has the Two shells rule`). The
-  implementer breaks each rule once in a scratch copy and sees its line (as iteration 56 did); the code reviewer checks
-  the CLAUDE.md and CONTRIBUTING texts against decision 2.
+  implementer breaks each rule once in a scratch copy and sees its line; the code reviewer checks the CLAUDE.md and
+  CONTRIBUTING texts against decision 2.
 - Criterion 2: **`tests/smoke-check.sh`** and **`tests/smoke-check.ps1`**, case `== the platform from the config`
   (fixture steps `l`, `b`, `p`, `c`), the `windows` lines changed and the rest kept; `WIN_LINE` becomes
   `SKIPPED: PowerShell tests (verification.platform is windows)`:
@@ -325,16 +326,16 @@ The CHANGELOG bullet is under Files touched; its last sentence is written only w
     `SKIPPED: other reason`, `WIN_LINE`; last line `ALL CHECKS PASSED`;
   - `--quick` with `windows`: log `l,b,`, no `SKIPPED:` line, the quick last line;
   - unchanged: `unix` (log `l,b,c,`), `all` and no key (log `l,b,p,c,`, equal outputs, standard error empty),
-    `linux` and `3` (the note), `--only b,p` with each value (log `b,p,`, no `SKIPPED:` line).
-  - In the `--affected` cases, "a shared file with a changed script" under `windows` (changed `scripts/lib/x.sh` and
+    `linux` and `3` (the note), `--only b,p` with each value (log `b,p,`, no `SKIPPED:` line);
+  - in the `--affected` cases, "a shared file with a changed script" under `windows` (changed `scripts/lib/x.sh` and
     `scripts/foo.sh`): log `l,b1,b2,p1,c,` and `WIN_LINE` printed (for `p2`); "p1 with a reason" under `windows`: log
     `l,b1,` as today. The `--within` cases are unchanged (the key does not apply).
   - **`tests/smoke-validate.sh`** and `.ps1`, `== verification.platform is windows, unix or all`: unchanged, and they
     pass (each value `0 errors, 0 warnings` under `--strict`).
   - **`tests/lint.sh`**, the platform block: the description of `verification.properties.platform` contains
     `windows runs the bash tests in Git Bash`, else
-    `FAIL: schema: verification.platform's description does not say windows runs the bash tests in Git Bash`; the existing
-    checks (example `all`, the README row mentions `platform`) stay. **`tests/smoke-check.sh`** gains
+    `FAIL: schema: verification.platform's description does not say windows runs the bash tests in Git Bash`; the
+    existing checks stay. **`tests/smoke-check.sh`** gains
     `lint_break platformmeaning schema/nightmill.schema.json 's/windows runs the bash tests in Git Bash/windows runs the PowerShell tests/' 'does not say windows runs the bash tests in Git Bash'`
     (bash only: no new step in a frozen file). The README row's text is checked by the code reviewer against decision 4.
 - Criterion 3: **`tests/test-lint-agreement-cases.sh`**, calling `frozen` (sourced) on scratch trees: a tree with
@@ -348,20 +349,21 @@ The CHANGELOG bullet is under Files touched; its last sentence is written only w
   **`tests/test-lint-agreement.sh`**'s self-tests `no twin`, `exception gone`, `exception twinned` and `script` are
   replaced by `no twin needed` (a `tests/smoke-b.sh` with its README line and a `scripts/b.sh`: no output). The lint
   passes on this checkout with its 54 files.
-- Criterion 4 (only with decision 7): **`tests/test-ci-parts.sh`**, rule 10 passes on the checkout; the cases change:
-  `gbcoe` adds `        continue-on-error: true` after `shell: bash` (expect `the Git Bash job is malformed`), and
-  `gbname` is `s/ scripts smoke tests$/ smoke tests/` (expect `malformed`); the other cases stay. **`tests/lint.sh`**:
-  the four names each once with the comment above, the comment exactly 4 times; **`tests/smoke-check.sh`** gains
-  `lint_break cigbrename .github/workflows/ci.yml 's/name: Git Bash scripts smoke tests/name: Git Bash smoke/' 'the required job Git Bash scripts smoke tests is missing'`.
-  The ruleset is the maintainer's (decision 6): the code reviewer checks that the pull request has the `## Ruleset`
-  section and the run ids, and no test reads the ruleset.
+- Criterion 4 (only with decision 7): **`tests/test-ci-parts.sh`** only (so its fallback sets aside one file), rules
+  10a and 10b pass on the checkout; the cases change: `gbcoe` becomes `'/shell: bash/a\` + `        continue-on-error: true'`
+  (expect `the Git Bash parts are malformed`); a new `gbjobcoe` adds `    continue-on-error: true` after
+  `    runs-on: windows-latest` (expect `the Git Bash parts are malformed (a continue-on-error: line)`); `gbfname`
+  becomes `s/^    name: Git Bash scripts smoke tests$/    name: Git Bash smoke tests (Windows, not blocking)/`
+  (expect `the Git Bash job is malformed`); the other cases stay. The lint's four names and count are exercised by the
+  lint on the checkout; no `lint_break` is added for them (each costs a lint copy). The ruleset is the maintainer's
+  (decision 6): the code reviewer checks the `## Ruleset` section and the run ids; no test reads the ruleset.
 - Criterion 5: the code reviewer checks the bullet against Files touched and that `git diff origin/main --stat` touches
   only the files listed there (nothing under `scripts/`, `skills/`, `agents/`, `hooks/`, `templates/`, no `.ps1` added
-  or removed); `bash tests/check.sh` is green on the branch, and the implementer puts its last line, the `Times:` total
-  and the `SKIPPED:` lines into "How verified".
+  or removed); `bash tests/check.sh` is green on the branch (decision 8).
 - **On the pull request's run** (the maintainer, before merging by hand): `Lint (generic, JSON, skills, shell)`,
-  `bash scripts smoke tests` and `PowerShell scripts smoke tests` green; with decision 7, `Git Bash scripts smoke tests`
-  green (not yet marked Required) with 48 steps in its summary; the run ids and numbers of decision 7 in "How verified".
+  `bash scripts smoke tests` and `PowerShell scripts smoke tests` green (`smoke-check.ps1` runs in PowerShell part 3,
+  not on this machine); with decision 7, `Git Bash scripts smoke tests` green (not yet marked Required) and the numbers
+  of decision 7's rule in "How verified".
 
 ## Files touched
 
@@ -371,16 +373,15 @@ The CHANGELOG bullet is under Files touched; its last sentence is written only w
 - `.claude/CLAUDE.md`: the `Bash only` rule (decision 2); with decision 7 the "CI and merging" sentence.
 - `CONTRIBUTING.md`: the rule and the CI sentence (decision 2).
 - `schema/nightmill.schema.json`: the description of `verification.platform` (decision 4).
-- `tests/check.sh`: the `windows)` line and two comments (decision 3).
-- `tests/smoke-check.sh`, `tests/smoke-check.ps1`: the cases of criterion 2; `smoke-check.sh` also the two
-  `lint_break` lines.
+- `tests/check.sh`: line 436 and two comments (decision 3).
+- `tests/smoke-check.sh`, `tests/smoke-check.ps1`: the cases of criterion 2; `smoke-check.sh` also the `lint_break`.
 - `tests/lint.sh`: the section of criterion 1, the description check of criterion 2, the section comment of
-  `== the lists and the shell twins agree`; with decision 7 the required names and the count.
+  `== the lists and the shell twins agree`; with decision 7 the required names, the count and two comments.
 - `tests/test-lint-agreement.sh`, `tests/test-lint-agreement-cases.sh`: decision 5 and its cases.
-- With decision 7: `.github/workflows/ci.yml` (the job `smoke-gitbash`), `tests/test-ci-parts.sh` (rule 10, two cases,
-  header).
+- With decision 7: `.github/workflows/ci.yml` (the jobs `smoke-gitbash-part` and `smoke-gitbash`),
+  `tests/test-ci-parts.sh` (rules 10a and 10b, three cases, header).
 - `README.md`: the `verification` row and the platform sentence (decision 4); with decision 7 the job sentence.
-- `CHANGELOG.md`, one bullet under `Unreleased`:
+- `CHANGELOG.md`, one bullet under `Unreleased`, above the bullet of iteration 66:
 
   ```
   - Iteration 65 (#363): the invariant Both shells becomes Bash only (decision record 0004, step 2): every script is
@@ -388,26 +389,29 @@ The CHANGELOG bullet is under Files touched; its last sentence is written only w
     they still ship and work, the lint fails on a new one, and it no longer asks a new bash script or smoke test for a
     PowerShell twin. verification.platform keeps its values and default, but windows now runs the bash tests in Git
     Bash and skips the PowerShell tests, as unix does; all still runs both. A Windows project now needs Git for Windows
-    (which brings Git Bash) for the check, as its hooks already do. The Git Bash CI job is now Git Bash scripts smoke
-    tests and fails on a failing step, to be made a required check of main.
+    (which brings Git Bash) for the check, as its hooks already do. The Git Bash CI parts now fail on a failing step,
+    and their final job, Git Bash scripts smoke tests, is to be made a required check of main.
   ```
 
   Without decision 7 the last sentence is left out.
 
-Not touched: `templates/` (decision 4), `scripts/`, `skills/` (`skills/init/SKILL.md` included, Left item 3),
+Not touched: `templates/` (decision 4), `scripts/`, `skills/` (`skills/init/SKILL.md` included, Left item 2),
 `agents/`, `hooks/`, `tests/check.ps1`, `tests/smoke-validate.*`, every other `.ps1`, `docs/decisions/`.
 
 ## Risks
 
-- **This repository's local check on Windows gets much longer and may go red.** With `windows` it now runs the 48 bash
-  steps in Git Bash: 32 to 39 minutes on a CI runner, 2 to 3 hours on the maintainer's machine by iteration 56. Three of
-  them fail on the Windows runner today (Facts); if they fail locally too, decision 8's rule makes #363 partly done
-  (criterion 3 delivered, the rest a new story that waits for the three bug fixes; Left item 2). `--affected` keeps the per-change check short; only the full check grows.
+- **This repository's local check on Windows gets much longer.** With `windows` it runs the 48 bash steps in Git Bash,
+  2 to 3 hours by iteration 56, instead of the PowerShell steps. Decision 8 keeps the tester and the work in between on
+  single files, and a step that fails twice for a reason outside this change stops the run as `failed` rather than
+  being skipped. After the merge every Windows session of this repository pays that cost for a full check; `--affected`
+  keeps the per-change check short where no shared path changes.
+- **The Git Bash chain is over the budget** (Facts: part 7 alone 19m39s to 20m36s). Decision 7's rule then fails and
+  its fallback leaves criterion 4 to a new story (Left item 1).
 - **A Windows project without Git for Windows** gets no bash tests from its check; it already lacked the hooks. The
   changelog names the need.
-- **The init question still tells a new project that `windows` runs the PowerShell tests** until #364 (Left item 3).
-- **Requiring a 30-minute job** lengthens every pull request that changes a shared path; `--within` keeps the others
-  short. Decision 7 only lands green and within the 17-minute budget; otherwise its fallback applies.
+- **The init question still tells a new project that `windows` runs the PowerShell tests** until #364 (Left item 2).
+- **Blocking parts make every pull request that changes a shared path wait for about 20 minutes of Git Bash**; decision
+  7 lands only within 17 minutes, and `--within` keeps the others short.
 - **The frozen list is data in a test**: a removal in #365 leaves stale lines, which do no harm (a missing listed file is
   not a failure); #365 removes the list with the files.
 
@@ -423,25 +427,21 @@ about 20 more.
 - Removing any `.ps1` file, test, check step or CI part (#365); `tests/check.ps1` stays.
 - Changing a skill, an agent, a hook or a README call line, `/nightmill:init`'s question 8 included (#364).
 - Renaming or removing `verification.platform` or one of its values; a new key.
-- Changing the ruleset (the maintainer's hand step) or splitting the Git Bash job into parts.
-- Fixing the three bash steps that fail in Git Bash on the Windows runner, or any skip list for Windows.
+- Changing the ruleset (the maintainer's hand step); rebalancing, adding or splitting the Git Bash parts, or rewriting a
+  test to make it faster (iteration 66's unfinished rounds).
+- Fixing a bash step that fails in Git Bash, or any skip list for Windows.
 - macOS in CI (#156), PowerShell 7 (#155), anything in `scripts/`.
 
 ## Left
 
-1. **The Git Bash job is over the budget and red today (needs the maintainer).** Its two measured full runs on `main`
-   took 38 min 52 s and 32 min 13 s against iteration 64's 17 minutes, and both failed three steps (Facts). Iteration
-   64 decision 4 says the iteration that makes the job required first splits it into parts when it is over the budget;
-   this spec does not split it (no green run exists to measure step times by). So decision 7 cannot land as things
-   stand, and its rule (green, at most 17 minutes) and fallback (partial, criterion 4 filed as a new story under #337)
-   are fixed by this spec. The maintainer's choice, before approving: (a) a split of the job, as a story of its own,
-   done before #363's implementation, so that the rule can be met, or (b) criterion 4 split off #363 into its own story
-   now. **Approving the spec as written accepts the fallback**: the implementer then most likely reports `partial` and
-   files criterion 4 as a new story.
-2. **Three Git Bash failures with no issue** (`smoke-json.sh`, `smoke-slot.sh`, `smoke-drive.sh`, Facts). They block
-   decision 7, and, because this repository sets `windows`, possibly the local full check on Windows; decision 8's rule
-   then delivers #363 partly (criterion 3 only), files each failure as a bug for `/fix` and the rest of #363 as a new
-   story under #337 that waits for those fixes. Filing and fixing them before `/next` starts on #363 avoids the split.
-3. **`skills/init/SKILL.md` question 8** ("`windows` (the check runs the PowerShell tests)") becomes wrong with this
-   iteration. Out of scope here (no skill changes); it belongs in #364, or the maintainer adds it here, which makes the
-   manual check apply.
+1. **The Git Bash chain is over the budget on `main` today (needs the maintainer).** Every step is green in Git Bash,
+   but in both push runs since iteration 66 part 7 took 19m39s and 20m36s against 14m00s, and the chain 19m58s and
+   20m56s against 17m00s (Facts). Iteration 66 ended with its own criterion 3 unmet: PR #384 left the rebalance and the
+   rewrites to later rounds, #382 is closed, and no story holds the rest. So decision 7's rule most likely fails, and
+   the fallback files criterion 4 as a new story. The maintainer's choice, before approving: (a) a story that finishes
+   iteration 66's work (a rebalance of part 7 by its decision 5, its decision 4 rewrites) merged before #363's `/next`,
+   so that the rule can be met here, or (b) criterion 4 split off #363 now. **Approving the spec as written accepts
+   the fallback.**
+2. **`skills/init/SKILL.md` question 8** ("`windows` (the check runs the PowerShell tests)") becomes wrong with this
+   iteration. Out of scope here (no skill changes); iteration 67 (#364, decision 4) changes it and checks first that
+   this iteration's schema text is on `main`.
