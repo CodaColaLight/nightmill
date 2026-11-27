@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 (2026-11-27)
+
 - Iteration 65 (#363): the invariant Both shells becomes Bash only (decision record 0004, step 2): every script is
   bash and runs in bash on Linux and macOS and in Git Bash on Windows. The PowerShell files are frozen, not removed:
   they still ship and work, and no new one is added (a rule for people and reviewers; the lint check for it, and the

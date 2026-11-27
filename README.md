@@ -1180,4 +1180,4 @@ request has to satisfy. Report a security problem privately, as described in `SE
 
 ## Status and license
 
-Version 0.9.0. Apache License 2.0, see `LICENSE`.
+Version 0.10.0. Apache License 2.0, see `LICENSE`.
