@@ -694,9 +694,7 @@ for f in scripts/slot.sh scripts/slot.ps1; do
 done
 grep -qF -- '--capacity' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --capacity"; fail=1; }
 grep -qF -- '-Capacity' scripts/slot.ps1 || { echo "FAIL: scripts/slot.ps1 has no -Capacity"; fail=1; }
-for w in '--capacity --porcelain'; do
-  grep -qF -- "$w" skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with $w"; fail=1; }
-done
+grep -qF -- '--capacity --porcelain' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with --capacity --porcelain"; fail=1; }
 for f in skills/next/SKILL.md skills/fix/SKILL.md skills/spec/SKILL.md; do
   if ! grep -qF -- '--capacity --porcelain' "$f"; then
     echo "FAIL: $f does not read the agent limit with the capacity command"; fail=1
