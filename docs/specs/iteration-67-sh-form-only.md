@@ -1,6 +1,6 @@
 # Iteration 67: the skills, the agents and the README name the bash form of every script only
 
-Status: draft, awaiting approval (#364)
+Status: delivered in iteration 67 (PR #391)
 
 Story #364, epic #337 (fast verification loop): step 3 of the migration outline of decision record 0004 (step 1 was
 iteration 64, #361; step 2 is iteration 65, #363; step 4 is #365). Every line of a skill and of the README that
