@@ -178,8 +178,10 @@ together, is malformed. The header comment (lines 1 to 44) is updated as follows
 - "tests/lint.sh reads it and fails on a smoke script that is not in it" becomes "fails on a test file that runs
   nowhere".
 
-`USAGE` (line 50) becomes
+`USAGE` (line 50) becomes exactly this text (the old text, with `<step>[,<step>...]` written as
+`<step|@group>[,...]` in both places):
 `usage: tests/check.sh [--quick | --only <step|@group>[,...] | --affected [--within <step|@group>[,...]]] [--jobs <1-16>] [--summary <file>]`.
+`tests/smoke-check.sh` holds a copy of it (line 14), which the tester changes to the same text (decision 9).
 
 **4. The workflow** (the implementer's, `.github/workflows/ci.yml`). Exactly:
 
@@ -329,6 +331,33 @@ cases are in `tests/smoke-check.sh` (decision 9).
   it), that is a change to this rule, in a spec of its own; it cannot be done by moving marks (Not done). The bounds of
   rule 3 go with it: N is no longer raised to 2 or capped at 10 by a rule of the split; rule 10a's `fewer than two parts`
   still fails a matrix of one part;
+- iteration 62 decision 2 (`docs/specs/iteration-62-slow-tests-out-of-check.md` lines 134 to 136): "The line format
+  becomes `add <kind> <name>[ first][ slow]`", "the word `slow` at the end of a step line", and "The `add` function
+  takes the words after the name in any of the three forms `first`, `slow` and `first slow`; any other word is the
+  malformed list". Replaced by decision 1: the line is `add <kind> <name>[ first][ slow][ jq][ nogitbash][ alone]`,
+  `slow` is no longer at the end when a CI mark follows it, and `add()` takes every subset of the five marks in that
+  order, with `jq`, `nogitbash` and `alone` on `bash` lines only and never `nogitbash alone`. Its sixth fixture field
+  (`slow` or empty) stays; decision 3 adds the seventh;
+- iteration 62 decision 8 rule 1 (same file, line 199): "The step-list pattern becomes
+  `^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?( slow)?$`", and its sentence on `firsts` (lines 211 and 212): "the
+  extraction becomes `/ first( slow)?$/` with a trailing ` slow` removed before the compare, so `want_firsts` and its
+  text stay as they are". Replaced by decision 5: the pattern
+  `^add (lint|bash) [A-Za-z0-9._-]+( first)?( slow)?( jq)?( nogitbash)?( alone)?$` with the two extra malformed
+  cases, and `firsts` taken from the lines that carry `first` as any field from the fourth on, compared with the new
+  `want_firsts`;
+- iteration 68 decision 5 (`docs/specs/iteration-68-remove-powershell.md` lines 299 to 304): "`want_firsts` is
+  `add bash smoke-slot.sh first|add bash test-spec-template.sh first|`", "the step-list pattern is
+  `^add (lint|bash) ...`", and "the loop reads `tests/smoke-*.sh` only". Replaced by decision 5: `want_firsts` is
+  `smoke-slot.sh|test-spec-template.sh|` (names, since a `first` line can now carry more marks), the pattern carries
+  the three CI marks (above), and the loop reads every `tests/smoke-*.sh` and every `tests/test-*.sh`, with the rule
+  `runs nowhere` for a `test-*.sh`. The rest of that decision (`want_slows`, `chk_prof`, the kind check `bash`, the
+  map section) stays;
+- iteration 60 decision 5 (`docs/specs/iteration-60-ci-affected-jobs.md` lines 94 to 97): "Its direct step becomes
+  `- run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-json.sh`, still before the step that
+  hides jq", and "The bash job then has exactly two check lines: this one, and the one with the other bash steps".
+  Replaced by decision 4: the first line ends `$CHECK_SELECT @with-jq`, the second `$CHECK_SELECT @without-jq`, still
+  on each side of `Hide jq`, and decision 5's rule on the bash job's two lines. Its iteration 60 decision 8 rule 5 (the
+  lint text naming `smoke-json.sh`) is the rule of the second bullet of this list;
 - iteration 62 decision 7 (the `--only` lists name every step): there are no lists left.
 
 **8. #390 (iteration 69) and the order of the merges.** This spec does not depend on #390, and #390 does not depend on
@@ -364,8 +393,15 @@ does not touch it).
   `$CHECK_SELECT @gitbash-${{ matrix.part }}`; its cases stay). On `main` the tests fail because the behaviour is
   missing. Rule 11a finds no marks and 11b's count, and 10a finds the `include:` matrix and the old run line. The new
   cases of `tests/smoke-check.sh` hit `no step named @with-jq` and the lint rules that do not exist yet.
+  `tests/smoke-check.sh` is the tester's file as a whole, so the tester also changes its copy of the usage text,
+  `USAGE` at line 14, to the new `USAGE` of decision 3, character for character:
+  `USAGE='usage: tests/check.sh [--quick | --only <step|@group>[,...] | --affected [--within <step|@group>[,...]]] [--jobs <1-16>] [--summary <file>]'`.
+  Every usage-error check that compares against it with `grep -qxF -- "$USAGE"` (`usage_case`, line 129, and the
+  summary usage checks at lines 584 and 588) then passes once `tests/check.sh` prints that text, and fails on `main`
+  (Tests).
 - **The implementer** writes `tests/check.sh` (decisions 1 to 3), `.github/workflows/ci.yml` (decision 4),
-  `tests/lint.sh` (decision 5) and `README.md` (decision 10), and never the tester's files or `CHANGELOG.md`. A dispute
+  `tests/lint.sh` (decision 5) and `README.md` (decision 10), and never the tester's files or `CHANGELOG.md`. Its
+  `USAGE` in `tests/check.sh` is the same text as the tester's copy in `tests/smoke-check.sh` (decision 3). A dispute
   over a test goes back to the tester.
 - **The `/next` session** adds the `CHANGELOG.md` bullet of Files touched (step 5 of `/next`, only when the changelog
   has no entry for iteration 70 yet).
@@ -453,6 +489,13 @@ How criterion 3 is carried through `/next` (its steps 3, 5, 7 and 8):
     - seventh fields `nogitbash alone`, `alone jq`, and `jq` on a lint line each exit with code 2;
     - on the real list, `bash tests/check.sh --only @gitbash-8` exits with code 2 and prints
       `check: no Git Bash part 8 (the step list makes 7)`.
+  - **`tests/smoke-check.sh`, the usage text.** Its line 14 copy `USAGE` becomes the new text of decision 3 (decision
+    9), and the usage cases stay as they are. On `main` this copy no longer equals what `tests/check.sh` prints, so the
+    first usage case, `usage_case --only nope` (line 132), fails with
+    `FAIL: usage (--only nope): no usage line on standard error: ...`: `tests/check.sh` exits with code 2 but prints
+    the old `--only <step>[,<step>...]` line, which `grep -qxF -- "$USAGE"` (line 129) does not match. The other
+    `usage_case` calls and the summary usage checks (lines 584 and 588) fail the same way. All pass once
+    `tests/check.sh` has the new `USAGE`.
 
     CI shows that the jobs run the expanded groups: each part's `check: only ...` line or `Selection:` section.
 - Criterion 2: **`tests/test-ci-parts.sh`**. The rules pass on the checkout. Each case goes through `gb_case`, `mkcase`
@@ -526,8 +569,8 @@ How criterion 3 is carried through `/next` (its steps 3, 5, 7 and 8):
   About 100 changed lines.
 - `tests/test-ci-parts.sh` (the tester): rules 10a and 11, the header, and the cases (decision 6, Tests). About 180
   changed lines.
-- `tests/smoke-check.sh` (the tester): the lint cases, the real-list section and `== groups` (Tests). About 100 changed
-  lines.
+- `tests/smoke-check.sh` (the tester): the lint cases, the real-list section, `== groups`, and the line 14 copy of
+  `USAGE`, set to the new text of decision 3 (decision 9, Tests). About 100 changed lines.
 - `tests/test-ci-run-steps.sh` (the tester): header line 3.
 - `README.md` (the implementer): one clause (decision 10).
 - `CHANGELOG.md` (the `/next` session, step 5 of `/next`; the implementer does not touch it): one bullet under
@@ -585,7 +628,7 @@ of iterations 42 to 69.
   measuring times, is a story of its own too.
 - Anything of #390: `continue-on-error`, the final job's name, the timeout, the ruleset, the budget measurement.
 - A `--list` option to print a group's steps, and parts for the Ubuntu job.
-- Editing the specs of iterations 42, 55, 60, 62 and 66 (decision 7 replaces their rules), or the story's text (Left 1).
+- Editing the specs of iterations 42, 55, 60, 62, 66 and 68 (decision 7 replaces their rules), or the story's text (Left 1).
 
 ## Left
 
