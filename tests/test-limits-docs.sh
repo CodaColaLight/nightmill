@@ -142,9 +142,11 @@ grep -qF '21 + 21' "$ini" || fail "skills/init/SKILL.md: the count is not 21 + 2
 if grep -qF '24 + 21' "$ini"; then fail "skills/init/SKILL.md: still says 24 + 21"; fi
 
 # --- Part D ---
-for f in scripts/drive.sh; do
-  p="$root/$f"
-  if [ ! -f "$p" ]; then fail "$f: missing"; continue; fi
+f=scripts/drive.sh
+p="$root/$f"
+if [ ! -f "$p" ]; then
+  fail "$f: missing"
+else
   for w in '--max-turns' '--max-budget-usd' NIGHTMILL_RUN_STARTED NIGHTMILL_ISSUES_LEFT 'gate.' run; do
     grep -qF -- "$w" "$p" || fail "$f: does not contain '$w'"
   done
@@ -153,7 +155,7 @@ for f in scripts/drive.sh; do
     [ -n "$l" ] || continue
     [[ "$l" == *"issue edit"*"--add-label blocked"* ]] || fail "$f: an 'issue edit' without --add-label blocked on its line: $l"
   done < <(grep -F 'issue edit' "$p" || true)
-done
+fi
 
 # --- Part R ---
 sec=$(awk '/^### Limits and the kill switch$/ { s = 1; print; next } s && /^##/ { exit } s { print }' "$readme")

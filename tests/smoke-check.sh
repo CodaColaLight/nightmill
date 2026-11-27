@@ -605,9 +605,8 @@ for want in "bash test-spec-template.sh" "bash smoke-slot.sh"; do
   has_line "$real_first" "add $want first" || fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh"
 done
 # the slow steps are marked in the step list itself (iteration 62, decision 4)
-for want in "bash test-lintcopy-output.sh slow"; do
-  has_line "$real_list" "add $want" || fail "slow steps: 'add $want' is not in the step list of tests/check.sh"
-done
+want="bash test-lintcopy-output.sh slow"
+has_line "$real_list" "add $want" || fail "slow steps: 'add $want' is not in the step list of tests/check.sh"
 
 echo "== the lint: the check runs every smoke script"
 # The section of tests/lint.sh is run alone on scratch copies of the files it reads, each broken once.

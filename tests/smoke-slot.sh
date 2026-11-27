@@ -1138,7 +1138,7 @@ c_check_race() { # c_check_race <branch of take 1> <branch of take 2>: checks th
 }
 claim_case7() {
   claim_reset
-  local p1 p2 gate
+  local p1 p2
   # same shell
   bg_pids=()
   NIGHTMILL_CLAIM_GATE="$tmp/claim-go" bg_take x1 --take feat/x1 --slot 1 --skip-warmup; p1=$bg_pid

@@ -402,11 +402,10 @@ fi
 for f in scripts/template-board.sh tests/smoke-template-board.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/template-board.sh; do
-  if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
-    echo "FAIL: $f changes something; the template check only reads"; fail=1
-  fi
-done
+f=scripts/template-board.sh
+if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
+  echo "FAIL: $f changes something; the template check only reads"; fail=1
+fi
 for w in 'gh project copy' 'template-board' 'field by field'; do
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
 done
@@ -675,10 +674,9 @@ done
 echo "== slots free themselves"
 # A busy slot whose pull request has merged is freed by -Reap / --reap and by the first step of every take
 # (iteration 17), with the tip check and the report text; the README says when it happens.
-for f in scripts/slot.sh; do
-  for w in 'released automatically' 'headRefOid'; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
-  done
+f=scripts/slot.sh
+for w in 'released automatically' 'headRefOid'; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
 done
 grep -qF -- '--reap' README.md || { echo "FAIL: README.md does not mention --reap"; fail=1; }
 
@@ -686,9 +684,8 @@ echo "== capacity is wired"
 # The slot count and the agent limit can be changed during a session (iteration 22): both slot scripts keep the live
 # values in capacity.json and have the capacity command, the skills read the agent limit from it at every decision to
 # start an agent (not once from the configuration), and the README says how and what wins.
-for f in scripts/slot.sh; do
-  grep -qF 'capacity.json' "$f" || { echo "FAIL: $f does not keep the live values in capacity.json"; fail=1; }
-done
+f=scripts/slot.sh
+grep -qF 'capacity.json' "$f" || { echo "FAIL: $f does not keep the live values in capacity.json"; fail=1; }
 grep -qF -- '--capacity' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --capacity"; fail=1; }
 grep -qF -- '--capacity --porcelain' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with --capacity --porcelain"; fail=1; }
 for f in skills/next/SKILL.md skills/fix/SKILL.md skills/spec/SKILL.md; do
@@ -708,16 +705,14 @@ echo "== slots report what their agent does"
 # slot scripts have the report command and decide running or stalled from worktrees.stalledAfterMinutes; /status
 # prints the agent state the slot script gives (no rule of its own) in one Slots section; /next and /fix report at
 # each step; the schema, the example and the README carry the key, and the README says what the states mean.
-for f in scripts/slot.sh; do
-  for w in 'reported' 'stalledAfterMinutes'; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the report item: $w"; fail=1; }
-  done
+f=scripts/slot.sh
+for w in 'reported' 'stalledAfterMinutes'; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the report item: $w"; fail=1; }
 done
 grep -qF -- '--report' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --report"; fail=1; }
-for f in scripts/lib/status.awk; do
-  if grep -qF 'slots: none busy' "$f"; then echo "FAIL: $f still prints 'slots: none busy' (the Slots section lists every slot)"; fail=1; fi
-  if grep -qF 'stalledAfterMinutes' "$f"; then echo "FAIL: $f reads stalledAfterMinutes (the slot script decides running or stalled)"; fail=1; fi
-done
+f=scripts/lib/status.awk
+if grep -qF 'slots: none busy' "$f"; then echo "FAIL: $f still prints 'slots: none busy' (the Slots section lists every slot)"; fail=1; fi
+if grep -qF 'stalledAfterMinutes' "$f"; then echo "FAIL: $f reads stalledAfterMinutes (the slot script decides running or stalled)"; fail=1; fi
 for f in skills/next/SKILL.md skills/fix/SKILL.md; do
   for w in '--report' 'slot-taken' 'code-review' 'done'; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the report item: $w"; fail=1; }
@@ -736,16 +731,13 @@ echo "== the stage record is wired"
 # take, report and freeing to <worktrees.root>/.slots/ledger.tsv; scripts/stages.sh prints the table;
 # tests/check.sh and CI run its smoke test; the README says where the record lives and how to
 # read the table; no skill writes or mentions the record (the scripts that already run write it).
-for f in scripts/slot.sh; do
-  grep -qF 'ledger.tsv' "$f" || { echo "FAIL: $f does not carry the record file: ledger.tsv"; fail=1; }
-done
-for f in scripts/stages.sh; do
-  [ -f "$f" ] || { echo "FAIL: $f does not exist"; fail=1; }
-done
-for w in 'smoke-stages.sh'; do
-  for f in tests/check.sh .github/workflows/ci.yml; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not run $w"; fail=1; }
-  done
+f=scripts/slot.sh
+grep -qF 'ledger.tsv' "$f" || { echo "FAIL: $f does not carry the record file: ledger.tsv"; fail=1; }
+f=scripts/stages.sh
+[ -f "$f" ] || { echo "FAIL: $f does not exist"; fail=1; }
+w='smoke-stages.sh'
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not run $w"; fail=1; }
 done
 for w in 'ledger.tsv' 'ci-and-merge' 'not-reported' 'stages.sh'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the stage record item: $w"; fail=1; }
@@ -1000,10 +992,9 @@ for f in scripts/load.sh scripts/lib/load.sh; do
     echo "FAIL: $f writes or changes something; load only reads"; fail=1
   fi
 done
-for f in scripts/lib/load.sh; do
-  for w in NIGHTMILL_LOAD_FIXTURE /proc/stat /proc/meminfo MemAvailable vm_stat hw.memsize; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry the reader item: $w"; fail=1; }
-  done
+f=scripts/lib/load.sh
+for w in NIGHTMILL_LOAD_FIXTURE /proc/stat /proc/meminfo MemAvailable vm_stat hw.memsize; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry the reader item: $w"; fail=1; }
 done
 json_load schema/nightmill.schema.json
 for spec in maxSuggestedAgents:4:1 memoryPerAgentGB:8:1 loadWindowSeconds:10:2; do
@@ -1023,9 +1014,8 @@ grep -qF -- "one per $gb_default GB" skills/init/SKILL.md || { echo "FAIL: skill
 for w in load.sh maxSuggestedAgents memoryPerAgentGB loadWindowSeconds 'rate limits' 'token budget'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/smoke-load.sh; do
-  grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
-done
+f=tests/smoke-load.sh
+grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
 for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-load' "$f" || { echo "FAIL: $f does not run smoke-load"; fail=1; }
 done
@@ -1038,11 +1028,10 @@ echo "== room is wired"
 for f in scripts/room.sh tests/smoke-room.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/room.sh; do
-  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
-    echo "FAIL: $f writes, changes or stops something, or calls a slot script; room only reads and holds back"; fail=1
-  fi
-done
+f=scripts/room.sh
+if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
+  echo "FAIL: $f writes, changes or stops something, or calls a slot script; room only reads and holds back"; fail=1
+fi
 for w in 'load_measure 3' 'room_settings' '--since'; do
   grep -qF -- "$w" scripts/room.sh 2>/dev/null || { echo "FAIL: scripts/room.sh does not carry: $w"; fail=1; }
 done
@@ -1077,9 +1066,8 @@ done
 for w in room.sh roomCheck roomMinFreeMB roomMaxCpuPercent roomPauseSeconds roomMaxWaitMinutes; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/smoke-room.sh; do
-  grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
-done
+f=tests/smoke-room.sh
+grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
 for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-room' "$f" || { echo "FAIL: $f does not run smoke-room"; fail=1; }
 done
@@ -1091,12 +1079,12 @@ echo "== control is wired"
 for f in scripts/control.sh skills/control/SKILL.md tests/smoke-control.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/control.sh; do
-  [ -f "$f" ] || continue
+f=scripts/control.sh
+if [ -f "$f" ]; then
   if grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|Copy-Item|WriteAll|IO\.File\]::|json_marker|--clear|--take|--release|--abandon|--reap|--report|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])gh +[a-z]|(^|[^A-Za-z0-9_-])kill( |$)|(^|[^A-Za-z0-9_-])(mv|cp|tee|mkdir) ' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes, removes or stops something; control changes the numbers only through the slot script"; fail=1
   fi
-done
+fi
 for w in '--capacity' '--agent-limit' '--slot-count' 'load_measure' 'load_suggest' 'control_settings' 'NIGHTMILL_NOW'; do
   grep -qF -- "$w" scripts/control.sh 2>/dev/null || { echo "FAIL: scripts/control.sh does not carry: $w"; fail=1; }
 done
@@ -1135,10 +1123,9 @@ fi
 for w in /nightmill:control control.sh /loop controlMode controlMinAgents controlMaxAgents controlCooldownMinutes controlIntervalMinutes 'The controller does not see'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/smoke-control.sh; do
-  for w in NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW; do
-    grep -qF "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not set $w"; fail=1; }
-  done
+f=tests/smoke-control.sh
+for w in NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW; do
+  grep -qF "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not set $w"; fail=1; }
 done
 for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-control' "$f" || { echo "FAIL: $f does not run smoke-control"; fail=1; }
@@ -1159,15 +1146,13 @@ for f in scripts/dashboard.sh scripts/lib/dashboard.awk; do
     echo "FAIL: $f changes, serves, opens or links something; the dashboard only reads and shows"; fail=1
   fi
 done
-for f in scripts/lib/dashboard.awk; do
-  for w in 'http-equiv="refresh"' '&amp;' '&lt;' '&gt;' '&quot;' '&#39;'; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
+f=scripts/lib/dashboard.awk
+for w in 'http-equiv="refresh"' '&amp;' '&lt;' '&gt;' '&quot;' '&#39;'; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
 done
-for f in scripts/dashboard.sh; do
-  for w in NIGHTMILL_NOW dashboardRefreshSeconds stalledAfterMinutes; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
+f=scripts/dashboard.sh
+for w in NIGHTMILL_NOW dashboardRefreshSeconds stalledAfterMinutes; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
 done
 grep -qF -- 'status.sh" --porcelain' scripts/dashboard.sh 2>/dev/null || { echo "FAIL: scripts/dashboard.sh does not call status.sh --porcelain"; fail=1; }
 grep -qF -- '--porcelain)' scripts/status.sh || { echo "FAIL: scripts/status.sh has no --porcelain"; fail=1; }
@@ -1204,18 +1189,17 @@ if [ -f hooks/panel.tsx ]; then
   done
 fi
 grep -qF -- 'slot.sh" --status --porcelain' scripts/panel.sh 2>/dev/null || { echo "FAIL: scripts/panel.sh does not call slot.sh --status --porcelain"; fail=1; }
-for f in scripts/panel.sh; do
-  for w in panelRefreshSeconds NIGHTMILL_NOW; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
-  if [ -f "$f" ]; then
-    panel_script=$(grep -vE '^[[:space:]]*#' "$f" || true)
-    for w in '.slots' '--take' '--release' '--abandon' '--reap' '--report' '--capacity' '-Take' '-Release' '-Abandon' '-Reap' '-Report' '-Capacity'; do
-      if printf '%s\n' "$panel_script" | grep -F -- "$w" >/dev/null; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
-    done
-    if printf '%s\n' "$panel_script" | grep -E '(^|[^A-Za-z0-9_-])gh +[a-z]' >/dev/null; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
-  fi
+f=scripts/panel.sh
+for w in panelRefreshSeconds NIGHTMILL_NOW; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
 done
+if [ -f "$f" ]; then
+  panel_script=$(grep -vE '^[[:space:]]*#' "$f" || true)
+  for w in '.slots' '--take' '--release' '--abandon' '--reap' '--report' '--capacity' '-Take' '-Release' '-Abandon' '-Reap' '-Report' '-Capacity'; do
+    if printf '%s\n' "$panel_script" | grep -F -- "$w" >/dev/null; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
+  done
+  if printf '%s\n' "$panel_script" | grep -E '(^|[^A-Za-z0-9_-])gh +[a-z]' >/dev/null; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
+fi
 grep -qF '"panelRefreshSeconds": { "type": "integer", "minimum": 5, "default": 15,' schema/nightmill.schema.json || { echo "FAIL: schema: worktrees.panelRefreshSeconds is not an integer of at least 5, default 15"; fail=1; }
 json_load templates/nightmill.example.json
 [ "$(json_get worktrees.panelRefreshSeconds)" = 15 ] || { echo "FAIL: templates/nightmill.example.json: worktrees.panelRefreshSeconds is not 15"; fail=1; }

@@ -11,7 +11,6 @@ set -euo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 
 ext=ps1
-keep="tests/check.$ext tools/make-icon.$ext tools/make-social-preview.$ext"
 
 # scan <root>: the FAIL lines of both rules on stdout
 scan() {

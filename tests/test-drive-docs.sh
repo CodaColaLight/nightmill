@@ -18,9 +18,11 @@ forbidden=(--bare --dangerously-skip-permissions bypassPermissions --allowedTool
 nostatus=(item-edit item-add item-delete field-create updateProjectV2ItemFieldValue single-select-option-id "issue close" "pr merge" "label create")
 
 # --- Part S ---
-for f in scripts/drive.sh; do
-  p="$root/$f"
-  if [ ! -f "$p" ]; then fail "$f: missing"; continue; fi
+f=scripts/drive.sh
+p="$root/$f"
+if [ ! -f "$p" ]; then
+  fail "$f: missing"
+else
   for w in "/nightmill:fix all" "/nightmill:next" "--permission-mode manual" "--output-format json" "--max-turns" "--max-budget-usd" "issue comment" "nightmill-stop" "nightmill-drive.lock"; do
     grep -qF -- "$w" "$p" || fail "$f: does not contain '$w'"
   done
@@ -38,7 +40,7 @@ for f in scripts/drive.sh; do
       case "$l" in *"$w"*) fail "$f: an 'issue edit' with $w: $l" ;; esac
     done
   done < <(grep -F 'issue edit' "$p" || true)
-done
+fi
 if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
   mode=$(git -C "$root" ls-files -s scripts/drive.sh | awk '{ print $1 }')
   [ "$mode" = "100755" ] || fail "scripts/drive.sh: mode '$mode' in the index, 100755 expected"

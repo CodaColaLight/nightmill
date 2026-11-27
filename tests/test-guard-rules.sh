@@ -33,23 +33,22 @@ if grep -F 'scripts/guard.sh' "$H" | grep -F 'exit 0' >/dev/null; then bad "$H: 
 need "$H" '"SessionStart"' 'session-start.sh' './panel.tsx'
 
 echo "== the guard scripts"
-for s in scripts/guard.sh; do
-  need "$s" \
-    'nightmill guard: refused: a merge without --auto.' \
-    'nightmill guard: refused: gh pr merge with --admin.' \
-    'nightmill guard: refused: a merge through gh api.' \
-    'nightmill guard: refused: a force push.' \
-    'nightmill guard: refused: a push to ' \
-    'nightmill guard: refused: setting ' \
-    'nightmill guard: refused: a status edit, because the ' \
-    'field-list' \
-    'nightmill guard: refused: deleting a remote branch.' \
-    'nightmill guard: refused: a forced branch delete.' \
-    'nightmill guard: refused: the GraphQL mutation ' \
-    'nightmill guard: refused: a GraphQL query the guard cannot read' \
-    'addSubIssue' 'createProjectV2View' 'enablePullRequestAutoMerge' \
-    'updateProjectV2Field' 'updateProjectV2ItemFieldValue' 'updateProjectV2View'
-done
+s=scripts/guard.sh
+need "$s" \
+  'nightmill guard: refused: a merge without --auto.' \
+  'nightmill guard: refused: gh pr merge with --admin.' \
+  'nightmill guard: refused: a merge through gh api.' \
+  'nightmill guard: refused: a force push.' \
+  'nightmill guard: refused: a push to ' \
+  'nightmill guard: refused: setting ' \
+  'nightmill guard: refused: a status edit, because the ' \
+  'field-list' \
+  'nightmill guard: refused: deleting a remote branch.' \
+  'nightmill guard: refused: a forced branch delete.' \
+  'nightmill guard: refused: the GraphQL mutation ' \
+  'nightmill guard: refused: a GraphQL query the guard cannot read' \
+  'addSubIssue' 'createProjectV2View' 'enablePullRequestAutoMerge' \
+  'updateProjectV2Field' 'updateProjectV2ItemFieldValue' 'updateProjectV2View'
 
 echo "== init: the Deny rules bullet"
 RULES=(
