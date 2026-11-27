@@ -80,7 +80,13 @@
         "specPattern": { "type": "string", "default": "iteration-<N>-<slug>.md" },
         "changelog": { "type": "string", "default": "docs/CHANGELOG.md" },
         "milestonePattern": { "type": "string", "default": "iteration-<N>" },
-        "decisionsDir": { "type": "string", "default": "docs/decisions" }
+        "decisionsDir": { "type": "string", "default": "docs/decisions" },
+        "maxSpecLines": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "The most lines a spec file may have, every line counted (blank lines, headings and the status line too). /spec tells the spec writer the limit, the spec reviewer reports a spec over it as a blocking finding, and a story that does not fit gets a split proposed on its issue instead of a spec. 0: no limit."
+        }
       }
     },
     "verification": {

@@ -1,6 +1,6 @@
 # Iteration 71: /spec holds a spec to a size limit, and a story that does not fit gets a split proposal
 
-Status: draft, awaiting approval (#347)
+Status: delivered in iteration 71 (PR #402)
 
 Story #347, epic #337 (fast verification loop). A new config key, `iterations.maxSpecLines`, holds the most lines a
 spec file may have; 0, the default, and an absent key mean no limit, and `/spec` then runs exactly as today. With a

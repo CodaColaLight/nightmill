@@ -1885,6 +1885,10 @@ echo "== the fast lane of /fix"
 # tests/test-fast-lane.sh.
 bash tests/test-fast-lane.sh "$PWD" || fail=1
 
+echo "== a spec stays within its size limit"
+# Iteration 71 (#347): iterations.maxSpecLines; the pins live in tests/test-spec-size-limit.sh.
+bash tests/test-spec-size-limit.sh "$PWD" || fail=1
+
 echo "== a take killed in its warm-up leaves the claim with the pid it recorded"
 # Bug #373: tests/smoke-slot.sh, interruption case 4, failed in Git Bash on Windows because the case asked for the
 # killed take's Windows pid after the take was reaped. tests/test-slot-killed-take.sh runs that case (read from the

@@ -29,7 +29,8 @@
     "specPattern": "iteration-<N>-<slug>.md",
     "changelog": "docs/CHANGELOG.md",
     "milestonePattern": "iteration-<N>",
-    "decisionsDir": "docs/decisions"
+    "decisionsDir": "docs/decisions",
+    "maxSpecLines": 0
   },
   "verification": {
     "check": "bash scripts/check.sh",
