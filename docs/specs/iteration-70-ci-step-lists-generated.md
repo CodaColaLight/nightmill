@@ -65,6 +65,30 @@ Read on branch `spec/70-ci-step-lists-generated` at 4395b13 ("docs: iteration 69
   - `tests/smoke-check.sh` breaks these rules in its cases `cibash`, `cijson`, `ciswap` and `cijsondirect` (lines 654
     to 666). `tests/test-ci-parts.sh` breaks rule 11 in `gbnoguard`, `gbgate2`, `gbnewstep`, `gbnostep`, `gborder`,
     `gblintcopy`, `gbalone`, `gbout` and `gbalonenope` (lines 368 to 403).
+- **Seven wiring loops also read the workflow for step names** (`tests/lint.sh`, the same lines at 4395b13 and at
+  `main` 1adfa4d). Each is a loop `for f in tests/check.sh .github/workflows/ci.yml; do` that fails when either file
+  lacks a step name:
+  - `== models is wired`, lines 435 to 437: `smoke-models`, `FAIL: $f does not run smoke-models`;
+  - `== the stage record is wired`, lines 739 to 741: `w='smoke-stages.sh'` (line 738), `FAIL: $f does not run $w`;
+  - `== load is wired`, lines 1019 to 1021: `smoke-load`;
+  - `== room is wired`, lines 1071 to 1073: `smoke-room`;
+  - `== control is wired`, lines 1130 to 1132: `smoke-control`;
+  - `== dashboard is wired`, lines 1165 to 1167: `smoke-dashboard`;
+  - `== slots pane is wired`, lines 1209 to 1213: `smoke-panel` and `claude plugin test`,
+    `FAIL: $f does not carry: $w`.
+
+  The specs that pinned them: iteration 16 (`docs/specs/iteration-16-models-command.md` line 234: "`tests/check.sh`,
+  `tests/check.ps1` and `ci.yml` mention `smoke-models`"), iteration 41 (`iteration-41-stage-times.md` lines 367 and
+  368: "`tests/check.sh` and `.github/workflows/ci.yml` run `smoke-stages.sh`"), iteration 24
+  (`iteration-24-machine-load.md` lines 459 and 460), iteration 28 (`iteration-28-machine-room.md` lines 435 and 436),
+  iteration 30 (`iteration-30-load-controller.md` lines 544 and 545), iteration 31 (`iteration-31-dashboard.md` line
+  614), each "`tests/check.sh` and `.github/workflows/ci.yml` contain `smoke-<x>`", and iteration 32
+  (`iteration-32-panel.md` lines 511 and 512: "contain `smoke-panel` and `claude plugin test`"). Iteration 42 names
+  them in its Facts (`iteration-42-parallel-check.md` lines 128 to 132: "The lint ties the check and CI by name
+  today"). `ci.yml` names six of these steps on line 44 and all seven in the `only:` line of part 7 (line 69).
+  `claude plugin test` is the claude step that `ci.yml` line 120 runs directly (`- run: claude plugin test .`); it is
+  no bash step. No test reads the FAIL texts of these loops (`tests/smoke-check.sh` and the `tests/test-*.sh` files
+  name none of them).
 - **Rules that stay, but read the line format** (`tests/lint.sh`): `firsts` (line 1230, `/ first( slow)?$/`), the
   step-list pattern (line 1250, `^add (lint|bash) [A-Za-z0-9._-]+( first)?( slow)?$`), `chk_slows` and the `# Time: `
   loop (lines 1256 and 1264, `$NF == "slow"`), and `tests/smoke-check.sh` lines 601 to 609 (`sed 's/ slow$//'`, then
@@ -206,7 +230,19 @@ lint compares it with the count derived from the step list (decision 6). It chan
 *Removed* (they only compared the two lists):
 
 - `chk_only` (lines 1321 to 1337) and its call (lines 1353 to 1356);
-- the list part of the two-line rule (lines 1338 to 1352).
+- the list part of the two-line rule (lines 1338 to 1352);
+- the workflow half of the seven wiring loops of Facts. After decision 4 `ci.yml` names none of these steps, and the
+  new rule below fails when it does, so each loop would go red on the checkout. In each of the six loops at lines 435
+  to 437 (`smoke-models`), 739 to 741 (`smoke-stages.sh`), 1019 to 1021 (`smoke-load`), 1071 to 1073 (`smoke-room`),
+  1130 to 1132 (`smoke-control`) and 1165 to 1167 (`smoke-dashboard`), the loop over the two files becomes the one
+  `grep` on `tests/check.sh`, with the same FAIL text (`$f` becomes `tests/check.sh`), for example
+  `grep -qF 'smoke-models' tests/check.sh || { echo "FAIL: tests/check.sh does not run smoke-models"; fail=1; }`.
+  In `== slots pane is wired` (lines 1209 to 1213), `smoke-panel` is checked in `tests/check.sh` only, and
+  `claude plugin test` in both files, as today: it is a claude step, which the workflow runs directly and the new rule
+  does not read. The half that reads `tests/check.sh` stays because it is no comparison of two lists. What replaces
+  the workflow half: the step list is the only list, the groups of decision 3 run every bash step in CI, and the
+  rules below (no step name in the workflow; a test file in no list fails). The sections' comments ("the check and CI
+  run the tests") stay: CI still runs them, through the groups.
 
 *Changed*:
 
@@ -358,7 +394,27 @@ cases are in `tests/smoke-check.sh` (decision 9).
   Replaced by decision 4: the first line ends `$CHECK_SELECT @with-jq`, the second `$CHECK_SELECT @without-jq`, still
   on each side of `Hide jq`, and decision 5's rule on the bash job's two lines. Its iteration 60 decision 8 rule 5 (the
   lint text naming `smoke-json.sh`) is the rule of the second bullet of this list;
-- iteration 62 decision 7 (the `--only` lists name every step): there are no lists left.
+- iteration 62 decision 7 (the `--only` lists name every step): there are no lists left;
+- iteration 68 decision 2 (`docs/specs/iteration-68-remove-powershell.md` lines 171 and 172): "`USAGE`, which becomes
+  `usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]`".
+  Replaced by decision 3's `USAGE`, with `<step|@group>[,...]` in both places;
+- iteration 60 decision 2 (`docs/specs/iteration-60-ci-affected-jobs.md` lines 65 to 68): "`--within <step>[,<step>...]`
+  ... a name that is no step gives `check: no step named <x>` and the usage error, as `--only` does", and its usage
+  line with `--within <step>[,<step>...]`. Replaced by decision 3: `--within` takes `<step|@group>[,...]`, an element
+  that begins with `@` is a group, not a step, and is expanded to its steps (also in the `--affected --within`
+  fallback); only an element without `@` that is no step still gives `check: no step named <x>`, and an unknown or
+  empty group or a part beyond N gives decision 3's errors, each with the usage line and exit code 2;
+- iteration 42 decisions 7 and 8 (`docs/specs/iteration-42-parallel-check.md` lines 271 and 272, and 285 to 290):
+  "`--only <name>[,<name>...]` ... runs exactly the named steps of the list ... A name that is not in the list is a
+  usage error", and the usage `tests/check.sh [--quick | --only <step>[,<step>...]] ...` with "for an unknown step
+  first `check: no step named <name>`". Replaced by decision 3: `--only` takes `<step|@group>[,...]`; an `@` name is a
+  group, not a name in the list, and runs the group's steps in list order; a name without `@` that is not in the list
+  is still the usage error with `check: no step named <name>`; the usage line is decision 3's `USAGE`;
+- the workflow half of the wiring rules of iterations 16, 24, 28, 30, 31, 32 and 41 (each quoted in Facts: "`ci.yml`
+  mention[s] `smoke-models`", "`tests/check.sh` and `.github/workflows/ci.yml` contain `smoke-<x>`" or "run
+  `smoke-stages.sh`"), which the seven loops of `tests/lint.sh` enforce. Replaced by decision 5: `tests/check.sh`
+  still contains each name, the workflow contains none of them, and CI runs them through the groups. Iteration 32's
+  `claude plugin test` in both files stays.
 
 **8. #390 (iteration 69) and the order of the merges.** This spec does not depend on #390, and #390 does not depend on
 it. Each states its rules by content; the line numbers in this spec are those of `main` at 4395b13. The pull request
@@ -400,7 +456,8 @@ does not touch it).
   summary usage checks at lines 584 and 588) then passes once `tests/check.sh` prints that text, and fails on `main`
   (Tests).
 - **The implementer** writes `tests/check.sh` (decisions 1 to 3), `.github/workflows/ci.yml` (decision 4),
-  `tests/lint.sh` (decision 5) and `README.md` (decision 10), and never the tester's files or `CHANGELOG.md`. Its
+  `tests/lint.sh` (decision 5, the seven wiring loops included; no test reads their texts, so they need no tester
+  change) and `README.md` (decision 10), and never the tester's files or `CHANGELOG.md`. Its
   `USAGE` in `tests/check.sh` is the same text as the tester's copy in `tests/smoke-check.sh` (decision 3). A dispute
   over a test goes back to the tester.
 - **The `/next` session** adds the `CHANGELOG.md` bullet of Files touched (step 5 of `/next`, only when the changelog
@@ -459,7 +516,7 @@ How criterion 3 is carried through `/next` (its steps 3, 5, 7 and 8):
 | 1 | CI takes the steps of each job from the check's step list; no step name is written in the workflow file | Decisions 3 and 4; decision 5 (no step name in the workflow, the bash job's two lines) |
 | 2 | The split of the steps into the Git Bash parts is derived, or stated in the step list itself (the story's "PowerShell steps", read for the CI of today: Facts) | Decisions 1 and 3 (the marks `alone` and `nogitbash`, the parts derived from them); decision 6 (rule 11a pins the marks, rule 11b the count); decision 7 |
 | 3 | A new test file is added in one place, one line per test | **Met in part, as the maintainer accepted in the review of this spec** (decision 11). Met: a new test is one unmarked line in the step list, in name order, and nothing in `ci.yml` (decisions 1 and 2), tested under criterion 1. Not met: it still needs one map line in `tests/check.sh` (map rule 3, which belongs to the map, out of scope). The tester's line is `not tested: the map line of a new test is out of scope (decision 11)`; the implementer reports `Result: partial` with `3 not met (decision 11: the map line)`, no `unmet:` path and no dispute; `/next` files the map line as a story under epic #337 and never ticks criterion 3 (decision 11, Left 2) |
-| 4 | The lint rules that only compared the two lists are removed; a test file that is in no list still fails the lint | Decision 5 (removed and changed rules, test files that run nowhere); decision 6 (rule 11 replaced) |
+| 4 | The lint rules that only compared the two lists are removed; a test file that is in no list still fails the lint | Decision 5 (removed and changed rules, the workflow half of the seven wiring loops, test files that run nowhere); decision 6 (rule 11 replaced); decision 7 |
 | 5 | The required job names do not change | Decision 4 (no `name:` changes); decision 8 (#390's name, in either order) |
 
 ## Tests
@@ -550,6 +607,12 @@ How criterion 3 is carried through `/next` (its steps 3, 5, 7 and 8):
   - `missing`, `twice`, `nofile`, `cidirect`, `cirename` and `cibegins` stay.
 
   The removed rules appear in no case: the code reviewer checks that `chk_only` is gone from `tests/lint.sh`.
+  The seven wiring loops (decision 5) are shown by `bash tests/lint.sh` on the checkout after decision 4: it prints no
+  `does not run smoke-` and no `does not carry: smoke-panel` line for `.github/workflows/ci.yml`, and passes. Kept
+  unchanged, the loops would fail there, since `ci.yml` then names none of the steps. The code reviewer checks that
+  `grep -nF 'for f in tests/check.sh .github/workflows/ci.yml' tests/lint.sh` finds at most one loop, the one of
+  `== slots pane is wired` for `claude plugin test` alone, and that each of the seven names is still checked in
+  `tests/check.sh`. No case is added for them: their texts are unchanged and no test reads them.
 - Criterion 5: `tests/lint.sh` on the checkout (the required-name loops, unchanged), and `cirename` and `cibegins`. The
   code reviewer checks that the diff of `ci.yml` touches no `name:` line and only the lines of decision 4.
 - **The tester** runs `bash tests/test-ci-parts.sh` and `bash tests/smoke-check.sh`, which fail on `main` as decision 9
@@ -565,8 +628,9 @@ How criterion 3 is carried through `/next` (its steps 3, 5, 7 and 8):
   About 200 changed lines, half of them from the sort.
 - `.github/workflows/ci.yml` (the implementer): lines 39 and 44, the matrix, and the run line (decision 4). About 20
   changed lines (the 15 matrix lines become 2).
-- `tests/lint.sh` (the implementer): the removed list rules, the changed and new rules, and two comments (decision 5).
-  About 100 changed lines.
+- `tests/lint.sh` (the implementer): the removed list rules, the workflow half of the seven wiring loops (lines 435 to
+  437, 739 to 741, 1019 to 1021, 1071 to 1073, 1130 to 1132, 1165 to 1167 and 1209 to 1213), the changed and new
+  rules, and two comments (decision 5). About 120 changed lines, about 20 of them the wiring loops.
 - `tests/test-ci-parts.sh` (the tester): rules 10a and 11, the header, and the cases (decision 6, Tests). About 180
   changed lines.
 - `tests/smoke-check.sh` (the tester): the lint cases, the real-list section, `== groups`, and the line 14 copy of
@@ -611,7 +675,7 @@ of iterations 42 to 69.
 
 ## Size estimate
 
-`L`: about 600 changed lines (`tests/check.sh` 200, `tests/test-ci-parts.sh` 180, `tests/lint.sh` 100,
+`L`: about 620 changed lines (`tests/check.sh` 200, `tests/test-ci-parts.sh` 180, `tests/lint.sh` 120,
 `tests/smoke-check.sh` 100, `ci.yml` 20, README 3, CHANGELOG 5). The sort alone accounts for about 100 of them.
 
 ## Not done
@@ -653,3 +717,8 @@ of iterations 42 to 69.
 4. **Name order** (decision 2) is this spec's choice for the goal's "do not conflict". It reorders the list once. If the
    maintainer prefers the list's current order, two pull requests that each add a test at the end will keep conflicting
    on the step list.
+5. **What the spec says about #390 is stale.** Facts and decision 8 describe #390 (iteration 69) as not merged. It
+   has merged since (5a95ed5): `main` at 1adfa4d has no `continue-on-error` in the part job, the final job named
+   `Git Bash scripts smoke tests`, the part timeout 51 and three required names in `tests/lint.sh`. The case "#390
+   merges first" of decision 8 is the one that applies. This revision only added the wiring loops (decision 5) and
+   the replaced usage rules (decision 7); it does not rewrite the spec for the merge.
