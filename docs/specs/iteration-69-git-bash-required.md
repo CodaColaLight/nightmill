@@ -123,20 +123,31 @@ iteration 69)".
   `    # The bash steps in Git Bash on Windows runners, in parts (iterations 64, 66 and 69; decision record 0004); the`
   and `    # job smoke-gitbash below carries the required name and fails unless every part succeeded.`; the line
   `        continue-on-error: true` of the check step (line 76) goes; `timeout-minutes: 360` becomes
-  `timeout-minutes: 51` (decision 4). Its name, strategy, matrix, lists, checkout and run line stay.
+  `timeout-minutes: 51` (decision 4, which replaces the measured timeout of iteration 65 decision 7 and iteration 66
+  decision 8). Its name, strategy, matrix, lists, checkout and run line stay.
 - Job `smoke-gitbash`: line 80 is replaced by
   `    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.`, directly above
   `    name: Git Bash scripts smoke tests` (in place of line 81). `needs`, `if: always()`, `runs-on`, `timeout-minutes: 5`,
   its permissions comment and block, and its three steps stay word for word.
 - Nothing else in the file changes.
 
-**4. The parts' timeout is 51 minutes**: 3 times the 17m00s that iteration 66 decision 2 allows a part's job, the
-factor of iteration 65 decision 7 and of bug #264's `smoke-bash` timeout. Iteration 65 decision 7 took the 3 times from
-"the longest part's job time on the first run that meets the rule"; that run exists only after the pull request is
-open and `/next` has ended, and a timeout changed after it would make a new final commit and void the measurement. A
-part within the budget runs at most a third of the timeout; a hung part now fails after 51 minutes instead of 6 hours,
-which matters once every pull request waits for the chain. The lint's rule (1 to 360) holds. No test pins the number;
-the code reviewer checks it.
+**4. The parts' timeout is 51 minutes** (accepted by the maintainer): 3 times the 17m00s that iteration 66 decision 2
+allows a part's job, the factor of iteration 65 decision 7 and of bug #264's `smoke-bash` timeout. This decision
+**replaces** two earlier rules, both "3 times the longest measured part job time":
+
+- the bullet of iteration 65 decision 7 on job `smoke-gitbash-part` (`docs/specs/iteration-65-bash-only-invariant.md`,
+  line 229): "`timeout-minutes` is 3 times the longest part's job time on the first run that meets the rule below,
+  rounded up to whole minutes, at most 360";
+- the first bullet of iteration 66 decision 8, the text decision 7 of iteration 65 was to say
+  (`docs/specs/iteration-66-gitbash-job-time.md`, lines 543 and 544): "`timeout-minutes` of `smoke-gitbash-part` is 3
+  times the longest part's measured job time, rounded up to whole minutes, at most 360".
+
+The reason: the measured run exists only after the pull request is open and `/next` has ended, and a timeout changed
+after it would make a new final commit and void the measurement. The maintainer accepted the replacement in this
+spec's review (it was an open question here before). A part within the budget runs at most a third of the timeout; a
+hung part now fails after 51 minutes instead of 6 hours, which matters once every pull request waits for the chain.
+The lint's rule (1 to 360) holds. No test pins the number; the code reviewer checks it. The specs of iterations 65 and
+66 are not edited; this decision is the rule from here on.
 
 **5. The lint knows three required names** (the implementer's, `tests/lint.sh`, as iteration 65 decision 7 gave it
 to the implementer): `Git Bash scripts smoke tests` is added, after `'bash scripts smoke tests'`, to the loops at lines
@@ -283,7 +294,8 @@ criterion 3 met.
 - Criterion 5: `bash tests/check.sh` is green on the branch (it runs the full check: `ci.yml` and the tests are shared
   paths); "How verified" gives its last line and its `Times:` total. The code reviewer checks that
   `git diff origin/main --stat` lists exactly the files of Files touched, and that the diff of `ci.yml` is the lines of
-  decisions 3 and 4 only. On the pull request's run `Lint (generic, JSON, skills, shell)` and
+  decisions 3 and 4 only (`timeout-minutes: 51`, not a measured value: decision 4 replaces the "3 times the longest
+  measured part job time" of iteration 65 decision 7 and iteration 66 decision 8). On the pull request's run `Lint (generic, JSON, skills, shell)` and
   `bash scripts smoke tests` are green.
 - **The tester** runs `bash tests/test-ci-parts.sh` (it fails on the checkout as decision 7 says) and nothing longer;
   **the implementer** runs `bash tests/test-ci-parts.sh`, `bash tests/lint.sh` and then the full check before the
@@ -292,8 +304,9 @@ criterion 3 met.
 ## Files touched
 
 - `.github/workflows/ci.yml` (the implementer): the part job's comment, its check step without
-  `continue-on-error: true`, its `timeout-minutes: 51`; the final job's `Required check` comment and name (decisions 3
-  and 4). About 7 changed lines.
+  `continue-on-error: true`, its `timeout-minutes: 51` (decision 4, in place of the "3 times the longest measured part
+  job time" of iteration 65 decision 7 and iteration 66 decision 8); the final job's `Required check` comment and name
+  (decisions 3 and 4). About 7 changed lines.
 - `tests/test-ci-parts.sh` (the tester): rules 10a and 10b, the header, the cases of Tests (decisions 1, 2 and 7). About
   25 changed lines.
 - `tests/lint.sh` (the implementer): the third required name in two loops and the heredoc, the count 3 and its text, two
@@ -305,7 +318,8 @@ criterion 3 met.
 
   ```
   - Iteration 69 (#390): the Git Bash CI parts fail on a failing step (no continue-on-error), time out after 51
-    minutes, and their final job is named Git Bash scripts smoke tests, the check the maintainer adds to the required
+    minutes (3 times the 17-minute budget of a part's job, in place of 3 times a measured part job time, the rule of
+    iterations 65 and 66), and their final job is named Git Bash scripts smoke tests, the check the maintainer adds to the required
     checks of main once two measured runs are within the 17-minute budget of iteration 66; the lint fails on a part
     with continue-on-error and on any other name for the final job. No config key.
   ```
@@ -343,6 +357,8 @@ CHANGELOG 5).
 - Changing the ruleset in code, or making a part's name required (iteration 66 decision 8: only the final job's name).
 - Running the measurement inside `/next` (its hard rules forbid `gh run rerun`), or more than the two attempts of
   decision 8 on one commit.
+- Measuring a part's job time to set the timeout (iteration 65 decision 7 and iteration 66 decision 8, replaced by
+  decision 4), or editing the specs of iterations 65 and 66 to say so.
 - The final job's own `continue-on-error: true` on its `Job times` step, its `timeout-minutes: 5`, and the non-blocking
   `claude plugin validate` job: unchanged.
 - The freeze lint and the removal of any `.ps1` file (#365), a skill, an agent or a README call line (#364), the
@@ -358,6 +374,3 @@ CHANGELOG 5).
    blocking parts and the new name without making the check required, the `Required check` comment, the lint's third
    name (decision 5) and the README and CLAUDE.md sentences (decision 6) would then be untrue; that choice needs a
    change to this spec before `/next`.
-2. **The timeout departs from iteration 65 decision 7's input** (decision 4: 3 times the budget of a part's job, 51
-   minutes, in place of 3 times a measured job time), because the measured run comes only after `/next` has ended. The
-   maintainer confirms it by approving this spec.
