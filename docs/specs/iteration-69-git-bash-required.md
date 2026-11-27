@@ -1,6 +1,6 @@
 # Iteration 69: the Git Bash parts fail on a failing step, and their final job takes the required name
 
-Status: draft, awaiting approval (#390)
+Status: delivered in iteration 69 (PR #398)
 
 Story #390, epic #337 (fast verification loop): the rest of #363, iteration 65 decision 7, which did not land in pull
 request #389. The Git Bash CI parts of iteration 66 lose `continue-on-error` on their check step, so a failing step
