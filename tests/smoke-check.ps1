@@ -771,8 +771,9 @@ try {
     Copy-Item "$here\templates\nightmill.example.json" "$d\templates\"
     Copy-Item "$here\scripts\*.sh", "$here\scripts\*.ps1" "$d\scripts\"
     Copy-Item "$here\scripts\lib" "$d\scripts\lib" -Recurse
-    Copy-Item "$here\README.md", "$here\CONTRIBUTING.md" $d
+    Copy-Item "$here\README.md", "$here\CONTRIBUTING.md", "$here\CHANGELOG.md" $d
     Copy-Item "$here\skills" "$d\skills" -Recurse
+    Copy-Item "$here\agents" "$d\agents" -Recurse
   }
   function Lint-In([string]$d) {
     $df = $d -replace '\\', '/'
