@@ -209,12 +209,25 @@ every pull request. The order applies to this iteration's one pull request, whic
    before this pull request merges. That release takes iterations 65 to 67 out of `Unreleased`; it is the release
    before this one that record 0004 step 3 asks for and that the changelog bullet (decision 12) tells a project to pin.
    The pull request may be opened before it; it is not merged before it, and it is brought up to date with `main`
-   after it (decision 12).
+   after it. **Who brings it up to date**: the maintainer, either by `git rebase origin/main` on the pull request's
+   branch (in its slot or any checkout), then `bash tests/check.sh` and `git push --force-with-lease` (the ruleset
+   forbids force pushes to `main` only), or by asking `/next 365` to resume at Review, which does the same. The one
+   conflict is in `CHANGELOG.md`: `main`'s new release section is kept as it is, and this iteration's bullet (Files
+   touched, word for word) becomes the only bullet under `## Unreleased`. When the release is cut before `/next`
+   starts, the bullet is written there from the start and no rebase is needed for it.
 2. The pull request is opened; its own run cannot report `PowerShell scripts smoke tests` (it waits as expected).
-   "How verified" shows `Lint (generic, JSON, skills, shell)` and `bash scripts smoke tests` green and every Git Bash
-   part's check step log ending `SELECTED CHECKS PASSED (<k> of 51 steps; the full check has not run)`, the `<k>`
-   adding up to 47 (the change touches `tests/check.sh` and `ci.yml`, shared paths, so every part runs its whole list;
-   the parts do not fail on a red step, so the log is the evidence).
+   `/next` writes the body when it opens the pull request, before CI has run, and does not rewrite it or watch the
+   checks (auto-merge is withheld). So "How verified" lists the local check and the manual check only (decision 13),
+   and ends with the line
+   `Windows (Git Bash parts): recorded by the maintainer in a comment on this pull request after CI has run (spec decision 3, step 2).`
+   **The maintainer** records the Windows evidence for criterion 6, as a comment on this pull request, after its run
+   has finished and before step 3: `Lint (generic, JSON, skills, shell)` and `bash scripts smoke tests` green, and every
+   Git Bash part's check step log ending `SELECTED CHECKS PASSED (<k> of 51 steps; the full check has not run)`, the
+   `<k>` adding up to 47 (the change touches `tests/check.sh` and `ci.yml`, shared paths, so every part runs its whole
+   list; the parts do not fail on a red step, so the log is the evidence), with a link to the run. A part whose log
+   ends otherwise is a red step: the pull request is fixed (by `/next 365` resumed at Review, or by hand) and the
+   comment is written for the new run. The comment is always for the run of the pull request's last commit, after the
+   rebase of step 1 when there is one.
 3. The maintainer removes `PowerShell scripts smoke tests` from the required status checks of the ruleset on `main`
    (by hand; no code here changes the ruleset).
 4. The maintainer merges the pull request with `gh pr merge <n> --auto --squash`.
@@ -230,11 +243,39 @@ Between steps 3 and 4 other open pull requests still run the PowerShell parts, n
   `the job smoke-gitbash has no Job times step (a step that runs tests/ci-jobs-summary.sh with if: always() and continue-on-error: true)`,
   rule 8 allows the job-level block only in `smoke-gitbash` (`(only smoke-gitbash may, with contents: read and actions: read)`,
   `the job smoke-gitbash's 'permissions:' block is not exactly 'contents: read' and 'actions: read'`), and its cases
-  `actionswrite`, `checksread`, `noperm` act on that job. Rules 10a, 10b and 11 and their cases are unchanged (10b
-  fails only on a step that runs `tests/check.sh`, which the new checkout and Job times steps do not). The header says
-  what is left; the OK line becomes `OK: the CI parts`.
-- `tests/test-ci-job-times.sh`: the same cases on the job `smoke-gitbash` (its insert after
-  `          echo "the Git Bash parts: `).
+  `actionswrite`, `checksread`, `noperm` act on that job. Rules 10a, 10b and 11 are unchanged (10b fails only on a
+  step that runs `tests/check.sh`, which the new checkout and Job times steps do not), and so are their cases but one:
+  rule 11's case `gbps` (lines 484 to 488) appends the literal `,smoke-slot.ps1`, which rule 2 of decision 6 flags, to
+  prove that a part naming a file that is no bash step fails. After the change no step of another kind names a file
+  (the kinds are `lint`, `bash` and `claude`), so the case appends a name that is no step at all, as case `gbout` does,
+  and keeps what it proves. Lines 484 to 488 become exactly
+
+  ```
+  mkcase gbnostep > /dev/null
+  ci_awk2 gbnostep 'FNR == NR { if ($0 ~ /^  [A-Za-z]/) inb = ($0 == "  smoke-gitbash-part:"); if (inb && $0 ~ /^ *only: /) last = FNR; next }
+    FNR == last { $0 = $0 ",smoke-nope.sh" } { print }'
+  changed gbnostep .github/workflows/ci.yml
+  expect_gb gbnostep 'names tests/smoke-nope.sh, which is not a bash step'
+  ```
+
+  The header's lines 2 to 6, up to "Rule 10a", become exactly
+  `# tests/test-ci-parts.sh - the CI parts are well formed (iterations 55 and 68): the final job smoke-gitbash has a`,
+  `# Job times step (tests/ci-jobs-summary.sh, with if: always() and continue-on-error: true), and only that job has a`
+  and `# job-level permissions block (contents: read, actions: read). Rule 10a (iterations 64 and 66, decision record 0004 step 1): the bash`
+  (the rest of line 6 on, "steps run in Git Bash ...", stays); line 17's "tests/smoke-check.sh/.ps1" becomes
+  "tests/smoke-check.sh"; line 20 becomes
+  `# Exit 1 on any failure, else 0 with the line "OK: the CI parts". Needs bash, awk, sed and tr.`, and the file's
+  OK line prints `OK: the CI parts`. After this, every `<x>.ps1` of the file
+  (lines 4, 128, 364 to 374 and 486 today) is gone.
+- `tests/test-ci-job-times.sh`: the same cases on the job `smoke-gitbash`. Its step is `Every Git Bash part
+  succeeded`, so in the cases `moveif`, `movecontinue` and `movecall` (lines 97 to 119) the pattern
+  `/^      - name: Every part succeeded[[:space:]]*$/` becomes `/^      - name: Every Git Bash part succeeded[[:space:]]*$/`,
+  and `movecall`'s insert matches `/^          echo "the Git Bash parts: /` in place of
+  `/^          echo "the PowerShell parts: /`. Without the new pattern each move case would only remove the property,
+  as `noalways`, `nocontinue` and `nocall` do, and would still pass without testing the move. The comments of lines 93,
+  96, 104 and 112 name `Every Git Bash part succeeded`, and header line 3's "the job smoke-powershell" becomes "the job
+  smoke-gitbash". In `tests/fixtures/ci-summary/jobs.tsv` and `jobs.md` and `tests/test-ci-summary.sh` line 36 the step
+  name `Every part succeeded` stays: it is fixture data that no rule reads against `ci.yml`.
 - `tests/test-ci-run-steps.sh` (bug #296): the same three cases on the job `smoke-gitbash-part` and its run line
   `        run: bash tests/check.sh --summary`, each expecting rule 10a's `the Git Bash parts are malformed (` line.
 - `tests/ci-jobs-summary.sh` line 97 prints
@@ -282,14 +323,39 @@ Between steps 3 and 4 other open pull requests still run the PowerShell parts, n
   `tests/test-lint-agreement.sh` the twin rules go (the loop `has no PowerShell twin tests/<x>.ps1`, `twin_exceptions`
   with its two texts and `is_exception`, the loop `has no PowerShell twin scripts/<x>.ps1`), and its README parser
   reads only `bash tests/smoke-<x>.sh` lines (the `ps` branch and the rule `runs ... in the wrong shell` go). Its
-  self-tests `shell`, `no twin`, `exception gone`, `exception twinned` and `script` go, `twice` uses a `.sh` line, and a
-  new one `no twin needed` (`tests/smoke-b.sh` with its README line and `scripts/b.sh`, no `.ps1`) prints nothing; the
-  OK line becomes `OK: the README lists every smoke file`. `tests/test-lint-agreement-cases.sh` drops the `.ps1` files
-  of its scratch trees and the cases of the removed rules, and keeps the others. Its cost bound
-  (`tests/test-lint-agreement-cost.sh`) is unchanged; its history comment (lines 3 and 4) names no removed file. The
-  section's comment (lines 1577 and 1578, "every tests/smoke-*.sh has a .ps1 twin ..., every scripts/*.sh has a .ps1
-  twin") becomes
+  self-tests `shell`, `no twin`, `exception gone`, `exception twinned` and `script` go; `mkbase` creates no `.ps1` file
+  and writes no `powershell` README line; `twice` appends `bash tests/smoke-a.sh` and expects
+  `README.md lists tests/smoke-a.sh more than once`; and a new one `no twin needed` (`tests/smoke-b.sh` with its README
+  line and `scripts/b.sh`, no `.ps1`) prints nothing. Its OK line, both places it is printed (lines 94 and 149), becomes
+  `OK: the README lists every smoke file`.
+- `tests/test-lint-agreement-cases.sh`: `mkbase` creates no `.ps1` file and writes no `powershell` README line; the
+  cases `shell`, `no twin`, `exception gone`, `exception twinned` and `script` go; `twice` appends
+  `bash tests/smoke-a.sh` and expects `README.md lists tests/smoke-a.sh more than once`; `all rules run` drops the README line of `tests/smoke-a.sh` and adds `bash tests/smoke-nope.sh`, and expects
+  `README.md does not list tests/smoke-a.sh` and `README.md lists tests/smoke-nope.sh, which does not exist`; the
+  `this checkout` tree copies `scripts/*.sh` only, its loop is `for f in smoke-stages.sh smoke-guard.sh; do` and its
+  case name `real tree without the two lines`; the cases `clean` (line 50) and `this checkout` (line 125) require
+  `OK: the README lists every smoke file` in place of `OK: lists and twins agree`. The other cases stay.
+- The section keeps its place and its two commands, and its header changes: `echo "== the lists and the shell twins agree"`
+  becomes `echo "== the README lists every smoke file"`. The section's comment (lines 1577 and 1578, "every
+  tests/smoke-*.sh has a .ps1 twin ..., every scripts/*.sh has a .ps1 twin") becomes
   `# Iteration 51 (#157): the README lists every tests/smoke-*.sh once. The rule lives in tests/test-lint-agreement.sh.`
+- `tests/test-lint-agreement-cost.sh` finds the section by its header, so it follows the rename; its bound (3 runs) and
+  its logic are unchanged. Exactly: line 25 becomes
+  `  index($0, "echo \"== the README lists every smoke file\"") == 1 { s = 1; next }`; line 29 becomes
+  `  echo "FAIL: tests/lint.sh has no section '== the README lists every smoke file'"; exit 1`; the stub's line 40
+  becomes `echo "OK: the README lists every smoke file"`; line 48 says `the lint section 'the README lists every smoke file'`
+  where it says `the lint section 'the lists and the shell twins agree'`, the rest of the line unchanged. The history
+  comment, lines 2 to 5 up to "is the cause the report points at. It runs", becomes exactly
+  `# tests/test-lint-agreement-cost.sh - regression test for #270: since iteration 51 the PowerShell CI job took 25 to 32`,
+  `# minutes (11 before; limit 38). The files that ran the lint on a copy of the repository slowed down: the PowerShell`,
+  `# smoke test of the check 2m53s -> 19m49s, those of the release and the validator about 5m -> 11m, the PowerShell lint`,
+  `# copy test 3m -> 4m. The lint section "== the README lists every smoke file" (until iteration 68 "== the lists and`
+  and `# the shell twins agree") is the cause the report points at. It runs` (line 6 on stays). It then names no
+  removed file.
+- **The OK line, everywhere.** `OK: lists and twins agree` appears today in `tests/test-lint-agreement.sh` lines 94
+  and 149, `tests/test-lint-agreement-cases.sh` lines 50 and 125 and `tests/test-lint-agreement-cost.sh` line 40 (a stub
+  that nothing checks); all five become `OK: the README lists every smoke file`, and after the change
+  `git grep -n 'OK: lists and twins agree' -- tests` prints nothing.
 - **The comments of `tests/lint.sh` that name a removed file or speak of two shells.** Rule 2 of decision 6 reads
   comments too (`grep -noE '[A-Za-z0-9_-]+\.ps1' tests/lint.sh`); besides the code lines of the sections above, two
   comment lines name a script's `.ps1` outside a section that this spec rewrites (line 1524 is in the section
@@ -328,12 +394,20 @@ fully on:
   `FAIL: <path> is a PowerShell file; only tests/check.ps1, tools/make-icon.ps1 and tools/make-social-preview.ps1 are left (decision record 0004)`.
   A listed file that is missing is no failure.
 - Rule 2: every text file of `<root>` (`git -C <root> ls-files -co --exclude-standard` when `<root>` is the top of a
-  work tree, else every file under it with `.git/` pruned; binary files skipped by `grep -I`), except paths under
+  work tree, else every file under it found by
+  `find "$root" \( -name .git -o -path "$root/tmp" \) -prune -o -type f ! -name '*.log' ! -name .DS_Store ! -path "$root/.claude/settings.local.json" ! -path "$root/tests/forbidden-words.local.txt" -print`,
+  so the fallback leaves out what `.gitignore` lists, as `ls-files --exclude-standard` does; binary files skipped by
+  `grep -I`), except paths under
   `docs/`, `CHANGELOG.md` and the three files of rule 1, is read in one `grep` over all files (bug #270: no process
   per file) for the extended pattern `[A-Za-z0-9_-]+\.ps1`; each match whose name is not `check.ps1`,
   `make-icon.ps1` or `make-social-preview.ps1` prints `FAIL: <path>:<n> names <name>, which is gone (#365)`.
   `*.ps1` (`.gitattributes`, `tests/test-docs-low-gaps.sh`) does not match. Every hit of the sweep in Facts is
-  removed or reworded by decisions 1 to 11, so on the branch rule 2 prints nothing.
+  removed or reworded by decisions 1 to 11, so on the branch rule 2 prints nothing. The fallback matters because
+  `tests/smoke-release.sh` (line 190), `tests/smoke-status.sh` (line 423) and `tests/smoke-validate.sh` (lines 267 and
+  274) run the lint on a `tar` copy of the checkout without `.git`, which takes the ignored files too: a
+  `.claude/settings.local.json` with `.ps1` allow rules, a log under `tmp/` or a `*.log` would otherwise turn those
+  smoke tests red on a machine where the checkout's own lint is green. A case of the file covers it: a tree that is no
+  work tree, with `.claude/settings.local.json`, `tmp/x.txt` and `a.log` each naming `slot.<ext>`, prints nothing.
 - The file's own cases run after the rules, on scratch trees, and build every `.ps1` name from a variable
   (`ext=ps1`, `"scripts/a.$ext"`), so the file itself names none: a tree with the three files prints nothing; with
   `scripts/a.<ext>` added rule 1 prints its line; with `tools/x/Y.PS1` and `scripts/lib/m.psm1` one line each; a
@@ -447,11 +521,42 @@ that *starts* a `.ps1` script, and every pin or comment that *reads the text* of
   `== verification.platform is not read`: fixture steps `l` (lint), `b` (bash), `c` (claude); for each of `"windows"`,
   `"unix"`, `"all"`, no key, `"linux"` and `3`: exit 0, log `l,b,c,`, no `SKIPPED:` line, standard error empty, last
   line `ALL CHECKS PASSED`; and a fixture line of kind `ps` exits 2 with `check: <file>: unknown kind ps` on standard
-  error. In `== affected` and the slow and `--within` cases the fixture steps `p1` and `p2` keep their names and become
-  kind `bash`, every changed path `scripts/foo.ps1` becomes `scripts/foo.sh`, `aff_cfg` always writes no platform key,
-  and the cases that only show the platform's effect go (the `for plat` loop "a changed script runs its tests in both
-  shells", "the PowerShell steps of the list ... unix", "the bash steps ... windows"); the step counts, verdict lines
-  and summary lines of the others stay. `== the slowest steps of the real list start first` pins only the bash marks of
+  error. `== quick`: `mk_quick` loses its `p` line (kind `ps`, line 97), so its fixture is `l`, `b`, `c`; the quick
+  cases stay as they are (log `b,l,`, no `SKIPPED:` line), and in `== only and usage` the last line of `--only b,l`
+  (line 125) becomes `SELECTED CHECKS PASSED (2 of 3 steps; the full check has not run)`. In `== affected`, the
+  `--within` cases and the slow cases, line by line as the file is at 4058d29:
+  - The fixture steps `p1` and `p2` keep their names and become kind `bash`: in `mk_aff` (lines 296 and 297) and
+    `mk_aff_slow` (lines 529 and 530) the kind field `ps` becomes `bash`, and line 286's "p1 p2 (ps)" becomes
+    "p1 p2 (bash)". The bad-sixth-field fixture (line 593) becomes
+    `printf 'p1\techo p1 >> "%s"\tbash\t\t\tfast\n' "$alog" >> "$tmp/slow-bad.txt"`: the kind check runs before the
+    sixth-field check, so with `ps` the case would get `unknown kind ps` in place of its message.
+  - `aff_cfg` takes no argument and always writes `{ "verification": { "check": "true" } }` (its comment becomes
+    `# aff_cfg: the configuration of $repo, with no platform key`). Its call at line 317 stays as `aff_cfg`; every
+    other call (lines 349, 357, 369, 427, 437, 442, 447, 459, 477 and 536) goes, since nothing else writes that file
+    after it.
+  - Every `scripts/foo.ps1`, in a changed path and in an expected line (lines 350 to 556: `affected: scripts/foo.ps1 ->
+    b1`, `affected: scripts/foo.ps1 -> b1,p1` with its fail text, ``| `scripts/foo.ps1` | b1 |``), becomes
+    `scripts/foo.sh`; the map line `map scripts/foo.* b1,p1` stays. The reason `no pwsh here` (lines 356, 361, 548 and
+    552) becomes `no tool here`.
+  - These cases go: lines 347 to 354 (the `for plat` loop "a changed script runs its tests in both shells, whatever
+    verification.platform says") and lines 436 to 446 ("the PowerShell steps of the list ... unix" and "the bash steps
+    of the list ... windows").
+  - Lines 363 to 368, "a shared file with a changed script", stay with a new expectation, because `p2` is no longer
+    skipped by the platform (it ran under the `"windows"` config of line 357): the comment becomes
+    `# a shared file with a changed script: the full check, every step`, line 366 expects the log
+    `l,b1,b2,p1,p2,c,`, and line 367 (`has_line "$out" "$WIN_LINE"`; `WIN_LINE` goes with the platform section) becomes
+    `if grep -q '^SKIPPED:' <<<"$out"; then fail "affected, shared and script: a SKIPPED line: $out"; fi`. Line 368
+    (the first line, `... is shared by many steps; running the full check`) stays.
+  - Lines 355 to 361, "what the machine cannot run is listed as skipped", stay with no platform key (log `l,b1,`, the
+    line `SKIPPED: no tool here`). Line 426's comment ends at "the lint only when the list names it" (", and
+    verification.platform does not apply to a selected step" goes). Line 458's comment ends at "every step of the list
+    runs, as --only" (", whatever verification.platform says" goes); its case (lines 459 to 465) stays: log `b2,p2,`,
+    last line `SELECTED CHECKS PASSED (2 of 6 steps; the full check has not run)`.
+  - Every other case of these sections keeps its log, its step counts (`of 6 steps`), its verdict lines and its
+    summary lines. After the change `grep -n 'WIN_LINE\|UNIX_LINE\|PNOTE\|aff_cfg .' tests/smoke-check.sh` prints
+    nothing, and the only fixture line of kind `ps` left is the one of `== verification.platform is not read` that
+    expects `unknown kind ps`.
+  `== the slowest steps of the real list start first` pins only the bash marks of
   decision 2. The `lint_break` cases: `cips`, the twin-map case (`scripts/slot.sh and scripts/slot.ps1 map to
   different steps`) and `shdev` (with the `dev` mode it breaks, decision 5) go; `cibegins` renames
   `claude plugin validate (not blocking)` to `bash scripts smoke tests (1)`; `cidepth`'s range ends at
@@ -496,8 +601,15 @@ that *starts* a `.ps1` script, and every pin or comment that *reads the text* of
   `smoke-template-board`, `smoke-validate`, `smoke-check`, `test-slot-low-defects`, `test-warmup-interpreter`,
   `test-json-bom`, `test-slot-number`) lose that clause.
 - The sweep in Facts ("Every bash test that names a removed `.ps1`", with its header comments) is the list this
-  decision and decisions 2, 4 and 5 cover; after the change `grep -noE '[A-Za-z0-9_-]+\.ps1' tests/*.sh` prints only
-  `check.ps1`, `make-icon.ps1` and `make-social-preview.ps1`.
+  decision and decisions 2, 4 and 5 cover. Re-checked file by file against today's hits: `tests/test-ci-parts.sh` (17
+  names: header line 4, rule 1 to 6 code at line 128 and their cases at lines 364 to 374, which go, and case `gbps` at
+  line 486, which becomes `gbnostep`; decision 4), `tests/test-lint-agreement.sh` (11, all in `mkbase` and the removed
+  or changed self-tests) and `tests/test-lint-agreement-cases.sh` (14, `mkbase`, the removed and changed cases, the
+  `this checkout` loop) and `tests/test-lint-agreement-cost.sh` (4, the history comment; all three decision 5), the
+  header lines 5 of `smoke-control`, `smoke-dashboard`, `smoke-panel`, `smoke-validate`, line 8 of
+  `test-slot-low-defects` and line 4 of `test-warmup-interpreter` (the header bullet above), and the lines named in the
+  bullets above. After the change `grep -noE '[A-Za-z0-9_-]+\.ps1' tests/*.sh` prints only `check.ps1`,
+  `make-icon.ps1` and `make-social-preview.ps1`, and `tests/fixtures/` names none.
 
 **12. The changelog.** One bullet under `Unreleased` (Files touched), and a lint check in the section of decision 6:
 `CHANGELOG.md` (lines joined) contains `Iteration 68 (#365)`, `hand-wired session-start.ps1 or guard.ps1 hook`,
@@ -514,9 +626,10 @@ either, once every change of decisions 4 and 5 is made, the comment bullet of de
 lines 741 (`scripts/stages.ps1`) and 1703 (`scripts/guard.ps1`) were the two that no section rewrite covered.
 `CHANGELOG.md` is outside rule 2, so it may name the `.ps1` files. "The release before this one" is the release the
 maintainer cuts from `Unreleased` before the pull request merges (decision 3, step 1), the one that carries
-iterations 65 to 67; the pull request is brought up to date with `main` after that release, so iteration 67's bullet
-is then in that release's section, this bullet is the first under a new `Unreleased`, and it names that release as
-the one a project pins. It is the iteration's only bullet.
+iterations 65 to 67; the maintainer brings the pull request up to date with `main` after that release (decision 3,
+step 1: `git rebase origin/main` or `/next 365` resumed at Review), so iteration 67's bullet is then in that release's
+section, this bullet is the only one under `## Unreleased`, and it names that release, by what it carries, as the one
+a project pins. It is the iteration's only bullet.
 
 **13. One pull request (the maintainer's decision).** #365 is implemented by one `/next` run against this spec, and
 all of it lands in one pull request:
@@ -527,8 +640,11 @@ all of it lands in one pull request:
   tests (4), the lint (5), `tests/test-no-powershell.sh` with both rules fully on (6), `verification.platform`
   including `skills/init/SKILL.md` (7), the pane (8), the templates (9), every text (10), the bash tests (11), and the
   one changelog bullet with its lint check (12).
-- It changes `hooks/` and `skills/`, so it carries the whole manual check of Tests; its "How verified" has the full
-  check on the branch, the parts' logs of decision 3 step 2 and the manual check's steps.
+- It changes `hooks/` and `skills/`, so it carries the whole manual check of Tests. Its "How verified", written by
+  `/next` when it opens the pull request, lists the full local check on the branch and the manual check's steps only,
+  and ends with the line of decision 3 step 2 that points to the maintainer's comment; the CI evidence for Windows
+  (the required jobs green, the Git Bash parts' logs) is that comment, written by the maintainer after CI has run and
+  before the ruleset step, not part of the body.
 - **It is never auto-merged**: it changes `.claude/` and `.github/`, carries the story trigger, and removes a required
   check. The ruleset steps of decision 3 apply to it in their order: the release is cut first, the maintainer then
   removes the check name from the ruleset, then merges.
@@ -543,7 +659,7 @@ all of it lands in one pull request:
 | 3 | The lint and the README no longer expect a `.ps1` twin | Decisions 5, 10 (README) |
 | 4 | No file of the repository outside `docs/` and `CHANGELOG.md` still names a `.ps1` form of a script (`tests/check.ps1` itself stays), including the Commands block of `.claude/CLAUDE.md`, `templates/CLAUDE.snippet.md` and `templates/workflows/nightmill-drive.yml` | Decisions 6 (rule 2), 8, 9, 10, 11 |
 | 5 | The changelog says what a project removes (hand-wired `.ps1` hooks, dead `.ps1` allow rules) and that it pins the release before this one until it has done so | Decision 12; Files touched (the bullet) |
-| 6 | The check stays green on Linux, macOS and Windows with Git Bash | Decision 3 (the parts' logs); Tests (criterion 6; manual check step 6 for macOS, which has no CI) |
+| 6 | The check stays green on Linux, macOS and Windows with Git Bash | Decision 3 step 2 (the parts' logs, in the maintainer's comment); Tests (criterion 6; manual check step 6 for macOS, which has no CI) |
 
 ## Tests
 
@@ -561,7 +677,9 @@ The tester writes the failing tests for every criterion before the change.
   times rule when `smoke-gitbash` has no such step). The required names reporting is seen on the pull request's run
   and stated in its `## Ruleset` (decision 3); no test reads the ruleset.
 - Criterion 3: **`tests/test-lint-agreement.sh`** self-test `no twin needed` and **`tests/test-lint-agreement-cases.sh`**
-  (a tree of `.sh` files with its README lines and no `.ps1`: no `FAIL`); the lint passes on the checkout with no
+  (a tree of `.sh` files with its README lines and no `.ps1`: no `FAIL`; the OK line
+  `OK: the README lists every smoke file`), **`tests/test-lint-agreement-cost.sh`** (finds the section by its new
+  header and stays within its bound); the lint passes on the checkout with no
   `.ps1` test and no `.ps1` script; the code reviewer checks that the README lists no `.ps1` test.
 - Criterion 4: **`tests/test-no-powershell.sh`** rule 2 and its cases; on the branch it prints nothing. The code
   reviewer reads the three named places (`.claude/CLAUDE.md` Commands, `templates/CLAUDE.snippet.md`,
@@ -572,7 +690,9 @@ The tester writes the failing tests for every criterion before the change.
 - Criterion 5: the lint check of decision 12; the code reviewer checks the bullet word for word.
 - Criterion 6: `bash tests/check.sh` is green on the branch (its last line, the `Times:` total, the `SKIPPED:` lines
   in "How verified", 51 steps); on the pull request's run `Lint (generic, JSON, skills, shell)` and
-  `bash scripts smoke tests` are green and the seven Git Bash parts' logs end as decision 3 step 2 says. CI covers
+  `bash scripts smoke tests` are green and the seven Git Bash parts' logs end as decision 3 step 2 says, which the
+  maintainer records in a comment on the pull request after the run and before the ruleset step ("How verified"
+  points to it; `/next` writes the body before CI and does not watch the checks). CI covers
   Ubuntu (the lint and the bash job) and Windows in Git Bash (the seven parts) only; there is no macOS CI (#156), so
   macOS is covered by manual check step 6 alone.
 - **The manual check** (the session of the `/next` run, step 4 of `/next`), with a separate checkout of the branch
@@ -592,8 +712,9 @@ The tester writes the failing tests for every criterion before the change.
      runs it on Linux or WSL instead and says so; what then stays unverified is macOS's own tools (BSD `sed`, `awk`,
      `date`, `find`, `stat` and bash 3.2 where `/bin/bash` is the default), and the step is left to the maintainer.
   Steps 1 to 5 apply because `hooks/` and `skills/` change; step 6 is the evidence for criterion 6 on macOS. The
-  steps and what each showed go into "How verified"; a step the session cannot run is named there and left to the
-  maintainer.
+  steps and what each showed go into "How verified", beside the local check; a step the session cannot run is named
+  there and left to the maintainer. The CI runs on Windows are no step of the manual check: the maintainer's comment
+  of decision 3 step 2 records them.
 
 ## Files touched
 
@@ -601,13 +722,18 @@ The tester writes the failing tests for every criterion before the change.
   `scripts/lib/{baseconfig,exactkeys,ledger,load}.ps1`, the 19 `tests/smoke-*.ps1`, the 9 `tests/test-*.ps1` (Facts).
 - `tests/check.sh`, `tests/check.ps1`: decision 2.
 - `.github/workflows/ci.yml`: decision 3.
-- `tests/test-ci-parts.sh`, `tests/test-ci-job-times.sh`, `tests/test-ci-run-steps.sh`, `tests/ci-jobs-summary.sh`,
-  `tests/test-ci-summary.sh`, `tests/fixtures/ci-summary/jobs.tsv`, `tests/fixtures/ci-summary/jobs.md`: decision 4.
+- `tests/test-ci-parts.sh` (rules 1 to 6 and their cases, rules 7 and 8 on `smoke-gitbash`, case `gbps` at lines 484
+  to 488 becoming `gbnostep`, header lines 2 to 6, 17 and 20, the OK line), `tests/test-ci-job-times.sh` (header
+  line 3; the step-name pattern and the comments of `moveif`, `movecontinue`, `movecall`, lines 92 to 119),
+  `tests/test-ci-run-steps.sh`, `tests/ci-jobs-summary.sh`, `tests/test-ci-summary.sh`,
+  `tests/fixtures/ci-summary/jobs.tsv`, `tests/fixtures/ci-summary/jobs.md`: decision 4.
 - `tests/lint.sh`: decisions 4, 5 (the comments at lines 235 to 237, 680, 740 to 742, 1577 and 1578, 1702 to 1704,
   1738 and 1739, and the `tests/smoke-check.sh/.ps1` comments at 1531, 1538, 1539, 1580, 1585, 1979, 1985 and 1992
   included), 6 (the section, with the changelog check), 7, 12.
-- `tests/test-lint-agreement.sh`, `tests/test-lint-agreement-cases.sh`, `tests/test-lint-agreement-cost.sh`:
-  decision 5.
+- `tests/test-lint-agreement.sh` (the twin rules, the self-tests, `mkbase`, the OK line at lines 94 and 149),
+  `tests/test-lint-agreement-cases.sh` (`mkbase`, the cases, the OK line at lines 50 and 125),
+  `tests/test-lint-agreement-cost.sh` (the history comment, lines 2 to 5; the section header at lines 25 and 29; the
+  stub's OK line at line 40; the message at line 48): decision 5.
 - `tests/test-no-powershell.sh` (new): decision 6.
 - `schema/nightmill.schema.json` (`verification.platform`: decision 7; `worktrees.warmup[].command`: decision 10),
   `skills/init/SKILL.md`: decision 7.
@@ -616,7 +742,9 @@ The tester writes the failing tests for every criterion before the change.
 - The 27 files under `scripts/` of Facts, `.claude/CLAUDE.md`, `.claude/nightmill.json`, `README.md`,
   `CONTRIBUTING.md`, `.github/pull_request_template.md`, `tests/fixtures/drive/README.txt`,
   `tests/fixtures/gate/README.txt`: decisions 1, 7, 8, 10.
-- `tests/smoke-check.sh`, `tests/smoke-slot.sh`, `tests/smoke-stages.sh`, `tests/test-lintcopy-output.sh`,
+- `tests/smoke-check.sh` (`USAGE`, `mk_quick` and the `--only` count, the platform section, `mk_aff`, `mk_aff_slow`,
+  `aff_cfg` and its calls, the `scripts/foo.ps1` paths, the cases of lines 347 to 368 and 426 to 465, line 593, the
+  `lint_break` cases), `tests/smoke-slot.sh`, `tests/smoke-stages.sh`, `tests/test-lintcopy-output.sh`,
   `tests/test-guard-gql-keyword.sh` (lines 4 and 46 to 57), `tests/test-guard-rules.sh`,
   `tests/test-interrupt-docs.sh` (header lines 2 to 4, line 29, lines 39 to 47), `tests/test-config-from-base.sh`,
   `tests/test-limits-docs.sh` (lines 131, 144 to 152, 168), `tests/test-drive-docs.sh` (lines 4, 21 to 30, 94),
@@ -624,7 +752,9 @@ The tester writes the failing tests for every criterion before the change.
   `tests/smoke-dashboard.sh` line 198 and `tests/smoke-panel.sh` line 162, and the header comments of decision 11:
   decision 11.
 - `CHANGELOG.md`, one bullet under `Unreleased`, which the release of decision 3 step 1 has emptied (iteration 67's
-  bullet is then in that release's section; the pull request is brought up to date with `main` after it):
+  bullet is then in that release's section; the maintainer brings the pull request up to date with `main` after it,
+  by `git rebase origin/main` or by `/next 365` resumed at Review, and this bullet is then the only one under
+  `## Unreleased`):
 
   ```
   - Iteration 68 (#365): the PowerShell scripts, their tests and the PowerShell CI parts are removed (decision record
