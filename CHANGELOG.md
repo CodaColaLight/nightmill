@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Iteration 68 (#365): the PowerShell scripts, their tests and the PowerShell CI parts are removed (decision record
+  0004, step 4): every script is bash and runs in bash on Linux and macOS and in Git Bash on Windows, and the check
+  and CI run the bash tests only. A project removes two things from its settings before it takes this release: a
+  hand-wired session-start.ps1 or guard.ps1 hook (hooks/hooks.json already runs the .sh form), and the .ps1 allow
+  rules /nightmill:init wrote before iteration 67, which match nothing now. Until it has done so, it should pin the
+  release before this one, the one that carries iteration 67 (#364). On Windows the slots pane runs scripts/panel.sh with bash, and the driver's workflow
+  template runs drive.sh in Git Bash. tests/check.ps1 stays, a wrapper for a PowerShell prompt that runs bash
+  tests/check.sh. verification.platform keeps its values and default; nightmill's own check no longer reads it.
+
 ## 0.10.0 (2026-11-27)
 
 - Iteration 65 (#363): the invariant Both shells becomes Bash only (decision record 0004, step 2): every script is
@@ -22,14 +31,6 @@
   without Git Bash can no longer run the skills' scripts and must install Git for Windows (which brings Git Bash).
   This release comes before the one that removes the .ps1 files (#365): move a hand-wired .ps1 hook to the .sh form,
   or pin this release until you have. No config key.
-- Iteration 68 (#365): the PowerShell scripts, their tests and the PowerShell CI parts are removed (decision record
-  0004, step 4): every script is bash and runs in bash on Linux and macOS and in Git Bash on Windows, and the check
-  and CI run the bash tests only. A project removes two things from its settings before it takes this release: a
-  hand-wired session-start.ps1 or guard.ps1 hook (hooks/hooks.json already runs the .sh form), and the .ps1 allow
-  rules /nightmill:init wrote before iteration 67, which match nothing now. Until it has done so, it should pin the
-  release before this one, the one that carries iteration 67 (#364). On Windows the slots pane runs scripts/panel.sh with bash, and the driver's workflow
-  template runs drive.sh in Git Bash. tests/check.ps1 stays, a wrapper for a PowerShell prompt that runs bash
-  tests/check.sh. verification.platform keeps its values and default; nightmill's own check no longer reads it.
 
 ## 0.9.0 (2026-11-22)
 
