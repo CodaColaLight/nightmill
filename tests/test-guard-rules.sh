@@ -33,7 +33,7 @@ if grep -F 'scripts/guard.sh' "$H" | grep -F 'exit 0' >/dev/null; then bad "$H: 
 need "$H" '"SessionStart"' 'session-start.sh' './panel.tsx'
 
 echo "== the guard scripts"
-for s in scripts/guard.sh scripts/guard.ps1; do
+for s in scripts/guard.sh; do
   need "$s" \
     'nightmill guard: refused: a merge without --auto.' \
     'nightmill guard: refused: gh pr merge with --admin.' \

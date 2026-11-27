@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # tests/test-warmup-interpreter.sh - regression for bug #133: a warm-up command is one string, and one interpreter runs it
-# in both shells (bash -c). A warm-up of `echo a && echo b` must work in slot.sh --take and new-worktree.sh (it did; the
-# PowerShell twins did not, see test-warmup-interpreter.ps1), and the schema description of warmup[].command must name
+# (bash -c). A warm-up of `echo a && echo b` must work in slot.sh --take and new-worktree.sh, and the schema description of warmup[].command must name
 # the interpreter.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

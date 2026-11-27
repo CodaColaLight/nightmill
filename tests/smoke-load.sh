@@ -2,7 +2,7 @@
 # tests/smoke-load.sh - load.sh against fixtures of readings (NIGHTMILL_LOAD_FIXTURE is set in every call, so the
 # real measurement never runs and the result does not depend on this machine), in a throwaway repository whose slot
 # markers and capacity.json are written by hand. The scenarios a to i are those of "The suggestion" in
-# docs/specs/iteration-24-machine-load.md; smoke-load.ps1 runs the same cases. Needs bash and awk, no jq.
+# docs/specs/iteration-24-machine-load.md. Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-load.XXXXXX")

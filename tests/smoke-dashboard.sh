@@ -2,7 +2,7 @@
 # tests/smoke-dashboard.sh - dashboard.sh against fixtures and a fake gh: the page is rendered once (--once) into a
 # temporary folder of the test from tests/fixtures/dashboard/run-stall-old-free/ (and tests/fixtures/status/c), the
 # slot markers are written from markers.txt and the clock is fixed (NIGHTMILL_NOW = 2026-11-05T12:00:00). The page
-# must equal expected.html, which smoke-dashboard.ps1 compares with too; UPDATE_DASHBOARD_FIXTURES=1 rewrites it
+# must equal expected.html; UPDATE_DASHBOARD_FIXTURES=1 rewrites it
 # (read the diff before committing). Needs bash and awk, no jq, no network. Nothing sleeps.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -195,7 +195,7 @@ run_d "$tmp/work" "$FIX" "$pages" --once
 hasnot '<td class="num">2</td><td class="free">free</td>' "unreadable marker"
 hasnot 'unknown: the slots could not be read' "unreadable marker"
 hasnot 'unknown: the board could not be read' "unreadable marker"
-# #329: slot.sh and slot.ps1 both list that slot as busy and unknown, so status succeeds in both shells and the page is
+# #329: slot.sh lists that slot as busy and unknown, so status succeeds and the page is
 # expected.html with slot 2's row replaced and the slot script's note in a Notes section before the legend
 row2_old='<tr><td class="num">2</td><td>busy</td><td class="stalled">stalled</td><td>feat/&lt;b&gt;&amp;&#39;x</td><td>fix/fixer</td><td>test</td><td class="num">2h</td><td class="num">4h</td><td>-</td><td class="flagged">stale: busy, no open PR</td></tr>'
 row2_new='<tr><td class="num">2</td><td>busy</td><td class="unknown">unknown</td><td></td><td>?</td><td>?</td><td class="num">-</td><td class="num">?</td><td>-</td><td class="flagged">stale: busy, since unreadable</td></tr>'

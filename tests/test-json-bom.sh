@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/test-json-bom.sh - regression for #132: a UTF-8 byte order mark at the start of .claude/nightmill.json
-# (Windows PowerShell 5.1 writes one) must not make the bash scripts reject the file; the PowerShell twins accept it.
+# (Windows PowerShell 5.1 writes one) must not make the bash scripts reject the file.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-test-json-bom.XXXXXX")

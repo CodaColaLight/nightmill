@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/smoke-room.sh - room.sh against fixtures of readings (NIGHTMILL_LOAD_FIXTURE is set in every call that measures,
 # so the real measurement never runs and the result does not depend on this machine), in a throwaway repository. The
-# cases 1 to 11 are those of "Tests" in docs/specs/iteration-28-machine-room.md; smoke-room.ps1 runs the same cases.
+# cases 1 to 11 are those of "Tests" in docs/specs/iteration-28-machine-room.md.
 # The pause is parallel.roomPauseSeconds 1 unless a case says otherwise, so nothing sleeps long. Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

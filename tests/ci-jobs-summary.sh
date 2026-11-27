@@ -94,7 +94,7 @@ for ((i = 0; i < nj; i++)); do
 done
 echo
 if [ "$chain_n" -gt 0 ]; then
-  echo "PowerShell scripts smoke tests: $(ledger_duration $((chain_max - chain_min))) from the start of the first part to the end of the last ($chain_n parts)."
+  echo "The parts (${parts% }): $(ledger_duration $((chain_max - chain_min))) from the start of the first part to the end of the last ($chain_n parts)."
   echo
 fi
 for ((i = 0; i < nj; i++)); do

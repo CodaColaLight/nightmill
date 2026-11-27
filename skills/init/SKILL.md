@@ -53,7 +53,7 @@ asks only "keep" or "change":
 5. **manual-check paths** (`verification.manualCheckPaths`) and, when there are any, the one-sentence `verification.manualCheckText`
 6. **slot count** (`worktrees.slots`, also used for `parallel.maxAgents`)
 7. **ports** (`worktrees.ports`); skipped when no dev server was detected
-8. **platform** (`verification.platform`): `windows` (the check runs the bash tests in Git Bash, from Git for Windows) or `unix` for Linux and macOS (the bash tests); `all` runs the bash and the PowerShell tests, for a project worked on from both; read only by a check command that reads it. An empty answer deletes the key, and the check then runs both families
+8. **platform** (`verification.platform`): `windows` for Windows or `unix` for Linux and macOS, or `all` for a project worked on from both; read only by a check command that reads it (nightmill's own check runs the bash tests on every platform, in Git Bash on Windows). An empty answer deletes the key
 
 A question is skipped when the existing config already holds the key, so a configured project is asked
 nothing. The user may answer "defaults" at any point; the remaining questions then take their proposed

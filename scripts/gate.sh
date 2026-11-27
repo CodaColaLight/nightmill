@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/gate.sh - may the next step start? The pause flag and the limits of a run (nightmill, iteration 53, #165).
-# Bash twin of gate.ps1; the rules and the texts are in docs/specs/iteration-53-run-limits.md (decision 3).
+# The rules and the texts are in docs/specs/iteration-53-run-limits.md (decision 3).
 #
 #   gate.sh [--issue <n>] [--slot <s>] [--role <role> --turns <t>]
 #   gate.sh -h | --help

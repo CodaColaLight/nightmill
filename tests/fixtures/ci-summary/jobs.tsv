@@ -20,28 +20,28 @@ step	bash scripts smoke tests	Hide jq (the bash scripts must not need it)	2026-1
 step	bash scripts smoke tests	Run bash tests/check.sh	2026-11-11T10:00:07Z	2026-11-11T10:07:13Z
 step	bash scripts smoke tests	Post Run actions/checkout		
 step	bash scripts smoke tests	Complete job	2026-11-11T10:07:13Z	2026-11-11T10:07:15Z
-job	PowerShell smoke part 1 of 4	success	2026-11-11T10:00:10Z	2026-11-11T10:09:30Z
-step	PowerShell smoke part 1 of 4	Set up job	2026-11-11T10:00:10Z	2026-11-11T10:00:15Z
-step	PowerShell smoke part 1 of 4	Run actions/checkout	2026-11-11T10:00:15Z	2026-11-11T10:00:20Z
-step	PowerShell smoke part 1 of 4	Run bash tests/check.sh	2026-11-11T10:00:20Z	2026-11-11T10:09:28Z
-step	PowerShell smoke part 1 of 4	Complete job	2026-11-11T10:09:28Z	2026-11-11T10:09:30Z
-job	PowerShell smoke part 2 of 4	success	2026-11-11T10:00:12Z	2026-11-11T10:09:00Z
-step	PowerShell smoke part 2 of 4	Set up job	2026-11-11T10:00:12Z	2026-11-11T10:00:16Z
-step	PowerShell smoke part 2 of 4	Run actions/checkout	2026-11-11T10:00:16Z	2026-11-11T10:00:19Z
-step	PowerShell smoke part 2 of 4	Run bash tests/check.sh	2026-11-11T10:00:19Z	2026-11-11T10:08:58Z
-step	PowerShell smoke part 2 of 4	Complete job	2026-11-11T10:08:58Z	2026-11-11T10:09:00Z
-job	PowerShell smoke part 3 of 4	failure	2026-11-11T10:00:15Z	2026-11-11T10:08:45Z
-step	PowerShell smoke part 3 of 4	Set up job	2026-11-11T10:00:15Z	2026-11-11T10:00:18Z
-step	PowerShell smoke part 3 of 4	Run actions/checkout	2026-11-11T10:00:18Z	2026-11-11T10:00:21Z
-step	PowerShell smoke part 3 of 4	Run bash tests/check.sh	2026-11-11T10:00:21Z	2026-11-11T10:08:43Z
-step	PowerShell smoke part 3 of 4	Complete job	2026-11-11T10:08:43Z	2026-11-11T10:08:45Z
-job	PowerShell smoke part 4 of 4	success	2026-11-11T10:00:20Z	2026-11-11T10:04:20Z
-step	PowerShell smoke part 4 of 4	Set up job	2026-11-11T10:00:20Z	2026-11-11T10:00:23Z
-step	PowerShell smoke part 4 of 4	Run actions/checkout	2026-11-11T10:00:23Z	2026-11-11T10:00:27Z
-step	PowerShell smoke part 4 of 4	Run bash tests/check.sh	2026-11-11T10:00:27Z	2026-11-11T10:04:18Z
-step	PowerShell smoke part 4 of 4	Complete job	2026-11-11T10:04:18Z	2026-11-11T10:04:20Z
-job	PowerShell scripts smoke tests	in_progress	2026-11-11T10:09:40Z	
-step	PowerShell scripts smoke tests	Set up job	2026-11-11T10:09:40Z	2026-11-11T10:09:43Z
-step	PowerShell scripts smoke tests	Run actions/checkout	2026-11-11T10:09:43Z	2026-11-11T10:09:48Z
-step	PowerShell scripts smoke tests	Every part succeeded	2026-11-11T10:09:48Z	2026-11-11T10:09:49Z
-step	PowerShell scripts smoke tests	Job times	2026-11-11T10:09:49Z	
+job	Git Bash smoke part 1 of 4	success	2026-11-11T10:00:10Z	2026-11-11T10:09:30Z
+step	Git Bash smoke part 1 of 4	Set up job	2026-11-11T10:00:10Z	2026-11-11T10:00:15Z
+step	Git Bash smoke part 1 of 4	Run actions/checkout	2026-11-11T10:00:15Z	2026-11-11T10:00:20Z
+step	Git Bash smoke part 1 of 4	Run bash tests/check.sh	2026-11-11T10:00:20Z	2026-11-11T10:09:28Z
+step	Git Bash smoke part 1 of 4	Complete job	2026-11-11T10:09:28Z	2026-11-11T10:09:30Z
+job	Git Bash smoke part 2 of 4	success	2026-11-11T10:00:12Z	2026-11-11T10:09:00Z
+step	Git Bash smoke part 2 of 4	Set up job	2026-11-11T10:00:12Z	2026-11-11T10:00:16Z
+step	Git Bash smoke part 2 of 4	Run actions/checkout	2026-11-11T10:00:16Z	2026-11-11T10:00:19Z
+step	Git Bash smoke part 2 of 4	Run bash tests/check.sh	2026-11-11T10:00:19Z	2026-11-11T10:08:58Z
+step	Git Bash smoke part 2 of 4	Complete job	2026-11-11T10:08:58Z	2026-11-11T10:09:00Z
+job	Git Bash smoke part 3 of 4	failure	2026-11-11T10:00:15Z	2026-11-11T10:08:45Z
+step	Git Bash smoke part 3 of 4	Set up job	2026-11-11T10:00:15Z	2026-11-11T10:00:18Z
+step	Git Bash smoke part 3 of 4	Run actions/checkout	2026-11-11T10:00:18Z	2026-11-11T10:00:21Z
+step	Git Bash smoke part 3 of 4	Run bash tests/check.sh	2026-11-11T10:00:21Z	2026-11-11T10:08:43Z
+step	Git Bash smoke part 3 of 4	Complete job	2026-11-11T10:08:43Z	2026-11-11T10:08:45Z
+job	Git Bash smoke part 4 of 4	success	2026-11-11T10:00:20Z	2026-11-11T10:04:20Z
+step	Git Bash smoke part 4 of 4	Set up job	2026-11-11T10:00:20Z	2026-11-11T10:00:23Z
+step	Git Bash smoke part 4 of 4	Run actions/checkout	2026-11-11T10:00:23Z	2026-11-11T10:00:27Z
+step	Git Bash smoke part 4 of 4	Run bash tests/check.sh	2026-11-11T10:00:27Z	2026-11-11T10:04:18Z
+step	Git Bash smoke part 4 of 4	Complete job	2026-11-11T10:04:18Z	2026-11-11T10:04:20Z
+job	Git Bash smoke tests (Windows, not blocking)	in_progress	2026-11-11T10:09:40Z	
+step	Git Bash smoke tests (Windows, not blocking)	Set up job	2026-11-11T10:09:40Z	2026-11-11T10:09:43Z
+step	Git Bash smoke tests (Windows, not blocking)	Run actions/checkout	2026-11-11T10:09:43Z	2026-11-11T10:09:48Z
+step	Git Bash smoke tests (Windows, not blocking)	Every part succeeded	2026-11-11T10:09:48Z	2026-11-11T10:09:49Z
+step	Git Bash smoke tests (Windows, not blocking)	Job times	2026-11-11T10:09:49Z	

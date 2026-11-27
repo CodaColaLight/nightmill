@@ -3,8 +3,8 @@
 # repository itself: copy it to .github/workflows/nightmill-drive.yml in your project, through a pull request
 # (a change under .github/ is never auto-merged).
 #
-# What it does: runs scripts/drive.sh (or drive.ps1 on Windows) of the installed nightmill plugin in the main
-# checkout, on a schedule and on demand (Actions > nightmill driver > Run workflow, or gh workflow run nightmill-drive.yml).
+# What it does: runs scripts/drive.sh of the installed nightmill plugin in the main checkout (in Git Bash on a Windows
+# runner), on a schedule and on demand (Actions > nightmill driver > Run workflow, or gh workflow run nightmill-drive.yml).
 # The driver runs /nightmill:fix all and /nightmill:next <N> headless until nothing is Ready or Approved, its time
 # limit (unattended.maxMinutes) is reached or its kill switch (.git/nightmill-stop) is set, and posts one summary.
 #
@@ -32,26 +32,13 @@ jobs:
     runs-on: [self-hosted, nightmill]
     timeout-minutes: 480
     steps:
-      - name: Run the driver (macOS, Linux)
-        if: runner.os != 'Windows'
+      - name: Run the driver
         shell: bash
         env:
           NIGHTMILL_CHECKOUT: ${{ vars.NIGHTMILL_CHECKOUT }}
         run: |
           [ -n "$NIGHTMILL_CHECKOUT" ] || { echo "Set the repository variable NIGHTMILL_CHECKOUT to the path of the main checkout on this runner." >&2; exit 2; }
-          root=$(claude plugin list --json | awk '/"id": "nightmill@nightmill"/ { f = 1 } f && /"installPath":/ { sub(/.*"installPath": *"/, ""); sub(/".*/, ""); print; exit }')
+          root=$(claude plugin list --json | awk '/"id": "nightmill@nightmill"/ { f = 1 } f && /"installPath":/ { sub(/.*"installPath": *"/, ""); sub(/".*/, ""); gsub(/\\\\/, "/"); print; exit }')
           [ -n "$root" ] || { echo "nightmill is not installed for the runner's user (claude plugin list)." >&2; exit 2; }
           cd "$NIGHTMILL_CHECKOUT"
           bash "$root/scripts/drive.sh"
-      - name: Run the driver (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          NIGHTMILL_CHECKOUT: ${{ vars.NIGHTMILL_CHECKOUT }}
-        run: |
-          if (-not $env:NIGHTMILL_CHECKOUT) { Write-Error "Set the repository variable NIGHTMILL_CHECKOUT to the path of the main checkout on this runner."; exit 2 }
-          $p = claude plugin list --json | ConvertFrom-Json | Where-Object { $_.id -eq 'nightmill@nightmill' } | Select-Object -First 1
-          if (-not $p) { Write-Error "nightmill is not installed for the runner's user (claude plugin list)."; exit 2 }
-          Set-Location $env:NIGHTMILL_CHECKOUT
-          powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $p.installPath 'scripts/drive.ps1')
-          exit $LASTEXITCODE

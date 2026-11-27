@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# scripts/control.sh - one pass of the opt-in load controller (nightmill). Bash twin of control.ps1; the rules and the
-# texts are in docs/specs/iteration-30-load-controller.md.
+# scripts/control.sh - one pass of the opt-in load controller (nightmill). The rules and the texts are
+# in docs/specs/iteration-30-load-controller.md.
 #
 #   control.sh                 # no arguments: the mode comes from parallel.controlMode (off, report or apply)
 #

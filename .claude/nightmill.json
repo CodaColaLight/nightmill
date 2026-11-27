@@ -60,7 +60,7 @@
   "git": { "baseBranch": "main", "featurePrefix": "feat/", "fixPrefix": "fix/", "specPrefix": "spec/", "mergeFlags": "--auto --squash" },
   "parallel": {
     "maxAgents": 2,
-    "hotFiles": ["skills/workflow/SKILL.md", "schema/nightmill.schema.json", "scripts/slot.ps1", "scripts/slot.sh"],
+    "hotFiles": ["skills/workflow/SKILL.md", "schema/nightmill.schema.json", "scripts/slot.sh"],
     "doNotPair": "two tasks that both change the slot scripts or both change the schema"
   },
   "worktrees": {

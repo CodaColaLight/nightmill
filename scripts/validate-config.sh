@@ -18,7 +18,7 @@
 #   warning: worktree: unknown key (did you mean "worktrees"?)
 #   1 error, 1 warning
 # Exit codes: 0 no error (and with --strict no warning), 1 an error or, with --strict, a warning, 2 a usage
-# error or an unreadable file. Same behaviour and output as validate-config.ps1.
+# error or an unreadable file.
 #
 # Needs bash and awk, no jq: the work is done by lib/json.awk (a JSON parser) and lib/validate.awk (the walk
 # of the schema). The validator supports type, properties, required, items, minimum, minItems,

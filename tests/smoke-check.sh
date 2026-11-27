@@ -3,7 +3,7 @@
 # (NIGHTMILL_CHECK_STEPS, lines <name> TAB <command> [TAB <kind> [TAB <reason>]]), the order and the verdict, the
 # limit of 1, the quick mode, --only and the usage errors, the limit from the config, two checks at once, and the
 # lint section that keeps the check's step list and CI in step. NIGHTMILL_CLOCK_FILE holds one fixed time, so every
-# duration is 0s. Same cases and same expected text as tests/smoke-check.ps1. Needs bash, git and awk, no jq.
+# duration is 0s. Needs bash, git and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-check.XXXXXX")
@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 echo 1794038400 > "$tmp/clock"
 export NIGHTMILL_CLOCK_FILE="$tmp/clock"
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
@@ -20,7 +20,7 @@ barrier() { printf 'i=0; until %s; do i=$((i+1)); [ $i -gt 300 ] && exit 9; slee
 # below do not read this repository's own .claude/nightmill.json (its verification.platform may be windows, unix, all or absent)
 nrepo="$tmp/nrepo"
 mkdir -p "$nrepo/tests" "$nrepo/scripts" "$nrepo/.claude"
-cp "$here/tests/check.sh" "$here/tests/check.ps1" "$nrepo/tests/"
+cp "$here/tests/check.sh" "$nrepo/tests/"
 cp -R "$here/scripts/lib" "$nrepo/scripts/lib"
 echo '{ "verification": { "check": "true" } }' > "$nrepo/.claude/nightmill.json"
 # run_check <steps-file> <args...>: out, err, rc of tests/check.sh in nrepo
@@ -94,7 +94,6 @@ mk_quick() { # mk_quick <command of b>
   {
     printf 'l\techo l >> "%s"\tlint\n' "$qlog"
     printf 'b\techo b >> "%s"; %s\tbash\n' "$qlog" "$1"
-    printf 'p\techo p >> "%s"\tps\n' "$qlog"
     printf 'c\techo c >> "%s"\tclaude\n' "$qlog"
   } > "$tmp/quick.txt"
 }
@@ -122,7 +121,7 @@ run_check "$tmp/quick.txt" --only b,l --jobs 1
 [ "$rc" = 0 ] || fail "only: exit $rc: $out"
 [ "$(tr '\n' ',' < "$qlog")" = "l,b," ] || fail "only: the steps did not run in list order: $(tr '\n' ',' < "$qlog")"
 [ "$(head -n 1 <<<"$out" | cut -c1-16)" = "check: only l,b," ] || fail "only: the header: $out"
-[ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS PASSED (2 of 4 steps; the full check has not run)" ] || fail "only: the last line: $out"
+[ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS PASSED (2 of 3 steps; the full check has not run)" ] || fail "only: the last line: $out"
 usage_case() { # usage_case <args...>
   : > "$qlog"
   run_check "$tmp/quick.txt" "$@"
@@ -137,14 +136,14 @@ usage_case --jobs 0
 usage_case --jobs 17
 usage_case --jobs x
 usage_case --jobs
-usage_case --powershell cmd
+usage_case --powershell pwsh
 usage_case --quick --quick
 usage_case extra
 
 echo "== the limit from the config"
 repo="$tmp/repo"
 mkdir -p "$repo/tests" "$repo/scripts" "$repo/.claude"
-cp "$here/tests/check.sh" "$here/tests/check.ps1" "$repo/tests/"
+cp "$here/tests/check.sh" "$repo/tests/"
 cp -R "$here/scripts/lib" "$repo/scripts/lib"
 printf 'only\ttrue\n' > "$tmp/one-step.txt"
 cfg_header() { # cfg_header <json for verification> [env...]: the header and the note of the check in $repo
@@ -171,22 +170,17 @@ printf '{ "verification": { "check": "true", "checkJobs": 2 } }\n' > "$repo/.cla
 out=$(UPDATE_PANEL_FIXTURES=1 NIGHTMILL_CHECK_STEPS="$tmp/one-step.txt" bash "$repo/tests/check.sh" --jobs 3 2>/dev/null) || fail "config UPDATE: exit $?"
 [ "$(head -n 1 <<<"$out")" = "check: full, 1 at a time (UPDATE_PANEL_FIXTURES is set)" ] || fail "config UPDATE: the header: $out"
 
-echo "== the platform from the config"
-# verification.platform (iteration 56, meaning changed in iteration 65): windows and unix both skip the ps steps (the scripts are
-# bash only; on Windows the bash tests run in Git Bash), all runs both, the lint and the claude steps always run, --only ignores the key. Four fixture steps l (lint), b (bash), p (ps), c (claude), each appending its name to one log.
+echo "== verification.platform is not read"
+# verification.platform (iteration 56; iteration 65; not read since iteration 68): whatever the key holds, nothing is
+# skipped for it, nothing is printed for it, and every step runs. Three fixture steps l (lint), b (bash), c (claude),
+# each appending its name to one log; a fixture line of kind ps is an unknown kind.
 plog="$tmp/platform.log"
-WIN_LINE='SKIPPED: PowerShell tests (verification.platform is windows)'
-UNIX_LINE='SKIPPED: PowerShell tests (verification.platform is unix)'
-PNOTE='check: verification.platform must be windows, unix or all; running both families'
-mk_plat() { # mk_plat <reason of b> <reason of p>: the four steps in $tmp/plat.txt
-  {
-    printf 'l\techo l >> "%s"\tlint\n' "$plog"
-    printf 'b\techo b >> "%s"\tbash\t%s\n' "$plog" "$1"
-    printf 'p\techo p >> "%s"\tps\t%s\n' "$plog" "$2"
-    printf 'c\techo c >> "%s"\tclaude\n' "$plog"
-  } > "$tmp/plat.txt"
-}
-plat_run() { # plat_run <platform as JSON, or - for no key> <check.sh arguments...>: out, err, rc of the check in $repo; the log in $plat_log
+{
+  printf 'l\techo l >> "%s"\tlint\n' "$plog"
+  printf 'b\techo b >> "%s"\tbash\n' "$plog"
+  printf 'c\techo c >> "%s"\tclaude\n' "$plog"
+} > "$tmp/plat.txt"
+plat_run() { # plat_run <platform as JSON, or - for no key>: out, err, rc of the check in $repo; the log in $plat_log
   local val=$1; shift
   if [ "$val" = - ]; then printf '{ "verification": { "check": "true" } }\n' > "$repo/.claude/nightmill.json"
   else printf '{ "verification": { "check": "true", "platform": %s } }\n' "$val" > "$repo/.claude/nightmill.json"; fi
@@ -197,93 +191,27 @@ plat_run() { # plat_run <platform as JSON, or - for no key> <check.sh arguments.
   err=$(cat "$tmp/err.txt")
   plat_log=$(tr '\n' ',' < "$plog")
 }
-skipped_lines() { grep -c '^SKIPPED:' <<<"$1" || true; }
-mk_plat "" ""
-# windows: the bash tests (in Git Bash), not the PowerShell tests
-plat_run '"windows"'
-[ "$rc" = 0 ] || fail "platform windows: exit $rc: $out $err"
-[ "$plat_log" = "l,b,c," ] || fail "platform windows: the steps that ran: $plat_log"
-[ "$(grep -cxF -- "$WIN_LINE" <<<"$out")" = 1 ] || fail "platform windows: not one '$WIN_LINE' line: $out"
-[ "$(skipped_lines "$out")" = 1 ] || fail "platform windows: more SKIPPED lines than the platform's: $out"
-if grep -qx '== p' <<<"$out"; then fail "platform windows: a section for the skipped ps step: $out"; fi
-[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows: the last line: $out"
-[ -z "$err" ] || fail "platform windows: standard error is not empty: $err"
-# unix: the bash tests, not the PowerShell tests
-plat_run '"unix"'
-[ "$rc" = 0 ] || fail "platform unix: exit $rc: $out $err"
-[ "$plat_log" = "l,b,c," ] || fail "platform unix: the steps that ran: $plat_log"
-[ "$(grep -cxF -- "$UNIX_LINE" <<<"$out")" = 1 ] || fail "platform unix: not one '$UNIX_LINE' line: $out"
-[ "$(skipped_lines "$out")" = 1 ] || fail "platform unix: more SKIPPED lines than the platform's: $out"
-if grep -qx '== p' <<<"$out"; then fail "platform unix: a section for the skipped ps step: $out"; fi
-[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform unix: the last line: $out"
-# the platform's reason replaces the step's own reason
-mk_plat "" "no pwsh here"
-plat_run '"windows"'
-[ "$rc" = 0 ] || fail "platform windows, p with a reason: exit $rc: $out $err"
-[ "$plat_log" = "l,b,c," ] || fail "platform windows, p with a reason: the steps that ran: $plat_log"
-has_line "$out" "$WIN_LINE" || fail "platform windows, p with a reason: no platform line: $out"
-if has_line "$out" 'SKIPPED: no pwsh here'; then fail "platform windows, p with a reason: the step's own reason was printed: $out"; fi
-plat_run '"unix"'
-[ "$rc" = 0 ] || fail "platform unix, p with a reason: exit $rc: $out $err"
-[ "$plat_log" = "l,b,c," ] || fail "platform unix, p with a reason: the steps that ran: $plat_log"
-has_line "$out" "$UNIX_LINE" || fail "platform unix, p with a reason: no platform line: $out"
-if has_line "$out" 'SKIPPED: no pwsh here'; then fail "platform unix, p with a reason: the step's own reason was printed: $out"; fi
-# a skipped step of the kept family keeps its own reason, and both lines print in list order
-mk_plat "other reason" ""
-plat_run '"windows"'
-[ "$rc" = 0 ] || fail "platform windows, b with a reason: exit $rc: $out $err"
-[ "$plat_log" = "l,c," ] || fail "platform windows, b with a reason: the steps that ran: $plat_log"
-[ "$(grep '^SKIPPED:' <<<"$out" | tr '\n' '|')" = "SKIPPED: other reason|$WIN_LINE|" ] || fail "platform windows, b with a reason: the SKIPPED lines or their order: $out"
-[ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform windows, b with a reason: the last line: $out"
-# all and no key: today's behaviour, both families, nothing skipped, nothing on standard error
-mk_plat "" ""
-plat_run '"all"'
-[ "$rc" = 0 ] || fail "platform all: exit $rc: $out $err"
-[ "$plat_log" = "l,b,p,c," ] || fail "platform all: the steps that ran: $plat_log"
-[ "$(skipped_lines "$out")" = 0 ] || fail "platform all: a SKIPPED line: $out"
-[ -z "$err" ] || fail "platform all: standard error is not empty: $err"
-out_all=$out
-plat_run -
-[ "$rc" = 0 ] || fail "platform not set: exit $rc: $out $err"
-[ "$plat_log" = "l,b,p,c," ] || fail "platform not set: the steps that ran: $plat_log"
-[ "$(skipped_lines "$out")" = 0 ] || fail "platform not set: a SKIPPED line: $out"
-[ -z "$err" ] || fail "platform not set: standard error is not empty: $err"
-[ "$out" = "$out_all" ] || fail "platform not set: the output differs from platform all: [$out] vs [$out_all]"
-# any other value: the note, and both families run
-for bad in '"linux"' 3; do
-  plat_run "$bad"
-  [ "$rc" = 0 ] || fail "platform $bad: exit $rc: $out $err"
-  [ "$plat_log" = "l,b,p,c," ] || fail "platform $bad: the steps that ran: $plat_log"
-  grep -qxF "$PNOTE" <<<"$err" || fail "platform $bad: no note on standard error: $err"
-  [ "$(skipped_lines "$out")" = 0 ] || fail "platform $bad: a SKIPPED line: $out"
+for plat in '"windows"' '"unix"' '"all"' - '"linux"' 3; do
+  plat_run "$plat"
+  [ "$rc" = 0 ] || fail "platform $plat: exit $rc: $out $err"
+  [ "$plat_log" = "l,b,c," ] || fail "platform $plat: the steps that ran: $plat_log"
+  if grep -q '^SKIPPED:' <<<"$out"; then fail "platform $plat: a SKIPPED line: $out"; fi
+  [ -z "$err" ] || fail "platform $plat: standard error is not empty: $err"
+  [ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "platform $plat: the last line: $out"
 done
-# --quick: the lint and the bash steps, then the key
-QUICK_LAST='QUICK CHECK PASSED (the lint and the bash smoke tests only; the full check has not run)'
-plat_run '"windows"' --quick
-[ "$rc" = 0 ] || fail "platform windows, quick: exit $rc: $out $err"
-[ "$plat_log" = "l,b," ] || fail "platform windows, quick: the steps that ran: $plat_log"
-[ "$(skipped_lines "$out")" = 0 ] || fail "platform windows, quick: a SKIPPED line: $out"
-[ "$(tail -n 1 <<<"$out")" = "$QUICK_LAST" ] || fail "platform windows, quick: the last line: $out"
-plat_run '"unix"' --quick
-[ "$rc" = 0 ] || fail "platform unix, quick: exit $rc: $out $err"
-[ "$plat_log" = "l,b," ] || fail "platform unix, quick: the steps that ran: $plat_log"
-[ "$(skipped_lines "$out")" = 0 ] || fail "platform unix, quick: a SKIPPED line: $out"
-[ "$(tail -n 1 <<<"$out")" = "$QUICK_LAST" ] || fail "platform unix, quick: the last line: $out"
-# --only ignores the key, and does not read it either
-for plat in '"windows"' '"unix"'; do
-  plat_run "$plat" --only b,p
-  [ "$rc" = 0 ] || fail "platform $plat, only: exit $rc: $out $err"
-  [ "$plat_log" = "b,p," ] || fail "platform $plat, only: the steps that ran: $plat_log"
-  [ "$(skipped_lines "$out")" = 0 ] || fail "platform $plat, only: a SKIPPED line: $out"
-  [ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS PASSED (2 of 4 steps; the full check has not run)" ] || fail "platform $plat, only: the last line: $out"
-done
-plat_run '"linux"' --only b
-[ "$rc" = 0 ] || fail "platform linux, only: exit $rc: $out $err"
-[ "$plat_log" = "b," ] || fail "platform linux, only: the steps that ran: $plat_log"
-if grep -qF "$PNOTE" <<<"$err"; then fail "platform linux, only: a note for a key that --only does not read: $err"; fi
+# the kind ps is gone: a fixture line of that kind is refused, as any unknown kind is
+printf 'l\techo l >> "%s"\tlint\np\techo p >> "%s"\tps\n' "$plog" "$plog" > "$tmp/plat-ps.txt"
+: > "$plog"
+set +e
+out=$(NIGHTMILL_CHECK_STEPS="$tmp/plat-ps.txt" bash "$repo/tests/check.sh" --jobs 1 2>"$tmp/err.txt"); rc=$?
+set -e
+err=$(cat "$tmp/err.txt")
+[ "$rc" = 2 ] || fail "kind ps: exit $rc, wanted 2: $out $err"
+grep -qxF "check: $tmp/plat-ps.txt: unknown kind ps" <<<"$err" || fail "kind ps: no 'unknown kind ps' line on standard error: $err"
+[ ! -s "$plog" ] || fail "kind ps: a step ran"
 
 echo "== affected"
-# --affected (iteration 59): the lint plus the steps the changed paths map to. Six fixture steps l (lint), b1 b2 (bash), p1 p2 (ps),
+# --affected (iteration 59): the lint plus the steps the changed paths map to. Six fixture steps l (lint), b1 b2 (bash), p1 p2 (bash),
 # c (claude), each appending its name to one log. The map (NIGHTMILL_CHECK_MAP) and the paths (NIGHTMILL_CHECK_PATHS) are fixture files.
 alog="$tmp/affected.log"
 aff_map="$tmp/aff.map"
@@ -293,14 +221,13 @@ mk_aff() { # mk_aff <reason of b1> <reason of p1> <tail of b1's command> [<tail 
     printf 'l\techo l >> "%s"\tlint\n' "$alog"
     printf 'b1\techo b1 >> "%s"%s\tbash\t%s\n' "$alog" "$3" "$1"
     printf 'b2\techo b2 >> "%s"%s\tbash\n' "$alog" "${4:-}"
-    printf 'p1\techo p1 >> "%s"\tps\t%s\n' "$alog" "$2"
-    printf 'p2\techo p2 >> "%s"\tps\n' "$alog"
+    printf 'p1\techo p1 >> "%s"\tbash\t%s\n' "$alog" "$2"
+    printf 'p2\techo p2 >> "%s"\tbash\n' "$alog"
     printf 'c\techo c >> "%s"\tclaude\n' "$alog"
   } > "$tmp/aff-steps.txt"
 }
-aff_cfg() { # aff_cfg <platform as JSON, or - for no key>: the configuration of $repo
-  if [ "$1" = - ]; then printf '{ "verification": { "check": "true" } }\n' > "$repo/.claude/nightmill.json"
-  else printf '{ "verification": { "check": "true", "platform": %s } }\n' "$1" > "$repo/.claude/nightmill.json"; fi
+aff_cfg() { # aff_cfg: the configuration of $repo, with no platform key
+  printf '{ "verification": { "check": "true" } }\n' > "$repo/.claude/nightmill.json"
 }
 aff_run() { # aff_run <the changed paths, one per line> <args...>: out, err, rc of tests/check.sh --affected in $repo; the log in $aff_log
   local paths=$1; shift
@@ -314,7 +241,7 @@ aff_run() { # aff_run <the changed paths, one per line> <args...>: out, err, rc 
 }
 aff_first() { echo "check: AFFECTED, 1 at a time (--jobs 1): $1 of 6 steps, changed paths: $2 (against NIGHTMILL_CHECK_PATHS); the full check does not run"; }
 mk_aff "" "" ""
-aff_cfg -
+aff_cfg
 # the steps the paths map to, in list order, and the lines around them
 aff_run $'templates/t.md\ntests/p2\n'
 [ "$rc" = 0 ] || fail "affected: exit $rc: $out $err"
@@ -344,29 +271,19 @@ for p in 'scripts/lib/x.sh|scripts/lib/x.sh is shared by many steps' 'other/thin
   [ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "affected, ${p%%|*}: the steps that ran: $aff_log"
   [ "$(tail -n 1 <<<"$out")" = "ALL CHECKS PASSED" ] || fail "affected, ${p%%|*}: the last line: $out"
 done
-# a changed script runs its tests in both shells, whatever verification.platform says
-for plat in '"windows"' '"unix"' -; do
-  aff_cfg "$plat"
-  aff_run $'scripts/foo.ps1\n'
-  [ "$rc" = 0 ] || fail "affected, script, platform $plat: exit $rc: $out $err"
-  [ "$aff_log" = "l,b1,p1," ] || fail "affected, script, platform $plat: the steps that ran: $aff_log"
-  if grep -q '^SKIPPED:.*verification\.platform' <<<"$out"; then fail "affected, script, platform $plat: a platform SKIPPED line: $out"; fi
-done
 # what the machine cannot run is listed as skipped
-mk_aff "" "no pwsh here" ""
-aff_cfg '"windows"'
-aff_run $'scripts/foo.ps1\n'
+mk_aff "" "no tool here" ""
+aff_run $'scripts/foo.sh\n'
 [ "$rc" = 0 ] || fail "affected, p1 with a reason: exit $rc: $out $err"
 [ "$aff_log" = "l,b1," ] || fail "affected, p1 with a reason: the steps that ran: $aff_log"
-has_line "$out" 'SKIPPED: no pwsh here' || fail "affected, p1 with a reason: no SKIPPED line: $out"
+has_line "$out" 'SKIPPED: no tool here' || fail "affected, p1 with a reason: no SKIPPED line: $out"
 mk_aff "" "" ""
-# a shared file with a changed script: the full check under the platform, plus the steps the script selected
+# a shared file with a changed script: the full check, every step
 aff_run $'scripts/lib/x.sh\nscripts/foo.sh\n'
 [ "$rc" = 0 ] || fail "affected, shared and script: exit $rc: $out $err"
-[ "$aff_log" = "l,b1,b2,p1,c," ] || fail "affected, shared and script: the steps that ran: $aff_log"
-has_line "$out" "$WIN_LINE" || fail "affected, shared and script: no platform line for p2: $out"
+[ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "affected, shared and script: the steps that ran: $aff_log"
+if grep -q '^SKIPPED:' <<<"$out"; then fail "affected, shared and script: a SKIPPED line: $out"; fi
 [ "$(head -n 1 <<<"$out")" = "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running the full check" ] || fail "affected, shared and script: the first line: $out"
-aff_cfg -
 # a failing step: the last line and the exit code say it was not the full check
 mk_aff "" "" "; exit 1"
 aff_run $'scripts/foo.sh\n'
@@ -378,7 +295,7 @@ mk_aff "" "" ""
 # the changed paths from git: committed, unstaged and untracked, against origin/main
 g="$tmp/gitrepo"
 mkdir -p "$g/tests" "$g/scripts" "$g/.claude" "$g/templates"
-cp "$here/tests/check.sh" "$here/tests/check.ps1" "$g/tests/"
+cp "$here/tests/check.sh" "$g/tests/"
 cp -R "$here/scripts/lib" "$g/scripts/lib"
 echo '{ "verification": { "check": "true" } }' > "$g/.claude/nightmill.json"
 echo one > "$g/scripts/foo.sh"; echo one > "$g/templates/t.md"
@@ -422,29 +339,15 @@ git_aff --within b2,p2
 [ "$(sed -n 2p <<<"$out")" = "check: only b2,p2, 1 at a time (--jobs 1)" ] || fail "affected within, no merge base: the second line: $out"
 [ "$aff_log" = "b2,p2," ] || fail "affected within, no merge base: the steps that ran: $aff_log"
 
-# --within (iteration 60): the steps of the list that the changed paths select; the lint only when the list names it, and
-# verification.platform does not apply to a selected step
-aff_cfg -
+# --within (iteration 60): the steps of the list that the changed paths select; the lint only when the list names it
 # a changed script and a changed doc against two bash steps: the script's step of the list, no lint
-aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within b1,b2
+aff_run $'scripts/foo.sh\ndocs/a.md\n' --within b1,b2
 [ "$rc" = 0 ] || fail "within: exit $rc: $out $err"
 [ "$aff_log" = "b1," ] || fail "within: the steps that ran: $aff_log"
 [ "$(head -n 1 <<<"$out")" = "$(aff_first 1 2 | sed 's/ of 6 steps/ of 2 steps/')" ] || fail "within: the first line: $out"
-[ "$(grep '^affected:' <<<"$out" | tr '\n' '|')" = "affected: docs/a.md -> none of the --within steps|affected: scripts/foo.ps1 -> b1|" ] || fail "within: the affected lines: $out"
+[ "$(grep '^affected:' <<<"$out" | tr '\n' '|')" = "affected: docs/a.md -> none of the --within steps|affected: scripts/foo.sh -> b1|" ] || fail "within: the affected lines: $out"
 [ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (1 of 2 steps, changed paths: 2; the full check has not run)" ] || fail "within: the last line: $out"
 if grep -q 'ALL CHECKS PASSED' <<<"$out"; then fail "within: printed ALL CHECKS PASSED: $out"; fi
-# the PowerShell steps of the list: a changed script selects p1 even where verification.platform is unix
-aff_cfg '"unix"'
-aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within p1,p2
-[ "$rc" = 0 ] || fail "within, unix: exit $rc: $out $err"
-[ "$aff_log" = "p1," ] || fail "within, unix: the steps that ran: $aff_log"
-# the bash steps of the list: a changed script selects b1 even where verification.platform is windows
-aff_cfg '"windows"'
-aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within b1,b2
-[ "$rc" = 0 ] || fail "within, windows: exit $rc: $out $err"
-[ "$aff_log" = "b1," ] || fail "within, windows: the steps that ran: $aff_log"
-if grep -q '^SKIPPED:.*verification\.platform' <<<"$out"; then fail "within, windows: a platform SKIPPED line: $out"; fi
-aff_cfg -
 # a docs-only change: no step of a test list runs, and the run passes
 aff_run $'docs/a.md\n' --within b1,p1
 [ "$rc" = 0 ] || fail "within, docs only: exit $rc: $out $err"
@@ -455,8 +358,7 @@ aff_run $'docs/a.md\n' --within b1,p1
 aff_run $'docs/a.md\n' --within l,b1
 [ "$rc" = 0 ] || fail "within, docs and the lint: exit $rc: $out $err"
 [ "$aff_log" = "l," ] || fail "within, docs and the lint: the steps that ran: $aff_log"
-# a shared path: every step of the list runs, as --only, whatever verification.platform says
-aff_cfg '"windows"'
+# a shared path: every step of the list runs, as --only
 aff_run $'scripts/lib/x.sh\n' --within b2,p2
 [ "$rc" = 0 ] || fail "within, shared: exit $rc: $out $err"
 [ "$(head -n 1 <<<"$out")" = "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running every --within step" ] || fail "within, shared: the first line: $out"
@@ -474,19 +376,18 @@ aff_run $'scripts/lib/x.sh\n' --within b2,p2
 [ "$rc" = 1 ] || fail "within, shared and failing: exit $rc: $out"
 [ "$(tail -n 1 <<<"$out")" = "SELECTED CHECKS FAILED: b2 (the full check has not run)" ] || fail "within, shared and failing: the last line: $out"
 mk_aff "" "" ""
-aff_cfg -
 # the summary: which steps ran, which were left out, and why
 sumf="$tmp/aff-summary.md"
 line_no() { grep -nxF -- "$1" "$sumf" | head -n 1 | cut -d: -f1; }
 rm -f "$sumf"
-aff_run $'scripts/foo.ps1\ndocs/a.md\n' --within b1,b2 --summary "$sumf"
+aff_run $'scripts/foo.sh\ndocs/a.md\n' --within b1,b2 --summary "$sumf"
 [ "$rc" = 0 ] || fail "within summary: exit $rc: $out $err"
 [ -f "$sumf" ] || fail "within summary: no summary file was written"
 w_wall=$(grep -n '^Wall time: ' "$sumf" | head -n 1 | cut -d: -f1)
 w_sel=$(line_no 'Selection: --affected against NIGHTMILL_CHECK_PATHS: 1 of 2 steps ran, 1 left out (no changed path selects them).')
 w_head=$(line_no '| Changed path | Selects |')
 w_r1=$(line_no '| `docs/a.md` | none of the --within steps |')
-w_r2=$(line_no '| `scripts/foo.ps1` | b1 |')
+w_r2=$(line_no '| `scripts/foo.sh` | b1 |')
 w_ran=$(line_no 'Ran: `b1`')
 w_left=$(line_no 'Left out: `b2`')
 w_slow=$(line_no '| Slowest step | Time |')
@@ -511,7 +412,7 @@ grep -qxF 'And 1 more changed paths (the log lists every one).' "$sumf" || fail 
 if grep -qF 'docs/p51.md' "$sumf"; then fail "within summary, 51 paths: the 51st path has a row: $(cat "$sumf")"; fi
 [ "$(grep -c '^affected: ' <<<"$out")" = 51 ] || fail "within summary, 51 paths: the log does not list every path: $out"
 # without --within the section is the one of --affected alone: the wall time, and no selection lines
-for p in $'scripts/foo.ps1\ndocs/a.md\n' $'scripts/lib/x.sh\n'; do
+for p in $'scripts/foo.sh\ndocs/a.md\n' $'scripts/lib/x.sh\n'; do
   rm -f "$sumf"
   aff_run "$p" --summary "$sumf"
   [ "$rc" = 0 ] || fail "plain affected summary (${p%%$'\n'*}): exit $rc: $out $err"
@@ -526,34 +427,33 @@ mk_aff_slow() { # mk_aff_slow <reason of p1>: the six steps of mk_aff, p1 with t
     printf 'l\techo l >> "%s"\tlint\n' "$alog"
     printf 'b1\techo b1 >> "%s"\tbash\n' "$alog"
     printf 'b2\techo b2 >> "%s"\tbash\n' "$alog"
-    printf 'p1\techo p1 >> "%s"\tps\t%s\t\tslow\n' "$alog" "$1"
-    printf 'p2\techo p2 >> "%s"\tps\n' "$alog"
+    printf 'p1\techo p1 >> "%s"\tbash\t%s\t\tslow\n' "$alog" "$1"
+    printf 'p2\techo p2 >> "%s"\tbash\n' "$alog"
     printf 'c\techo c >> "%s"\tclaude\n' "$alog"
   } > "$tmp/aff-steps.txt"
 }
 SLOW_LEFT='LEFT OUT: p1 (a slow step; the full check and CI on the base branch run it)'
 times_names() { printf '%s\n' "$1" | awk '/^Times:$/ { p = 1 } p && NF { print $1 } /^  total / { p = 0 }'; }
-aff_cfg -
 mk_aff_slow ""
-aff_run $'scripts/foo.ps1\n'
+aff_run $'scripts/foo.sh\n'
 [ "$rc" = 0 ] || fail "slow, affected: exit $rc: $out $err"
 [ "$aff_log" = "l,b1," ] || fail "slow, affected: the steps that ran: $aff_log"
 [ "$(head -n 1 <<<"$out")" = "$(aff_first 2 1)" ] || fail "slow, affected: the first line: $out"
-has_line "$out" 'affected: scripts/foo.ps1 -> b1,p1' || fail "slow, affected: no 'scripts/foo.ps1 -> b1,p1' line: $out"
+has_line "$out" 'affected: scripts/foo.sh -> b1,p1' || fail "slow, affected: no 'scripts/foo.sh -> b1,p1' line: $out"
 has_line "$out" "$SLOW_LEFT" || fail "slow, affected: no LEFT OUT line for p1: $out"
 if has_line "$out" '== p1'; then fail "slow, affected: a section for the slow step p1: $out"; fi
 if grep -qx p1 <<<"$(times_names "$out")"; then fail "slow, affected: p1 is in the Times block: $out"; fi
 [ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (2 of 6 steps, changed paths: 1; the full check has not run)" ] || fail "slow, affected: the last line: $out"
 # a slow step that cannot run here is listed as left out, not as skipped
-mk_aff_slow "no pwsh here"
-aff_run $'scripts/foo.ps1\n'
+mk_aff_slow "no tool here"
+aff_run $'scripts/foo.sh\n'
 [ "$rc" = 0 ] || fail "slow, affected, with a reason: exit $rc: $out $err"
 has_line "$out" "$SLOW_LEFT" || fail "slow, affected, with a reason: no LEFT OUT line for p1: $out"
-if has_line "$out" 'SKIPPED: no pwsh here'; then fail "slow, affected, with a reason: a SKIPPED line for the slow step: $out"; fi
+if has_line "$out" 'SKIPPED: no tool here'; then fail "slow, affected, with a reason: a SKIPPED line for the slow step: $out"; fi
 mk_aff_slow ""
 # --within: the slow step of the list is left out, and the summary says so
 rm -f "$sumf"
-aff_run $'scripts/foo.ps1\n' --within b1,p1 --summary "$sumf"
+aff_run $'scripts/foo.sh\n' --within b1,p1 --summary "$sumf"
 [ "$rc" = 0 ] || fail "slow, within: exit $rc: $out $err"
 [ "$aff_log" = "b1," ] || fail "slow, within: the steps that ran: $aff_log"
 [ "$(head -n 1 <<<"$out")" = "$(aff_first 1 1 | sed 's/ of 6 steps/ of 2 steps/')" ] || fail "slow, within: the first line: $out"
@@ -590,7 +490,7 @@ case "$(sed -n 2p <<<"$out")" in "check: only b2,p1, "*) ;; *) fail "slow, withi
 if grep -q '^LEFT OUT:' <<<"$out"; then fail "slow, within fallback: a LEFT OUT line: $out"; fi
 # the sixth field is slow or empty
 printf 'l\techo l >> "%s"\tlint\n' "$alog" > "$tmp/slow-bad.txt"
-printf 'p1\techo p1 >> "%s"\tps\t\t\tfast\n' "$alog" >> "$tmp/slow-bad.txt"
+printf 'p1\techo p1 >> "%s"\tbash\t\t\tfast\n' "$alog" >> "$tmp/slow-bad.txt"
 : > "$alog"
 run_check "$tmp/slow-bad.txt" --jobs 1
 [ "$rc" = 2 ] || fail "slow, bad sixth field: exit $rc, wanted 2: $out"
@@ -701,12 +601,11 @@ echo "== the slowest steps of the real list start first"
 real_list=$(awk '/^# steps: begin$/{on=1;next} /^# steps: end$/{on=0} on' "$here/tests/check.sh")
 # a step marked slow (iteration 62) ends in ' slow' after its 'first': the mark is removed before the whole-line match
 real_first=$(sed 's/ slow$//' <<<"$real_list")
-for want in "bash test-spec-template.sh" "bash smoke-slot.sh" "ps smoke-slot.ps1" "ps smoke-check.ps1" "ps smoke-validate.ps1" \
-            "ps smoke-release.ps1" "ps smoke-drive.ps1" "ps test-lintcopy-output.ps1"; do
+for want in "bash test-spec-template.sh" "bash smoke-slot.sh"; do
   has_line "$real_first" "add $want first" || fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh"
 done
 # the slow steps are marked in the step list itself (iteration 62, decision 4)
-for want in "ps smoke-drive.ps1 first slow" "ps test-lintcopy-output.ps1 first slow" "bash test-lintcopy-output.sh slow"; do
+for want in "bash test-lintcopy-output.sh slow"; do
   has_line "$real_list" "add $want" || fail "slow steps: 'add $want' is not in the step list of tests/check.sh"
 done
 
@@ -718,11 +617,11 @@ awk '/^echo "== the check runs every smoke script"/ { p = 1 } /^echo "== text fr
 mkcopy() { # mkcopy <dir>: the files the section reads (every script in tests/, so a step that is not a smoke-* file exists)
   local d=$1
   mkdir -p "$d/tests" "$d/.github/workflows" "$d/schema" "$d/templates" "$d/scripts"
-  cp "$here"/tests/*.sh "$here"/tests/*.ps1 "$d/tests/"
+  cp "$here"/tests/*.sh "$d/tests/"
   cp "$here/.github/workflows/ci.yml" "$d/.github/workflows/"
   cp "$here/schema/nightmill.schema.json" "$d/schema/"
   cp "$here/templates/nightmill.example.json" "$d/templates/"
-  cp "$here"/scripts/*.sh "$here"/scripts/*.ps1 "$d/scripts/"
+  cp "$here"/scripts/*.sh "$d/scripts/"
   cp -R "$here/scripts/lib" "$d/scripts/lib"
   cp "$here/README.md" "$here/CONTRIBUTING.md" "$here/CHANGELOG.md" "$d/"
   cp -R "$here/skills" "$d/skills"
@@ -754,18 +653,17 @@ lint_break nofile tests/check.sh 's/^# steps: end/add bash smoke-nope.sh\
 lint_break twopassed tests/check.sh '$a\
 echo "ALL CHECKS PASSED"' 'FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place'
 lint_break cibash .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,//' 'FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh'
-lint_break cips .github/workflows/ci.yml '/^ *only: smoke-hook\.ps1,/s/smoke-hook\.ps1,//' 'FAIL: .github/workflows/ci.yml: tests/smoke-hook.ps1 runs in no PowerShell part'
 lint_break cijson .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary.*smoke-hook\.sh/s/\$CHECK_SELECT /\$CHECK_SELECT smoke-json.sh,/' 'FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice'
 lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,smoke-release\.sh/smoke-release.sh,smoke-hook.sh/' 'FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list'
 lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'
-lint_break cibegins .github/workflows/ci.yml 's/name: claude plugin validate (not blocking)/name: PowerShell scripts smoke tests (1)/' "FAIL: .github/workflows/ci.yml: the job name 'PowerShell scripts smoke tests (1)' begins with the required name 'PowerShell scripts smoke tests'"
+lint_break cibegins .github/workflows/ci.yml 's/name: claude plugin validate (not blocking)/name: bash scripts smoke tests (1)/' "FAIL: .github/workflows/ci.yml: the job name 'bash scripts smoke tests (1)' begins with the required name 'bash scripts smoke tests'"
 # CI selects the steps a pull request affects, and every required job runs on every event (iteration 60, decision 8)
 lint_break cienv .github/workflows/ci.yml $'/CHECK_SELECT:/s/\'--only\'/\'--quick\'/' 'FAIL: .github/workflows/ci.yml: the env block is not exactly the line'
 lint_break cipaths .github/workflows/ci.yml $'/^  pull_request:$/a\\\n\\    paths-ignore: [\'docs/**\']' "FAIL: .github/workflows/ci.yml: the 'on:' block is not exactly push to main and pull_request"
 lint_break ciif .github/workflows/ci.yml $'/^    name: Lint (generic, JSON, skills, shell)$/a\\\n\\    if: github.event_name == \'push\'' "job lint has an 'if:'"
-lint_break cidepth .github/workflows/ci.yml '/^  smoke-bash:$/,/^  smoke-powershell-part:$/{/fetch-depth: 0/d;}' 'job smoke-bash does not check out with fetch-depth: 0'
+lint_break cidepth .github/workflows/ci.yml '/^  smoke-bash:$/,/^  smoke-gitbash-part:$/{/fetch-depth: 0/d;}' 'job smoke-bash does not check out with fetch-depth: 0'
 lint_break cijsondirect .github/workflows/ci.yml '/\$CHECK_SELECT smoke-json\.sh$/s/run: .*/run: bash tests\/smoke-json.sh/' 'the bash smoke job does not run tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-json.sh, then the other bash steps'
 # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
 lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema: verification.platform is not a string'
@@ -773,8 +671,8 @@ lint_break platformexample templates/nightmill.example.json 's/"platform": "all"
 lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
 lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'
 lint_break platformcheck tests/check.sh 's/verification\.platform/verification-platform/g' 'FAIL: tests/check.sh does not mention verification.platform'
-# windows runs the bash tests in Git Bash (iteration 65)
-lint_break platformmeaning schema/nightmill.schema.json 's/windows runs the bash tests in Git Bash/windows runs the PowerShell tests/' 'does not say windows runs the bash tests in Git Bash'
+# tests/check.sh does not read verification.platform (iteration 68)
+lint_break platformmeaning schema/nightmill.schema.json 's/tests\/check\.sh does not read it/tests\/check.sh reads it/' 'does not say tests/check.sh does not read it'
 # the map of tests/check.sh (iteration 59, decision 7): every test step and every script is in it
 lint_break mapstep tests/check.sh '/^map [^ ]* smoke-hook\.sh$/d; /^map /{s/,smoke-hook\.sh,/,/; s/,smoke-hook\.sh$//; s/ smoke-hook\.sh,/ /;}' 'no path maps to the step smoke-hook.sh'
 d="$tmp/lint-mapscript"
@@ -796,27 +694,24 @@ grep -E '^FAIL: .*tests/fixtures/zz-new-case' <<<"$out" >/dev/null || fail "lint
 rm -rf "$d"
 lint_break mapname tests/check.sh 's/^# affects: end$/map README.md smoke-nope.sh\
 # affects: end/' 'the map names smoke-nope.sh, which is not a step'
-lint_break maptwin tests/check.sh 's/^# affects: end$/map scripts\/slot.sh smoke-hook.sh\
-# affects: end/' 'scripts/slot.sh and scripts/slot.ps1 map to different steps'
 lint_break mapshared tests/check.sh '/^shared scripts\/lib\/\*$/d' 'the map does not have the line shared scripts/lib/*'
 lint_break cimapci tests/check.sh '/^shared \.github\/workflows\/\*$/d' 'the map does not have the line shared .github/workflows/*'
 lint_break mapskill skills/check/SKILL.md 's/check: AFFECTED/check: AFFECTEX/g' 'skills/check/SKILL.md does not mention check: AFFECTED'
 # the slow mark (iteration 62, decision 8): its format, the set of slow steps, the '# Time: ' notes and the release line of the map
-lint_break slowformat tests/check.sh 's/^add ps smoke-drive\.ps1 first slow$/add ps smoke-drive.ps1 slow first/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
-lint_break slowset tests/check.sh 's/^\(add ps smoke-drive\.ps1 first\) slow$/\1/' 'the steps marked slow are not exactly the slow steps'
-lint_break slownote tests/smoke-drive.ps1 '/^# Time: /d' "tests/smoke-drive.ps1 has no '# Time: ' note in its header"
+lint_break slowformat tests/check.sh 's/^add bash test-lintcopy-output\.sh slow$/add bash test-lintcopy-output.sh slow first/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
+lint_break slowset tests/check.sh 's/^\(add bash test-lintcopy-output\.sh\) slow$/\1/' 'the steps marked slow are not exactly the slow steps'
+lint_break slownote tests/test-lintcopy-output.sh '/^# Time: /d' "tests/test-lintcopy-output.sh has no '# Time: ' note in its header"
 lint_break mapplugin tests/check.sh '/^shared \.claude-plugin\/plugin\.json$/d' 'the map does not have the line shared .claude-plugin/plugin.json'
 
 # the skills, the agents and the README name the .sh form only (#364): the section of tests/lint.sh, each rule broken once
-lint_break shskill skills/status/SKILL.md 's#bash "\${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"#powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/status.ps1"#' 'names the PowerShell form of a script'
+lint_break shskill skills/status/SKILL.md 's#bash "\${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"#powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"#' 'names the PowerShell form of a script'
 lint_break shflag skills/workflow/SKILL.md 's/--capacity --porcelain/-Capacity -Porcelain/' 'names the PowerShell form of a script (-Capacity'
-lint_break shreadme README.md 's#bash scripts/load.sh \[--porcelain\]#scripts/load.ps1 [-Porcelain]#' 'README.md:'
+lint_break shreadme README.md 's#bash scripts/load.sh \[--porcelain\]#bash scripts/load.sh -Porcelain#' 'README.md:'
 grep -qF 'names the PowerShell form of a script' <<<"$out" || fail "lint shreadme: no 'names the PowerShell form of a script' in: $out"
-lint_break shdev README.md 's#^`main` only takes pull requests, so a release has two steps.#& Or `scripts/release.ps1`.#' 'names the PowerShell form of a script (scripts/release.ps1)'
 # the init section: init writes no PowerShell allow rule (#364)
 sec="$tmp/lint-init-section.sh"
 awk '/^echo "== init installs the run permissions"/ { p = 1 } /^echo "== \/next and \/fix hand the coding to a subagent"/ { p = 0 } p' "$here/tests/lint.sh" > "$sec"
 [ -s "$sec" ] || fail "lint: tests/lint.sh has no section '== init installs the run permissions'"
-lint_break initps skills/init/SKILL.md 's#`Bash(bash "<P>/scripts/<name>.sh" \*)`\.#&\n    `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)`#' 'writes a PowerShell allow rule'
+lint_break initps skills/init/SKILL.md 's#`Bash(bash "<P>/scripts/<name>.sh" \*)`\.#&\n    `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.sh" *)`#' 'writes a PowerShell allow rule'
 
 echo "smoke-check: ok"

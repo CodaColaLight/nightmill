@@ -9,6 +9,6 @@
 ## Checklist
 
 - [ ] `bash tests/check.sh` passed
-- [ ] A changed script is changed in both PowerShell and bash, with a smoke step in both
+- [ ] A changed script has a smoke step in the bash tests
 - [ ] `CHANGELOG.md` has a bullet under `Unreleased`
 - [ ] Nothing project-specific was added: no project name, person or local path

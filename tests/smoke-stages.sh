@@ -163,7 +163,7 @@ steps="$tmp/steps.txt"
 # below do not read this repository's own .claude/nightmill.json (its verification.platform may be windows, unix, all or absent)
 nrepo="$tmp/nrepo"
 mkdir -p "$nrepo/tests" "$nrepo/scripts" "$nrepo/.claude"
-cp "$here/tests/check.sh" "$here/tests/check.ps1" "$nrepo/tests/"
+cp "$here/tests/check.sh" "$nrepo/tests/"
 cp -R "$here/scripts/lib" "$nrepo/scripts/lib"
 echo '{ "verification": { "check": "true" } }' > "$nrepo/.claude/nightmill.json"
 echo "$T0" > "$CLOCK"

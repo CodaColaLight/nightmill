@@ -1,7 +1,7 @@
 # scripts/lib/stages.awk - the computation of scripts/stages.sh (iteration 41): reads the record
 # <worktrees.root>/.slots/ledger.tsv and prints the time per stage of the chosen takes. POSIX awk, run with LC_ALL=C.
 # Variables: NOW (seconds since 1970, UTC), MODE (issue or last), N (the issue, or how many takes), PATHNAME (for the
-# note). The rules are those of stages.ps1 (decisions 6 to 10 of docs/specs/iteration-41-stage-times.md):
+# note). The rules are decisions 6 to 10 of docs/specs/iteration-41-stage-times.md:
 #   a take line starts a take of its slot (an earlier open take of that slot is "not freed"); a step line belongs to
 #   the slot's open take, or starts one whose start is unknown; a free line ends the open take, or is a take of its
 #   own; a take without a free line at the end is running.

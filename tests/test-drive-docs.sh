@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/test-drive-docs.sh - the driver, its keys, the workflow template and the README section (iteration 52, #164).
 # Iteration 53 (#165): the driver also passes --max-turns and --max-budget-usd and edits an issue only to add blocked.
-# Iteration 54 (#166): the driver also calls history.sh --run (history.ps1) for its summary.
+# Iteration 54 (#166): the driver also calls history.sh --run for its summary.
 # Parts S (the driver sets no status), K (the config keys), T (the template), R (the README).
 #   tests/test-drive-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
@@ -18,17 +18,14 @@ forbidden=(--bare --dangerously-skip-permissions bypassPermissions --allowedTool
 nostatus=(item-edit item-add item-delete field-create updateProjectV2ItemFieldValue single-select-option-id "issue close" "pr merge" "label create")
 
 # --- Part S ---
-for f in scripts/drive.sh scripts/drive.ps1; do
+for f in scripts/drive.sh; do
   p="$root/$f"
   if [ ! -f "$p" ]; then fail "$f: missing"; continue; fi
   for w in "/nightmill:fix all" "/nightmill:next" "--permission-mode manual" "--output-format json" "--max-turns" "--max-budget-usd" "issue comment" "nightmill-stop" "nightmill-drive.lock"; do
     grep -qF -- "$w" "$p" || fail "$f: does not contain '$w'"
   done
   # iteration 54 (#166): the summary carries the history of the run, computed by the history script of the same folder
-  case "$f" in
-    *.sh) hw='history.sh" --run' ;;
-    *) hw='history.ps1' ;;
-  esac
+  hw='history.sh" --run'
   grep -qF -- "$hw" "$p" || fail "$f: does not contain '$hw'"
   for w in "${nostatus[@]}" "${forbidden[@]}"; do
     if grep -qF -- "$w" "$p"; then fail "$f: contains '$w'"; fi
@@ -91,7 +88,9 @@ else
   grep -qE '^    - cron: "[0-9*/ ,-]+"$' "$tpl" || fail "nightmill-drive.yml: no cron line"
   t=$(sed -n 's/^    timeout-minutes: \([0-9][0-9]*\)$/\1/p' "$tpl" | head -1)
   if [ -z "$t" ] || [ "$t" -lt 1 ] || [ "$t" -gt 4320 ]; then fail "nightmill-drive.yml: timeout-minutes missing or not from 1 to 4320"; fi
-  grep -qF 'scripts/drive.ps1' "$tpl" || fail "nightmill-drive.yml: no scripts/drive.ps1"
+  grep -qF 'shell: pwsh' "$tpl" && fail "nightmill-drive.yml: still has a shell: pwsh step"
+  ext=ps1
+  grep -qF "drive.$ext" "$tpl" && fail "nightmill-drive.yml: still names drive.$ext"
   grep -qF 'NIGHTMILL_CHECKOUT: ${{ vars.NIGHTMILL_CHECKOUT }}' "$tpl" || fail "nightmill-drive.yml: no NIGHTMILL_CHECKOUT variable"
   for w in 'uses:' 'secrets.' GITHUB_TOKEN GH_TOKEN ': write' "${forbidden[@]}"; do
     if grep -qF -- "$w" "$tpl"; then fail "nightmill-drive.yml: contains '$w'"; fi

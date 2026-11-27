@@ -208,15 +208,15 @@ test('a failed read drops the rows of the last good read', async ($, on) => {
   expect(after).not.toContain('running')
 })
 
-test('on Windows the pane runs scripts/panel.ps1 with Windows PowerShell', async ($, on) => {
+test('on Windows too the pane runs scripts/panel.sh with bash', async ($, on) => {
   const world = worldOf(on)
   world.os.current = 'Windows_NT'
   await openPane($, world)
   expect(world.runs.length).toBeGreaterThanOrEqual(1)
   const argv = world.runs[0]!.argv
-  expect(argv.slice(0, 5)).toEqual(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'])
-  expect(argv.length).toBe(6)
-  expect(argv[5], 'the plugin folder, a slash, scripts/panel.ps1').toMatch(/^.+\/scripts\/panel\.ps1$/)
+  expect(argv.length).toBe(2)
+  expect(argv[0]).toBe('bash')
+  expect(argv[1], 'the plugin folder, a slash, scripts/panel.sh').toMatch(/^.+\/scripts\/panel\.sh$/)
   expect(world.runs[0]!.init.cwd, 'the script runs in the session folder').toBe('/work')
   expect(world.runs[0]!.init.timeoutMs).toBe(20000)
 })

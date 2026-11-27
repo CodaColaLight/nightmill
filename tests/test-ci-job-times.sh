@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/test-ci-job-times.sh - the final CI job's job-times step is pinned (bug #295; iteration 55, decision 7): the rules
-# of tests/test-ci-parts.sh fail when the job smoke-powershell has no step that runs tests/ci-jobs-summary.sh with
+# of tests/test-ci-parts.sh fail when the job smoke-gitbash has no step that runs tests/ci-jobs-summary.sh with
 # `if: always()` and `continue-on-error: true`. Each case is a scratch copy of .github/workflows/ci.yml (the real file
 # is never touched) changed once: the step removed, its `if: always()` removed, its `continue-on-error: true` removed,
 # its call of tests/ci-jobs-summary.sh removed, and each of the three properties moved to another step of the job; the rules (NIGHTMILL_CI_PARTS_RULES_ONLY=1, no cases of their own) must
@@ -90,32 +90,32 @@ case_job_times nocall '
   { print }'
 
 # The three properties may not be spread over the steps of the job: each case below moves one property of the Job times
-# step onto the step 'Every part succeeded' of the same job, so all three are still in the job's block, but not in one step
+# step onto the step 'Every Git Bash part succeeded' of the same job, so all three are still in the job's block, but not in one step
 # (a rule that greps the whole job for each, as the rule of the final job's verdict does, passes them).
 
-# 'if: always()' moved to 'Every part succeeded': the summary would not be written after a failed part
+# 'if: always()' moved to 'Every Git Bash part succeeded': the summary would not be written after a failed part
 case_job_times moveif '
   /^      - name: Job times[[:space:]]*$/ { inst = 1; print; next }
   inst && (/^      - / || /^  [A-Za-z]/ || /^[^[:space:]]/ || /^[[:space:]]*$/) { inst = 0 }
   inst && /^        if: always\(\)[[:space:]]*$/ { next }
-  /^      - name: Every part succeeded[[:space:]]*$/ { print; print "        if: always()"; next }
+  /^      - name: Every Git Bash part succeeded[[:space:]]*$/ { print; print "        if: always()"; next }
   { print }'
 
-# 'continue-on-error: true' moved to 'Every part succeeded': the summary could fail the job, and a failed part would pass
+# 'continue-on-error: true' moved to 'Every Git Bash part succeeded': the summary could fail the job, and a failed part would pass
 case_job_times movecontinue '
   /^      - name: Job times[[:space:]]*$/ { inst = 1; print; next }
   inst && (/^      - / || /^  [A-Za-z]/ || /^[^[:space:]]/ || /^[[:space:]]*$/) { inst = 0 }
   inst && /^        continue-on-error: true[[:space:]]*$/ { next }
-  /^      - name: Every part succeeded[[:space:]]*$/ { print; print "        continue-on-error: true"; next }
+  /^      - name: Every Git Bash part succeeded[[:space:]]*$/ { print; print "        continue-on-error: true"; next }
   { print }'
 
-# the call of tests/ci-jobs-summary.sh moved to 'Every part succeeded': the Job times step would write nothing
+# the call of tests/ci-jobs-summary.sh moved to 'Every Git Bash part succeeded': the Job times step would write nothing
 case_job_times movecall '
   /^      - name: Job times[[:space:]]*$/ { inst = 1; print; next }
   inst && (/^      - / || /^  [A-Za-z]/ || /^[^[:space:]]/ || /^[[:space:]]*$/) { inst = 0 }
   inst { gsub(/tests\/ci-jobs-summary\.sh/, "tests/other-summary.sh") }
-  /^      - name: Every part succeeded[[:space:]]*$/ { instep = 1 }
-  instep && /^          echo "the PowerShell parts: / { print; print "          echo tests/ci-jobs-summary.sh"; instep = 0; next }
+  /^      - name: Every Git Bash part succeeded[[:space:]]*$/ { instep = 1 }
+  instep && /^          echo "the Git Bash parts: / { print; print "          echo tests/ci-jobs-summary.sh"; instep = 0; next }
   { print }'
 
 [ "$fail" = 0 ] || exit 1

@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034,SC2154
 # (the LOAD_ variables are read by the script that sources this file; JSON_FLAT is set by scripts/lib/json.sh)
 # scripts/lib/load.sh - the machine's CPU load and free memory over a short window, and a suggested agent limit
-# (nightmill). Bash twin of scripts/lib/load.ps1; the rules and the texts are in
+# (nightmill). The rules and the texts are in
 # docs/specs/iteration-24-machine-load.md. Source it after scripts/lib/json.sh, with the config loaded (json_load).
 # Loading it runs nothing.
 #

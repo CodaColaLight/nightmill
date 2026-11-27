@@ -123,12 +123,13 @@ else
     fi
   done
 fi
+ext=ps1
 for sk in next fix spec check story control; do
   f="$root/skills/$sk/SKILL.md"
   if [ ! -f "$f" ]; then fail "skills/$sk/SKILL.md: missing"; continue; fi
   grep -qF '**The pause and the limits**' "$f" || fail "skills/$sk/SKILL.md: no **The pause and the limits**"
   grep -qF 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"' "$f" || fail "skills/$sk/SKILL.md: no call bash \"\${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh\""
-  if grep -qF 'gate.ps1' "$f"; then fail "skills/$sk/SKILL.md: still names gate.ps1"; fi
+  if grep -qF "gate.$ext" "$f"; then fail "skills/$sk/SKILL.md: still names gate.$ext"; fi
 done
 if grep -qF 'once they exist' "$root/skills/fix/SKILL.md"; then fail "skills/fix/SKILL.md: still says 'once they exist'"; fi
 for sk in status models; do
@@ -141,16 +142,13 @@ grep -qF '21 + 21' "$ini" || fail "skills/init/SKILL.md: the count is not 21 + 2
 if grep -qF '24 + 21' "$ini"; then fail "skills/init/SKILL.md: still says 24 + 21"; fi
 
 # --- Part D ---
-for f in scripts/drive.sh scripts/drive.ps1; do
+for f in scripts/drive.sh; do
   p="$root/$f"
   if [ ! -f "$p" ]; then fail "$f: missing"; continue; fi
   for w in '--max-turns' '--max-budget-usd' NIGHTMILL_RUN_STARTED NIGHTMILL_ISSUES_LEFT 'gate.' run; do
     grep -qF -- "$w" "$p" || fail "$f: does not contain '$w'"
   done
-  case "$f" in
-    *.sh) grep -qF ledger_append "$p" || fail "$f: does not contain ledger_append" ;;
-    *.ps1) grep -qiE 'ledger.*append|append.*ledger|Ledger-Append|ledger\.ps1' "$p" || fail "$f: does not use the append of ledger.ps1" ;;
-  esac
+  grep -qF ledger_append "$p" || fail "$f: does not contain ledger_append"
   while IFS= read -r l; do
     [ -n "$l" ] || continue
     [[ "$l" == *"issue edit"*"--add-label blocked"* ]] || fail "$f: an 'issue edit' without --add-label blocked on its line: $l"
@@ -165,7 +163,6 @@ done
 if [[ "$sec" == *'are not there yet'* ]]; then fail "README.md: '### Limits and the kill switch' still says the limits are not there yet"; fi
 grep -qF '| `scripts/gate.sh` |' "$readme" || fail "README.md: no row of scripts/gate.sh in the plugin table"
 grep -qF 'bash tests/smoke-gate.sh' "$readme" || fail "README.md: no line of bash tests/smoke-gate.sh in Developing nightmill"
-grep -qF 'tests/smoke-gate.ps1' "$readme" || fail "README.md: no line of tests/smoke-gate.ps1 in Developing nightmill"
 sm=$(awk '/^## Security model$/ { s = 1; print; next } s && /^## / { exit } s { print }' "$readme" | flat)
 [[ "$sm" == *'enforced by scripts/gate.*'* ]] || fail "README.md: the Security model row of the limits is not 'enforced by scripts/gate.*'"
 if grep -qF 'not enforced yet | [#165]' "$readme"; then fail "README.md: the #165 row of the Security model still says 'not enforced yet'"; fi

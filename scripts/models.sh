@@ -6,8 +6,7 @@
 # Prints one row per role: what it does, the model it runs on, whether that model comes from the config or from the
 # default of the schema, its rank in models.ranking and whether its pairing holds (a reviewer must rank at least as
 # high as each role it reviews), then the ranking, a summary line and, when the config sets nothing, a line that
-# says so. It only reads. The texts and the rules are in docs/specs/iteration-16-models-command.md; models.ps1
-# prints the same.
+# says so. It only reads. The texts and the rules are in docs/specs/iteration-16-models-command.md.
 # --config  the file to read (default: .claude/nightmill.json of the main checkout, found with
 #           git rev-parse --git-common-dir, so it works from any worktree of the project)
 # --schema  the schema for the defaults (default: schema/nightmill.schema.json of this plugin)

@@ -7,7 +7,7 @@
 #   names, DB_WT 1 when the config has worktrees;
 #   DB_ST_NAME, DB_ST_CODE, DB_ST_OUT, DB_ST_ERR  the status child: its name, exit code, standard output and error;
 #   DB_SL_RAN 1 when the slot child ran, DB_SL_NAME, DB_SL_CODE, DB_SL_OUT, DB_SL_ERR  the same for it.
-# Prints the page. scripts/dashboard.ps1 builds the same bytes; docs/specs/iteration-31-dashboard.md has the rules.
+# Prints the page; docs/specs/iteration-31-dashboard.md has the rules.
 # The page reloads itself with <meta http-equiv="refresh" content="N"> and only shows: no link, form, button,
 # input or request.
 

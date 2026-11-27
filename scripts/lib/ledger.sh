@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/lib/ledger.sh - the stage record (iteration 41): the clock, the UTC stamp, the duration text and the append
 # of one line to <worktrees.root>/.slots/ledger.tsv. Source it:  . "$(dirname "$0")/lib/ledger.sh"
-# Bash twin of lib/ledger.ps1. Used by slot.sh (it writes the record), stages.sh (it reads it) and tests/check.sh
+# Used by slot.sh (it writes the record), stages.sh (it reads it) and tests/check.sh
 # (the step times).
 #
 #   ledger_clock              the time in ledger_s: seconds since 1970, UTC

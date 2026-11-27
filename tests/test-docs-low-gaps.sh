@@ -11,7 +11,7 @@
 #   (d) decision 0001 carries a note that 0003 partly supersedes it
 #   (e) the schema's text about unknown keys agrees with the validator, which reports an unknown key as a warning
 #   (f) no .ps1 file has a byte outside ASCII (an em dash) without a byte order mark: Windows PowerShell 5.1 reads a
-#       file without one as ANSI (tests/smoke-render.ps1)
+#       file without one as ANSI
 # Not pinned, they need a design or wording choice: the slot root guidance, the template board note, whether $schema and
 # $id point to a version, the default of iterations.changelog (a story). Already fixed when this test was written: the
 # README says the hook needs bash, the template board is described in the README.

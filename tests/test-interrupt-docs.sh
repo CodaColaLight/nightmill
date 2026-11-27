@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# tests/test-interrupt-docs.sh - the README and the header comment of both slot scripts describe what an interruption
-# of a take does (iteration 36, #190): the paragraph after "Retries (iteration 35)" in scripts/slot.sh and
-# scripts/slot.ps1, and the sentences in the README's "Why slots".
+# tests/test-interrupt-docs.sh - the README and the header comment of scripts/slot.sh describe what an interruption
+# of a take does (iteration 36, #190): the paragraph after "Retries (iteration 35)" in scripts/slot.sh, and the
+# sentences in the README's "Why slots".
 #   tests/test-interrupt-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -25,8 +25,7 @@ for t in 'Interruption (iteration 36): a take stopped by INT (Ctrl+C) or TERM af
   'it leaves its claim without the process id; --abandon frees it.' \
   'second signal does not stop a restore.' \
   'A signal sent with kill to the take alone waits for the running command.' \
-  '(KILL, a closed window) leaves a claim that is dead once its process has' \
-  'Same behaviour as slot.ps1, which prints "<step> stopped" and cannot set the exit code.'; do
+  '(KILL, a closed window) leaves a claim that is dead once its process has'; do
   has "$tmp" "$t" || fail "scripts/slot.sh: the header does not say: $t"
 done
 grep -n '^# Retries (iteration 35)' "$tmp" > /dev/null || fail "scripts/slot.sh: no Retries paragraph in the header"
@@ -35,16 +34,6 @@ i=$(grep -n '^# Interruption (iteration 36)' "$tmp" | cut -d: -f1 || true)
 r2=$(grep -n '^# Record (iteration 41)' "$tmp" | cut -d: -f1 || true)
 { [ -n "$r" ] && [ -n "$i" ] && [ -n "$r2" ] && [ "$r" -lt "$i" ] && [ "$i" -lt "$r2" ]; } ||
   fail "scripts/slot.sh: the Interruption paragraph is not directly after the Retries paragraph"
-
-header "$root/scripts/slot.ps1" > "$tmp"
-for t in 'Interruption (iteration 36): a take stopped by Ctrl+C after it has claimed its slot runs, in a finally block, the' \
-  'same restore as a failed step, prints "<step> stopped" with the outcome.' \
-  'it leaves its claim without the process id; -Abandon frees it.' \
-  '(Stop-Process, a closed console) leaves a claim that is dead once its' \
-  'Same behaviour as slot.sh, which names the signal and exits 130 or 143.'; do
-  has "$tmp" "$t" || fail "scripts/slot.ps1: the header does not say: $t"
-done
-if has "$tmp" 'A signal sent with kill'; then fail "scripts/slot.ps1: the header keeps the sentence on kill"; fi
 
 for t in 'A take that is interrupted after it has claimed its slot (Ctrl+C, or a TERM signal in bash) puts the slot back and frees it as a failed take does' \
   '"warm-up 1 interrupted (INT); slot 1 is free again"' \

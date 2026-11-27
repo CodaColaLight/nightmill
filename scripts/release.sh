@@ -246,7 +246,7 @@ phase=branch
 
 sed -E "s/^([[:space:]]*\"version\":[[:space:]]*\")[0-9]+\.[0-9]+\.[0-9]+(\")/\1$version\2/" "$PJ" > "$tmpf"
 cat "$tmpf" > "$PJ"
-# The line ends of release.ps1 (iteration 57, #329): every line ends with CRLF when the file holds a CRLF, else
+# The line ends (iteration 57, #329): every line ends with CRLF when the file holds a CRLF, else
 # with LF, the two new lines included; the file ends with a line end exactly when it did before. BINMODE=3 keeps
 # gawk on Windows from dropping the CR on input (other awks ignore it).
 lastnl=1; if [ -s CHANGELOG.md ] && [ -n "$(tail -c 1 CHANGELOG.md)" ]; then lastnl=0; fi
@@ -282,7 +282,7 @@ newtmp body
 {
   section "$version" CHANGELOG.md
   echo
-  echo "After this merges, run \`scripts/release.sh --version $version --publish\` (or \`scripts/release.ps1 -Version $version -Publish\`) to tag it and create the GitHub Release."
+  echo "After this merges, run \`scripts/release.sh --version $version --publish\` to tag it and create the GitHub Release."
 } > "$body"
 git push -q -u origin "$rbranch"
 phase=pushed

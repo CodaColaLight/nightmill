@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/smoke-drive.sh - scripts/drive.sh against a fake claude, a fake gh and throwaway slots (iteration 52, #164;
 # docs/specs/iteration-52-unattended-driver.md, "Tests"; iteration 53, #165, docs/specs/iteration-53-run-limits.md: the
-# flags, the run ledger, the pause flag and the limits). smoke-drive.ps1 runs the same cases. Needs bash and awk, no network.
+# flags, the run ledger, the pause flag and the limits). Needs bash and awk, no network.
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 D="$here/scripts/drive.sh"

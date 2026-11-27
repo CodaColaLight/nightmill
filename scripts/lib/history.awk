@@ -1,7 +1,7 @@
 # scripts/lib/history.awk - the computation of scripts/history.sh (iteration 54): reads the run ledger
 # <worktrees.root>/.slots/ledger.tsv and the board's status changes and prints how the work went in a window, as
-# text, as one JSON line or as one HTML page. POSIX awk, run with LC_ALL=C. The rules are those of history.ps1
-# (decisions 3 to 11 of docs/specs/iteration-54-history-metrics.md). Everything comes in the environment:
+# text, as one JSON line or as one HTML page. POSIX awk, run with LC_ALL=C. The rules are decisions 3 to 11
+# of docs/specs/iteration-54-history-metrics.md. Everything comes in the environment:
 #   H_LEDGER     the ledger to read, or empty when there is none (H_PATHNAME names it in the notes)
 #   H_NOW        the clock, seconds since 1970 (UTC)
 #   H_FROM H_TO  the window ends in seconds, or empty for the defaults (decision 2); H_RUN a driver run's stamp
