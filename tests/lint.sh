@@ -683,9 +683,7 @@ for f in scripts/slot.sh scripts/slot.ps1; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
   done
 done
-for w in '--reap'; do
-  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
-done
+grep -qF -- '--reap' README.md || { echo "FAIL: README.md does not mention --reap"; fail=1; }
 
 echo "== capacity is wired"
 # The slot count and the agent limit can be changed during a session (iteration 22): both slot scripts keep the live
@@ -783,9 +781,7 @@ done
 for w in 'history.sh' 'history.ps1' '--html' 'status.sh --json'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for w in '--json'; do
-  grep -qF -- "$w" skills/status/SKILL.md || { echo "FAIL: skills/status/SKILL.md does not mention $w"; fail=1; }
-done
+grep -qF -- '--json' skills/status/SKILL.md || { echo "FAIL: skills/status/SKILL.md does not mention --json"; fail=1; }
 if grep -rqF 'history.sh' skills; then
   echo "FAIL: a file in skills/ names history.sh (the history is a script the maintainer runs, not a skill): $(grep -rlF 'history.sh' skills | tr '\n' ' ')"; fail=1
 fi
