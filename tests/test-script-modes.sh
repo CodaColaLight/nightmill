@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Regression test for #114: skills call scripts directly but they are committed
 # non-executable. (a) every scripts/*.sh with a shebang is 100755 in the git
-# index; (b) no skill or agent runs a plugin script without `bash "` or
-# `powershell -NoProfile -ExecutionPolicy Bypass -File "` in front of it.
+# index; (b) no skill or agent runs a plugin script without `bash "` in front of it (#364).
 set -u
 set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -34,9 +33,9 @@ for f in skills/*/SKILL.md agents/*.md; do
     rest=${hit#*:}
     pre=${rest%%\"\$\{CLAUDE_PLUGIN_ROOT\}*}
     case "$pre" in
-      *'bash '|*'-NoProfile -ExecutionPolicy Bypass -File ') ;;
+      *'bash ') ;;
       *)
-        echo "FAIL: $f:$n runs a plugin script without bash \" or powershell -NoProfile -ExecutionPolicy Bypass -File \" in front"
+        echo "FAIL: $f:$n runs a plugin script without bash \" in front"
         fail=1
         ;;
     esac

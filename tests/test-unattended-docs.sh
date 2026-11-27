@@ -154,10 +154,11 @@ done
 
 # 9. when a run is stopped
 stopped=$(part '### When a run is stopped' | flatten)
-for w in 'Ctrl+C' 'SIGTERM' '143' 'take-died' '-Abandon N' '--abandon N' 'In progress' 'Review' 'auto-merge' '**running**' '**stalled**' \
+for w in 'Ctrl+C' 'SIGTERM' '143' 'take-died' '--abandon N' 'In progress' 'Review' 'auto-merge' '**running**' '**stalled**' \
   "\`worktrees.stalledAfterMinutes\` (default $d_stalled)" '/nightmill:next <N>' 'Ready' "[#165](https://github.com/$repo/issues/165)"; do
   contains "$stopped" "$w" || fail "README.md: '### When a run is stopped' does not contain $w"
 done
+if contains "$stopped" '-Abandon N'; then fail "README.md: '### When a run is stopped' still names -Abandon N (bash form only, #364)"; fi
 grep -F 'another run is working on it' "$root/skills/next/SKILL.md" >/dev/null || fail "skills/next/SKILL.md no longer contains 'another run is working on it'"
 grep -F '`stalled` and `unknown` are resumed' "$root/skills/next/SKILL.md" >/dev/null || fail "skills/next/SKILL.md no longer contains '\`stalled\` and \`unknown\` are resumed'"
 

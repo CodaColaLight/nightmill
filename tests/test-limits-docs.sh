@@ -113,7 +113,7 @@ if [ ! -f "$wf" ]; then
   fail "skills/workflow/SKILL.md: missing"
 else
   grep -qF '**The pause and the limits**' "$wf" || fail "skills/workflow/SKILL.md: no heading **The pause and the limits**"
-  for w in 'scripts/gate.sh' 'scripts/gate.ps1' 'Stopped: paused: ' 'Stopped: limit: ' 'Stopped by a limit: ' '--add-label blocked' 'tool_uses' 'limits.turnsPerRole is not checked'; do
+  for w in 'scripts/gate.sh' 'Stopped: paused: ' 'Stopped: limit: ' 'Stopped by a limit: ' '--add-label blocked' 'tool_uses' 'limits.turnsPerRole is not checked'; do
     grep -qF -- "$w" "$wf" || fail "skills/workflow/SKILL.md: does not contain '$w'"
   done
   para=$(awk '/\*\*The pause and the limits\*\*/ { s = 1 } s { print }' "$wf")
@@ -128,7 +128,7 @@ for sk in next fix spec check story control; do
   if [ ! -f "$f" ]; then fail "skills/$sk/SKILL.md: missing"; continue; fi
   grep -qF '**The pause and the limits**' "$f" || fail "skills/$sk/SKILL.md: no **The pause and the limits**"
   grep -qF 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"' "$f" || fail "skills/$sk/SKILL.md: no call bash \"\${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh\""
-  grep -qF '${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1' "$f" || fail "skills/$sk/SKILL.md: no PowerShell call of gate.ps1"
+  if grep -qF 'gate.ps1' "$f"; then fail "skills/$sk/SKILL.md: still names gate.ps1"; fi
 done
 if grep -qF 'once they exist' "$root/skills/fix/SKILL.md"; then fail "skills/fix/SKILL.md: still says 'once they exist'"; fi
 for sk in status models; do
@@ -137,7 +137,7 @@ done
 ini="$root/skills/init/SKILL.md"
 grep -qF '| `paused` | `FBCA04` |' "$ini" || fail "skills/init/SKILL.md: no label row for paused (FBCA04)"
 grep -qF '`gate`' "$ini" || fail "skills/init/SKILL.md: group D does not name gate"
-grep -qF '26 + 21' "$ini" || fail "skills/init/SKILL.md: the count is not 26 + 21"
+grep -qF '21 + 21' "$ini" || fail "skills/init/SKILL.md: the count is not 21 + 21"
 if grep -qF '24 + 21' "$ini"; then fail "skills/init/SKILL.md: still says 24 + 21"; fi
 
 # --- Part D ---
@@ -163,7 +163,7 @@ for w in '.git/nightmill-stop' 'limits.paused' 'ledger.tsv' 'paused'; do
   case "$sec" in *"$w"*) ;; *) fail "README.md: '### Limits and the kill switch' lacks '$w'" ;; esac
 done
 if [[ "$sec" == *'are not there yet'* ]]; then fail "README.md: '### Limits and the kill switch' still says the limits are not there yet"; fi
-grep -qF '| `scripts/gate.ps1`, `scripts/gate.sh` |' "$readme" || fail "README.md: no row of scripts/gate.ps1, scripts/gate.sh in the plugin table"
+grep -qF '| `scripts/gate.sh` |' "$readme" || fail "README.md: no row of scripts/gate.sh in the plugin table"
 grep -qF 'bash tests/smoke-gate.sh' "$readme" || fail "README.md: no line of bash tests/smoke-gate.sh in Developing nightmill"
 grep -qF 'tests/smoke-gate.ps1' "$readme" || fail "README.md: no line of tests/smoke-gate.ps1 in Developing nightmill"
 sm=$(awk '/^## Security model$/ { s = 1; print; next } s && /^## / { exit } s { print }' "$readme" | flat)

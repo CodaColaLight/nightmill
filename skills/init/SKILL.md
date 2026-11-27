@@ -13,12 +13,12 @@ Current configuration, if any:
 
 The plugin's files are under `${CLAUDE_PLUGIN_ROOT}`: the schema `schema/nightmill.schema.json` (every
 key described, with defaults), the example `templates/nightmill.example.json`, the CLAUDE.md snippet
-`templates/CLAUDE.snippet.md`, the renderer `scripts/render-templates.ps1` / `.sh`, the location of nightmill's
-template board `templates/board-template.json` and the check of it `scripts/template-board.ps1` / `.sh`.
+`templates/CLAUDE.snippet.md`, the renderer `scripts/render-templates.sh`, the location of nightmill's
+template board `templates/board-template.json` and the check of it `scripts/template-board.sh`.
 
 This is an install chat. The order is fixed: **1 Detect, 2 Ask, 3 Plan, 4 Confirm once, 5 Apply,
 6 Report.** Nothing is written or created before the confirmation in step 4 is answered; steps 1 to 3
-only read. Every step uses `gh` and `git` alone, so it works in either shell.
+only read. Every step uses `gh`, `git` and the plugin's bash scripts.
 
 The flow this sets up: Backlog > Ready > Spec > Spec review > Approved > In progress > Review > Done.
 The names come from `board.statuses` (defaults in the schema); the eight statuses and who sets them are
@@ -37,9 +37,9 @@ Read these, in this order, and never ask for a value that was found:
 | `verification.check` | an existing check script in `scripts/` or `tests/`, a `Makefile` target, a `package.json` script, or the steps of `.github/workflows/*.yml` |
 | `areas` | top-level directories that hold source or docs, minus `.git*`, `.claude*`, `node_modules`, `target`, `dist`, `build` and other build output |
 | `verification.manualCheckPaths` | the areas that look like a UI or an app: a `package.json` with a dev server, `src/ui`, `client`, `app` |
-| `worktrees.slots`, `parallel.maxAgents` | physical memory, one per 8 GB, at least 1 and at most 4 (PowerShell: `(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory`; bash: `/proc/meminfo` or `sysctl hw.memsize`) |
+| `worktrees.slots`, `parallel.maxAgents` | physical memory, one per 8 GB, at least 1 and at most 4 (`/proc/meminfo`, also in Git Bash, or `sysctl hw.memsize`) |
 | `worktrees.ports` | one name per dev server found (`PORT` or `--port` in `package.json` scripts or in config files); none when none |
-| `verification.platform` | the platform Claude Code runs on: Windows (`win32`, also in Git Bash, MSYS or Cygwin) is `windows`; Linux and macOS (`linux`, `darwin`) are `unix`. When the platform is not known: `uname -s` in bash (`MINGW*`, `MSYS*`, `CYGWIN*` give `windows`, anything else `unix`), or `$env:OS -eq 'Windows_NT'` in PowerShell |
+| `verification.platform` | the platform Claude Code runs on: Windows (`win32`, also in Git Bash, MSYS or Cygwin) is `windows`; Linux and macOS (`linux`, `darwin`) are `unix`. When the platform is not known: `uname -s` in bash (`MINGW*`, `MSYS*`, `CYGWIN*` give `windows`, anything else `unix`) |
 
 ## 2. Ask
 
@@ -53,7 +53,7 @@ asks only "keep" or "change":
 5. **manual-check paths** (`verification.manualCheckPaths`) and, when there are any, the one-sentence `verification.manualCheckText`
 6. **slot count** (`worktrees.slots`, also used for `parallel.maxAgents`)
 7. **ports** (`worktrees.ports`); skipped when no dev server was detected
-8. **platform** (`verification.platform`): `windows` (the check runs the PowerShell tests) or `unix` for Linux and macOS (the bash tests); `all` runs both, for a project worked on from both; read only by a check command that reads it. An empty answer deletes the key, and the check then runs both families
+8. **platform** (`verification.platform`): `windows` (the check runs the bash tests in Git Bash, from Git for Windows) or `unix` for Linux and macOS (the bash tests); `all` runs the bash and the PowerShell tests, for a project worked on from both; read only by a check command that reads it. An empty answer deletes the key, and the check then runs both families
 
 A question is skipped when the existing config already holds the key, so a configured project is asked
 nothing. The user may answer "defaults" at any point; the remaining questions then take their proposed
@@ -67,7 +67,6 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   views (filters, grouping, sorting, columns) and workflows are already configured, and `gh project copy`
   carries all of them across. Build the candidate config first (the **Config** line below), write it to a
   temporary file outside the project and run the check on it:
-  `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/template-board.ps1" -Config <file>` (PowerShell) or
   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/template-board.sh" --config <file>`. It only reads and prints one line:
   `template: usable (<owner>/<number>)` or `template: not usable: <reason>` (an exit code 2 is an error to
   report, not a reason; fall back as below and say what failed). The plan's **Board** line is then one of:
@@ -152,16 +151,14 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
 
 - **Config**: `.claude/nightmill.json` with LF line endings, from the example with every detected and
   answered value, keys the user left empty deleted. Write the candidate to a temporary file outside the
-  project and validate it before the plan is shown: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Config <file>`
-  (PowerShell) or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <file>`. An error (a wrong
+  project and validate it before the plan is shown: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" <file>`. An error (a wrong
   type, a missing required key) is fixed and the validator run again; a warning (an unknown key, with a hint
   when it looks like a typo) is listed in the plan. After the real file is written, run the validator on it
   and put its summary line, for example `0 errors, 0 warnings`, in the report's **Config** row.
-- **Issue forms**: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.ps1"` (PowerShell) or
-  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.sh"` from the repository root, writing
+- **Issue forms**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/render-templates.sh"` from the repository root, writing
   `.github/ISSUE_TEMPLATE/{epic,story,bug,config}.yml` from `areas` and `invariants`. An existing form
   that differs is shown as a diff in the plan and overwritten only when the user keeps that line
-  (`-Force` / `--force`).
+  (`--force`).
 - **CLAUDE.md**: append `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.snippet.md` to the project's `CLAUDE.md`
   (root, else `.claude/CLAUDE.md`, creating the root file when neither exists); **exists** when either file
   already contains the line `This project runs on the [nightmill]`.
@@ -241,10 +238,10 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   **Permissions** and **Edit permission** stay as they are.
   - **Values.** `<C>` is `verification.check`, `<B>` `git.baseBranch`, `<Sp>`, `<Fe>`, `<Fx>` `git.specPrefix`,
     `git.featurePrefix`, `git.fixPrefix` (defaults `main`, `spec/`, `feat/`, `fix/`). `<R>` is the slot root,
-    resolved the way the slot script of the shell in use does it, without creating it: the main checkout is the
+    resolved the way the slot script does it, without creating it: the main checkout is the
     parent of `git rev-parse --path-format=absolute --git-common-dir`; `<R>` is `<main>/<worktrees.root>` (default
-    `../<main folder name>-wt`) with `.` and `..` resolved as text, in the form the script prints (bash: `/c/...`
-    under Git Bash, `/...` elsewhere; PowerShell: `C:\...`). `<S>` is one slot, `<R>/slot-<n>` with the separator
+    `../<main folder name>-wt`) with `.` and `..` resolved as text, in the form the script prints (`/c/...` under
+    Git Bash, `/...` elsewhere). `<S>` is one slot, `<R>/slot-<n>` with the separator
     of that form. `<P>` is `${CLAUDE_PLUGIN_ROOT}` exactly as it expands in this text, the same string every skill
     of this installed version expands to, so a rule and the command the model copies from a skill are the same text.
   - **A. The main checkout**, 15 rules: `Bash(git fetch origin)`, `Bash(git switch *)`, `Bash(git add *)`,
@@ -264,19 +261,17 @@ Build the full list of changes. Mark each line **create**, **change** or **exist
   - **C. Edits in the slots**, one rule: `Edit(//<R as POSIX path, without its leading slash>/slot-*/**)`, for
     example `Edit(//Users/a/work/app-wt/slot-*/**)` or, on Windows, `Edit(//c/Users/a/work/app-wt/slot-*/**)`.
     `slot-*` is one path segment, so `<R>/.slots/` (markers, ledger, capacity) is not covered and still prompts.
-  - **D. The scripts**, 10 rules, for `<name>` in `slot`, `room`, `gate`, `validate-config`, `status`:
-    `Bash(bash "<P>/scripts/<name>.sh" *)` and
-    `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)`. Other scripts get no
-    rule. The folder holds the version, so after an upgrade the next run finds these missing and adds the new ones;
+  - **D. The scripts**, 5 rules, for `<name>` in `slot`, `room`, `gate`, `validate-config`, `status`:
+    `Bash(bash "<P>/scripts/<name>.sh" *)`. Other scripts get no rule. The folder holds the version, so after an upgrade the next run finds these missing and adds the new ones;
     rules of another plugin folder already in the file are kept, and the plan says
     `kept: <k> script rules for another plugin folder`.
   - **E. The directory**: `<R>` once in `permissions.additionalDirectories` (the array is created when missing),
     so files in the slots are read without a prompt and a `cd` into a slot is read-only.
-  - **Count.** `26 + 21 × worktrees.slots` rules and one directory: 68 rules for 2 slots, 110 for 4.
+  - **Count.** `21 + 21 × worktrees.slots` rules and one directory: 63 rules for 2 slots, 105 for 4.
   - **Never broader.** Each rule names its subcommand before the first `*`. No bare `git push` rule, no wildcard
     for git as a whole or for `git -C` in any directory, no hard reset, no `git stash drop`, `git branch -D`,
     `git clean` or `git checkout`. Refusing the forbidden actions is the job of **Deny rules** and the plugin's guard hook (#110), not this line's.
-  - **Unmatchable root.** When `<R>` contains a space, a quote or (in the bash form) a backslash, the line is
+  - **Unmatchable root.** When `<R>` contains a space, a quote or a backslash, the line is
     **failed**: `worktrees.root resolves to <R>, which a rule cannot match unquoted; slot commands will prompt`;
     A and D are still written.
   - **Detect.** A rule is present when it is in `permissions.allow` of `.claude/settings.local.json` or of

@@ -76,7 +76,7 @@ need skills/workflow/SKILL.md 'nightmill: no branch of origin is known; the conf
 need skills/workflow/SKILL.md 'nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree.'
 for name in spec next fix; do
   need "skills/$name/SKILL.md" 'validate-config.sh" --base'
-  need "skills/$name/SKILL.md" 'validate-config.ps1" -Base'
+  lacks "skills/$name/SKILL.md" 'validate-config.ps1'
 done
 # init keeps writing and validating the working tree's file
 [ -f "$root/skills/init/SKILL.md" ] && { need skills/init/SKILL.md '!`cat .claude/nightmill.json'; }

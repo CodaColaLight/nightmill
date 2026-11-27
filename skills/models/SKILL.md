@@ -5,10 +5,9 @@ description: Show which model every agent role runs on, where the value comes fr
 
 Show which model every agent role runs on. This skill reads and changes nothing.
 
-Run the script of the shell in use, from inside the project (any checkout or worktree), and wait for it:
+Run the script from inside the project (any checkout or worktree), and wait for it:
 
-- PowerShell (Windows): `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/models.ps1"`
-- bash: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/models.sh"`
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/models.sh"`
 
 If it exits with 2, show its message and stop: it is a missing or unreadable config, a config that is not a JSON
 object, or a call outside a git checkout of the project.

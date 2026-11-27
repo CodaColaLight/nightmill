@@ -18,7 +18,7 @@ text and the configuration disagree, the configuration wins. The process rules a
 skill of this plugin; this skill is the step list.
 
 **The pause and the limits** (the `workflow` skill) are checked before every step of this list, by the six points
-listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`,
+listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"`,
 with `--issue <N>` once the story is known, `--slot <n>` once a slot is taken and `--role <role> --turns <t>` after a
 launch returns. Exit 1, 2 or 4 stops the run with its `Stopped:` line; exit 3 is the breach (comment, label `blocked`,
 `Stopped: limit: <reason>. Labelled blocked.`; no status is set).
@@ -68,10 +68,9 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    `iterations.specDir`. Read it completely; the spec is the contract. The iteration number N is the one
    in the spec's file name.
 2. Before it, check the room on the machine (**Parallel work** in the `workflow` skill). Take a slot:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.featurePrefix><N>-<slug>` (PowerShell)
-   or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><N>-<slug>` (bash), N the iteration
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.featurePrefix><N>-<slug>`, N the iteration
    number from the spec's file name, so that a resumed run finds the branch. Work in that
-   worktree; `-Release N` after the merge. Without slots, `git fetch origin`, then
+   worktree; `--release N` after the merge. Without slots, `git fetch origin`, then
    `git switch -c <git.featurePrefix><N>-<slug> origin/<git.baseBranch>`. A resumed run takes the slot as "Resuming a
    story" says ("The slot" there). In a slot every git command, the session's own
    included, is `git -C <slot path> ...` with the absolute slot path, never `cd <slot> && git ...`.
@@ -164,7 +163,7 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
      the producer's prompt gets the checkout's absolute path for `<absolute slot path>`, and its tree must be clean
      (`git status --porcelain --untracked-files=all` prints nothing), else the hand-over with the reason
      `the checkout is not clean`. A resumed run (row N1) whose branch no slot holds gets a checkout before the
-     producer of its first round as "The slot" (N6) does: with slots `--take <branch>` (`-Take <branch>`), then the
+     producer of its first round as "The slot" (N6) does: with slots `--take <branch>`, then the
      report `resumed` (role `session`), the slot held until the merge; a take that fails is the hand-over with the
      reason `the slot could not be taken: <the take's line>`; without slots `git switch <branch>` (the tree clean,
      else the hand-over with the reason `the checkout is not clean`).
@@ -212,9 +211,8 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
 
 ## Reporting the steps
 
-A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call of the
-shell in use, with N the slot number the take printed (`Slot N is yours`):
-`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill next -Role <role>` or
+A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call, with N
+the slot number the take printed (`Slot N is yours`):
 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --report <step> --slot <n> --skill next --role <role>`. A report that
 fails never stops the run: go on, and name a failed report you made yourself once, in your final message. A report
 is not a board status. A run without slots (no `worktrees`, `git switch -c` in a single checkout) took no slot and
@@ -260,7 +258,7 @@ issue** in the `workflow` skill). N is the number in the spec's file name, found
   (a local branch and its `origin/` twin are one branch). More than one is refused:
   `#<n> has more than one branch of iteration <N>: <names, comma-separated>; the maintainer keeps one. Nothing was changed.`
   A branch only on `origin` is created locally before the take: `git branch --no-track <branch> origin/<branch>`.
-- **The slot**: the busy line of `slot --status --porcelain` (`slot.ps1 -Status -Porcelain`) whose field 3 is the
+- **The slot**: the busy line of `slot --status --porcelain` whose field 3 is the
   branch; field 6 is the agent state, field 9 the step, field 10 the report time.
 - **No artefact**: `#<n> is at <status>, but no branch <git.featurePrefix><N>-*, no slot and no pull request of it exists; nothing to continue. The maintainer moves it back to Approved.`
   Nothing is changed.
@@ -271,7 +269,7 @@ issue** in the `workflow` skill). N is the number in the spec's file name, found
 |---|---|
 | field 6 `running` | `#<n>: slot <s> (<branch>) is running (last report <field 10>, step <field 9>); another run is working on it. Nothing was changed.` |
 | field 9 `taking` | `#<n>: slot <s> (<branch>) is being taken; another run is working on it. Nothing was changed.` |
-| field 9 `take-died` | `#<n>: slot <s> (<branch>) holds a take that did not finish; free it with slot --abandon <s> (-Abandon <s>) and run /next <n> again. Nothing was changed.` |
+| field 9 `take-died` | `#<n>: slot <s> (<branch>) holds a take that did not finish; free it with slot --abandon <s> and run /next <n> again. Nothing was changed.` |
 
 `stalled` and `unknown` are resumed (the threshold is `worktrees.stalledAfterMinutes`); the resume line names the
 state and the last report.
@@ -296,7 +294,7 @@ The table is read top to bottom; the first row that matches decides.
 | N10 | no artefact | refused (no artefact, above) | |
 
 **The slot** (N6). A slot that holds the branch (stalled, unknown or `done`) is reused as it is: no take. Otherwise the
-branch is taken with `--take <branch>` (`-Take <branch>`; the take switches to the existing local branch). Without
+branch is taken with `--take <branch>` (the take switches to the existing local branch). Without
 slots, the session's checkout is switched to it (`git switch <branch>`, the tree clean). Right after, report the step
 `resumed` (role `session`) to the slot, so that it shows `running` again; from there every step is reported as today.
 A take that fails because the branch is checked out elsewhere stops with the take's line, as every failed take does.
@@ -322,7 +320,7 @@ message is `Unmet tests for #<issue>: <title>` (`git stash list`) is named in th
 The session keeps the board, the slot and every hard rule; the failing tests are the tester's.
 
 1. **Count.** Before the launch count the agents running, as for the implementer (the live agent limit from
-   `slot.ps1 -Capacity -Porcelain` or `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
+   `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
    one to end and say what you wait for; the session never writes the tests itself instead. The tester is one agent (its
    agent file has no `Agent` tool), and it has returned before the implementer is launched, so a story runs at most one
    producer at a time. Then check the room on the machine (**Parallel work** in the `workflow` skill).
@@ -389,8 +387,7 @@ did not test, are the implementer's, and so is the commit of both. The implement
 went on.
 
 1. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
-   builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
-   `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
+   builds). At the agent limit (read it now, as the workflow skill says: `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
    wait for; the session never writes the code itself instead. The implementer is one agent (its prompt forbids launching others).
    Then check the room on the machine (**Parallel work** in the `workflow` skill).
 2. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
@@ -461,8 +458,8 @@ Do this:
    with `git -C <slot path> add ...` and `git -C <slot path> commit -m "<message>"`, a message that names the story.
    Never commit red.
 
-Report your progress with `<the report command of the shell in use, with --slot <n> --skill next --role implementer
-(PowerShell: -Slot, -Skill, -Role) and the step as the value of --report / -Report>`: before step 1 (`tests`), before
+Report your progress with `<the report command, with --slot <n> --skill next --role implementer and the step as the
+value of --report>`: before step 1 (`tests`), before
 step 2 (`code`), before every run of the check (`check`) and before the commit (`commit`). It writes only the slot's
 marker outside the repository and is not a status; when it fails, go on.
 
@@ -512,7 +509,7 @@ path is not the tester's, and a tester file is the tester's as a whole. The sess
    object store as the pristine copy), `<head>` by `git -C <slot> rev-parse -q --verify HEAD:<path>` (`none` when it
    prints nothing: the file is new), and `<mode>` is the first field of `git -C <slot> ls-tree HEAD -- <path>` when
    `<head>` is not `none`, else the mode of the line `new file mode <mode>` that
-   `git -C <slot> diff --no-index -- /dev/null <path>` prints (git alone, the same in bash and PowerShell; its exit code
+   `git -C <slot> diff --no-index -- /dev/null <path>` prints (git alone; its exit code
    1 means only that the files differ). A path whose file is missing when it is recorded stops the run with
    `Stopped: the tester returned failed: it deleted <path>`. The pristine copy lives only in the object store, never in
    the stash (shared by all worktrees) and never in a file of the slot. Keep `<tester originals>` beside them: one line
@@ -542,7 +539,7 @@ path is not the tester's, and a tester file is the tester's as a whole. The sess
       `git -C <slot> update-index --add --cacheinfo <mode>,<blob>,<path>`, then `git -C <slot> checkout-index -f -- <path>`
       (writes the tester's text into the working tree, creating its directory, with git's filters), then
       `git -C <slot> reset -q -- <path>` (the index at that path is HEAD's again; the file is uncommitted, as the tester
-      left it). Git writes the file; no shell redirection is used, so the bytes are the same in bash and PowerShell.
+      left it). Git writes the file; no shell redirection is used, so the bytes do not depend on the shell.
    4. Check every line of `<tester blobs>` again by rule 3; one that still fails stops with
       `Stopped: the implementer returned failed: the tester's file <path> could not be restored`.
 
@@ -638,9 +635,8 @@ lines.
 After the implementer's result (not `failed`) and before the manual check, a different agent reviews the change. The
 findings format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
 
-1. **The pairing.** Run `validate-config` of the shell in use on the project's base configuration
-   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Base`, or
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
+1. **The pairing.** Run `validate-config` on the project's base configuration
+   (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
    the base branch, **The configuration** in the `workflow` skill; a stop of that rule is exit 2). When it reports a line
    on `roles.codeReviewer.model` with the text `ranks below`, stop with
    `Stopped: the codeReviewer ranks below the implementer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`

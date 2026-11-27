@@ -13,6 +13,13 @@
   whole job finishes sooner. The slowest bash steps are measured section by section in Git Bash on Windows (the spec
   holds the numbers), and test-lintcopy-output.sh, which nests whole runs of three other steps, leaves the Git Bash job
   (the Ubuntu bash job still runs it). No config key.
+- Iteration 67 (#364): the skills and the README name the bash form of every script only (decision record 0004,
+  step 3), and /nightmill:init writes the allow rules of its five scripts in the bash form only (21 + 21 ×
+  worktrees.slots rules). The .ps1 files still ship and work in this release: a project's existing .ps1 allow rules
+  stay and still match, and a hand-wired session-start.ps1 or guard.ps1 hook keeps running. A Windows session
+  without Git Bash can no longer run the skills' scripts and must install Git for Windows (which brings Git Bash).
+  This release comes before the one that removes the .ps1 files (#365): move a hand-wired .ps1 hook to the .sh form,
+  or pin this release until you have. No config key.
 
 ## 0.9.0 (2026-11-22)
 

@@ -5,15 +5,14 @@ description: Show one table of what waits for the maintainer and what is stuck -
 
 Show where the work stands. This skill reads and changes nothing.
 
-Run the script of the shell in use, from inside the project (any checkout or worktree), and wait for it:
+Run the script from inside the project (any checkout or worktree), and wait for it:
 
-- PowerShell (Windows): `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/status.ps1"`
-- bash: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"`
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"`
 
-Add `-All` (PowerShell) or `--all` (bash) to include the items at Backlog and Done. If it exits with 2, show
+Add `--all` to include the items at Backlog and Done. If it exits with 2, show
 its message and stop: it is a missing config, a missing or logged-out `gh`, or a failed `gh` call.
 
-When the maintainer asks for JSON (or passes `json`), add `-Json` (PowerShell) or `--json` (bash), combinable with
+When the maintainer asks for JSON (or passes `json`), add `--json`, combinable with
 the option for all items: the script prints one JSON object on one line. Show that output exactly as printed and add
 none of the three lines below.
 
