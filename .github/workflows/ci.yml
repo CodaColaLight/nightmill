@@ -44,12 +44,11 @@ jobs:
       - run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-hook.sh,smoke-release.sh,smoke-slot.sh,smoke-render.sh,smoke-validate.sh,smoke-status.sh,smoke-template-board.sh,smoke-models.sh,smoke-load.sh,smoke-room.sh,smoke-control.sh,smoke-dashboard.sh,smoke-panel.sh,smoke-stages.sh,smoke-check.sh,test-lintcopy-output.sh,test-lint-pipefail.sh,test-release-resume.sh,test-release-low-defects.sh,test-json-bom.sh,test-render-quoting.sh,test-changelog-refs.sh,test-check-skill.sh,test-status-controls.sh,test-worker-merge.sh,test-script-modes.sh,test-fix-pick.sh,test-changelog-coverage.sh,test-json-speed.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,test-board-listing.sh,test-resume-stuck.sh,test-story-dedup.sh,test-interrupt-docs.sh,test-spec-template.sh,smoke-guard.sh,test-watch-checks.sh,test-guard-rules.sh,smoke-drive.sh,smoke-gate.sh,smoke-history.sh,test-ci-summary.sh,test-baseconfig-pathconv.sh,test-restricted-path-git.sh,test-slot-low-defects.sh
 
   smoke-gitbash-part:
-    # The bash steps in Git Bash on Windows runners, in parts (iterations 64 and 66; decision record 0004, migration
-    # step 1). Not a required check, and its check step does not fail the part: the job smoke-gitbash below fails
-    # unless every part succeeded.
+    # The bash steps in Git Bash on Windows runners, in parts (iterations 64, 66 and 69; decision record 0004); the
+    # job smoke-gitbash below carries the required name and fails unless every part succeeded.
     name: Git Bash smoke part ${{ matrix.part }} of 7
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 51
     strategy:
       fail-fast: false
       matrix:
@@ -73,12 +72,11 @@ jobs:
         with:
           fetch-depth: 0
       - shell: bash
-        continue-on-error: true
         run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}
 
   smoke-gitbash:
-    # The Git Bash parts together (iteration 66). Not a required check until #390 makes it one.
-    name: Git Bash smoke tests (Windows, not blocking)
+    # Required check: the ruleset on main requires this name; renaming it blocks every pull request.
+    name: Git Bash scripts smoke tests
     needs: smoke-gitbash-part
     if: always()
     runs-on: ubuntu-latest

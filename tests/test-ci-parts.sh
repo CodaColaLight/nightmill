@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # tests/test-ci-parts.sh - the CI parts are well formed (iterations 55 and 68): the final job smoke-gitbash has a
 # Job times step (tests/ci-jobs-summary.sh, with if: always() and continue-on-error: true), and only that job has a
-# job-level permissions block (contents: read, actions: read). Rule 10a (iterations 64 and 66, decision record 0004 step 1): the bash
-# steps run in Git Bash on Windows runners, in the matrix job smoke-gitbash-part, and do not block: its name, runs-on:
+# job-level permissions block (contents: read, actions: read). Rule 10a (iterations 64, 66 and 69, decision record 0004 step 1): the bash
+# steps run in Git Bash on Windows runners, in the matrix job smoke-gitbash-part, and block: its name, runs-on:
 # windows-latest, fail-fast: false, a full-history checkout, no if:, no needs:, the part and only lines in pairs, numbered
 # 1 to the <n> of its name, and exactly one run step, tests/check.sh $CHECK_SELECT ${{ matrix.only }}, in a step with
-# shell: bash and continue-on-error: true. Rule 10b (iteration 66): the final job smoke-gitbash (not yet a required
-# check) needs the part job, has if: always(), runs on ubuntu-latest, fails unless every part succeeded, and does not run
+# shell: bash, and no line of the job has continue-on-error. Rule 10b (iterations 66 and 69): the final job smoke-gitbash
+# (the required check Git Bash scripts smoke tests, iteration 69) needs the part job, has if: always(), runs on ubuntu-latest, fails unless every part succeeded, and does not run
 # tests/check.sh. Rule 11 (iteration 66, decisions 3 and 5): every `add bash` step of tests/check.sh except the list
 # gitbash_out (test-lintcopy-output.sh, which the Ubuntu job runs) is named in exactly one part, each list is in the order
 # of the step list, and each step on the list gitbash_alone has a part of its own. Prints one FAIL line per broken rule,
@@ -106,8 +106,8 @@ rules() {
   local gks=() gonlys=()
   local GBRUN='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}'
   gstep_end() { # the step just read: is it the one run step, with its keys?
-    if [ "$grl" = "$GBRUN" ] && [ "$gsh" = 1 ] && [ "$gcoe" = 1 ]; then grunok=$((grunok + 1)); fi
-    gsh=0; gcoe=0; grl=""
+    if [ "$grl" = "$GBRUN" ] && [ "$gsh" = 1 ]; then grunok=$((grunok + 1)); fi
+    gsh=0; grl=""
   }
   gpblock=$(block smoke-gitbash-part)
   while IFS= read -r l; do
@@ -126,7 +126,7 @@ rules() {
       "part: "*) gks[${#gks[@]}]=${t#part: } ;;
       "only: "*) gonlys[${#gonlys[@]}]=${t#only: } ;;
       "shell: bash") gsh=1 ;;
-      "continue-on-error: true") gcoe=1 ;;
+      "continue-on-error:"*) gcoe=1 ;;
       "run:"*) gruns=$((gruns + 1)); grl=$t ;;
     esac
   done <<<"$gpblock"
@@ -141,6 +141,7 @@ rules() {
   [ -n "$gbad" ] || [ "$gfd" = 1 ] || gbad="no fetch-depth: 0"
   [ -n "$gbad" ] || [ "$gif" = 0 ] || gbad="an if: line"
   [ -n "$gbad" ] || [ "$gneeds" = 0 ] || gbad="a needs: line"
+  [ -n "$gbad" ] || [ "$gcoe" = 0 ] || gbad="a continue-on-error: line"
   if [ -z "$gbad" ]; then
     if [ "$gm" -lt 2 ]; then gbad="fewer than two parts"
     elif [ "$gm" != "${#gonlys[@]}" ]; then gbad="the part and only lines are not in pairs"
@@ -154,7 +155,7 @@ rules() {
     fi
   fi
   [ -n "$gbad" ] || [ "$gruns" = 1 ] || gbad="$gruns run steps, not exactly one"
-  [ -n "$gbad" ] || [ "$grunok" = 1 ] || gbad='the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }} in a step with shell: bash and continue-on-error: true'
+  [ -n "$gbad" ] || [ "$grunok" = 1 ] || gbad='the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }} in a step with shell: bash'
   [ -z "$gbad" ] || fl "the Git Bash parts are malformed ($gbad)"
 
   # rule 10b: the final job smoke-gitbash fails unless every part succeeded, and runs no check itself
@@ -163,7 +164,7 @@ rules() {
   if [ -z "$gfblock" ]; then
     gbad="the job smoke-gitbash is missing"
   else
-    for gw in '    name: Git Bash smoke tests (Windows, not blocking)' '    needs: smoke-gitbash-part' '    if: always()' '    runs-on: ubuntu-latest'; do
+    for gw in '    name: Git Bash scripts smoke tests' '    needs: smoke-gitbash-part' '    if: always()' '    runs-on: ubuntu-latest'; do
       grep -qxF -- "$gw" <<<"$gfblock" || { gbad="missing: ${gw#    }"; break; }
     done
     if [ -n "$gbad" ]; then
@@ -326,8 +327,15 @@ gb_case gbubuntu 's/^    runs-on: windows-latest$/    runs-on: ubuntu-latest/' '
 gb_case gbdepth '/fetch-depth: 0/d' 'the Git Bash parts are malformed'
 gb_case gbif "/^    runs-on: /a\
     if: github.event_name == 'push'" 'the Git Bash parts are malformed'
-gb_case gbcoe '/continue-on-error: true/d' 'the Git Bash parts are malformed'
-gb_case gbshell '/shell: bash/d' 'the Git Bash parts are malformed'
+gb_case gbcoe '/^      - shell: bash$/a\
+        continue-on-error: true' 'the Git Bash parts are malformed (a continue-on-error: line)'
+gb_case gbjobcoe '/^    runs-on: windows-latest$/a\
+    continue-on-error: true' 'the Git Bash parts are malformed (a continue-on-error: line)'
+gb_case gbcoeexpr '/^      - shell: bash$/a\
+        continue-on-error: ${{ matrix.part == 7 }}' 'the Git Bash parts are malformed (a continue-on-error: line)'
+gb_case gbcoefalse '/^      - shell: bash$/a\
+        continue-on-error: false' 'the Git Bash parts are malformed (a continue-on-error: line)'
+gb_case gbshell '/shell: bash/d' 'in a step with shell: bash)'
 gb_case gbtwo '/run: bash tests\/check\.sh/a\
       - run: echo x' 'the Git Bash parts are malformed'
 gb_case gbname '/^    name: /s/ of [0-9][0-9]*$/ of X/' 'the Git Bash parts are malformed'
@@ -350,7 +358,8 @@ mkcase gbfgone > /dev/null
 ci_awk gbfgone '/^  [A-Za-z]/ { skip = ($0 == "  smoke-gitbash:") } !skip'
 changed gbfgone .github/workflows/ci.yml
 expect_gb gbfgone 'the Git Bash job is malformed'
-gbf_case gbfname 's/ (Windows, not blocking)$//' 'the Git Bash job is malformed'
+gbf_case gbfname 's/^    name: Git Bash scripts smoke tests$/    name: Git Bash smoke tests (Windows, not blocking)/' 'the Git Bash job is malformed (missing: name: Git Bash scripts smoke tests)'
+gbf_case gbfrename 's/^    name: Git Bash scripts smoke tests$/    name: Git Bash smoke tests/' 'the Git Bash job is malformed (missing: name: Git Bash scripts smoke tests)'
 gbf_case gbfalways '/^    if: always()$/d' 'the Git Bash job is malformed'
 gbf_case gbfneeds '/^    needs: smoke-gitbash-part$/d' 'the Git Bash job is malformed'
 gbf_case gbfsuccess '/\[ "\$PARTS" = success \]/d' 'the Git Bash job is malformed'
