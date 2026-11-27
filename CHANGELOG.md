@@ -15,6 +15,7 @@
   iterations 65 and 66), and their final job is named Git Bash scripts smoke tests, the check the maintainer adds to the required
   checks of main once two measured runs are within the 17-minute budget of iteration 66; the lint fails on a part
   with continue-on-error and on any other name for the final job. No config key.
+- Iteration 71 (#347): a spec stays short: `iterations.maxSpecLines` (default 0, no limit) holds a spec to a number of lines; the spec reviewer reports a spec over it as blocking, and a story that does not fit gets a split proposed on its issue instead of a spec.
 
 ## 0.10.0 (2026-11-27)
 
