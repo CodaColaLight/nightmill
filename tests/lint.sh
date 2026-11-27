@@ -1362,13 +1362,13 @@ while IFS= read -r l; do
   x=$(printf '%s\n' "$l" | grep -oE 'tests/smoke-[A-Za-z0-9._-]+' | head -n 1 || true)
   echo "FAIL: $chk_ci runs ${x:-a smoke file} outside tests/check.sh"; fail=1
 done < <(grep -E 'run: bash tests/smoke-|-File tests/smoke-' "$chk_ci" || true)
-for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests'; do
+for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'Git Bash scripts smoke tests'; do
   [ "$(grep -cxF -- "    name: $req" "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci: the required job $req is missing"; fail=1; }
 done
 # a job name that begins with a required name would add a check such as 'bash scripts smoke tests (1)' (iteration 55, decision 5)
 while IFS= read -r l; do
   l=${l%$'\r'}; t="${l#"${l%%[![:space:]]*}"}"; t=${t#- }; t=${t#name: }
-  for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests'; do
+  for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'Git Bash scripts smoke tests'; do
     [ "$l" != "    name: $req" ] || continue
     case $t in "$req"*) echo "FAIL: $chk_ci: the job name '$t' begins with the required name '$req'"; fail=1 ;; esac
   done
@@ -1494,7 +1494,7 @@ echo "== the job-name rule says begins with"
 echo "== CI selects the steps a pull request affects"
 # Iteration 60, decision 8: on a pull request every smoke job runs tests/check.sh --affected --within <its list>, on
 # every other event --only <its list>, through one workflow variable (1); every job starts on every event, so the
-# two required names always report: no path filter on 'on:' (2), no 'if:' on a required job or its steps but the
+# three required names always report: no path filter on 'on:' (2), no 'if:' on a required job or its steps but the
 # if: always() of smoke-gitbash (1); the smoke jobs fetch the history, so origin/main exists
 # (4). One awk pass (bug #270: no process per line); it assumes the block style ci.yml uses (jobs at 2 spaces, job
 # keys at 4).
@@ -1692,7 +1692,7 @@ fi
 echo "== CI runs with least privilege"
 # The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level
 # permissions but those of smoke-gitbash (1, amended by iteration 55), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on
-# the two job names the ruleset on main requires (4), every action pinned by its full commit SHA with the release in a
+# the three job names the ruleset on main requires (4), every action pinned by its full commit SHA with the release in a
 # trailing comment (5), and Dependabot's github-actions entry kept (6). It reads the files with grep and awk only and
 # assumes the block style ci.yml uses (jobs at 2 spaces, job keys at 4); anything it cannot match fails. It cannot check
 # that a SHA exists or belongs to the release in its comment, that GitHub accepts the expressions, that the two names
@@ -1774,9 +1774,10 @@ if [ -f "$ci_yml" ]; then
   done <<'EOF'
 Lint (generic, JSON, skills, shell)
 bash scripts smoke tests
+Git Bash scripts smoke tests
 EOF
   n_cm=$(grep -cF -- "${ci_req_comment#    }" "$ci_yml" || true)
-  [ "$n_cm" = 2 ] || { echo "FAIL: $ci_yml has the 'Required check' comment $n_cm times (exactly 2 expected, one per required job)"; fail=1; }
+  [ "$n_cm" = 3 ] || { echo "FAIL: $ci_yml has the 'Required check' comment $n_cm times (exactly 3 expected, one per required job)"; fail=1; }
   # 5. every uses: line is pinned by a 40-character lower-case SHA with the release in a trailing comment
   n_uses=0
   while IFS= read -r sel; do

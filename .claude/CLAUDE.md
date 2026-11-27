@@ -45,8 +45,8 @@ twice (installed and `--plugin-dir`) in one session; they shadow each other.
   it again with `--publish` to tag. The lint keeps `plugin.json`, the changelog and the README line in step.
   Projects pin by version.
 - **CI and merging.** `ci.yml` runs on every push and PR to `main`. A ruleset protects `main`: squash
-  only, no force push, a PR merges only when the lint and the bash smoke-test job pass
-  (`claude plugin validate` does not block). Only ever `gh pr merge <n> --auto --squash`; a plain
+  only, no force push, a PR merges only when the lint, the bash smoke-test job and the Git Bash
+  smoke tests pass (`claude plugin validate` does not block). Only ever `gh pr merge <n> --auto --squash`; a plain
   `gh pr merge` would let the admin bypass merge a red PR. A red PR is fixed, never forced.
 
 ## Commands

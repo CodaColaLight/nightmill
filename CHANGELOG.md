@@ -10,6 +10,11 @@
   release before this one, the one that carries iteration 67 (#364). On Windows the slots pane runs scripts/panel.sh with bash, and the driver's workflow
   template runs drive.sh in Git Bash. tests/check.ps1 stays, a wrapper for a PowerShell prompt that runs bash
   tests/check.sh. verification.platform keeps its values and default; nightmill's own check no longer reads it.
+- Iteration 69 (#390): the Git Bash CI parts fail on a failing step (no continue-on-error), time out after 51
+  minutes (3 times the 17-minute budget of a part's job, in place of 3 times a measured part job time, the rule of
+  iterations 65 and 66), and their final job is named Git Bash scripts smoke tests, the check the maintainer adds to the required
+  checks of main once two measured runs are within the 17-minute budget of iteration 66; the lint fails on a part
+  with continue-on-error and on any other name for the final job. No config key.
 
 ## 0.10.0 (2026-11-27)
 
