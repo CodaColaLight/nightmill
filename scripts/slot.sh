@@ -31,8 +31,8 @@
 # worktrees.stalledAfterMinutes (default 30) old, stalled after that, unknown without a report. The take does not
 # report.
 # Claim (iteration 34): a take claims its slot before it fetches, switches or warms up: it writes a marker with
-# "state": "taking" and its process id ("pid") and gives it the marker's name only if no marker exists (bash ln,
-# PowerShell File.Move), so two takes never get the same slot; the finished take replaces it with the marker above.
+# "state": "taking" and its process id ("pid") and gives it the marker's name only if no marker exists (ln),
+# so two takes never get the same slot; the finished take replaces it with the marker above.
 # A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
 # claim whose process has ended is dead: --status shows take-died, and only --abandon frees it.
 # Retries (iteration 35): the take's own marker changes (the move of the finished marker over its claim, the

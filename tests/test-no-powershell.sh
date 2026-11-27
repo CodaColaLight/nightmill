@@ -2,6 +2,7 @@
 # tests/test-no-powershell.sh - no PowerShell script is left, and none is named (iteration 68, #365, decision record
 # 0004 step 4). Called from tests/lint.sh.
 #   tests/test-no-powershell.sh [<root>]   # root: the checkout to read (default: this one)
+# Rule 3: tests/check.ps1 exists, runs tests/check.sh, has no -PowerShell or --powershell option.
 # Rule 1: the only PowerShell files are the three on the list below. Rule 2: no text file outside docs/ and
 # CHANGELOG.md names another one. The cases at the end run both rules on scratch trees; they build every name of a
 # PowerShell file from a variable, so this file names none.
@@ -23,6 +24,15 @@ scan() {
     echo "FAIL: $p is a PowerShell file; only tests/check.$ext, tools/make-icon.$ext and tools/make-social-preview.$ext are left (decision record 0004)"
   done < <(find "$r" \( -name .git -o -path "$r/tmp" \) -prune -o -type f \
     \( -iname "*.$ext" -o -iname '*.psm1' -o -iname '*.psd1' \) -print | LC_ALL=C sort)
+  # rule 3: tests/check.ps1 stays, as a wrapper that runs tests/check.sh and has no PowerShell option of its own
+  if [ ! -f "$r/tests/check.$ext" ]; then
+    echo "FAIL: tests/check.$ext is missing; it stays as a wrapper for tests/check.sh (#365)"
+  else
+    grep -q 'check\.sh' "$r/tests/check.$ext" || echo "FAIL: tests/check.$ext does not run tests/check.sh (#365)"
+    if grep -qiE -e '[-$]PowerShell|--powershell' "$r/tests/check.$ext"; then
+      echo "FAIL: tests/check.$ext still has a PowerShell option (#365)"
+    fi
+  fi
   # rule 2: one grep over every text file outside docs/, CHANGELOG.md and the three files of rule 1
   if [ "$(git -C "$r" rev-parse --show-toplevel 2>/dev/null || true)" = "$(cd "$r" && pwd -P)" ]; then
     files=$(git -C "$r" ls-files -co --exclude-standard)
@@ -53,7 +63,7 @@ n=0
 mktree() { # sets $d: a tree with the three files that stay
   n=$((n + 1)); d="$work/c$n"
   mkdir -p "$d/tests" "$d/tools" "$d/scripts" "$d/docs"
-  : > "$d/tests/check.$ext"; : > "$d/tools/make-icon.$ext"; : > "$d/tools/make-social-preview.$ext"
+  printf '%s\n' 'param([switch]$Quick)' '& bash "$root/tests/check.sh"' > "$d/tests/check.$ext"; : > "$d/tools/make-icon.$ext"; : > "$d/tools/make-social-preview.$ext"
 }
 expect() { # <case> <text, empty for no output>
   local got
@@ -78,6 +88,10 @@ mktree; printf 'tests/check.%s tools/make-icon.%s *.%s tools/make-social-preview
 mktree; printf 'slot.%s\n' "$ext" > "$d/docs/a.md"; printf 'slot.%s\n' "$ext" > "$d/CHANGELOG.md"; expect 'rule 2 docs and changelog' ''
 mktree; mkdir -p "$d/.claude" "$d/tmp"; printf 'slot.%s\n' "$ext" > "$d/.claude/settings.local.json"
 printf 'slot.%s\n' "$ext" > "$d/tmp/x.txt"; printf 'slot.%s\n' "$ext" > "$d/a.log"; expect 'rule 2 ignored files' ''
+mktree; rm "$d/tests/check.$ext"; expect 'rule 3 wrapper deleted' "FAIL: tests/check.$ext is missing"
+mktree; printf 'param([switch]$PowerShell)\n& bash tests/check.sh\n' > "$d/tests/check.$ext"; expect 'rule 3 option left' "FAIL: tests/check.$ext still has a PowerShell option"
+mktree; printf 'a="--powershell"\n& bash tests/check.sh\n' > "$d/tests/check.$ext"; expect 'rule 3 long option left' "still has a PowerShell option"
+mktree; printf 'param([switch]$Quick)\n' > "$d/tests/check.$ext"; expect 'rule 3 no bash call' "FAIL: tests/check.$ext does not run tests/check.sh"
 
 if [ "$bad" -ne 0 ]; then exit 1; fi
 echo "OK: no PowerShell script is left or named"

@@ -1951,9 +1951,20 @@ bash tests/test-no-powershell.sh "$PWD" || fail=1
 # the changelog says what a project removes and which release it pins until then (the names are built from a variable:
 # this file is read by rule 2 as well)
 ps=ps1
-cl_flat=$(tr '\n' ' ' < CHANGELOG.md 2>/dev/null | tr -s ' ')
+# only the Iteration 68 (#365) bullet counts: from its line up to the next line that starts with "- " or "## "
+cl_flat=$(
+  cl_in=0
+  while IFS= read -r cl_l; do
+    case "$cl_l" in
+      '- Iteration 68 (#365)'*) cl_in=1; printf '%s ' "$cl_l"; continue ;;
+      '- '* | '## '*) cl_in=0 ;;
+    esac
+    if [ "$cl_in" = 1 ]; then printf '%s ' "$cl_l"; fi
+  done < CHANGELOG.md 2>/dev/null
+)
+cl_flat=$(printf '%s' "$cl_flat" | tr -s ' ')
 for cl_w in 'Iteration 68 (#365)' "hand-wired session-start.$ps or guard.$ps hook" '.ps1 allow rules' 'pin the release before this one'; do
-  case "$cl_flat" in *"$cl_w"*) ;; *) echo "FAIL: CHANGELOG.md does not say: $cl_w (#365)"; fail=1 ;; esac
+  case "$cl_flat" in *"$cl_w"*) ;; *) echo "FAIL: CHANGELOG.md: the Iteration 68 (#365) bullet does not say: $cl_w"; fail=1 ;; esac
 done
 
 echo "== shell"
