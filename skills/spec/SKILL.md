@@ -176,6 +176,32 @@ rule. The spec file is the writer's.
    spec file on the branch has the right form. That is the form only; whether the spec is good is for the
    reviewer and the maintainer. The headings of templates/spec.md are checked by the reviewer, not here.
    - `Result: complete` and the form is right: go on with "The spec review" below, then step 4 above.
+   - `Result: split` (only when the size limit applies) with at least two lines `- <title>: <criteria>` on `Split`:
+     no form check runs and no pull request opens. Post one comment on the issue, only when no comment of the
+     maintainer's login on it starts with `Split proposed for #<issue>:`, with
+     `gh issue comment <issue> --body-file <file>`, the body exactly:
+
+     ```
+     Split proposed for #<issue>: the story does not fit in a spec of <limit> lines (iterations.maxSpecLines).
+
+     - <title>: <the acceptance criteria it takes>
+     - <title>: <the acceptance criteria it takes>
+
+     The maintainer decides. #<issue> stays at Spec; no spec pull request was opened.
+     ```
+
+     Then print `Stopped: #<issue> does not fit the spec size limit of <limit> lines; a split is proposed on the issue. The status of #<issue> is Spec.`
+     and do the clean-up (a branch with nothing committed goes; a spec file of an earlier round is committed
+     unfinished, not pushed). No status is set and no story is filed. A `Result: split` with fewer than two stories is
+     a wrong form (`partial`). **Later rounds:** a writer of a fix round of the spec review (status Spec, no pull
+     request yet) gets the same comment, `Stopped:` line and clean-up. In the extra round or a check fix round (status
+     Spec review, the spec pull request open) the comment's last line is instead
+     `The maintainer decides. #<issue> stays at Spec review; the spec pull request #<pr> is not changed by this proposal.`,
+     nothing is pushed, the pull request and its auto-merge stay as they are (off after the extra round's proposal; in
+     a check fix round on, and the red check keeps it from merging), and the round ends as a round that does not
+     finish (the extra round) or as a hand-over (a check fix round), with the reason
+     `the story does not fit the spec size limit`. The first line is the same in every case, so a rerun posts no
+     second comment.
    - `Result: partial`, `Result: failed`, no result block, an error, or a wrong form: open no PR and move nothing
      to Spec review. Print `Stopped: the specWriter returned <partial|failed>: <Left>` (a wrong form is
      `partial`, and the line names what is wrong), say that the story stays at Spec, and do the clean-up.
@@ -183,6 +209,9 @@ rule. The spec file is the writer's.
    with `-m "docs: iteration <N> spec (#<issue>), unfinished"` and do not push. Switch back to the branch you came
    from (`git switch <branch>`). When nothing was committed, delete the branch you created with `git branch -d <branch>` (it is empty and you made it; this is not
    the deletion of a file); if git refuses, leave it and say so, never force it. The clean-up never deletes a branch the run did not create (a resumed run's found branch stays). Never set Ready; a story left at Spec goes back to Ready only by the maintainer.
+
+The size limit applies only when iterations.maxSpecLines in the base-branch configuration is at least 1; with the key
+absent or 0 nothing below is added.
 
 The prompt, with the placeholders filled in (the story and the epic verbatim):
 
@@ -206,6 +235,12 @@ issue), a "Not done" list, and the status line `Status: draft, awaiting approval
 title `# Iteration <N>: <what>`. Say whether the change is one of <escalation.storyTriggers> and whether the
 manual check of <verification.manualCheckPaths> applies. Add no scope the issue does not ask for, and do not
 contradict a decision or a spec that exists.
+
+<only when the size limit applies: The spec has at most <iterations.maxSpecLines> lines, every line of the file
+counted (blank lines, headings and the status line too). If the story cannot be specified within that, write no spec
+file: return Result: split with Spec: none and, on the Split line, the two or more stories it should be split into.
+With Result: split, the block below gets one last line after Left: Split: <the proposed stories, one per line as
+"- <title>: <the acceptance criteria it takes>">.>
 
 Do not commit and do not push, do not open or edit a pull request, do not touch the board, any issue or any
 status, do not create or switch branches, do not edit any other file, do not delete files, and
@@ -260,6 +295,7 @@ rule are in **Findings and fix rounds** in the `workflow` skill.
    The change is a story trigger when it is one of: <escalation.storyTriggers, one per line>.
    The paths that require a manual check: <verification.manualCheckPaths>.
    The spec template: <absolute path of ${CLAUDE_PLUGIN_ROOT}/templates/spec.md>.
+   <only when the size limit applies: The size limit of a spec: <iterations.maxSpecLines> lines.>
    The invariants of the project: <config invariants, one per line>.
 
    End with the findings block of the workflow skill, and nothing after it.

@@ -391,7 +391,7 @@ The schema documents every key; the short version:
 | `maintainer.name` | Who sets Ready and Approved |
 | `board` | Field names, status names, priority order |
 | `labels`, `areas`, `invariants` | Label scheme, area options, the project's rules (rendered into the issue forms) |
-| `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
+| `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory, and the most lines a spec may have (`maxSpecLines`, default 0: no limit) |
 | `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it), and the platform the project runs on (`platform`: `windows`, `unix` or `all`, default `all`, for a check that reads it; nightmill's own check does not read it and runs the bash tests on every platform) |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`, an alias the Agent tool takes: `sonnet`, `opus`, `haiku` or `fable`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |

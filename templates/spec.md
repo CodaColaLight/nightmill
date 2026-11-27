@@ -3,6 +3,7 @@
 Status: draft, awaiting approval (#<issue>)
 
 <!-- One paragraph: the story and its epic, what changes, and every file that changes. -->
+<!-- Not in a spec: the issue restated (point to it), the history of a decision (state the rule and its reason only), the text of other specs (name the spec and its rule). -->
 
 ## Story trigger and manual check
 
