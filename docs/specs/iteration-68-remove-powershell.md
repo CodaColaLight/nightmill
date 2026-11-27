@@ -1,6 +1,6 @@
 # Iteration 68: the PowerShell scripts, their tests and the PowerShell CI parts are removed
 
-Status: draft, awaiting approval (#365)
+Status: delivered in iteration 68 (PR #394)
 
 Story #365, epic #337 (fast verification loop): step 4, the last, of the migration outline of decision record 0004
 (step 1 was iteration 64, #361; step 2 iteration 65, #363; step 3 iteration 67, #364, merged as 4058d29). The 23
