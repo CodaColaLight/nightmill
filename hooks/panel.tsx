@@ -2,9 +2,10 @@
 // /nightmill-slots opens a read-only pane with every slot, free or busy, its agent (running, stalled, unknown),
 // branch, skill, step and the age of the last report, and reads them again every worktrees.panelRefreshSeconds
 // seconds while it is open; /nightmill-slots off, or the pane's close mark, closes it and stops the reading.
-// Nothing runs until the command is given. The data comes only from scripts/panel.sh (scripts/panel.ps1 on
-// Windows), which runs the slot script's porcelain status once per read; this module reads no file and decides
-// nothing itself: it splits the script's lines and draws them. The rules are in docs/specs/iteration-32-panel.md.
+// Nothing runs until the command is given. The data comes only from scripts/panel.sh, run with bash (on Windows the
+// bash on the PATH of Claude Code's process, Git Bash from Git for Windows), which runs the slot script's porcelain
+// status once per read; this module reads no file and decides nothing itself: it splits the script's lines and draws
+// them. The rules are in docs/specs/iteration-32-panel.md.
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 type Engine = EngineInterface
@@ -119,11 +120,7 @@ async function tick($: Engine) {
 async function readSlots($: Engine) {
   isReading = true
   try {
-    const isWindows = (await $.env.get('OS')) === 'Windows_NT'
-    const root = $.plugin.root
-    const argv = isWindows
-      ? ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', `${root}/scripts/panel.ps1`]
-      : ['bash', `${root}/scripts/panel.sh`]
+    const argv = ['bash', `${$.plugin.root}/scripts/panel.sh`]
     let next: View
     try {
       const ran = await $.process.run(argv, { cwd: await $.session.cwd(), timeoutMs: 20000 })

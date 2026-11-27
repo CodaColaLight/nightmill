@@ -15,7 +15,7 @@
 # slot.sh --capacity (the last line, when the project has worktrees).
 # Run it from inside the project: any checkout or worktree of it. Settings come from .claude/nightmill.json
 # in the main checkout (github, board.statuses, labels.epic, git.specPrefix, worktrees). The rules and the
-# texts are in docs/specs/iteration-8-status.md; status.ps1 prints the same.
+# texts are in docs/specs/iteration-8-status.md.
 # Needs git, gh, bash and awk, no jq. Exit code 0 when the table was printed (flags do not change it), 2 for a
 # usage error, a missing or unreadable config, a missing gh or a failed gh call.
 # A busy slot whose since is not YYYY-MM-DDTHH:MM:SS shows the Since cell ? and, unless its PR is merged or closed,

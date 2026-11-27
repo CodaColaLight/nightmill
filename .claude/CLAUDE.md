@@ -27,11 +27,11 @@ twice (installed and `--plugin-dir`) in one session; they shadow each other.
 - **Generic.** `tests/lint.sh` fails on any word from the private word list (`tests/forbidden-words.local.txt`): the name of the project
   nightmill was extracted from, its maintainer, its domain. That holds for issues and specs too.
 - **Bash only.** A script in `scripts/` is bash and runs in bash on Linux and macOS and in Git Bash on Windows
-  (decision record 0004); a change to one has a smoke step in `tests/smoke-*.sh`. The PowerShell files are frozen
-  until they are removed (#365): no new one is added (a rule for people and reviewers; the lint check for it comes
-  in a follow-up), and an existing one changes only to fix a bug in it or to keep its own test green.
-  `tests/check.sh` runs what the machine can run and lists what it skipped; CI runs all of it (bash on Ubuntu; on
-  Windows the bash tests in Git Bash and the PowerShell tests).
+  (decision record 0004); a change to one has a smoke step in `tests/smoke-*.sh`. No PowerShell file is added: the
+  lint fails on one that is not on the list of `tests/test-no-powershell.sh`, which holds only `tests/check.ps1`
+  (a wrapper that runs `bash tests/check.sh`) and `tools/make-icon.ps1` and `tools/make-social-preview.ps1` (run by
+  hand). `tests/check.sh` runs what the machine can run and lists what it skipped; CI runs all of it (bash on
+  Ubuntu, and in Git Bash on Windows).
 - **Config keys are a contract.** A new key goes into `schema/nightmill.schema.json` with a description
   and a default, into `templates/nightmill.example.json`, and into the README's configuration table.
   Renaming or removing one is a story, never a bug fix.
@@ -41,11 +41,11 @@ twice (installed and `--plugin-dir`) in one session; they shadow each other.
   bullet under `Unreleased` naming the iteration and the issue; any other change under `skills/`, `agents/`,
   `scripts/` or `hooks/` (not only an iteration) gets a bullet there too, naming the issue or pull request (a bug
   fix excepted: bugs carry no entry); the maintainer cuts a version with
-  `scripts/release.sh --version X.Y.Z` (or `release.ps1`), merges the release pull request it opens, then runs
+  `scripts/release.sh --version X.Y.Z`, merges the release pull request it opens, then runs
   it again with `--publish` to tag. The lint keeps `plugin.json`, the changelog and the README line in step.
   Projects pin by version.
 - **CI and merging.** `ci.yml` runs on every push and PR to `main`. A ruleset protects `main`: squash
-  only, no force push, a PR merges only when the lint and both smoke-test jobs pass
+  only, no force push, a PR merges only when the lint and the bash smoke-test job pass
   (`claude plugin validate` does not block). Only ever `gh pr merge <n> --auto --squash`; a plain
   `gh pr merge` would let the admin bypass merge a red PR. A red PR is fixed, never forced.
 
@@ -55,10 +55,8 @@ twice (installed and `--plugin-dir`) in one session; they shadow each other.
 bash tests/check.sh                                   # everything the machine can run
 bash tests/lint.sh                                    # generic words, JSON, skill frontmatter, shell syntax
 bash tests/smoke-slot.sh; bash tests/smoke-render.sh; bash tests/smoke-json.sh
-powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
 claude plugin validate . --strict
-powershell -ExecutionPolicy Bypass -File scripts/render-templates.ps1 -Project . -Force   # after editing areas or invariants
+bash scripts/render-templates.sh --project . --force   # after editing areas or invariants
 powershell -ExecutionPolicy Bypass -File tools/make-icon.ps1                               # after editing the icon
 powershell -ExecutionPolicy Bypass -File tools/make-social-preview.ps1                     # after the icon or the tagline changes; upload docs/social-preview.png in Settings > General by hand
 ```
@@ -72,11 +70,11 @@ skills           one folder per skill: workflow (rules), spec, next, fix, story,
 agents           worker.md, code-reviewer.md, spec-reviewer.md, tester.md
 scripts          slot, new-worktree, render-templates, status, models, validate-config, stages, history, load,
                  room, control, panel, dashboard, drive, gate, template-board, guard, session-start, release;
-                 each as .ps1 and .sh; lib/ holds what they share (awk, sh and ps1 helpers)
+                 each as .sh; lib/ holds what they share (awk and sh helpers)
 hooks            hooks.json (SessionStart hint, PreToolUse guard), panel.tsx (the slots pane), panel.test.tsx
 schema           nightmill.schema.json, every config key described
 templates        nightmill.example.json, ISSUE_TEMPLATE/*.yml with {{placeholders}}, CLAUDE.snippet.md
-tests            lint.sh, smoke-*.sh/.ps1, test-*.sh/.ps1, check.sh/.ps1, fixtures/ (canned inputs for the tests)
+tests            lint.sh, smoke-*.sh, test-*.sh, check.sh and check.ps1 (its wrapper for a PowerShell prompt), fixtures/ (canned inputs for the tests)
 tools            make-icon.ps1, make-social-preview.ps1, fonts/ (Creepster, SIL OFL, licence beside it)
 docs             specs/ (iteration specs), decisions/
 ```

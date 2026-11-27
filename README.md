@@ -392,7 +392,7 @@ The schema documents every key; the short version:
 | `board` | Field names, status names, priority order |
 | `labels`, `areas`, `invariants` | Label scheme, area options, the project's rules (rendered into the issue forms) |
 | `iterations` | Spec directory and name pattern, CHANGELOG path, milestone pattern, decisions directory |
-| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it), and which test families the check runs (`platform`: `windows` and `unix` run the bash tests, on Windows in Git Bash from Git for Windows; `all` runs the bash and the PowerShell tests; default `all`, for a check that reads it) |
+| `verification` | The check command, which paths also need a manual check and what that check is, an optional bench rule, how many steps of the check run at once (`checkJobs`, default 4, for a check that reads it), and the platform the project runs on (`platform`: `windows`, `unix` or `all`, default `all`, for a check that reads it; nightmill's own check does not read it and runs the bash tests on every platform) |
 | `escalation.storyTriggers` | Kinds of change that make a bug a story and block auto-merge |
 | `roles` | The model of each agent role (`roles.<role>.model`, an alias the Agent tool takes: `sonnet`, `opus`, `haiku` or `fable`): `specWriter`, `specReviewer`, `tester`, `implementer`, `codeReviewer`, `fixer`, `worker` |
 | `models.ranking` | The models from weakest to strongest, for judging that a reviewer is at least as strong as the role it reviews |
@@ -405,7 +405,7 @@ The schema documents every key; the short version:
 | `unattended` | For `scripts/drive.*`: the most minutes one driver run starts steps for (`maxMinutes`, default 240) and the issue its summary is posted on (`summaryIssue`, no default: printed only) |
 | `limits` | The pause flag (`paused`, default false) and the limits of every run: minutes per issue (`minutesPerIssue`, default 180), turns per launch of each role and of a headless session per issue (`turnsPerRole.<role>`, default `session` 200, `specWriter` 150, `specReviewer` 80, `tester` 150, `implementer` 300, `codeReviewer` 80, `fixer` 200, `worker` 40), issues per run (`issuesPerRun`, default 10), cost per issue (`costPerIssueUsd`, default 25). Read from the base branch only ([Limits and the kill switch](#limits-and-the-kill-switch)) |
 
-Keys are matched by their exact spelling in both shells (`Slots` is not `slots`; `validate-config` warns about it),
+Keys are matched by their exact spelling (`Slots` is not `slots`; `validate-config` warns about it),
 and an empty string for a label, a status name or `verification.manualCheckText` counts as not set.
 
 `templates/nightmill.example.json` is a complete example.
@@ -672,7 +672,9 @@ in the terminal on the machine); there the command says it cannot show the pane,
 2.1.287 does not show the pane. An organization can turn installed mods off, and mods are early access in Claude Code
 and may change between its releases.
 
-On Windows the pane runs `scripts/panel.ps1` with Windows PowerShell, elsewhere `scripts/panel.sh` with bash.
+The pane runs `scripts/panel.sh` with bash on every platform; on Windows that is the
+`bash` on the PATH of Claude Code's process (Git Bash, from Git for Windows), and where none starts the pane shows the
+slots as unknown with the reason.
 
 ### Changing the numbers during a session
 
@@ -1101,25 +1103,6 @@ bash tests/smoke-guard.sh   # guard.sh: what the PreToolUse guard refuses
 bash tests/smoke-drive.sh   # drive.sh against a fake claude, a fake gh and throwaway slots
 bash tests/smoke-gate.sh    # gate.sh: the pause flag and the limits against a throwaway repository
 bash tests/smoke-history.sh # history.sh: metrics from a fixture ledger and a fake gh
-powershell -ExecutionPolicy Bypass -File tests/smoke-slot.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-render.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-hook.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-release.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-validate.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-status.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-template-board.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-models.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-load.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-room.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-control.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-dashboard.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-panel.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-stages.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-check.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-guard.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-drive.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-gate.ps1
-powershell -ExecutionPolicy Bypass -File tests/smoke-history.ps1
 claude plugin validate . --strict
 claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 ```
@@ -1128,23 +1111,21 @@ claude plugin test .        # the pane's module (hooks/panel.test.tsx)
 processors; `--jobs N` for one run; 1 runs them one after another, as before), prints each step whole and in a fixed
 order whatever order they finish in, and the time of every step and the total. `bash tests/check.sh --quick` runs the
 lint and the bash smoke tests only and says that the full check has not run: use it while writing code, and the full
-check before every commit and every pull request. CI runs the smoke jobs through `tests/check.sh`: the
-PowerShell smoke steps in four parts on four Windows runners at once (`smoke-slot.ps1` alone in one), and the required
-check `PowerShell scripts smoke tests` is a final job that fails unless every part succeeded; the bash test steps but
-`test-lintcopy-output.sh` (the bash job runs that one) run in Git Bash in seven parts on seven Windows runners at once
-(decision record 0004, step 1), the longest steps alone in theirs, and a further job,
-`Git Bash smoke tests (Windows, not blocking)`, fails unless every part succeeded; it is not a required check, and a
-failing step shows in its part's summary without failing the part; the lint fails when a
-PowerShell step runs in no part or in two. On a pull request each CI smoke job runs
+check before every commit and every pull request. CI runs the smoke jobs through `tests/check.sh`: the bash test
+steps on Ubuntu, and all of them but `test-lintcopy-output.sh` (the Ubuntu job runs that one) in Git Bash in seven
+parts on seven Windows runners at once (decision record 0004), the longest steps alone in theirs; a further job,
+`Git Bash smoke tests (Windows, not blocking)`, fails unless every part succeeded; it is not a required check yet
+(#390), and a failing step shows in its part's summary without failing the part; the lint fails when a bash step runs
+in no Git Bash part or in two. On a pull request each CI smoke job runs
 `tests/check.sh --affected --within <its list>`: the steps of its list that the changed paths select, or all of them
 when a path is shared or unknown; a push to `main` runs every step. Every required job runs on every event. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
 appends the check's wall time and its five slowest steps to a Markdown file; each CI run's summary page shows every
 job's wall time and its five slowest workflow steps (read from the jobs API by the final job, the one job with
-`actions: read`), and each check's five slowest steps. With `verification.platform` set to `windows` or `unix`,
-`tests/check.sh` runs the bash tests (in Git Bash on Windows) and not the PowerShell tests, always the lint and the
-`claude` steps, and lists the family it skipped; `--only` ignores the key, and CI runs both families through `--only`.
+`actions: read`), and each check's five slowest steps. `tests/check.sh` runs the same steps on every platform (the
+bash tests in Git Bash on Windows) and does not read `verification.platform`; it lists what the machine cannot run as
+`SKIPPED:`.
 `bash tests/check.sh --affected` runs the lint and the tests of the paths changed against `origin/<git.baseBranch>`
-(the map in `tests/check.sh`), the tests of a changed script in both shells; a change to `scripts/lib/` or the check
+(the map in `tests/check.sh`), the tests of a changed script; a change to `scripts/lib/` or the check
 itself, or to a path the map does not know, runs the full check. It is enough before a commit and in a fix round; the
 full check runs before a release, and CI runs every test. A step marked `slow` in the step list of `tests/check.sh`
 does not run in a selective `--affected` run, which lists it as `LEFT OUT:`. The full check, `--only` and CI on a push

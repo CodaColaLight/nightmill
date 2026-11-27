@@ -656,7 +656,6 @@ EOF
 # bg_take <name> <arguments>: slot.sh in the background; standard output and error go to $tmp/<name>.out and .err, the
 # process id is left in $bg_pid. bg_wait <pid> <name> then leaves $rc, $out and $err (without carriage returns).
 bg_take() { local name=$1; shift; bash "$S" "$@" >"$tmp/$name.out" 2>"$tmp/$name.err" & bg_pid=$!; bg_pids+=("$bg_pid"); }
-bg_ps() { local name=$1; shift; powershell -NoProfile -ExecutionPolicy Bypass -File "$ps_slot" "$@" >"$tmp/$name.out" 2>"$tmp/$name.err" & bg_pid=$!; bg_pids+=("$bg_pid"); }
 bg_wait() { rc=0; wait "$1" || rc=$?; out=$(tr -d '\r' < "$tmp/$2.out"); err=$(tr -d '\r' < "$tmp/$2.err"); }
 bg_alive() { local p; for p in ${bg_pids[@]+"${bg_pids[@]}"}; do if kill -0 "$p" 2>/dev/null; then return 0; fi; done; return 1; }
 bg_winpid() { if [ -r "/proc/$1/winpid" ]; then cat "/proc/$1/winpid"; else echo "$1"; fi; } # the id the script records for that process
@@ -1139,7 +1138,7 @@ c_check_race() { # c_check_race <branch of take 1> <branch of take 2>: checks th
 }
 claim_case7() {
   claim_reset
-  local p1 p2 gate
+  local p1 p2
   # same shell
   bg_pids=()
   NIGHTMILL_CLAIM_GATE="$tmp/claim-go" bg_take x1 --take feat/x1 --slot 1 --skip-warmup; p1=$bg_pid
@@ -1153,30 +1152,6 @@ claim_case7() {
   c_finished 1 || fail "claim 7: the winner's marker has other keys than slot, branch, since: $(cat "$(marker 1)")"
   claim_reset
   git -C "$tmp/work" branch -D "$c_winner" >/dev/null
-  # across the shells
-  if command -v powershell >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then
-    ps_slot=$(cygpath -w "$here/scripts/slot.ps1")
-    gate=$(cygpath -m "$tmp/claim-go")
-    rm -f "$tmp/claim-go"
-    bg_pids=()
-    NIGHTMILL_CLAIM_GATE="$gate" bg_take y1 --take feat/y1 --slot 1 --skip-warmup; p1=$bg_pid
-    NIGHTMILL_CLAIM_GATE="$gate" bg_ps y2 -Take feat/y2 -Slot 1 -SkipWarmup; p2=$bg_pid
-    wait_claims 1 2
-    : > "$tmp/claim-go"
-    bg_wait "$p1" y1; r1=$rc; o1=$out; e1=$err
-    bg_wait "$p2" y2; r2=$rc; o2=$out; e2=$err
-    bg_pids=()
-    c_check_race feat/y1 feat/y2
-    if [ "$c_winner" = feat/y1 ]; then
-      c_finished 1 || fail "claim 7: the bash winner's marker has other keys than slot, branch, since in that order: $(cat "$(marker 1)")"
-    else
-      [ "$(grep -o '"[a-z]*":' "$(marker 1)" | tr -d '":' | sort | paste -sd, -)" = "branch,since,slot" ] || fail "claim 7: the PowerShell winner's marker has other keys than branch, since, slot: $(cat "$(marker 1)")"
-    fi
-    claim_reset
-    git -C "$tmp/work" branch -D "$c_winner" >/dev/null
-  else
-    echo "skipped: no PowerShell for the cross-shell claim"
-  fi
 }
 
 claim_case1

@@ -9,7 +9,7 @@
 # lib/dashboard.awk, to <temp>/nightmill-dashboard-<owner>-<repo>.html; the page reloads itself. It never calls
 # the GitHub CLI itself, starts no server and opens no browser: it prints the file:// address to open once.
 # Run it from inside the project: any checkout or worktree of it. The rules are in
-# docs/specs/iteration-31-dashboard.md; dashboard.ps1 writes the same page.
+# docs/specs/iteration-31-dashboard.md.
 # Exit code 0 after --once wrote the page, 1 when the page could not be written the first time, 2 for a usage error,
 # no checkout, no or invalid config, no owner or repo. Needs git, bash and awk, no jq.
 # NIGHTMILL_NOW (seconds since 1970) fixes the clock of the page and of the child scripts; the smoke test uses it.

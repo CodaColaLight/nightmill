@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/room.sh - does the machine have room for one more agent? Free memory and CPU load over 3 one-second samples,
-# against parallel.roomMinFreeMB and parallel.roomMaxCpuPercent (nightmill). Bash twin of room.ps1; the rules and the
-# texts are in docs/specs/iteration-28-machine-room.md.
+# against parallel.roomMinFreeMB and parallel.roomMaxCpuPercent (nightmill). The rules and the texts
+# are in docs/specs/iteration-28-machine-room.md.
 #
 #   room.sh                    # the first check
 #   room.sh --since <seconds>  # a check while waiting: the value of the "room: call again with" line

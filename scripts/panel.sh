@@ -7,7 +7,7 @@
 # time (HH:MM:SS of the read), every (worktrees.panelRefreshSeconds, default 15), then noslots (no worktrees
 # section), or one slot record per slot (<n>, free or busy, agent, branch, skill, step and report cells as /status
 # shows them), or one unknown record with the reason the slots could not be read; then the notes. The pane of
-# hooks/panel.tsx (/nightmill-slots) calls it on every read; panel.ps1 prints the same bytes. The rules are in
+# hooks/panel.tsx (/nightmill-slots) calls it on every read. The rules are in
 # docs/specs/iteration-32-panel.md. Run it from inside the project: any checkout or worktree of it.
 # Exit code 0 when the records were printed (also with an unknown record), 2 for a usage error, no checkout, no or
 # invalid config. It writes nothing but two temporary files, removed on every exit. Needs git, bash and awk, no jq.

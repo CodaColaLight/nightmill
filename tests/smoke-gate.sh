@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/smoke-gate.sh - scripts/gate.sh against a throwaway project and a fake gh (iteration 53, #165;
-# docs/specs/iteration-53-run-limits.md, "Tests"). smoke-gate.ps1 runs the same cases. Needs bash, git and awk, no network.
+# docs/specs/iteration-53-run-limits.md, "Tests"). Needs bash, git and awk, no network.
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 G="$here/scripts/gate.sh"

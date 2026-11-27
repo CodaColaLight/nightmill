@@ -2,7 +2,7 @@
 # tests/smoke-control.sh - control.sh against fixtures of readings (NIGHTMILL_LOAD_FIXTURE is set in every call that
 # measures, so the real measurement never runs) and a fixed clock (NIGHTMILL_NOW), in a throwaway repository whose slot
 # markers and capacity.json are written by hand. The cases 1 to 14 are those of "Tests" in
-# docs/specs/iteration-30-load-controller.md; smoke-control.ps1 runs the same cases. Needs bash and awk, no jq.
+# docs/specs/iteration-30-load-controller.md. Needs bash and awk, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-control.XXXXXX")

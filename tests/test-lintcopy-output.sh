@@ -88,14 +88,14 @@ if [ -n "$other_sections" ]; then
   bad=1
 fi
 # Regression test for #293: tests/smoke-check.sh ran the lint section "the check runs every smoke script" on about 11
-# throwaway copies of the repository, and since iteration 55 that range holds the section "the PowerShell job runs in
-# parts", which started tests/test-ci-parts.sh with its 18 cases (sed, awk and cp, slow under Git Bash) once per copy:
-# smoke-check.ps1 took 10m22s and bounded part 3 of the PowerShell job. The cost is counted, not timed. A shim named cp,
+# throwaway copies of the repository, and since iteration 55 that range holds the section "the CI parts are well formed"
+# (until iteration 68 "the PowerShell job runs in parts"), which started tests/test-ci-parts.sh with its 18 cases (sed,
+# awk and cp, slow under Git Bash) once per copy: the check of the lint copies took 10m22s and bounded part 3 of the
+# parts. The cost is counted, not timed. A shim named cp,
 # first on the PATH, logs every cp whose destination is the scratch root of a case of tests/test-ci-parts.sh (each case
 # starts with one: cp tests/check.sh <tmp>/case-<name>/tests/check.sh) and passes every call to the real cp. The bound is
 # one run of the cases: what one direct run of tests/test-ci-parts.sh logs. smoke-check.sh may log no more for all its
 # lint copies, and it must still end well (its case "cips" needs the part rule's FAIL line on a copy).
-# smoke-check.ps1 runs the same lint through Git Bash, so this bash count covers the shared cause.
 real_cp=$(command -v cp)
 cpshim="$tmp/cpshim"; cplog="$tmp/cp-calls.log"
 mkdir -p "$cpshim"; : > "$cplog"
@@ -108,7 +108,7 @@ exec "$real_cp" "\$@"
 SHIM
 chmod +x "$cpshim/cp"
 # Regression test for #340: the lint copies of tests/smoke-check.sh (29 of them) ran the agreement cases and the agreement
-# cost test each, which the lint step runs once: smoke-check.ps1 took 20m32s in CI. They check the rules only now
+# cost test each, which the lint step runs once: tests/smoke-check.sh took 20m32s in CI. They check the rules only now
 # (NIGHTMILL_CI_PARTS_RULES_ONLY). The cost is counted, not timed: a second shim, named bash, in the same folder as the cp
 # shim, logs every call whose first argument ends in tests/test-lint-agreement-cases.sh or tests/test-lint-agreement-cost.sh
 # and passes every call to the real bash unchanged. The bound is 0 calls for the run of tests/smoke-check.sh below, and a
@@ -155,20 +155,6 @@ fi
 agr_runs=$(wc -l < "$agrlog" | tr -d ' ')
 if [ "$agr_runs" != 0 ]; then
   echo "FAIL: tests/smoke-check.sh starts the agreement cases or cost test $agr_runs times on its lint copies; 0 expected (the lint runs them once, #340)"
-  bad=1
-fi
-# No PowerShell runs here, so the .ps1 half is a text check: a code line (not a comment) of tests/smoke-check.ps1 that
-# writes run-section.sh must export NIGHTMILL_CI_PARTS_RULES_ONLY=1 before the lint section text ($secText) is appended,
-# as smoke-check.sh does. Whitespace around the line is free.
-ps1_ok=$(awk '
-  /^[[:space:]]*#/ { next }
-  /run-section\.sh/ && /export[[:space:]]+NIGHTMILL_CI_PARTS_RULES_ONLY=1/ {
-    e = index($0, "NIGHTMILL_CI_PARTS_RULES_ONLY=1"); s = index($0, "$secText")
-    if (s > e) ok = 1
-  }
-  END { print ok + 0 }' "$here/tests/smoke-check.ps1")
-if [ "$ps1_ok" != 1 ]; then
-  echo "FAIL: tests/smoke-check.ps1 does not export NIGHTMILL_CI_PARTS_RULES_ONLY=1 in the run-section.sh its Lint-In writes, before the lint section; the PowerShell job would run the cases of tests/test-ci-parts.sh on every lint copy (#293)"
   bad=1
 fi
 [ "$bad" = 0 ] || exit 1

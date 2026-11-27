@@ -76,21 +76,15 @@ need skills/workflow/SKILL.md 'nightmill: no branch of origin is known; the conf
 need skills/workflow/SKILL.md 'nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree.'
 for name in spec next fix; do
   need "skills/$name/SKILL.md" 'validate-config.sh" --base'
-  lacks "skills/$name/SKILL.md" 'validate-config.ps1'
 done
 # init keeps writing and validating the working tree's file
 [ -f "$root/skills/init/SKILL.md" ] && { need skills/init/SKILL.md '!`cat .claude/nightmill.json'; }
 
 echo "== the scripts read the base configuration"
-for f in scripts/lib/baseconfig.sh scripts/lib/baseconfig.ps1; do
-  [ -f "$root/$f" ] || fail "$f: missing"
-done
+[ -f "$root/scripts/lib/baseconfig.sh" ] || fail "scripts/lib/baseconfig.sh: missing"
 need scripts/slot.sh 'lib/baseconfig'
-need scripts/slot.ps1 'lib\baseconfig'
 lacks scripts/slot.sh '.claude/nightmill.json"'
-lacks scripts/slot.ps1 '".claude\nightmill.json"'
 need scripts/validate-config.sh '--base'
-need scripts/validate-config.ps1 '-Base'
 
 echo "== a change under .claude/ or .github/ is never auto-merged"
 wf=skills/workflow/SKILL.md

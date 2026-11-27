@@ -5,13 +5,13 @@
 | Lint (generic, JSON, skills, shell) | success | 42s |
 | claude plugin validate (not blocking) | success | ? |
 | bash scripts smoke tests | success | 7m25s |
-| PowerShell smoke part 1 of 4 | success | 9m20s |
-| PowerShell smoke part 2 of 4 | success | 8m48s |
-| PowerShell smoke part 3 of 4 | failure | 8m30s |
-| PowerShell smoke part 4 of 4 | success | 4m00s |
-| PowerShell scripts smoke tests | in_progress | 10m20s (running) |
+| Git Bash smoke part 1 of 4 | success | 9m20s |
+| Git Bash smoke part 2 of 4 | success | 8m48s |
+| Git Bash smoke part 3 of 4 | failure | 8m30s |
+| Git Bash smoke part 4 of 4 | success | 4m00s |
+| Git Bash smoke tests (Windows, not blocking) | in_progress | 10m20s (running) |
 
-PowerShell scripts smoke tests: 9m20s from the start of the first part to the end of the last (4 parts).
+The parts (Git Bash smoke part): 9m20s from the start of the first part to the end of the last (4 parts).
 
 #### Slowest steps: Lint (generic, JSON, skills, shell)
 
@@ -42,7 +42,7 @@ PowerShell scripts smoke tests: 9m20s from the start of the first part to the en
 | Complete job | 2s |
 | Hide jq (the bash scripts must not need it) | 1s |
 
-#### Slowest steps: PowerShell smoke part 1 of 4
+#### Slowest steps: Git Bash smoke part 1 of 4
 
 | Step | Time |
 |---|---|
@@ -51,7 +51,7 @@ PowerShell scripts smoke tests: 9m20s from the start of the first part to the en
 | Run actions/checkout | 5s |
 | Complete job | 2s |
 
-#### Slowest steps: PowerShell smoke part 2 of 4
+#### Slowest steps: Git Bash smoke part 2 of 4
 
 | Step | Time |
 |---|---|
@@ -60,7 +60,7 @@ PowerShell scripts smoke tests: 9m20s from the start of the first part to the en
 | Run actions/checkout | 3s |
 | Complete job | 2s |
 
-#### Slowest steps: PowerShell smoke part 3 of 4
+#### Slowest steps: Git Bash smoke part 3 of 4
 
 | Step | Time |
 |---|---|
@@ -69,7 +69,7 @@ PowerShell scripts smoke tests: 9m20s from the start of the first part to the en
 | Run actions/checkout | 3s |
 | Complete job | 2s |
 
-#### Slowest steps: PowerShell smoke part 4 of 4
+#### Slowest steps: Git Bash smoke part 4 of 4
 
 | Step | Time |
 |---|---|
@@ -78,7 +78,7 @@ PowerShell scripts smoke tests: 9m20s from the start of the first part to the en
 | Set up job | 3s |
 | Complete job | 2s |
 
-#### Slowest steps: PowerShell scripts smoke tests
+#### Slowest steps: Git Bash smoke tests (Windows, not blocking)
 
 | Step | Time |
 |---|---|

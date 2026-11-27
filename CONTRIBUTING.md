@@ -42,12 +42,12 @@ Run the check:
 bash tests/check.sh
 ```
 
-The full check runs the lint, the bash smoke tests, the PowerShell smoke tests (when PowerShell is installed),
+The full check runs the lint, the bash smoke tests,
 `claude plugin validate` and `claude plugin test` (when `claude` is installed and has them). It runs up to
 `verification.checkJobs` steps at once (default 4, never more than the processors; `--jobs 1` runs them one after
 another) and lists what it skipped. `bash tests/check.sh --quick` runs the lint and the bash smoke tests only: it is
 for the loop while you write code and is never the check before a commit or a pull request. CI runs all of them, the
-bash ones on Ubuntu and in Git Bash on Windows, the PowerShell ones on Windows, so a skipped test is not a reason to leave a change untested.
+bash ones on Ubuntu and in Git Bash on Windows, so a skipped test is not a reason to leave a change untested.
 
 The rules a change has to keep:
 

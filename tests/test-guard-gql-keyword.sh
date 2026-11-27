@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/test-guard-gql-keyword.sh - iteration 50 (#253): only the first name of a GraphQL definition is its keyword,
 # so an operation named after a keyword does not change its kind. `mutation query { deleteIssue }` is refused and
-# `query mutation { viewer }` passes, in scripts/guard.sh and, when a PowerShell is on the PATH, scripts/guard.ps1.
+# `query mutation { viewer }` passes, in scripts/guard.sh.
 #   tests/test-guard-gql-keyword.sh [<root>]   # root: the checkout to test (default: this one)
 set -uo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -42,19 +42,6 @@ run_sh() { expect bash "$@" bash "$root/scripts/guard.sh"; }
 run_sh "mutation named query" 2 "$REFUSED"
 run_sh "query named mutation" 0 "$PASSED"
 run_sh "mutation named subscription" 2 "$SUBFRAG"
-
-ps=""
-if command -v powershell >/dev/null 2>&1; then ps=powershell
-elif command -v pwsh >/dev/null 2>&1; then ps=pwsh
-fi
-if [ -n "$ps" ]; then
-  run_ps() { expect "$ps" "$@" "$ps" -NoProfile -ExecutionPolicy Bypass -File "$root/scripts/guard.ps1"; }
-  run_ps "mutation named query" 2 "$REFUSED"
-  run_ps "query named mutation" 0 "$PASSED"
-  run_ps "mutation named subscription" 2 "$SUBFRAG"
-else
-  echo "test-guard-gql-keyword: no PowerShell on the PATH, scripts/guard.ps1 not run"
-fi
 
 [ "$bad" = 0 ] || exit 1
 echo "GUARD GQL KEYWORD OK"

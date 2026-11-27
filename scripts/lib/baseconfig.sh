@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 # scripts/lib/baseconfig.sh - the configuration that governs a run: .claude/nightmill.json on the base branch, not the
-# working tree's file (iteration 48, #111). Source it after lib/json.sh. Bash twin of lib/baseconfig.ps1.
+# working tree's file (iteration 48, #111). Source it after lib/json.sh.
 #
 #   base_config <main checkout>
 #

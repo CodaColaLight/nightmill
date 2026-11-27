@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # scripts/render-templates.sh - write the project's GitHub issue forms from the nightmill templates.
-# Bash twin of render-templates.ps1.
 #   render-templates.sh [--project <dir>] [--force]
 # Reads areas, invariants, labels and verification from .claude/nightmill.json and fills the {{...}}
 # placeholders in templates/ISSUE_TEMPLATE/*.yml. Without --force an existing form that differs is

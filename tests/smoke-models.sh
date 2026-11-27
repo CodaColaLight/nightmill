@@ -3,7 +3,7 @@
 # its rank and whether its pairing holds. The defaults are printed and named, a reviewer below its producer and a
 # model that is not in the ranking are flagged, tester and worker never are, an invalid ranking is reported, usage
 # errors exit 2, nothing is changed, the verdict agrees with validate-config, and the default config is found from a
-# subfolder and from a second worktree. Same cases as smoke-models.ps1. Needs bash, awk and git, no jq.
+# subfolder and from a second worktree. Needs bash, awk and git, no jq.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-models.XXXXXX")

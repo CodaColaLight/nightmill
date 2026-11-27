@@ -1,8 +1,8 @@
 # scripts/lib/validate.awk - the walk of scripts/validate-config.sh (use it together with json.awk):
 #   VAL_CONFIG=config.json VAL_SCHEMA=schema.json LC_ALL=C awk -f json.awk -f validate.awk
 # Prints one record per finding, "<path> TAB <rank> TAB <line>" (rank 0 for an error, 1 for a warning), in
-# no particular order; the caller sorts them with LC_ALL=C sort. Same checks, texts and order as
-# validate-config.ps1: type, enum, pattern, not (only { "pattern": ... }), minimum, minItems, items, required,
+# no particular order; the caller sorts them with LC_ALL=C sort. The checks, in order:
+# type, enum, pattern, not (only { "pattern": ... }), minimum, minItems, items, required,
 # properties, additionalProperties (a schema, true or false); an unknown key is a warning, with a hint when it looks like a typo. After the
 # walk, vpairs() checks that a reviewer role is not ranked below the role it reviews (iteration 15).
 # Exit code 2 (message on standard error) when the schema or the config cannot be read, or the schema is
@@ -150,7 +150,7 @@ function vnode(id, sid, path,   k, t, e, pt, nt, i, ok, list, item, mn, mi, it, 
 # it reviews (specReviewer over specWriter, codeReviewer over implementer and fixer), judged by models.ranking.
 # It runs on the effective models (the config's roles.<role>.model when it is a non-empty string, else the
 # default of the schema) and on the effective ranking (the config's, else the default of the schema), so a
-# config without the keys is clean. Same texts and same findings as validate-config.ps1.
+# config without the keys is clean.
 
 # a child of a node, 0 when the node itself is 0
 function vch(id, key) {

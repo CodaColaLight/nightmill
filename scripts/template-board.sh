@@ -14,7 +14,7 @@
 #   template: not usable: <reason>      none published | not reachable | fields differ | statuses differ
 # Exit code 0 whenever the line was printed, "usable" or not. Exit 2 for a usage error, an unreadable file, gh
 # missing or not logged in; the message goes to standard error. The rules and the texts are in
-# docs/specs/iteration-9-init-template-board.md; template-board.ps1 prints the same.
+# docs/specs/iteration-9-init-template-board.md.
 # Needs git, gh and bash (awk, no jq).
 set -euo pipefail
 

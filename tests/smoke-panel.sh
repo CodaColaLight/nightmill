@@ -2,7 +2,7 @@
 # tests/smoke-panel.sh - panel.sh against fixtures (iteration 32): the slot markers of
 # tests/fixtures/panel/run-stall-old-free/ are written into a throwaway project, the clock is fixed
 # (NIGHTMILL_NOW = 2026-11-05T12:00:00) and every case runs panel.sh in a child process. The output of the first case
-# must equal expected.txt, which smoke-panel.ps1 compares with too; UPDATE_PANEL_FIXTURES=1 rewrites it (read the diff
+# must equal expected.txt; UPDATE_PANEL_FIXTURES=1 rewrites it (read the diff
 # before committing). A fake gh that logs its calls is first on the PATH: the panel never calls it. Needs bash and awk,
 # no jq, no network. Nothing sleeps.
 set -euo pipefail
@@ -159,7 +159,7 @@ printf '{ not json' > "$tmp/wt/.slots/slot-2.json"
 run_p "$tmp/work"
 [ "$code" = 0 ] || fail "unreadable marker: exit code $code: $(cat "$tmp/err.txt")"
 [ ! -s "$tmp/err.txt" ] || fail "unreadable marker: the panel wrote on standard error: $(cat "$tmp/err.txt")"
-# #329: slot.sh and slot.ps1 both list that slot as busy and unknown (exit 0), with one note line
+# #329: slot.sh lists that slot as busy and unknown (exit 0), with one note line
 grep -q "^slot${TAB}2${TAB}free" "$tmp/out.txt" && fail "a slot with an unreadable marker is listed free"
 grep -q "^unknown${TAB}" "$tmp/out.txt" && fail "an unreadable marker gave an unknown record: $(cat "$tmp/out.txt")"
 {

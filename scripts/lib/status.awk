@@ -7,7 +7,7 @@
 # and the settings in ST_* environment variables (see BEGIN). Prints the table of what waits and what is stuck,
 # or with ST_PORCELAIN=1 the same cells as tab separated records (item, note, slot; iteration 31), or with ST_JSON=1
 # the same cells as one JSON object on one line (iteration 54; ST_CAPACITY holds the capacity cell, or is unset).
-# The rules are in docs/specs/iteration-8-status.md; scripts/status.ps1 does the same.
+# The rules are in docs/specs/iteration-8-status.md.
 
 function days(y, m, d,   era, yoe, doy, doe) {
   if (m <= 2) y--

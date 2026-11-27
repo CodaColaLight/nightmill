@@ -92,7 +92,7 @@
         "manualCheckText": { "type": "string", "description": "What the manual check is, in one sentence." },
         "benchRule": { "type": "string", "description": "Optional extra testing rule, for example which code needs a benchmark." },
         "checkJobs": { "type": "integer", "minimum": 1, "default": 4, "description": "How many independent steps the check command runs at the same time (1 to 16), for a check command that reads it; nightmill's own tests/check.sh does, and runs no more steps at once than the machine has processors. 1 runs them one after another." },
-        "platform": { "type": "string", "enum": ["all", "windows", "unix"], "default": "all", "description": "The platform the project runs on, for a check command that reads it; nightmill's own tests/check.sh does. windows runs the bash tests in Git Bash (from Git for Windows) and skips the PowerShell tests; unix (Linux or macOS) runs the bash tests and skips the PowerShell tests; all runs the bash and the PowerShell tests. The lint and claude plugin validate and test run on every platform. The check lists what it skipped; --only ignores this key. /nightmill:init proposes the detected platform." }
+        "platform": { "type": "string", "enum": ["all", "windows", "unix"], "default": "all", "description": "The platform the project runs on, for a check command that reads it. windows is Windows (the bash tests run in Git Bash, from Git for Windows), unix is Linux or macOS, all is a project worked on from both. nightmill's own tests/check.sh does not read it (iteration 68): its tests are bash only and the same on every platform, and it lists what the machine cannot run. /nightmill:init proposes the detected platform." }
       }
     },
     "escalation": {
@@ -215,7 +215,7 @@
             "required": ["command"],
             "properties": {
               "dir": { "type": "string", "description": "Directory inside the worktree to run in. Default: the worktree root." },
-              "command": { "type": "string", "description": "One command line, run by bash in both shells: bash -c in slot.sh and new-worktree.sh, and the same bash from slot.ps1 and new-worktree.ps1 (Git for Windows' bash beside git, else the first bash on the PATH that is not WSL's System32 bash.exe). Write it in bash syntax (&&, $VAR, quoting); without bash the PowerShell scripts fail the warm-up with \"bash not found\" and try no other interpreter." },
+              "command": { "type": "string", "description": "One command line, run by bash: bash -c in slot.sh and new-worktree.sh (on Windows in Git Bash). Write it in bash syntax (&&, $VAR, quoting)." },
               "lockfile": { "type": "string", "description": "Relative to the worktree. When set, the command runs only when this file's hash changed since the last run in that slot." }
             }
           },

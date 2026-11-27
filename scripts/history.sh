@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/history.sh - how the work went in a window (iteration 54). Bash twin of history.ps1.
+# scripts/history.sh - how the work went in a window (iteration 54).
 #   history.sh [--from <t>] [--to <t>] | [--run <stamp>]   [--json | --html <dir>]
 # <t> is YYYY-MM-DD (00:00:00Z of that day) or YYYY-MM-DDTHH:MM:SSZ; <stamp> the second form. The window is [from, to],
 # both ends included: to defaults to now, from to the earliest line of the record (or a week before to); --run <stamp>

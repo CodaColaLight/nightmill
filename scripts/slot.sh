@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/slot.sh - permanent worktrees, one per worker slot (nightmill). Bash twin of slot.ps1.
+# scripts/slot.sh - permanent worktrees, one per worker slot (nightmill).
 #   slot.sh --status [--porcelain]      # --porcelain: one tab separated line per slot, for scripts
 #   slot.sh --take feat/foo [--slot 2] [--base origin/main] [--skip-warmup]
 #   slot.sh --release 1                 # after the PR merged
@@ -19,45 +19,42 @@
 # worktree is clean and gh lists a merged PR for its branch whose last commit is the tip of the local branch
 # (so a reused branch name or work after the merge keeps the slot busy and nothing is deleted). A slot that
 # cannot be judged (gh missing or failing, no fetch) stays busy and a note goes to standard error; the freeing
-# never makes a take fail. Same behaviour as slot.ps1 (-Reap).
+# never makes a take fail.
 # Capacity (--capacity; iteration 22): the slot count and the agent limit can be set during a session. The set
 # values are kept in <root>/.slots/capacity.json (untracked, shared by every worktree) until --capacity --clear
 # or until set again; the tracked config is never edited. Slot count: the live value, then WORKER_SLOTS, then
 # worktrees.slots, then 2. Agent limit: the live value, then parallel.maxAgents, then 2. A busy slot above a
 # lowered count is retiring: it is no longer handed out, is never touched, and is no longer listed once released.
-# Same behaviour as slot.ps1 (-Capacity).
 # Reports (--report; iteration 23): a skill that works in a slot writes its skill, its role, the current step and the
 # time of the report into the slot's marker (the keys skill, role, step, reported after slot, branch, since).
 # --status --porcelain prints them with the agent state: running while the last report is at most
 # worktrees.stalledAfterMinutes (default 30) old, stalled after that, unknown without a report. The take does not
-# report. Same behaviour as slot.ps1 (-Report).
+# report.
 # Claim (iteration 34): a take claims its slot before it fetches, switches or warms up: it writes a marker with
-# "state": "taking" and its process id ("pid") and gives it the marker's name only if no marker exists (bash ln,
-# PowerShell File.Move), so two takes never get the same slot; the finished take replaces it with the marker above.
+# "state": "taking" and its process id ("pid") and gives it the marker's name only if no marker exists (ln),
+# so two takes never get the same slot; the finished take replaces it with the marker above.
 # A failed fetch, switch or warm-up puts the slot back, removes the claim and prints "<step> failed (exit N)". A
-# claim whose process has ended is dead: --status shows take-died, and only --abandon frees it. Same behaviour as
-# slot.ps1.
+# claim whose process has ended is dead: --status shows take-died, and only --abandon frees it.
 # Retries (iteration 35): the take's own marker changes (the move of the finished marker over its claim, the
 # rewrite of a claim it leaves behind and the removal of its claim) are tried up to 21 times, 0.25 s apart (at most
 # 5 s of waiting), because on Windows a reader that holds the marker open makes them fail for a moment. Nothing is
-# printed between tries; only the last try's error is. The publish of the claim is tried once. Same behaviour as
-# slot.ps1.
+# printed between tries; only the last try's error is. The publish of the claim is tried once.
 # Interruption (iteration 36): a take stopped by INT (Ctrl+C) or TERM after it has claimed its slot runs the same
 # restore as a failed step, prints "<step> interrupted (INT)" or "(TERM)" with the outcome and exits 130 or 143.
 # Stopped while it writes its finished marker, it leaves its claim without the process id; --abandon frees it. A
 # second signal does not stop a restore. A signal sent with kill to the take alone waits for the running command. A
 # take killed without a chance to clean up (KILL, a closed window) leaves a claim that is dead once its process has
-# ended. Same behaviour as slot.ps1, which prints "<step> stopped" and cannot set the exit code.
+# ended.
 # Record (iteration 41): the take, every report and every freeing append one line to <root>/.slots/ledger.tsv (see
-# scripts/stages.sh); a failed append prints one note and changes nothing else. Same behaviour as slot.ps1.
+# scripts/stages.sh); a failed append prints one note and changes nothing else.
 # Failures (iteration 57): --release and --abandon exit 1 on every failure; a failed git or gh call ends with one line
 # of their own after its text (git fetch failed, gh pr list failed, git switch failed). --release frees the slot
 # also when the local branch cannot be deleted. A marker that is not a JSON object is a busy slot in --status (the
 # branch and the other fields empty; --porcelain writes "slot N: the marker is not a JSON object" on standard
-# error), exit 0. Same behaviour as slot.ps1.
+# error), exit 0.
 # Checks (bug 322): --release frees a slot only for a merged PR whose last commit is the tip of the local branch, as
 # the reap; --release and --abandon (of a finished take) refuse a slot whose worktree is on another branch;
-# --status creates nothing; a git older than 2.31 is named; gh runs with GH_PROMPT_DISABLED. Same behaviour as slot.ps1.
+# --status creates nothing; a git older than 2.31 is named; gh runs with GH_PROMPT_DISABLED.
 set -euo pipefail
 
 usage() {

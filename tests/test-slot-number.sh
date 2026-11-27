@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # tests/test-slot-number.sh - bug 128: --slot, --release and --abandon take only digits and normalise them
-# (02 is slot 2); anything else prints the usage line and changes nothing. bash only: the PowerShell twin binds
-# -Slot, -Release and -Abandon as integers, so it needs no test of its own.
+# (02 is slot 2); anything else prints the usage line and changes nothing.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-slotnum.XXXXXX")

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # tests/check.sh - the local equivalent of CI, in one command (verification.check in .claude/nightmill.json).
-#   tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]
+#   tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]
 # The steps are the lines of the step list below (between '# steps: begin' and '# steps: end'; tests/lint.sh reads it
 # and fails on a smoke script that is not in it), then the two claude steps:
 #   lint                      tests/lint.sh
 #   bash <file>               the bash smoke tests and regression tests (they need git and the tools every POSIX shell has, no jq)
-#   ps <file>                 the PowerShell smoke tests (when powershell or pwsh is on the PATH)
 #   claude plugin validate    claude plugin validate --strict (when claude is on the PATH)
 #   claude plugin test        claude plugin test . (the module test hooks/panel.test.tsx; when claude has it)
 # Up to L steps run at the same time (iteration 42): L is --jobs N, else verification.checkJobs, else 4; the last two
@@ -24,16 +23,12 @@
 #                  tests/<step> runs itself). A shared path, a path in no line of the map, or no merge base runs the
 #                  full check instead. Never prints the line of a passed full check unless it ran the full check.
 #   --within a,b   with --affected only (iteration 60; CI's smoke jobs on a pull request): of the named steps, those the
-#                  changed paths select (the lint only when it is named; verification.platform does not apply). Where
+#                  changed paths select (the lint only when it is named). Where
 #                  --affected alone would run the full check, it runs --only a,b instead. With --summary, the section
 #                  also says which steps ran, which were left out, and why.
-# verification.platform (iteration 56, iteration 65) picks the test families of a full or quick run: windows and unix
-# skip the ps steps (the scripts are bash only, decision record 0004: on Windows the bash tests run in Git Bash), all
-# (or no key) runs both; the lint and the claude steps run on every platform, and the
-# skipped family is listed as SKIPPED. --only ignores the key and does not read it; --affected does not apply it to
-# a step that a changed path selected (so a changed script runs its tests in both shells).
+# verification.platform is not read (iteration 68): the steps are the same on every platform (on Windows the bash
+# tests run in Git Bash), and what the machine cannot run is listed as SKIPPED.
 #   --jobs N       the limit for this run, 1 to 16, not capped
-#   --powershell   the PowerShell for the ps steps (default: pwsh, else powershell)
 #   --summary F    appends the check's wall time and its five slowest steps to the Markdown file F, before the
 #                  verdict line, whatever the verdict (iteration 55; CI passes $GITHUB_STEP_SUMMARY); an interrupted
 #                  check writes none
@@ -41,7 +36,7 @@
 # result line carries the step's time, and a Times: block after the last step lists every step's time and the total
 # (iteration 41; the total is the wall time from the start to the end of the last step).
 # For the tests only: NIGHTMILL_CHECK_STEPS names a file of <name> TAB <command> [TAB <kind> [TAB <reason> [TAB first
-# [TAB slow]]]] lines (kind lint, bash, ps or claude; bash when left out; a step with a reason is not run and is listed
+# [TAB slow]]]] lines (kind lint, bash or claude; bash when left out; a step with a reason is not run and is listed
 # as SKIPPED: <reason>; first marks a step to start first and slow marks a slow step, as in the step list; empty fields
 # keep their place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
 # scripts/lib/ledger.sh) is the clock the times are read from. With NIGHTMILL_CHECK_STEPS set, NIGHTMILL_CHECK_MAP
@@ -52,14 +47,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 . scripts/lib/ledger.sh
 . scripts/lib/json.sh
 
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--powershell powershell|pwsh] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]'
 usage() { echo "$USAGE" >&2; exit 2; }
 whole_1_16() { [[ "$1" =~ ^[1-9][0-9]?$ ]] && [ "$1" -le 16 ]; }
 
-mode=full; only=""; within=""; jobs=""; psopt=""; summary=""; seen=" "
+mode=full; only=""; within=""; jobs=""; summary=""; seen=" "
 while [ $# -gt 0 ]; do
   case $1 in
-    --quick|--only|--affected|--within|--jobs|--powershell|--summary)
+    --quick|--only|--affected|--within|--jobs|--summary)
       case $seen in *" $1 "*) usage ;; esac
       seen="$seen$1 " ;;
   esac
@@ -69,7 +64,6 @@ while [ $# -gt 0 ]; do
     --only) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; only=$2; mode=only; shift 2 ;;
     --within) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; within=$2; shift 2 ;;
     --jobs) [ $# -ge 2 ] || usage; whole_1_16 "$2" || usage; jobs=$2; shift 2 ;;
-    --powershell) [ $# -ge 2 ] || usage; case $2 in powershell|pwsh) psopt=$2 ;; *) usage ;; esac; shift 2 ;;
     --summary) { [ $# -ge 2 ] && [ -n "$2" ]; } || usage; summary=$2; shift 2 ;;
     *) usage ;;
   esac
@@ -90,16 +84,9 @@ add() { # add <kind> <name> [first] [slow]
   k_kind[n]=$1; k_name[n]=$2; k_first[n]=""; k_slow[n]=""; k_skip[n]=""; k_cmd[n]=""
   case $marks in first*) k_first[n]=first ;; esac
   # a lint or claude step is never slow
-  case $marks in *slow) case $1 in bash|ps) k_slow[n]=slow ;; esac ;; esac
+  case $marks in *slow) case $1 in bash) k_slow[n]=slow ;; esac ;; esac
   n=$((n + 1))
 }
-
-ps=""
-if [ -n "$psopt" ]; then
-  if command -v "$psopt" >/dev/null 2>&1; then ps=$psopt; fi
-elif command -v pwsh >/dev/null 2>&1; then ps=pwsh
-elif command -v powershell >/dev/null 2>&1; then ps=powershell
-fi
 
 real_steps() {
 # steps: begin
@@ -152,40 +139,7 @@ add bash test-ci-summary.sh
 add bash test-baseconfig-pathconv.sh
 add bash test-restricted-path-git.sh
 add bash test-slot-low-defects.sh
-add ps smoke-slot.ps1 first
-add ps smoke-render.ps1
-add ps smoke-hook.ps1
-add ps smoke-release.ps1 first
-add ps smoke-validate.ps1 first
-add ps smoke-status.ps1
-add ps smoke-template-board.ps1
-add ps smoke-models.ps1
-add ps smoke-load.ps1
-add ps smoke-room.ps1
-add ps smoke-control.ps1
-add ps smoke-dashboard.ps1
-add ps smoke-panel.ps1
-add ps smoke-stages.ps1
-add ps smoke-check.ps1 first
-add ps test-lintcopy-output.ps1 first slow
-add ps test-release-resume.ps1
-add ps test-release-low-defects.ps1
-add ps test-json-bom.ps1
-add ps test-render-quoting.ps1
-add ps test-status-controls.ps1
-add ps test-smoke-slot-tar.ps1
-add ps test-slot-low-defects.ps1
-add ps smoke-guard.ps1
-add ps smoke-drive.ps1 first slow
-add ps smoke-gate.ps1
-add ps smoke-history.ps1
 # steps: end
-  local i
-  if [ -z "$ps" ]; then
-    for ((i = 0; i < n; i++)); do
-      [ "${k_kind[i]}" != ps ] || k_skip[i]="PowerShell smoke tests (no pwsh or powershell)"
-    done
-  fi
   add claude "claude plugin validate"
   add claude "claude plugin test"
   if command -v claude >/dev/null 2>&1; then
@@ -202,7 +156,7 @@ add ps smoke-history.ps1
 # names and on a script that maps to no step). map <pattern> <step>[,<step>...]: a changed path that matches selects
 # the steps; shared <pattern>: a changed path that matches runs the full check; lintonly <pattern>: a changed path
 # that matches and matches no map line runs the lint alone. A pattern is a case pattern on the whole path ('*' also
-# matches '/'); a script is always scripts/<x>.*, so both twins select the tests of both shells. The map lines name
+# matches '/'); a script is scripts/<x>.*. The map lines name
 # the repository paths each test file names.
 affects_map() {
   cat <<'MAP'
@@ -214,75 +168,71 @@ shared .github/workflows/*
 shared .claude-plugin/plugin.json
 lintonly docs/*
 map .claude-plugin/* claude plugin validate,claude plugin test
-map .claude-plugin/plugin.json smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh,smoke-release.ps1,test-release-resume.ps1,test-release-low-defects.ps1
+map .claude-plugin/plugin.json smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh
 map .claude/CLAUDE.md test-changelog-coverage.sh
-map .github/workflows/ci.yml smoke-check.sh,smoke-check.ps1
-map CHANGELOG.md smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh,test-changelog-refs.sh,test-changelog-coverage.sh,smoke-release.ps1,test-release-resume.ps1,test-release-low-defects.ps1
-map CONTRIBUTING.md smoke-check.sh,smoke-check.ps1
-map README.md smoke-release.sh,smoke-check.sh,test-release-resume.sh,test-release-low-defects.sh,test-resume-stuck.sh,test-story-dedup.sh,test-interrupt-docs.sh,test-spec-template.sh,test-watch-checks.sh,test-guard-rules.sh,smoke-release.ps1,smoke-check.ps1,test-release-resume.ps1,test-release-low-defects.ps1
+map .github/workflows/ci.yml smoke-check.sh
+map CHANGELOG.md smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh,test-changelog-refs.sh,test-changelog-coverage.sh
+map CONTRIBUTING.md smoke-check.sh
+map README.md smoke-release.sh,smoke-check.sh,test-release-resume.sh,test-release-low-defects.sh,test-resume-stuck.sh,test-story-dedup.sh,test-interrupt-docs.sh,test-spec-template.sh,test-watch-checks.sh,test-guard-rules.sh
 map agents/* test-script-modes.sh,test-guard-rules.sh,claude plugin validate,claude plugin test
 map agents/spec-reviewer.md test-spec-template.sh
 map agents/worker.md test-worker-merge.sh
 map hooks/* claude plugin validate,claude plugin test
-map hooks/hooks.json smoke-hook.sh,smoke-guard.sh,test-guard-rules.sh,smoke-hook.ps1
-map schema/nightmill.schema.json smoke-json.sh,smoke-validate.sh,smoke-template-board.sh,smoke-check.sh,test-watch-checks.sh,smoke-validate.ps1,smoke-template-board.ps1,smoke-check.ps1
-map scripts/control.* smoke-control.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-control.ps1
-map scripts/dashboard.* smoke-dashboard.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-dashboard.ps1
-map scripts/drive.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh,smoke-drive.ps1
-map scripts/gate.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-gate.sh,smoke-gate.ps1
-map scripts/guard.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-guard.sh,test-guard-rules.sh,smoke-guard.ps1
-map scripts/history.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh,smoke-history.sh,smoke-drive.ps1,smoke-history.ps1
+map hooks/hooks.json smoke-hook.sh,smoke-guard.sh,test-guard-rules.sh
+map schema/nightmill.schema.json smoke-json.sh,smoke-validate.sh,smoke-template-board.sh,smoke-check.sh,test-watch-checks.sh
+map scripts/control.* smoke-control.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/dashboard.* smoke-dashboard.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/drive.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh
+map scripts/gate.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-gate.sh
+map scripts/guard.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-guard.sh,test-guard-rules.sh
+map scripts/history.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh,smoke-history.sh
 map scripts/lib/baseconfig.sh test-baseconfig-pathconv.sh
 map scripts/lib/json.awk smoke-json.sh
 map scripts/lib/json.sh smoke-json.sh,smoke-slot.sh,smoke-status.sh,smoke-dashboard.sh,smoke-panel.sh,test-json-bom.sh,test-json-speed.sh,smoke-history.sh,test-baseconfig-pathconv.sh
-map scripts/lib/ledger.ps1 smoke-history.ps1
 map scripts/lib/ledger.sh smoke-history.sh
-map scripts/load.* smoke-load.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-load.ps1
-map scripts/models.* smoke-models.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-models.ps1
-map scripts/new-worktree.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-slot-low-defects.sh,test-slot-low-defects.ps1
-map scripts/panel.* smoke-panel.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-panel.ps1
-map scripts/release.* smoke-release.sh,test-lint-pipefail.sh,test-release-resume.sh,test-release-low-defects.sh,test-script-modes.sh,test-changelog-coverage.sh,test-mktemp-template.sh,smoke-release.ps1,test-release-resume.ps1,test-release-low-defects.ps1
-map scripts/render-templates.* smoke-render.sh,test-lint-pipefail.sh,test-render-quoting.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-render.ps1,test-render-quoting.ps1
-map scripts/room.* smoke-room.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh,smoke-room.ps1,smoke-drive.ps1
-map scripts/session-start.* smoke-hook.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-hook.ps1
-map scripts/slot.* smoke-slot.sh,smoke-control.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,test-interrupt-docs.sh,smoke-drive.sh,test-slot-low-defects.sh,smoke-slot.ps1,smoke-control.ps1,test-smoke-slot-tar.ps1,test-slot-low-defects.ps1,smoke-drive.ps1
-map scripts/stages.* smoke-slot.sh,smoke-stages.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-slot.ps1,smoke-stages.ps1
-map scripts/status.* smoke-status.sh,smoke-dashboard.sh,test-lint-pipefail.sh,test-status-controls.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-status.ps1,smoke-dashboard.ps1,test-status-controls.ps1
-map scripts/template-board.* smoke-template-board.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-template-board.ps1
-map scripts/validate-config.* smoke-validate.sh,smoke-models.sh,test-lint-pipefail.sh,test-json-bom.sh,test-script-modes.sh,test-mktemp-template.sh,test-board-listing.sh,smoke-validate.ps1,smoke-models.ps1,test-json-bom.ps1
+map scripts/load.* smoke-load.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/models.* smoke-models.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/new-worktree.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-slot-low-defects.sh
+map scripts/panel.* smoke-panel.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/release.* smoke-release.sh,test-lint-pipefail.sh,test-release-resume.sh,test-release-low-defects.sh,test-script-modes.sh,test-changelog-coverage.sh,test-mktemp-template.sh
+map scripts/render-templates.* smoke-render.sh,test-lint-pipefail.sh,test-render-quoting.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/room.* smoke-room.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh
+map scripts/session-start.* smoke-hook.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/slot.* smoke-slot.sh,smoke-control.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,test-interrupt-docs.sh,smoke-drive.sh,test-slot-low-defects.sh
+map scripts/stages.* smoke-slot.sh,smoke-stages.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/status.* smoke-status.sh,smoke-dashboard.sh,test-lint-pipefail.sh,test-status-controls.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/template-board.* smoke-template-board.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
+map scripts/validate-config.* smoke-validate.sh,smoke-models.sh,test-lint-pipefail.sh,test-json-bom.sh,test-script-modes.sh,test-mktemp-template.sh,test-board-listing.sh
 map skills/* test-script-modes.sh,test-watch-checks.sh,test-guard-rules.sh,claude plugin validate,claude plugin test
-map skills/check/* smoke-check.sh,test-check-skill.sh,smoke-check.ps1
+map skills/check/* smoke-check.sh,test-check-skill.sh
 map skills/fix/* test-fix-pick.sh,test-watch-checks.sh
-map skills/init/* smoke-check.sh,test-skill-config-fallback.sh,test-guard-rules.sh,smoke-check.ps1
+map skills/init/* smoke-check.sh,test-skill-config-fallback.sh,test-guard-rules.sh
 map skills/next/* test-resume-stuck.sh,test-watch-checks.sh
 map skills/spec/* test-resume-stuck.sh,test-spec-template.sh,test-watch-checks.sh,test-guard-rules.sh
 map skills/status/* test-resume-stuck.sh
 map skills/story/* test-story-dedup.sh
-map skills/workflow/* smoke-validate.sh,test-board-listing.sh,test-resume-stuck.sh,test-watch-checks.sh,test-guard-rules.sh,smoke-validate.ps1
-map templates/ISSUE_TEMPLATE/* smoke-render.sh,test-render-quoting.sh,smoke-render.ps1,test-render-quoting.ps1
-map templates/board-template.json smoke-template-board.sh,smoke-template-board.ps1
-map templates/nightmill.example.json smoke-json.sh,smoke-validate.sh,smoke-models.sh,smoke-check.sh,test-json-bom.sh,test-board-listing.sh,test-watch-checks.sh,smoke-validate.ps1,smoke-models.ps1,smoke-check.ps1,test-json-bom.ps1
+map skills/workflow/* smoke-validate.sh,test-board-listing.sh,test-resume-stuck.sh,test-watch-checks.sh,test-guard-rules.sh
+map templates/ISSUE_TEMPLATE/* smoke-render.sh,test-render-quoting.sh
+map templates/board-template.json smoke-template-board.sh
+map templates/nightmill.example.json smoke-json.sh,smoke-validate.sh,smoke-models.sh,smoke-check.sh,test-json-bom.sh,test-board-listing.sh,test-watch-checks.sh
 map templates/spec.md test-spec-template.sh
 map tests/*.sh test-lint-pipefail.sh,test-mktemp-template.sh,test-restricted-path-git.sh
 map tests/ci-jobs-summary.sh test-ci-summary.sh
 map tests/fixtures/ci-summary/* test-ci-summary.sh
-map tests/fixtures/dashboard/* smoke-dashboard.sh,smoke-dashboard.ps1
+map tests/fixtures/dashboard/* smoke-dashboard.sh
 map tests/fixtures/drive/* smoke-drive.sh
 map tests/fixtures/gate/* smoke-gate.sh,smoke-history.sh
-map tests/fixtures/history/* smoke-history.sh,smoke-history.ps1
-map tests/fixtures/panel/* smoke-panel.sh,smoke-panel.ps1
+map tests/fixtures/history/* smoke-history.sh
+map tests/fixtures/panel/* smoke-panel.sh
 map tests/fixtures/smoke-json-crlf/* lint
-map tests/fixtures/stages/* smoke-stages.sh,smoke-stages.ps1
-map tests/fixtures/status-controls/* test-status-controls.sh,test-status-controls.ps1
-map tests/fixtures/status/* smoke-status.sh,smoke-dashboard.sh,test-mktemp-template.sh,smoke-status.ps1,smoke-dashboard.ps1
-map tests/fixtures/template-board/* smoke-template-board.sh,smoke-template-board.ps1
-map tests/lint.sh smoke-release.sh,smoke-validate.sh,smoke-status.sh,smoke-check.sh,test-lintcopy-output.sh,test-story-dedup.sh,test-spec-template.sh,smoke-release.ps1,smoke-validate.ps1,smoke-check.ps1
-map tests/smoke-check.ps1 test-lintcopy-output.sh
+map tests/fixtures/stages/* smoke-stages.sh
+map tests/fixtures/status-controls/* test-status-controls.sh
+map tests/fixtures/status/* smoke-status.sh,smoke-dashboard.sh,test-mktemp-template.sh
+map tests/fixtures/template-board/* smoke-template-board.sh
+map tests/lint.sh smoke-release.sh,smoke-validate.sh,smoke-status.sh,smoke-check.sh,test-lintcopy-output.sh,test-story-dedup.sh,test-spec-template.sh
 map tests/smoke-check.sh test-lintcopy-output.sh
 map tests/smoke-history.sh test-restricted-path-git.sh
-map tests/smoke-release.ps1 test-lintcopy-output.ps1
-map tests/smoke-slot.ps1 test-smoke-slot-tar.ps1
-map tests/test-ci-parts.sh smoke-check.sh,test-lintcopy-output.sh,smoke-check.ps1
+map tests/test-ci-parts.sh smoke-check.sh,test-lintcopy-output.sh
 map tests/test-spec-template.sh test-lintcopy-output.sh
 # affects: end
 MAP
@@ -298,7 +248,7 @@ if [ -n "${NIGHTMILL_CHECK_STEPS:-}" ]; then
     done
     f_name=${f[0]}; f_cmd=${f[1]:-}; f_kind=${f[2]:-}; f_reason=${f[3]:-}; f_first=${f[4]:-}; f_slow=${f[5]:-}
     [ -n "$f_name" ] || continue
-    case ${f_kind:-bash} in lint|bash|ps|claude) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: unknown kind $f_kind" >&2; exit 2 ;; esac
+    case ${f_kind:-bash} in lint|bash|claude) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: unknown kind $f_kind" >&2; exit 2 ;; esac
     case $f_first in ""|first) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the fifth field is first or empty, not $f_first" >&2; exit 2 ;; esac
     case $f_slow in ""|slow) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the sixth field is slow or empty, not $f_slow" >&2; exit 2 ;; esac
     add "${f_kind:-bash}" "$f_name" $f_first $f_slow
@@ -332,7 +282,7 @@ fi
 
 # --affected (iteration 59): the changed paths, each turned into steps by the map. aff is selective (the lint and the
 # selected steps run) or full (the full check runs, and its reason is aff_reason); aff_sel[i] is 1 for a step that a
-# changed path selected, and the platform does not apply to it.
+# changed path selected.
 aff=""; aff_reason=""; aff_c=0; aff_ref=""; aff_lines=(); aff_paths=(); aff_texts=()
 for ((i = 0; i < n; i++)); do aff_sel[i]=0; done
 if [ "$mode" = affected ]; then
@@ -426,27 +376,6 @@ if [ "$mode" = affected ]; then
   fi
 fi
 
-# The platform (iteration 56, iteration 65): verification.platform windows and unix skip the ps steps (the scripts are
-# bash only, decision record 0004: on Windows the bash tests run in Git Bash), all (or no key) runs both; the lint and
-# the claude steps belong to neither family. --only does not read it, nor does a selective --affected; when
-# --affected runs the full check, the key does not apply to a step that a changed path selected.
-if [ "$mode" != only ] && [ "$mode" != affected ] && [ -f .claude/nightmill.json ] &&
-  json_load .claude/nightmill.json >/dev/null 2>&1 && json_has verification.platform; then
-  # json_get gives a number or a boolean as its text, which is never one of the three words
-  plat=$(json_get verification.platform); plat_kind=""; plat_reason=""
-  case $plat in
-    windows) plat_kind="ps"; plat_reason="PowerShell tests (verification.platform is windows)" ;;
-    unix) plat_kind="ps"; plat_reason="PowerShell tests (verification.platform is unix)" ;;
-    all) ;;
-    *) echo "check: verification.platform must be windows, unix or all; running both families" >&2 ;;
-  esac
-  if [ -n "$plat_kind" ]; then
-    for ((i = 0; i < n; i++)); do
-      [ "${k_kind[i]}" != "$plat_kind" ] || [ "${aff_sel[i]}" = 1 ] || k_skip[i]=$plat_reason
-    done
-  fi
-fi
-
 # The selection: sel[i] is 1 for a step this run takes
 for ((i = 0; i < n; i++)); do
   case $mode in
@@ -529,7 +458,6 @@ step_cmd() {
   case ${k_kind[i]} in
     lint) bash tests/lint.sh ;;
     bash) bash "tests/${k_name[i]}" ;;
-    ps) "$ps" -NoProfile -ExecutionPolicy Bypass -File "tests/${k_name[i]}" ;;
     claude)
       case ${k_name[i]} in
         "claude plugin validate") claude plugin validate . --strict ;;

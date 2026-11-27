@@ -3,7 +3,7 @@
 # Prints one table, one row per agent role (role, what it does, the model it runs on, whether the model comes
 # from the config or from the schema default, its rank, and whether its pairing holds), then the ranking, the
 # summary of the pairings and, when the config sets nothing, a line that says so. The texts, the columns and the
-# rules are in docs/specs/iteration-16-models-command.md; models.ps1 prints the same.
+# rules are in docs/specs/iteration-16-models-command.md.
 # The effective model of a role is roles.<role>.model of the config when it is a non-empty string, else the default
 # of the schema; the effective ranking is models.ranking of the config, else the default of the schema. The rank of
 # a model is the 1-based position of the first ranking entry that has it as a part of a "="-joined entry.

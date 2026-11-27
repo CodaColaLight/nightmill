@@ -232,12 +232,10 @@ for f in templates/nightmill.example.json .claude/nightmill.json; do
 done
 
 echo "== reviewer pairing is checked"
-# The validators reject a reviewer ranked below the role it reviews and warn about a model that is not in
-# models.ranking (iteration 15). Both shells carry the rule, so a shell that drops it fails here on a machine
-# that can run only the other one.
+# The validator (scripts/lib/validate.awk) rejects a reviewer ranked below the role it reviews and warns about a
+# model that is not in models.ranking (iteration 15); a change that drops the rule fails here.
 for w in 'ranks below' 'is not in models.ranking'; do
   grep -qF -- "$w" scripts/lib/validate.awk || { echo "FAIL: scripts/lib/validate.awk does not carry the pairing rule text: $w"; fail=1; }
-  grep -qF -- "$w" scripts/validate-config.ps1 || { echo "FAIL: scripts/validate-config.ps1 does not carry the pairing rule text: $w"; fail=1; }
 done
 # the validator this lint runs on the example and on the repository's own config has the rule
 pair_cfg=$(mktemp "${TMPDIR:-/tmp}/nightmill-lint.XXXXXX")
@@ -379,11 +377,11 @@ done
 echo "== status is wired"
 # /status (iteration 8): the skill, both scripts and both smoke tests exist, the README names the skill, and the
 # scripts only read: no board edit, merge, comment or GraphQL mutation anywhere in them.
-for f in skills/status/SKILL.md scripts/status.sh scripts/status.ps1 scripts/lib/status.awk tests/smoke-status.sh tests/smoke-status.ps1; do
+for f in skills/status/SKILL.md scripts/status.sh scripts/lib/status.awk tests/smoke-status.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
 grep -qF '/nightmill:status' README.md || { echo "FAIL: README.md does not mention /nightmill:status"; fail=1; }
-for f in scripts/status.sh scripts/status.ps1 scripts/lib/status.awk; do
+for f in scripts/status.sh scripts/lib/status.awk; do
   if [ -f "$f" ] && grep -nE 'item-edit|item-add|item-archive|item-delete|pr merge|issue edit|issue comment|issue close|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f changes something; /status only reads"; fail=1
   fi
@@ -401,14 +399,13 @@ if [ -f "$tb" ]; then
 else
   echo "FAIL: $tb is missing"; fail=1
 fi
-for f in scripts/template-board.sh scripts/template-board.ps1 tests/smoke-template-board.sh tests/smoke-template-board.ps1; do
+for f in scripts/template-board.sh tests/smoke-template-board.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/template-board.sh scripts/template-board.ps1; do
-  if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
-    echo "FAIL: $f changes something; the template check only reads"; fail=1
-  fi
-done
+f=scripts/template-board.sh
+if [ -f "$f" ] && grep -nE 'project copy|project link|item-edit|item-add|item-archive|item-delete|field-create|project edit|api graphql|mutation' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
+  echo "FAIL: $f changes something; the template check only reads"; fail=1
+fi
 for w in 'gh project copy' 'template-board' 'field by field'; do
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
 done
@@ -418,11 +415,11 @@ echo "== models is wired"
 # /models (iteration 16): the skill, both scripts and both smoke tests exist, the README names the skill, the scripts
 # only read, the roles of the scripts are the roles of the schema, the skill does not name the config file (so it
 # needs no injection), and the check and CI run the smoke tests.
-for f in skills/models/SKILL.md scripts/models.sh scripts/models.ps1 scripts/lib/models.awk tests/smoke-models.sh tests/smoke-models.ps1; do
+for f in skills/models/SKILL.md scripts/models.sh scripts/lib/models.awk tests/smoke-models.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
 grep -qF '/nightmill:models' README.md || { echo "FAIL: README.md does not mention /nightmill:models"; fail=1; }
-for f in scripts/models.sh scripts/models.ps1 scripts/lib/models.awk; do
+for f in scripts/models.sh scripts/lib/models.awk; do
   if [ -f "$f" ] && grep -nE '(^|[^a-z])gh +[a-z]|curl|Set-Content|Out-File|Add-Content|Remove-Item|New-Item|git +(add|commit|push|switch|checkout|fetch|worktree|config|branch|reset|rm|mv|clean|stash|init|merge|rebase|pull)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes or calls out; /models only reads"; fail=1
   fi
@@ -431,7 +428,6 @@ json_load schema/nightmill.schema.json
 while IFS= read -r r; do
   [ -n "$r" ] || continue
   grep -qF -- "$r" scripts/lib/models.awk || { echo "FAIL: scripts/lib/models.awk does not know the role $r of the schema"; fail=1; }
-  grep -qF -- "$r" scripts/models.ps1 || { echo "FAIL: scripts/models.ps1 does not know the role $r of the schema"; fail=1; }
 done < <(json_keys properties.roles.properties)
 if grep -qF 'nightmill.json' skills/models/SKILL.md; then
   echo "FAIL: skills/models/SKILL.md names the config file; it would have to inject it"; fail=1
@@ -677,11 +673,10 @@ done
 
 echo "== slots free themselves"
 # A busy slot whose pull request has merged is freed by -Reap / --reap and by the first step of every take
-# (iteration 17), in both shells, with the tip check and the report text; the README says when it happens.
-for f in scripts/slot.sh scripts/slot.ps1; do
-  for w in 'released automatically' 'headRefOid'; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
-  done
+# (iteration 17), with the tip check and the report text; the README says when it happens.
+f=scripts/slot.sh
+for w in 'released automatically' 'headRefOid'; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
 done
 grep -qF -- '--reap' README.md || { echo "FAIL: README.md does not mention --reap"; fail=1; }
 
@@ -689,11 +684,9 @@ echo "== capacity is wired"
 # The slot count and the agent limit can be changed during a session (iteration 22): both slot scripts keep the live
 # values in capacity.json and have the capacity command, the skills read the agent limit from it at every decision to
 # start an agent (not once from the configuration), and the README says how and what wins.
-for f in scripts/slot.sh scripts/slot.ps1; do
-  grep -qF 'capacity.json' "$f" || { echo "FAIL: $f does not keep the live values in capacity.json"; fail=1; }
-done
+f=scripts/slot.sh
+grep -qF 'capacity.json' "$f" || { echo "FAIL: $f does not keep the live values in capacity.json"; fail=1; }
 grep -qF -- '--capacity' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --capacity"; fail=1; }
-grep -qF -- '-Capacity' scripts/slot.ps1 || { echo "FAIL: scripts/slot.ps1 has no -Capacity"; fail=1; }
 grep -qF -- '--capacity --porcelain' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with --capacity --porcelain"; fail=1; }
 for f in skills/next/SKILL.md skills/fix/SKILL.md skills/spec/SKILL.md; do
   if ! grep -qF -- '--capacity --porcelain' "$f"; then
@@ -712,17 +705,14 @@ echo "== slots report what their agent does"
 # slot scripts have the report command and decide running or stalled from worktrees.stalledAfterMinutes; /status
 # prints the agent state the slot script gives (no rule of its own) in one Slots section; /next and /fix report at
 # each step; the schema, the example and the README carry the key, and the README says what the states mean.
-for f in scripts/slot.sh scripts/slot.ps1; do
-  for w in 'reported' 'stalledAfterMinutes'; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the report item: $w"; fail=1; }
-  done
+f=scripts/slot.sh
+for w in 'reported' 'stalledAfterMinutes'; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the report item: $w"; fail=1; }
 done
 grep -qF -- '--report' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --report"; fail=1; }
-grep -qF -- '-Report' scripts/slot.ps1 || { echo "FAIL: scripts/slot.ps1 has no -Report"; fail=1; }
-for f in scripts/lib/status.awk scripts/status.ps1; do
-  if grep -qF 'slots: none busy' "$f"; then echo "FAIL: $f still prints 'slots: none busy' (the Slots section lists every slot)"; fail=1; fi
-  if grep -qF 'stalledAfterMinutes' "$f"; then echo "FAIL: $f reads stalledAfterMinutes (the slot script decides running or stalled)"; fail=1; fi
-done
+f=scripts/lib/status.awk
+if grep -qF 'slots: none busy' "$f"; then echo "FAIL: $f still prints 'slots: none busy' (the Slots section lists every slot)"; fail=1; fi
+if grep -qF 'stalledAfterMinutes' "$f"; then echo "FAIL: $f reads stalledAfterMinutes (the slot script decides running or stalled)"; fail=1; fi
 for f in skills/next/SKILL.md skills/fix/SKILL.md; do
   for w in '--report' 'slot-taken' 'code-review' 'done'; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the report item: $w"; fail=1; }
@@ -737,20 +727,17 @@ for w in 'running' 'stalled' 'unknown'; do
 done
 
 echo "== the stage record is wired"
-# The time a story spends in each stage is recorded and shown (iteration 41): both slot scripts append one line per
-# take, report and freeing to <worktrees.root>/.slots/ledger.tsv; scripts/stages.sh and scripts/stages.ps1 print the
-# table; tests/check.sh and CI run the smoke tests of both shells; the README says where the record lives and how to
+# The time a story spends in each stage is recorded and shown (iteration 41): scripts/slot.sh appends one line per
+# take, report and freeing to <worktrees.root>/.slots/ledger.tsv; scripts/stages.sh prints the table;
+# tests/check.sh and CI run its smoke test; the README says where the record lives and how to
 # read the table; no skill writes or mentions the record (the scripts that already run write it).
-for f in scripts/slot.sh scripts/slot.ps1; do
-  grep -qF 'ledger.tsv' "$f" || { echo "FAIL: $f does not carry the record file: ledger.tsv"; fail=1; }
-done
-for f in scripts/stages.sh scripts/stages.ps1; do
-  [ -f "$f" ] || { echo "FAIL: $f does not exist"; fail=1; }
-done
-for w in 'smoke-stages.sh' 'smoke-stages.ps1'; do
-  for f in tests/check.sh .github/workflows/ci.yml; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not run $w"; fail=1; }
-  done
+f=scripts/slot.sh
+grep -qF 'ledger.tsv' "$f" || { echo "FAIL: $f does not carry the record file: ledger.tsv"; fail=1; }
+f=scripts/stages.sh
+[ -f "$f" ] || { echo "FAIL: $f does not exist"; fail=1; }
+w='smoke-stages.sh'
+for f in tests/check.sh .github/workflows/ci.yml; do
+  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not run $w"; fail=1; }
 done
 for w in 'ledger.tsv' 'ci-and-merge' 'not-reported' 'stages.sh'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the stage record item: $w"; fail=1; }
@@ -764,10 +751,10 @@ echo "== history is wired"
 # exist; the three history files only read (no board edit, merge, comment, mutation, slot action, browser opener or
 # listener) and the page they write links, loads and runs nothing; the README names the command, the page and the JSON
 # form of /status; the status skill says how to ask for JSON; no skill names the history script (the maintainer runs it).
-for f in scripts/history.sh scripts/history.ps1 scripts/lib/history.awk tests/smoke-history.sh tests/smoke-history.ps1 tests/fixtures/history/expected.html; do
+for f in scripts/history.sh scripts/lib/history.awk tests/smoke-history.sh tests/fixtures/history/expected.html; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/history.sh scripts/history.ps1 scripts/lib/history.awk; do
+for f in scripts/history.sh scripts/lib/history.awk; do
   [ -f "$f" ] || continue
   if grep -nE -- 'item-edit|item-add|item-delete|pr merge|issue edit|issue comment|mutation|--take|--release|--abandon|--reap|--report|--capacity|-Take|-Release|-Abandon|-Reap|-Report|-Capacity|Start-Process|xdg-open|HttpListener' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f changes, serves or opens something; the history only reads"; fail=1
@@ -776,7 +763,7 @@ for f in scripts/history.sh scripts/history.ps1 scripts/lib/history.awk; do
     echo "FAIL: $f writes a page that links, loads or runs something; the page needs no network"; fail=1
   fi
 done
-for w in 'history.sh' 'history.ps1' '--html' 'status.sh --json'; do
+for w in 'history.sh' '--html' 'status.sh --json'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 grep -qF -- '--json' skills/status/SKILL.md || { echo "FAIL: skills/status/SKILL.md does not mention --json"; fail=1; }
@@ -997,24 +984,17 @@ echo "== load is wired"
 # A read-only command measures CPU load and free memory and suggests an agent limit (iteration 24): both scripts, both
 # libraries and both smoke tests exist, the scripts only read, the libraries carry every reader, the schema, the example
 # and the README carry the three keys, /init's rule of thumb is the schema default, and the check and CI run the tests.
-for f in scripts/load.sh scripts/load.ps1 scripts/lib/load.sh scripts/lib/load.ps1 tests/smoke-load.sh tests/smoke-load.ps1; do
+for f in scripts/load.sh scripts/lib/load.sh tests/smoke-load.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/load.sh scripts/load.ps1 scripts/lib/load.sh scripts/lib/load.ps1; do
+for f in scripts/load.sh scripts/lib/load.sh; do
   if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes or changes something; load only reads"; fail=1
   fi
 done
-for f in scripts/lib/load.sh scripts/lib/load.ps1; do
-  for w in NIGHTMILL_LOAD_FIXTURE /proc/stat /proc/meminfo MemAvailable vm_stat hw.memsize; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry the reader item: $w"; fail=1; }
-  done
-done
-for w in Win32_PerfRawData_PerfOS_Processor Win32_OperatingSystem; do
-  grep -qF -- "$w" scripts/lib/load.ps1 2>/dev/null || { echo "FAIL: scripts/lib/load.ps1 does not read $w"; fail=1; }
-done
-for w in LoadPercentage Get-Counter; do
-  if grep -qF -- "$w" scripts/lib/load.ps1 2>/dev/null; then echo "FAIL: scripts/lib/load.ps1 uses $w (see the spec of iteration 24)"; fail=1; fi
+f=scripts/lib/load.sh
+for w in NIGHTMILL_LOAD_FIXTURE /proc/stat /proc/meminfo MemAvailable vm_stat hw.memsize; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry the reader item: $w"; fail=1; }
 done
 json_load schema/nightmill.schema.json
 for spec in maxSuggestedAgents:4:1 memoryPerAgentGB:8:1 loadWindowSeconds:10:2; do
@@ -1031,12 +1011,11 @@ for spec in maxSuggestedAgents:4 memoryPerAgentGB:8 loadWindowSeconds:10; do
   [ "$(json_get "parallel.$k")" = "$d" ] || { echo "FAIL: templates/nightmill.example.json: parallel.$k is not the schema default $d"; fail=1; }
 done
 grep -qF -- "one per $gb_default GB" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not say 'one per $gb_default GB' (the schema default of parallel.memoryPerAgentGB)"; fail=1; }
-for w in load.sh load.ps1 maxSuggestedAgents memoryPerAgentGB loadWindowSeconds 'rate limits' 'token budget'; do
+for w in load.sh maxSuggestedAgents memoryPerAgentGB loadWindowSeconds 'rate limits' 'token budget'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/smoke-load.sh tests/smoke-load.ps1; do
-  grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
-done
+f=tests/smoke-load.sh
+grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
 for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-load' "$f" || { echo "FAIL: $f does not run smoke-load"; fail=1; }
 done
@@ -1046,19 +1025,15 @@ echo "== room is wired"
 # tests exist, the scripts only read and hold back, they measure 3 samples with the library, the schema, the example and
 # the README carry the five keys, the rule is in the workflow skill once and the three skills point to it at every
 # launch, and the check and CI run the tests.
-for f in scripts/room.sh scripts/room.ps1 tests/smoke-room.sh tests/smoke-room.ps1; do
+for f in scripts/room.sh tests/smoke-room.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/room.sh scripts/room.ps1; do
-  if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|slot\.ps1|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
-    echo "FAIL: $f writes, changes or stops something, or calls a slot script; room only reads and holds back"; fail=1
-  fi
-done
+f=scripts/room.sh
+if [ -f "$f" ] && grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|--slot-count|--agent-limit|-SlotCount|-AgentLimit|--clear|-Clear|--take|--release|--abandon|--reap|(^|[^A-Za-z0-9_-])gh +[a-z]|slot\.sh|--capacity|-Capacity|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])kill( |$)' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
+  echo "FAIL: $f writes, changes or stops something, or calls a slot script; room only reads and holds back"; fail=1
+fi
 for w in 'load_measure 3' 'room_settings' '--since'; do
   grep -qF -- "$w" scripts/room.sh 2>/dev/null || { echo "FAIL: scripts/room.sh does not carry: $w"; fail=1; }
-done
-for w in 'Measure-Load -Samples 3' 'Get-RoomSettings' 'Since'; do
-  grep -qF -- "$w" scripts/room.ps1 2>/dev/null || { echo "FAIL: scripts/room.ps1 does not carry: $w"; fail=1; }
 done
 json_load schema/nightmill.schema.json
 p=properties.parallel.properties.roomCheck
@@ -1084,16 +1059,15 @@ for spec in next:7 fix:6 spec:3; do
   s=skills/${spec%%:*}/SKILL.md; want=${spec#*:}
   n_room=$(grep -cF 'check the room on the machine' "$s" || true)
   [ "${n_room:-0}" -ge "$want" ] || { echo "FAIL: $s says 'check the room on the machine' on ${n_room:-0} lines (at least $want expected)"; fail=1; }
-  for w in room.sh room.ps1 roomMin; do
+  for w in room.sh roomMin; do
     if grep -qF -- "$w" "$s"; then echo "FAIL: $s names $w (the rule lives in the workflow skill only)"; fail=1; fi
   done
 done
-for w in room.sh room.ps1 roomCheck roomMinFreeMB roomMaxCpuPercent roomPauseSeconds roomMaxWaitMinutes; do
+for w in room.sh roomCheck roomMinFreeMB roomMaxCpuPercent roomPauseSeconds roomMaxWaitMinutes; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/smoke-room.sh tests/smoke-room.ps1; do
-  grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
-done
+f=tests/smoke-room.sh
+grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
 for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-room' "$f" || { echo "FAIL: $f does not run smoke-room"; fail=1; }
 done
@@ -1102,29 +1076,20 @@ echo "== control is wired"
 # An opt-in controller adjusts the agent limit from the measured load (iteration 30): both control scripts, the skill and
 # both smoke tests exist, the scripts change the numbers only through the slot script and stop nothing, the libraries
 # read the five keys, the schema, the example and the README carry them, and the check and CI run the tests.
-for f in scripts/control.sh scripts/control.ps1 skills/control/SKILL.md tests/smoke-control.sh tests/smoke-control.ps1; do
+for f in scripts/control.sh skills/control/SKILL.md tests/smoke-control.sh; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/control.sh scripts/control.ps1; do
-  [ -f "$f" ] || continue
+f=scripts/control.sh
+if [ -f "$f" ]; then
   if grep -nE 'Set-Content|Out-File|Add-Content|Remove-Item|New-Item|Move-Item|Copy-Item|WriteAll|IO\.File\]::|json_marker|--clear|--take|--release|--abandon|--reap|--report|Stop-Process|taskkill|(^|[^A-Za-z0-9_-])gh +[a-z]|(^|[^A-Za-z0-9_-])kill( |$)|(^|[^A-Za-z0-9_-])(mv|cp|tee|mkdir) ' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f writes, removes or stops something; control changes the numbers only through the slot script"; fail=1
   fi
-done
-if [ -f scripts/control.ps1 ] && grep -nwE 'Clear|Take|Release|Abandon|Reap|Report' scripts/control.ps1 | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
-  echo "FAIL: scripts/control.ps1 names a slot action other than Capacity, Status, AgentLimit, SlotCount or Porcelain"; fail=1
 fi
 for w in '--capacity' '--agent-limit' '--slot-count' 'load_measure' 'load_suggest' 'control_settings' 'NIGHTMILL_NOW'; do
   grep -qF -- "$w" scripts/control.sh 2>/dev/null || { echo "FAIL: scripts/control.sh does not carry: $w"; fail=1; }
 done
-for w in 'Capacity' 'AgentLimit' 'SlotCount' 'Measure-Load' 'Get-LoadSuggestion' 'Get-ControlSettings' 'NIGHTMILL_NOW'; do
-  grep -qF -- "$w" scripts/control.ps1 2>/dev/null || { echo "FAIL: scripts/control.ps1 does not carry: $w"; fail=1; }
-done
 for w in control_settings controlMode; do
   grep -qF -- "$w" scripts/lib/load.sh || { echo "FAIL: scripts/lib/load.sh does not carry: $w"; fail=1; }
-done
-for w in Get-ControlSettings controlMode; do
-  grep -qF -- "$w" scripts/lib/load.ps1 || { echo "FAIL: scripts/lib/load.ps1 does not carry: $w"; fail=1; }
 done
 json_load schema/nightmill.schema.json
 p=properties.parallel.properties.controlMode
@@ -1155,13 +1120,12 @@ if [ -f "$s" ]; then
     if grep -qF -- "$w" "$s"; then echo "FAIL: $s names $w (the skill changes nothing itself)"; fail=1; fi
   done
 fi
-for w in /nightmill:control control.sh control.ps1 /loop controlMode controlMinAgents controlMaxAgents controlCooldownMinutes controlIntervalMinutes 'The controller does not see'; do
+for w in /nightmill:control control.sh /loop controlMode controlMinAgents controlMaxAgents controlCooldownMinutes controlIntervalMinutes 'The controller does not see'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/smoke-control.sh tests/smoke-control.ps1; do
-  for w in NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW; do
-    grep -qF "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not set $w"; fail=1; }
-  done
+f=tests/smoke-control.sh
+for w in NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW; do
+  grep -qF "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not set $w"; fail=1; }
 done
 for f in tests/check.sh .github/workflows/ci.yml; do
   grep -qF 'smoke-control' "$f" || { echo "FAIL: $f does not run smoke-control"; fail=1; }
@@ -1173,33 +1137,29 @@ echo "== dashboard is wired"
 # browser opener, nothing on the page that links, loads or acts); they carry the refresh, the escaping, the clock and
 # the porcelain call; status has its porcelain form; the schema, the example and the README carry the key; the check
 # and CI run the tests.
-for f in scripts/dashboard.sh scripts/dashboard.ps1 scripts/lib/dashboard.awk tests/smoke-dashboard.sh tests/smoke-dashboard.ps1 tests/fixtures/dashboard/run-stall-old-free/expected.html; do
+for f in scripts/dashboard.sh scripts/lib/dashboard.awk tests/smoke-dashboard.sh tests/fixtures/dashboard/run-stall-old-free/expected.html; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
-for f in scripts/dashboard.sh scripts/dashboard.ps1 scripts/lib/dashboard.awk; do
+for f in scripts/dashboard.sh scripts/lib/dashboard.awk; do
   [ -f "$f" ] || continue
   if grep -nE -- '--take|--release|--abandon|--reap|--report|--capacity|-Take|-Release|-Abandon|-Reap|-Report|-Capacity|item-edit|pr merge|issue edit|issue comment|mutation|(^|[^A-Za-z0-9_-])gh +[a-z]|HttpListener|TcpListener|socat|nc -l|http\.server|Start-Process|xdg-open|open http|cmd /c start|<form|<button|<input|<a |href|src=|<link|@import|url\(|fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage' "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f changes, serves, opens or links something; the dashboard only reads and shows"; fail=1
   fi
 done
-for f in scripts/dashboard.ps1 scripts/lib/dashboard.awk; do
-  for w in 'http-equiv="refresh"' '&amp;' '&lt;' '&gt;' '&quot;' '&#39;'; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
+f=scripts/lib/dashboard.awk
+for w in 'http-equiv="refresh"' '&amp;' '&lt;' '&gt;' '&quot;' '&#39;'; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
 done
-for f in scripts/dashboard.sh scripts/dashboard.ps1; do
-  for w in NIGHTMILL_NOW dashboardRefreshSeconds stalledAfterMinutes; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
+f=scripts/dashboard.sh
+for w in NIGHTMILL_NOW dashboardRefreshSeconds stalledAfterMinutes; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
 done
 grep -qF -- 'status.sh" --porcelain' scripts/dashboard.sh 2>/dev/null || { echo "FAIL: scripts/dashboard.sh does not call status.sh --porcelain"; fail=1; }
-grep -qF -- '-Porcelain' scripts/dashboard.ps1 2>/dev/null || { echo "FAIL: scripts/dashboard.ps1 does not call status.ps1 -Porcelain"; fail=1; }
 grep -qF -- '--porcelain)' scripts/status.sh || { echo "FAIL: scripts/status.sh has no --porcelain"; fail=1; }
-grep -qF -- '[switch]$Porcelain' scripts/status.ps1 || { echo "FAIL: scripts/status.ps1 has no -Porcelain"; fail=1; }
 grep -qF -- '"dashboardRefreshSeconds": { "type": "integer", "minimum": 10, "default": 60,' schema/nightmill.schema.json || { echo "FAIL: schema: worktrees.dashboardRefreshSeconds is not an integer of at least 10, default 60"; fail=1; }
 json_load templates/nightmill.example.json
 [ "$(json_get worktrees.dashboardRefreshSeconds)" = 60 ] || { echo "FAIL: templates/nightmill.example.json: worktrees.dashboardRefreshSeconds is not 60"; fail=1; }
-for w in dashboard.sh dashboard.ps1 dashboardRefreshSeconds Ctrl-C --porcelain; do
+for w in dashboard.sh dashboardRefreshSeconds Ctrl-C --porcelain; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 for f in tests/check.sh .github/workflows/ci.yml; do
@@ -1213,39 +1173,37 @@ echo "== slots pane is wired"
 # gh call, no reader of the slot markers); the scripts carry the porcelain call, the clock and the interval key; the
 # schema, the example and the README carry the key and the versions; the check and CI run the tests. Each phrase stands
 # on one line of its file.
-for f in hooks/panel.tsx hooks/panel.test.tsx scripts/panel.sh scripts/panel.ps1 tests/smoke-panel.sh tests/smoke-panel.ps1 tests/fixtures/panel/run-stall-old-free/expected.txt tests/fixtures/panel/run-stall-old-free/markers.txt; do
+for f in hooks/panel.tsx hooks/panel.test.tsx scripts/panel.sh tests/smoke-panel.sh tests/fixtures/panel/run-stall-old-free/expected.txt tests/fixtures/panel/run-stall-old-free/markers.txt; do
   [ -f "$f" ] || { echo "FAIL: $f is missing"; fail=1; }
 done
 grep -qF '"modules": ["./panel.tsx"]' hooks/hooks.json 2>/dev/null || { echo "FAIL: hooks/hooks.json does not name the module: \"modules\": [\"./panel.tsx\"]"; fail=1; }
 grep -q '"SessionStart"' hooks/hooks.json 2>/dev/null || { echo "FAIL: hooks/hooks.json lost its SessionStart hook"; fail=1; }
-for w in 'nightmill-slots' 'Windows_NT' 'scripts/panel.ps1' 'scripts/panel.sh' '$.clock.every(' '$.ui.open(' "'unknown'"; do
+for w in 'nightmill-slots' 'scripts/panel.sh' '$.clock.every(' '$.ui.open(' "'unknown'"; do
   grep -qF -- "$w" hooks/panel.tsx 2>/dev/null || { echo "FAIL: hooks/panel.tsx does not carry: $w"; fail=1; }
 done
 # outside comment lines the module draws nothing that can be pressed and reaches nothing but the panel script
 if [ -f hooks/panel.tsx ]; then
   panel_code=$(grep -vE '^[[:space:]]*(//|/\*|\*)' hooks/panel.tsx || true)
-  for w in Button Input Select Link onPress '$.fs.' '$.store.' '$.state.' '$.prompt.' '$.tool.' '$.agent.' '$.http.' '$.model.' '$.command.run' '$.session.append' 'slot.sh' 'slot.ps1' '.slots'; do
+  for w in Button Input Select Link onPress '$.fs.' '$.store.' '$.state.' '$.prompt.' '$.tool.' '$.agent.' '$.http.' '$.model.' '$.command.run' '$.session.append' 'slot.sh' '.slots'; do
     if printf '%s\n' "$panel_code" | grep -F -- "$w" >/dev/null; then echo "FAIL: hooks/panel.tsx uses $w outside a comment; the pane is read-only and runs only the panel script"; fail=1; fi
   done
 fi
 grep -qF -- 'slot.sh" --status --porcelain' scripts/panel.sh 2>/dev/null || { echo "FAIL: scripts/panel.sh does not call slot.sh --status --porcelain"; fail=1; }
-grep -qF -- '-Status -Porcelain' scripts/panel.ps1 2>/dev/null || { echo "FAIL: scripts/panel.ps1 does not call slot.ps1 -Status -Porcelain"; fail=1; }
-for f in scripts/panel.sh scripts/panel.ps1; do
-  for w in panelRefreshSeconds NIGHTMILL_NOW; do
-    grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
-  if [ -f "$f" ]; then
-    panel_script=$(grep -vE '^[[:space:]]*#' "$f" || true)
-    for w in '.slots' '--take' '--release' '--abandon' '--reap' '--report' '--capacity' '-Take' '-Release' '-Abandon' '-Reap' '-Report' '-Capacity'; do
-      if printf '%s\n' "$panel_script" | grep -F -- "$w" >/dev/null; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
-    done
-    if printf '%s\n' "$panel_script" | grep -E '(^|[^A-Za-z0-9_-])gh +[a-z]' >/dev/null; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
-  fi
+f=scripts/panel.sh
+for w in panelRefreshSeconds NIGHTMILL_NOW; do
+  grep -qF -- "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not carry: $w"; fail=1; }
 done
+if [ -f "$f" ]; then
+  panel_script=$(grep -vE '^[[:space:]]*#' "$f" || true)
+  for w in '.slots' '--take' '--release' '--abandon' '--reap' '--report' '--capacity' '-Take' '-Release' '-Abandon' '-Reap' '-Report' '-Capacity'; do
+    if printf '%s\n' "$panel_script" | grep -F -- "$w" >/dev/null; then echo "FAIL: $f uses $w outside a comment; the panel script only reads through slot --status --porcelain"; fail=1; fi
+  done
+  if printf '%s\n' "$panel_script" | grep -E '(^|[^A-Za-z0-9_-])gh +[a-z]' >/dev/null; then echo "FAIL: $f calls gh; the panel needs no gh"; fail=1; fi
+fi
 grep -qF '"panelRefreshSeconds": { "type": "integer", "minimum": 5, "default": 15,' schema/nightmill.schema.json || { echo "FAIL: schema: worktrees.panelRefreshSeconds is not an integer of at least 5, default 15"; fail=1; }
 json_load templates/nightmill.example.json
 [ "$(json_get worktrees.panelRefreshSeconds)" = 15 ] || { echo "FAIL: templates/nightmill.example.json: worktrees.panelRefreshSeconds is not 15"; fail=1; }
-for w in /nightmill-slots panelRefreshSeconds 2.1.287 panel.ps1; do
+for w in /nightmill-slots panelRefreshSeconds 2.1.287; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 for f in tests/check.sh .github/workflows/ci.yml; do
@@ -1270,7 +1228,7 @@ echo "== the check starts the longest steps first"
 # tests/check.sh, so with a limit above 1 they start before all others and the total is set by the slowest step.
 # A step marked slow (iteration 62) ends in ' first slow': the ' slow' is removed before the compare.
 firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p && / first( slow)?$/ { sub(/ slow$/, ""); print }' tests/check.sh | tr '\n' '|')
-want_firsts="add bash smoke-slot.sh first|add bash test-spec-template.sh first|add ps smoke-slot.ps1 first|add ps smoke-release.ps1 first|add ps smoke-validate.ps1 first|add ps smoke-check.ps1 first|add ps test-lintcopy-output.ps1 first|add ps smoke-drive.ps1 first|"
+want_firsts="add bash smoke-slot.sh first|add bash test-spec-template.sh first|"
 if [ "$firsts" != "$want_firsts" ]; then
   echo "FAIL: tests/check.sh: the steps marked first are not exactly the longest steps (docs/specs/iteration-42-parallel-check.md, decision 1): $firsts"; fail=1
 fi
@@ -1280,8 +1238,8 @@ echo "== the check runs every smoke script"
 # Iteration 42, decision 11: the step list of tests/check.sh (between '# steps: begin' and '# steps: end') runs every
 # smoke script once, in its own shell; the check has one place that prints the all-passed line; the key and the quick
 # mode are wired in the schema, the example, the README, the contributor guide and the skills; and CI runs its smoke
-# jobs through tests/check.sh $CHECK_SELECT (--only, or --affected --within on a pull request): the bash job with a list equal to the step list's bash steps, the PowerShell job
-# in parts (iteration 55; the parts are checked in the next section), and no other job name begins with a required one.
+# jobs through tests/check.sh $CHECK_SELECT (--only, or --affected --within on a pull request): the bash job with a list equal to the step list's bash steps, the Git Bash
+# parts (iterations 55 and 66; the parts are checked in the next section but one), and no other job name begins with a required one.
 chk_block=""
 chk_nb=$(grep -cx '# steps: begin' tests/check.sh || true)
 chk_ne=$(grep -cx '# steps: end' tests/check.sh || true)
@@ -1289,20 +1247,20 @@ chk_lb=$(grep -nx '# steps: begin' tests/check.sh | head -n 1 | cut -d: -f1 || t
 chk_le=$(grep -nx '# steps: end' tests/check.sh | head -n 1 | cut -d: -f1 || true)
 if [ "$chk_nb" = 1 ] && [ "$chk_ne" = 1 ] && [ "$chk_le" -gt "$chk_lb" ]; then
   chk_block=$(sed -n "$((chk_lb + 1)),$((chk_le - 1))p" tests/check.sh | grep -v '^[[:space:]]*$' || true)
-  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash|ps) [A-Za-z0-9._-]+( first)?( slow)?$' >/dev/null; then chk_block=""; fi
+  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash) [A-Za-z0-9._-]+( first)?( slow)?$' >/dev/null; then chk_block=""; fi
 fi
 if [ -z "$chk_block" ]; then
   echo "FAIL: tests/check.sh: the step list between '# steps: begin' and '# steps: end' is missing or malformed"; fail=1
 else
   # Iteration 62, decision 8 rule 2: exactly the slow steps of decision 4 carry the mark 'slow' (a lint line never)
   chk_slows=$(printf '%s\n' "$chk_block" | awk '$NF == "slow" { print $2 " " $3 }' | tr '\n' '|')
-  want_slows="bash test-lintcopy-output.sh|ps test-lintcopy-output.ps1|ps smoke-drive.ps1|"
+  want_slows="bash test-lintcopy-output.sh|"
   if [ "$chk_slows" != "$want_slows" ]; then
     echo "FAIL: tests/check.sh: the steps marked slow are not exactly the slow steps (docs/specs/iteration-62-slow-tests-out-of-check.md, decision 4): $chk_slows"; fail=1
   fi
   # Iteration 62, decision 8 rule 3: every profiled step (decision 1) and every slow step says in a '# Time: ' line of
   # its header where its time goes; one awk pass over the files (bug #270: no process per line)
-  chk_prof="tests/smoke-check.ps1 tests/smoke-drive.ps1 tests/test-lintcopy-output.ps1"
+  chk_prof=""
   for b in $(printf '%s\n' "$chk_block" | awk '$NF == "slow" { print $3 }'); do
     case " $chk_prof " in *" tests/$b "*) ;; *) chk_prof="$chk_prof tests/$b" ;; esac
   done
@@ -1314,16 +1272,16 @@ else
     { sub(/\r$/, "") }
     head && !/^#/ { head = 0 }
     head && /^# Time: / { hit = 1 }
-    END { if (prev != "" && !hit) print prev }' $chk_prof 2>/dev/null)
-  for f in tests/smoke-*.sh tests/smoke-*.ps1; do
+    END { if (prev != "" && !hit) print prev }' $chk_prof 2>/dev/null </dev/null)
+  for f in tests/smoke-*.sh; do
     [ -f "$f" ] || continue
-    b=${f#tests/}; k='bash'; case $b in *.ps1) k='ps' ;; esac
-    c=$(printf '%s\n' "$chk_block" | awk -v k="$k" -v b="$b" '$2 == k && $3 == b' | wc -l | tr -d ' ')
+    b=${f#tests/}
+    c=$(printf '%s\n' "$chk_block" | awk -v b="$b" '$2 == "bash" && $3 == b' | wc -l | tr -d ' ')
     if [ "$c" = 0 ]; then echo "FAIL: tests/check.sh does not run tests/$b"; fail=1
     elif [ "$c" -gt 1 ]; then echo "FAIL: tests/check.sh runs tests/$b more than once"; fail=1; fi
   done
   while read -r _ k b _; do
-    case $k in bash|ps) [ -f "tests/$b" ] || { echo "FAIL: tests/check.sh runs tests/$b, which does not exist"; fail=1; } ;; esac
+    case $k in bash) [ -f "tests/$b" ] || { echo "FAIL: tests/check.sh runs tests/$b, which does not exist"; fail=1; } ;; esac
   done <<<"$chk_block"
   printf '%s\n' "$chk_block" | grep -x 'add lint lint' >/dev/null || { echo "FAIL: tests/check.sh does not run the lint"; fail=1; }
 fi
@@ -1338,10 +1296,10 @@ pf=properties.verification.properties.platform
 [ "$(json_get "$pf.type")" = string ] || { echo "FAIL: schema: verification.platform is not a string"; fail=1; }
 [ "$(json_get "$pf.default")" = all ] || { echo "FAIL: schema: verification.platform default is not all"; fail=1; }
 [ -n "$(json_get "$pf.description")" ] || { echo "FAIL: schema: verification.platform has no description"; fail=1; }
-# Iteration 65 (#363): windows runs the bash tests in Git Bash
+# Iteration 68 (#365): tests/check.sh does not read the key
 case "$(json_get "$pf.description")" in
-  *'windows runs the bash tests in Git Bash'*) ;;
-  *) echo "FAIL: schema: verification.platform's description does not say windows runs the bash tests in Git Bash"; fail=1 ;;
+  *'tests/check.sh does not read it'*) ;;
+  *) echo "FAIL: schema: verification.platform's description does not say tests/check.sh does not read it"; fail=1 ;;
 esac
 for j in 0 1 2; do
   case $j in 0) m=all ;; 1) m=windows ;; 2) m=unix ;; esac
@@ -1404,13 +1362,13 @@ while IFS= read -r l; do
   x=$(printf '%s\n' "$l" | grep -oE 'tests/smoke-[A-Za-z0-9._-]+' | head -n 1 || true)
   echo "FAIL: $chk_ci runs ${x:-a smoke file} outside tests/check.sh"; fail=1
 done < <(grep -E 'run: bash tests/smoke-|-File tests/smoke-' "$chk_ci" || true)
-for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'PowerShell scripts smoke tests'; do
+for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests'; do
   [ "$(grep -cxF -- "    name: $req" "$chk_ci" || true)" = 1 ] || { echo "FAIL: $chk_ci: the required job $req is missing"; fail=1; }
 done
-# a job name that begins with a required name would add a check such as 'PowerShell scripts smoke tests (1)' (iteration 55, decision 5)
+# a job name that begins with a required name would add a check such as 'bash scripts smoke tests (1)' (iteration 55, decision 5)
 while IFS= read -r l; do
   l=${l%$'\r'}; t="${l#"${l%%[![:space:]]*}"}"; t=${t#- }; t=${t#name: }
-  for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests' 'PowerShell scripts smoke tests'; do
+  for req in 'Lint (generic, JSON, skills, shell)' 'bash scripts smoke tests'; do
     [ "$l" != "    name: $req" ] || continue
     case $t in "$req"*) echo "FAIL: $chk_ci: the job name '$t' begins with the required name '$req'"; fail=1 ;; esac
   done
@@ -1418,7 +1376,7 @@ done < <(grep -E '^[[:space:]]*(- )?name: ' "$chk_ci" || true)
 
 echo "== every script and every test step is in the map"
 # Iteration 59, decision 7: the map of tests/check.sh --affected (between '# affects: begin' and '# affects: end') is
-# well formed, names only steps, names every bash and ps step, maps every script (a twin pair to the same steps) and
+# well formed, names only steps, names every bash step, maps every script and
 # every file under tests/fixtures/ (bug #379), holds
 # the shared and lintonly lines of decision 3, and the skills and the README describe the mode. The matching is the
 # case pattern of the check, in this process (bug #270: no process per path).
@@ -1454,9 +1412,9 @@ else
       case $aff_all in *"|$x|"*) ;; *) echo "FAIL: tests/check.sh: the map names $x, which is not a step"; fail=1 ;; esac
     done
   done
-  # rule 3: every bash and ps step is named by a map line
+  # rule 3: every bash step is named by a map line
   while read -r _ k b _; do
-    case $k in bash|ps) ;; *) continue ;; esac
+    case $k in bash) ;; *) continue ;; esac
     hit=""
     for ((j = 0; j < aff_n; j++)); do case ${aff_steps[j]} in *",$b,"*) hit=1; break ;; esac; done
     [ -n "$hit" ] || { echo "FAIL: tests/check.sh: no path maps to the step $b"; fail=1; }
@@ -1475,17 +1433,11 @@ else
     aff_got=""
     for x in "${aff_names[@]}"; do case $names in *",$x,"*) aff_got="$aff_got,$x" ;; esac; done
   }
-  # rule 4: every script maps to a step or is shared; rule 5: twins select the same steps
-  for f in scripts/*.sh scripts/*.ps1 scripts/lib/*; do
+  # rule 4: every script maps to a step or is shared
+  for f in scripts/*.sh scripts/lib/*; do
     [ -f "$f" ] || continue
     aff_select "$f"
     [ -n "$aff_got" ] || { echo "FAIL: tests/check.sh: $f maps to no step"; fail=1; }
-  done
-  for f in scripts/*.sh; do
-    [ -f "$f" ] && [ -f "${f%.sh}.ps1" ] || continue
-    aff_select "$f"; aff_a=$aff_got
-    aff_select "${f%.sh}.ps1"
-    [ "$aff_a" = "$aff_got" ] || { echo "FAIL: tests/check.sh: $f and ${f%.sh}.ps1 map to different steps"; fail=1; }
   done
   # rule 4b (bug #379): every file under tests/fixtures/ maps to a step, is shared or is lintonly, else a change to it
   # makes --affected run the full check; one failure per fixture directory, naming the path
@@ -1519,31 +1471,31 @@ for fw in 'skills/workflow/SKILL.md|--affected' 'skills/workflow/SKILL.md|check:
   grep -qF -- "${fw#*|}" "${fw%%|*}" || { echo "FAIL: ${fw%%|*} does not mention ${fw#*|}"; fail=1; }
 done
 
-echo "== the PowerShell job runs in parts"
-# Iteration 55, decisions 3 and 5: every ps step of the step list runs in exactly one part of the matrix of the job
-# smoke-powershell-part, in list order, smoke-slot.ps1 alone; the job smoke-powershell (the required name) fails unless
-# every part succeeded; only it has a job-level permissions block. The rules and their cases live in
-# tests/test-ci-parts.sh, started once (bug #270: each process costs time in the lint copies of the PowerShell steps).
+echo "== the CI parts are well formed"
+# Rules 7 to 11 of tests/test-ci-parts.sh (iterations 55, 64, 66 and 68): the final job smoke-gitbash has a Job times
+# step, and only it has a job-level permissions block (rules 7 and 8); the Git Bash parts, their run step and their lists
+# of bash steps, and the final job that fails unless every part succeeded (rules 10a, 10b and 11). The rules and their
+# cases live in tests/test-ci-parts.sh, started once (bug #270: each process costs time in the lint copies).
 bash tests/test-ci-parts.sh "$PWD" || fail=1
 
 echo "== the final CI job writes the job times"
 # Bug #295: the rule of tests/test-ci-parts.sh that pins the Job times step (decision 7) is broken once per case in
-# tests/test-ci-job-times.sh. The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it (#293).
+# tests/test-ci-job-times.sh. The lint copies of tests/smoke-check.sh check the rules only, so they skip it (#293).
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-job-times.sh || fail=1
-# Bug #296: rule 2 counts every run step of the part job, `- run: ...` too; tests/test-ci-run-steps.sh adds one per case.
+# Bug #296: rule 10a counts every run step of the part job, `- run: ...` too; tests/test-ci-run-steps.sh adds one per case.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-run-steps.sh || fail=1
 
 echo "== the job-name rule says begins with"
 # Bug #294: the rule that fails a job name that begins with a required name is pinned by the lint_break case cibegins
-# in tests/smoke-check.sh/.ps1; tests/test-ci-job-name-rule.sh checks that the iteration 55 spec words it the same way.
-# The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it (#293).
+# in tests/smoke-check.sh; tests/test-ci-job-name-rule.sh checks that the iteration 55 spec words it the same way.
+# The lint copies of tests/smoke-check.sh check the rules only, so they skip it (#293).
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-ci-job-name-rule.sh || fail=1
 
 echo "== CI selects the steps a pull request affects"
 # Iteration 60, decision 8: on a pull request every smoke job runs tests/check.sh --affected --within <its list>, on
 # every other event --only <its list>, through one workflow variable (1); every job starts on every event, so the
-# three required names always report: no path filter on 'on:' (2), no 'if:' on a required job or its steps but the
-# if: always() of smoke-powershell and smoke-gitbash (3); the smoke jobs fetch the history, so origin/main exists
+# two required names always report: no path filter on 'on:' (2), no 'if:' on a required job or its steps but the
+# if: always() of smoke-gitbash (1); the smoke jobs fetch the history, so origin/main exists
 # (4). One awk pass (bug #270: no process per line); it assumes the block style ci.yml uses (jobs at 2 spaces, job
 # keys at 4).
 ci_sel_env="  CHECK_SELECT: \${{ github.event_name == 'pull_request' && '--affected --within' || '--only' }}"
@@ -1563,59 +1515,44 @@ done < <(LC_ALL=C awk -v want="$ci_sel_env" '
   # the jobs
   blk == "jobs:" && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
   blk != "jobs:" { job = "" }
-  job != "" && /^    if:/ { if (!((job == "smoke-powershell" || job == "smoke-gitbash") && $0 == "    if: always()") && !bad[job]++) print "if " job }
-  job != "" && /^      +(- )?if:/ && (job == "lint" || job == "smoke-bash" || job == "smoke-powershell-part") && !bad[job]++ { print "if " job }
+  job != "" && /^    if:/ { if (!(job == "smoke-gitbash" && $0 == "    if: always()") && !bad[job]++) print "if " job }
+  job != "" && /^      +(- )?if:/ && (job == "lint" || job == "smoke-bash") && !bad[job]++ { print "if " job }
   job != "" && /^[[:space:]]+fetch-depth: 0[[:space:]]*$/ { depth[job] = 1 }
   END {
     if (nenv != 1 || ne != 1 || env[1] != want) print "env"
     if (non != 1 || no != 3 || on[1] != "  push:" || on[2] != "    branches: [main]" || on[3] != "  pull_request:") print "on"
     if (!depth["smoke-bash"]) print "depth smoke-bash"
-    if (!depth["smoke-powershell-part"]) print "depth smoke-powershell-part"
   }' "$chk_ci")
 
-echo "== the lists and the shell twins agree"
-# Iteration 51 (#157): the README lists every smoke file, every tests/smoke-*.sh has a .ps1 twin (except the listed
-# ones), every scripts/*.sh has a .ps1 twin. The rules live in tests/test-lint-agreement.sh.
+echo "== the README lists every smoke file"
+# Iteration 51 (#157): the README lists every tests/smoke-*.sh once. The rule lives in tests/test-lint-agreement.sh.
 bash tests/test-lint-agreement.sh "$PWD" || fail=1
-# #340: the lint copies of tests/smoke-check.sh/.ps1 check the rules only; the cases run once, in the lint.
+# #340: the lint copies of tests/smoke-check.sh check the rules only; the cases run once, in the lint.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-lint-agreement-cases.sh "$PWD" || fail=1
 
 echo "== the agreement section stays cheap"
-# Bug #270: the section above made the PowerShell CI job 25 to 32 minutes long; it may start the rule file only a few times.
-# #340: the lint copies of tests/smoke-check.sh/.ps1 check the rules only; the cost test runs once, in the lint.
+# Bug #270: the section above made the CI job 25 to 32 minutes long; it may start the rule file only a few times.
+# #340: the lint copies of tests/smoke-check.sh check the rules only; the cost test runs once, in the lint.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-lint-agreement-cost.sh "$PWD" || fail=1
 
 echo "== the skills, the agents and the README name the .sh form only (#364)"
 # Iteration 67 (#364, decision record 0004 step 3): a line of a skill, an agent or the user part of the README that tells
-# how to run a script names the bash form. The .ps1 files still ship (#365 removes them), so the Developing nightmill part
-# of the README may name a .ps1 that has no .sh twin or that a test line names, but not scripts/<x>.ps1 of a script that exists.
+# how to run a script names the bash form.
 sh_only_scan() { # sh_only_scan <mode> <file> <stop-heading>: prints "<n>:<first match>" per failing line
   awk -v mode="$1" -v stop="$3" '
-    mode == "dev" { if (!on) { if ($0 == stop) on = 1; next } }
     mode == "user" && $0 == stop { exit }
     {
       m = ""
-      if (mode == "dev") {
-        s = $0
-        while (match(s, /(scripts\/|[ `(])[a-z0-9-]+\.ps1/)) {
-          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
-          sub(/^[ `(]/, "", t)
-          n = t; sub(/^scripts\//, "", n)
-          if (system("test -f scripts/" n) == 0) { m = "scripts/" n; break }
-        }
-      } else {
-        if (index($0, ".ps1")) m = ".ps1"
-        else if (mode == "user" && index($0, "powershell -")) m = "powershell -"
-        else if (mode == "agent" && index($0, "powershell")) m = "powershell"
-        else if (mode == "skill" && index($0, "powershell")) m = "powershell"
-        if (m == "" && mode != "user") {
-          t = $0; gsub(/PowerShell tests/, "", t)
-          if (index(t, "PowerShell") && !(mode == "agent" && $0 ~ /^tools:/)) m = "PowerShell"
-        }
-        if (m == "" && match($0, "(^|[ `(/])-[A-Z][a-z]+")) {
-          m = substr($0, RSTART, RLENGTH); sub(/^[ `(\/]/, "", m)
-        }
-        if (m != "" && mode == "user" && $0 ~ /^On Windows the pane runs `scripts\/panel\.ps1` /) m = ""
+      if (index($0, ".ps1")) m = ".ps1"
+      else if (mode == "user" && index($0, "powershell -")) m = "powershell -"
+      else if (mode == "agent" && index($0, "powershell")) m = "powershell"
+      else if (mode == "skill" && index($0, "powershell")) m = "powershell"
+      if (m == "" && mode != "user") {
+        t = $0; gsub(/PowerShell tests/, "", t)
+        if (index(t, "PowerShell") && !(mode == "agent" && $0 ~ /^tools:/)) m = "PowerShell"
+      }
+      if (m == "" && match($0, "(^|[ `(/])-[A-Z][a-z]+")) {
+        m = substr($0, RSTART, RLENGTH); sub(/^[ `(\/]/, "", m)
       }
       if (m != "") print NR ":" m
     }' "$2"
@@ -1629,12 +1566,7 @@ sh_only_report() { # sh_only_report <file> <scan output>
 for so_f in skills/*/SKILL.md; do sh_only_report "$so_f" "$(sh_only_scan skill "$so_f" '')"; done
 for so_f in agents/*.md; do [ -f "$so_f" ] && sh_only_report "$so_f" "$(sh_only_scan agent "$so_f" '')"; done
 sh_only_report README.md "$(sh_only_scan user README.md '## Developing nightmill')"
-sh_only_report README.md "$(sh_only_scan dev README.md '## Developing nightmill')"
 
-# the .ps1 files still ship in this release (#365 removes them), so a project's .ps1 allow rules and hand-wired hooks work
-for so_s in slot room gate validate-config status session-start guard; do
-  [ -f "scripts/$so_s.ps1" ] || { echo "FAIL: scripts/$so_s.ps1 is gone; this release ships the .ps1 files (#364, #365 removes them)"; fail=1; }
-done
 # the changelog tells a Windows session without Git Bash what to do, and that the removal of the .ps1 files comes later
 so_cl=$(tr '\n' ' ' < CHANGELOG.md 2>/dev/null | tr -s ' ')
 for so_w in 'Iteration 67 (#364)' 'install Git for Windows' 'comes before the one that removes the .ps1 files (#365)'; do
@@ -1700,8 +1632,7 @@ bash tests/test-security-model.sh "$PWD" || fail=1
 
 echo "== the guard reads a GraphQL keyword only as a definition's first name"
 # Iteration 50 (#253): an operation named query, subscription or fragment stays the kind its first name says, in
-# scripts/guard.sh and, where a PowerShell is on the PATH, scripts/guard.ps1. The cases live in
-# tests/test-guard-gql-keyword.sh.
+# scripts/guard.sh. The cases live in tests/test-guard-gql-keyword.sh.
 bash tests/test-guard-gql-keyword.sh "$PWD" || fail=1
 
 echo "== running unattended is documented"
@@ -1735,14 +1666,8 @@ echo "== the low-severity documentation gaps are closed"
 bash tests/test-docs-low-gaps.sh "$PWD" || fail=1
 
 echo "== one interpreter runs a warm-up command"
-# Bug #133: slot.* and new-worktree.* run worktrees.warmup[].command in bash in both shells, and the schema says so.
-# The PowerShell half needs Windows PowerShell (the test starts powershell); without it, it is skipped.
+# Bug #133: slot.sh and new-worktree.sh run worktrees.warmup[].command in bash, and the schema says so.
 bash tests/test-warmup-interpreter.sh || fail=1
-if command -v powershell >/dev/null 2>&1; then
-  powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-warmup-interpreter.ps1 || fail=1
-else
-  echo "(no powershell: tests/test-warmup-interpreter.ps1 skipped)"
-fi
 
 echo "== the config comes from the base branch"
 # Iteration 48 (#111): the skills and the slot script read the config from the base branch, git.mergeFlags must contain
@@ -1766,11 +1691,11 @@ fi
 
 echo "== CI runs with least privilege"
 # The workflow is hardened (iteration 38, finding MD-T3 of the review of 0.2.0): a read-only token and no job-level
-# permissions but those of smoke-powershell (1, amended by iteration 55), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on
-# the three job names the ruleset on main requires (4), every action pinned by its full commit SHA with the release in a
+# permissions but those of smoke-gitbash (1, amended by iteration 55), a timeout on every job (2), a concurrency group that cancels pull request runs only (3), a comment on
+# the two job names the ruleset on main requires (4), every action pinned by its full commit SHA with the release in a
 # trailing comment (5), and Dependabot's github-actions entry kept (6). It reads the files with grep and awk only and
 # assumes the block style ci.yml uses (jobs at 2 spaces, job keys at 4); anything it cannot match fails. It cannot check
-# that a SHA exists or belongs to the release in its comment, that GitHub accepts the expressions, that the three names
+# that a SHA exists or belongs to the release in its comment, that GitHub accepts the expressions, that the two names
 # still match the ruleset, or that Dependabot runs. The two paths can be overridden (LINT_CI_YML, LINT_DEPENDABOT_YML)
 # so the same code can be run on a copy; the defaults are the repository's files.
 ci_yml=${LINT_CI_YML:-.github/workflows/ci.yml}
@@ -1781,7 +1706,7 @@ ci_conc_cancel='  cancel-in-progress: ${{ github.event_name == '\''pull_request'
 ci_pin_re='^[[:space:]]*(- )?uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
 if [ -f "$ci_yml" ]; then
   # 1. permissions: contents: read at column 0 and nothing else; no write scope. The job-level rule (only
-  # smoke-powershell, with contents: read and actions: read; iteration 55, decision 11) lives in tests/test-ci-parts.sh
+  # smoke-gitbash, with contents: read and actions: read; iterations 55 and 68) lives in tests/test-ci-parts.sh
   # (rule 8), as the smoke-bash timeout pin lives in tests/test-ci-smoke-bash-timeout.sh.
   perm=$(LC_ALL=C awk '
     { L[NR] = $0 }
@@ -1834,7 +1759,7 @@ if [ -f "$ci_yml" ]; then
   if grep -qE 'cancel-in-progress:[[:space:]]*true' "$ci_yml"; then
     echo "FAIL: $ci_yml has 'cancel-in-progress: true' (a run on main must never be cancelled)"; fail=1
   fi
-  # 4. the three names the ruleset requires carry the comment on the line directly above them
+  # 4. the two names the ruleset requires carry the comment on the line directly above them
   while IFS= read -r req; do
     ln_list=$(grep -nxF -- "    name: $req" "$ci_yml" | cut -d: -f1 || true)
     if [ -z "$ln_list" ]; then
@@ -1849,10 +1774,9 @@ if [ -f "$ci_yml" ]; then
   done <<'EOF'
 Lint (generic, JSON, skills, shell)
 bash scripts smoke tests
-PowerShell scripts smoke tests
 EOF
   n_cm=$(grep -cF -- "${ci_req_comment#    }" "$ci_yml" || true)
-  [ "$n_cm" = 3 ] || { echo "FAIL: $ci_yml has the 'Required check' comment $n_cm times (exactly 3 expected, one per required job)"; fail=1; }
+  [ "$n_cm" = 2 ] || { echo "FAIL: $ci_yml has the 'Required check' comment $n_cm times (exactly 2 expected, one per required job)"; fail=1; }
   # 5. every uses: line is pinned by a 40-character lower-case SHA with the release in a trailing comment
   n_uses=0
   while IFS= read -r sel; do
@@ -1938,19 +1862,6 @@ for w in 'fixAllMaxBugs' 'abandons it itself'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 
-echo "== the PowerShell scripts read the config with exact keys (#329)"
-# Iteration 57 (#329): PowerShell's property access is case-insensitive, bash's json_get is not. Every PowerShell script
-# that parses the project config (a file that names nightmill.json and calls ConvertFrom-Json) passes the parsed object
-# through Select-ExactKeys (scripts/lib/exactkeys.ps1), which drops a key that differs from a schema property only by
-# case. validate-config.ps1 is the exception: it has to see the misspelled key to warn about it.
-for f in scripts/*.ps1 scripts/lib/*.ps1; do
-  [ -f "$f" ] || continue
-  case "$f" in scripts/validate-config.ps1) continue ;; esac
-  if grep -qF 'nightmill.json' "$f" && grep -qF 'ConvertFrom-Json' "$f"; then
-    grep -qF 'Select-ExactKeys' "$f" || { echo "FAIL: $f reads the config but does not call Select-ExactKeys (scripts/lib/exactkeys.ps1)"; fail=1; }
-  fi
-done
-
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
@@ -1976,20 +1887,20 @@ bash tests/test-fast-lane.sh "$PWD" || fail=1
 echo "== a take killed in its warm-up leaves the claim with the pid it recorded"
 # Bug #373: tests/smoke-slot.sh, interruption case 4, failed in Git Bash on Windows because the case asked for the
 # killed take's Windows pid after the take was reaped. tests/test-slot-killed-take.sh runs that case (read from the
-# smoke test) alone. The lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
+# smoke test) alone. The lint copies of tests/smoke-check.sh check the rules only, so they skip it.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-slot-killed-take.sh "$PWD" || fail=1
 
 echo "== the jq cross-check of smoke-json.sh passes when jq prints CRLF line ends"
 # Bug #372: tests/smoke-json.sh failed in Git Bash on Windows because a native jq.exe ends every line with CRLF
 # unless it is given -b. tests/test-smoke-json-jq-crlf.sh runs smoke-json.sh with a stand-in that prints CRLF. The
-# lint copies of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
+# lint copies of tests/smoke-check.sh check the rules only, so they skip it.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-smoke-json-jq-crlf.sh "$PWD" || fail=1
 
 echo "== the driver ends the background process a step leaves behind"
 # Bug #374: tests/smoke-drive.sh, the case "left behind", failed in Git Bash on Windows: the driver lists the step's
 # process group with ps -A -o, which the ps of Git Bash does not take, so it ended nothing and the step's background
 # process stayed alive. tests/test-drive-leftover.sh runs that case (read from the smoke test) alone. The lint copies
-# of tests/smoke-check.sh/.ps1 check the rules only, so they skip it.
+# of tests/smoke-check.sh check the rules only, so they skip it.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-drive-leftover.sh "$PWD" || fail=1
 
 echo "== the invariant is Bash only (#363)"
@@ -2015,6 +1926,29 @@ done
 for bo_p in .claude/CLAUDE.md CONTRIBUTING.md; do
   grep -q -- '^- \*\*Bash only\.\*\*' "$bo_p" 2>/dev/null || { echo "FAIL: $bo_p has no Bash only rule"; fail=1; }
   if grep -qF -- '**Two shells.**' "$bo_p" 2>/dev/null; then echo "FAIL: $bo_p still has the Two shells rule"; fail=1; fi
+done
+
+echo "== no PowerShell script is left, and none is named (#365)"
+# Iteration 68 (#365, decision record 0004 step 4): only tests/check.ps1 and the two image tools are PowerShell files, and
+# no text outside docs/ and CHANGELOG.md names another one (tests/test-no-powershell.sh, rules 1 and 2 and their cases).
+bash tests/test-no-powershell.sh "$PWD" || fail=1
+# the changelog says what a project removes and which release it pins until then (the names are built from a variable:
+# this file is read by rule 2 as well)
+ps=ps1
+# only the Iteration 68 (#365) bullet counts: from its line up to the next line that starts with "- " or "## "
+cl_flat=$(
+  cl_in=0
+  while IFS= read -r cl_l; do
+    case "$cl_l" in
+      '- Iteration 68 (#365)'*) cl_in=1; printf '%s ' "$cl_l"; continue ;;
+      '- '* | '## '*) cl_in=0 ;;
+    esac
+    if [ "$cl_in" = 1 ]; then printf '%s ' "$cl_l"; fi
+  done < CHANGELOG.md 2>/dev/null
+)
+cl_flat=$(printf '%s' "$cl_flat" | tr -s ' ')
+for cl_w in 'Iteration 68 (#365)' "hand-wired session-start.$ps or guard.$ps hook" '.ps1 allow rules' 'pin the release before this one'; do
+  case "$cl_flat" in *"$cl_w"*) ;; *) echo "FAIL: CHANGELOG.md: the Iteration 68 (#365) bullet does not say: $cl_w"; fail=1 ;; esac
 done
 
 echo "== shell"

@@ -3,7 +3,7 @@
 # (tests/lint.sh, section "the check runs every smoke script"; iteration 55, decision 5) is worded the same everywhere.
 # The spec docs/specs/iteration-55-ci-parallel-powershell.md says "begins with" for this rule, never "contains": a name
 # that merely contains a required name is allowed (the rule would not fire on it), so "contains" misstates the rule.
-# The rule itself is pinned by the lint_break case "cibegins" in tests/smoke-check.sh and tests/smoke-check.ps1.
+# The rule itself is pinned by the lint_break case "cibegins" in tests/smoke-check.sh.
 # Not a smoke script: run it with `bash tests/test-ci-job-name-rule.sh`. Needs bash, grep and tr.
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

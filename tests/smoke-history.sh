@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # tests/smoke-history.sh - scripts/history.sh against a fixture ledger, fixture board pages and a fake gh (iteration 54,
-# #166; docs/specs/iteration-54-history-metrics.md, "Tests"). smoke-history.ps1 runs the same cases against the same
-# expected files in tests/fixtures/history/. The clock is NIGHTMILL_CLOCK_FILE (test only): 2026-11-09T12:00:00Z,
+# #166; docs/specs/iteration-54-history-metrics.md, "Tests"). The expected files are in tests/fixtures/history/. The clock is NIGHTMILL_CLOCK_FILE (test only): 2026-11-09T12:00:00Z,
 # 1794225600 seconds since 1970. Needs bash, git and awk, no jq, no network (the fake gh answers the one board query).
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

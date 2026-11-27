@@ -5,7 +5,6 @@
 #   3 --status only reads: it does not create the worktree root
 #   4 git older than 2.31 gets a message that names the version, not "run from inside a git checkout"
 #   5 gh never prompts: GH_PROMPT_DISABLED is set for --reap and --release
-# PowerShell twin: test-slot-low-defects.ps1.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-slotlow.XXXXXX")

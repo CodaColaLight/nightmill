@@ -15,7 +15,7 @@
 # The command is split into segments at && || ; | & and newlines outside quotes and each segment into words; a
 # command substitution $(...) or `...` is judged as a command of its own. No other shell parsing. The rules are in
 # docs/specs/iteration-47-enforce-hard-rules.md (decision 5) and
-# docs/specs/iteration-50-refuse-other-deletes.md (decisions 3 to 5); scripts/guard.ps1 is the same in PowerShell.
+# docs/specs/iteration-50-refuse-other-deletes.md (decisions 3 to 5).
 #   CLAUDE_PROJECT_DIR   the project root (set by Claude Code); the current directory when unset
 # Needs bash and awk, no jq (lib/json.sh reads the event and the config); gh only for a status edit.
 set -uo pipefail

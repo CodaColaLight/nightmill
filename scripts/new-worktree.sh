@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# scripts/new-worktree.sh - an ad-hoc extra checkout, outside the slot system (nightmill). Bash twin
-# of new-worktree.ps1.
+# scripts/new-worktree.sh - an ad-hoc extra checkout, outside the slot system (nightmill).
 #   new-worktree.sh fix/123-short-name
 #   new-worktree.sh feat/foo --base main --skip-warmup
 # Creates <worktrees.root>/<branch with / as -> as a new branch from the base branch (or the branch

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/drive.sh - the unattended driver (nightmill): runs /nightmill:fix all and /nightmill:next <N> headless, round
 # after round, until no Ready bug and no Approved story is left, its time limit is reached or its kill switch is set,
-# then prints and posts one summary. Bash twin of drive.ps1; the rules and the texts are in
+# then prints and posts one summary. The rules and the texts are in
 # docs/specs/iteration-52-unattended-driver.md, and for the pause flag, the limits and the run ledger
 # docs/specs/iteration-53-run-limits.md (decisions 7 to 9).
 #

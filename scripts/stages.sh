@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# scripts/stages.sh - where a story's time went (iteration 41). Bash twin of stages.ps1.
+# scripts/stages.sh - where a story's time went (iteration 41).
 #   stages.sh [--issue N | --last N]      # one issue, or the last N takes (default: --last 5)
-# Reads the record <worktrees.root>/.slots/ledger.tsv that slot.sh and slot.ps1 append to (a take, every report, every
+# Reads the record <worktrees.root>/.slots/ledger.tsv that slot.sh appends to (a take, every report, every
 # freeing) and prints per take the time of each stage and its share of the total: take, not-reported, the reported
 # step names as the slots reported them, and ci-and-merge (from the pull request's open to its merge). A time that
 # cannot be known is unknown, never 0s. Read-only: it calls no gh, needs no network and writes no file. The

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # tests/smoke-template-board.sh - template-board.sh against fixtures: a fake gh answers from
 # tests/fixtures/template-board/, the plugin files are copied to a throwaway root so that each scenario can
-# have its own templates/board-template.json. The line must be the one smoke-template-board.ps1 expects too, so
-# both shells print the same. Needs bash and awk, no jq, no network.
+# have its own templates/board-template.json. Needs bash and awk, no jq, no network.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/nightmill-smoke-template-board.XXXXXX")

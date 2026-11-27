@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/load.sh - the machine's CPU load and free memory, the agent limit, the slots in use and a suggested agent
-# limit with the reason (nightmill). Bash twin of load.ps1; the rules and the texts are in
+# limit with the reason (nightmill). The rules and the texts are in
 # docs/specs/iteration-24-machine-load.md.
 #
 #   load.sh [--porcelain]      # --porcelain: one tab separated line per value, by name, for scripts
