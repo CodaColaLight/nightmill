@@ -374,10 +374,10 @@ round never leads to a proposal.
 ## Parallel work
 
 - One task per slot. Slots are permanent worktrees with warm build output; take one with the slot
-  script (`-Take <branch>`), free it after the merge (`-Release N`), or, in `/fix all`,
-  once its pull request is open and its branch pushed (`-Abandon N`; see `/fix`), list them (`-Status`). The
-  scripts are at `${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1` and `${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh`. A skill
-  that works in a slot reports each step with `-Report <step>` / `--report <step>` (the steps are in `/next` and
+  script (`--take <branch>`), free it after the merge (`--release N`), or, in `/fix all`,
+  once its pull request is open and its branch pushed (`--abandon N`; see `/fix`), list them (`--status`). The
+  script is at `${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh`. A skill
+  that works in a slot reports each step with `--report <step>` (the steps are in `/next` and
   `/fix`), and `/status` shows the slot `running` while the last report is at most `worktrees.stalledAfterMinutes`
   old, `stalled` after that (also a slot that waits for its merge after its last step, `done`), `unknown` without a
   report.
@@ -385,18 +385,17 @@ round never leads to a proposal.
   forms the skills write.
 - At most the agent limit agents (subagents, slot builds, your own builds) at the same time. The limit is the live
   value set during the session, else `parallel.maxAgents`. Read it at every decision to start an agent, never once per
-  session: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Capacity -Porcelain` or
-  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --capacity --porcelain` (the line `agents`, second field). When the
+  session: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --capacity --porcelain` (the line `agents`, second field). When the
   command fails, use `parallel.maxAgents` of the configuration and say so. Before launching one, count the running
   ones; queue or do the work inline otherwise. A lowered limit stops no running agent: wait until fewer run than it
-  says. The slot count is changed the same way (`-Capacity -SlotCount N`, `--capacity --slot-count N`); a raised count
+  says. The slot count is changed the same way (`--capacity --slot-count N`); a raised count
   is used by the next take.
 - **Room on the machine.** When the count allows a start (a subagent, a slot build such as a take's warm-up, your own
   build), check right before it that the machine has room, after the count and before the step report of that launch
   (only a `dispute-<k>` step is reported before its count):
-  `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/room.ps1"` or `bash "${CLAUDE_PLUGIN_ROOT}/scripts/room.sh"`. Exit 0: start; say a
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/room.sh"`. Exit 0: start; say a
   `not checked: unavailable` line once per run. Exit 1: say its `room: waiting` line, then run it again at once with
-  the value of its `room: call again with` line (`-Since <n>`, `--since <n>`; the script has paused), until another
+  the value of its `room: call again with` line (`--since <n>`; the script has paused), until another
   exit code; then count again before the start. Exit 3: start nothing and print
   `Stopped: no room on this machine to start the <role, slot, manual check or check> after <w> min: <the details of its gave-up line>. Nothing was started.`
   The check itself commits, pushes, reverts, stops or releases nothing, and the board status stays. In `/next` and
@@ -411,9 +410,8 @@ round never leads to a proposal.
 - Do not launch agents just to wait on a dependency; start them when it has merged.
 
 **The pause and the limits** (#165). The pause flag and the limits of every run are checked by the gate,
-`bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh" [--issue <n>] [--slot <s>] [--role <role> --turns <t>]` or
-`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1" [-Issue <n>] [-Slot <s>] [-Role <role> -Turns <t>]`
-(`scripts/gate.sh`, `scripts/gate.ps1`). It reads `limits` only from the base branch's configuration (a branch cannot
+`bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh" [--issue <n>] [--slot <s>] [--role <role> --turns <t>]`
+(`scripts/gate.sh`). It reads `limits` only from the base branch's configuration (a branch cannot
 unpause or raise the limits of its own run), the label `paused` on the issue's epic, and the driver's run lines in the slots'
 record; it changes nothing. `/next`, `/fix`, `/spec`, `/check`, `/story` and `/control` run it before every
 step, that is exactly:

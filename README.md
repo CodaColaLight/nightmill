@@ -46,25 +46,25 @@ not a conversation.
 | `/nightmill:init` | The install chat: detects what `gh` and the repository can tell, asks the rest one question at a time, shows one plan and, after one confirmation, creates the board with its columns view, the labels, the config, the issue forms, the CLAUDE.md snippet and the permission rules. |
 | `workflow` skill | The process rules. Claude loads it when it touches an issue, a spec, a slot or a PR. |
 | `worker` agent | A cheap subagent for mechanical, fully specified jobs. |
-| `scripts/slot.ps1`, `scripts/slot.sh` | Permanent worktree slots: `-Take <branch>`, `-Release N`, `-Abandon N`, `-Reap`, `-Status`, `-Capacity`, `-Report <step>`. |
-| `scripts/stages.ps1`, `scripts/stages.sh` | Read-only: the time a story spent in each stage, from the slots' record `ledger.tsv`, for one issue (`-Issue N`) or the last N takes (`-Last N`). |
-| `scripts/history.ps1`, `scripts/history.sh` | Read-only: how the work went in a window - time per board status, fix rounds and check fix rounds, cost per issue, slot utilisation - from `ledger.tsv` and the board's status changes, as text, JSON (`-Json`) or one static page (`-Html <dir>`). |
-| `scripts/load.ps1`, `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
-| `scripts/panel.ps1`, `scripts/panel.sh` | Read-only: the slot lines the pane draws, from `slot --status --porcelain`. |
-| `scripts/dashboard.ps1`, `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
-| `scripts/room.ps1`, `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
-| `scripts/control.ps1`, `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
-| `scripts/drive.ps1`, `scripts/drive.sh` | Runs `/nightmill:fix all` and `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the time limit is reached or the kill switch is set, then posts one summary. Sets no status. |
-| `scripts/gate.ps1`, `scripts/gate.sh` | Checks the pause flag and the limits before a step: exit 0 go, 1 paused, 2 cannot check, 3 a limit is breached, 4 the epic is paused. Changes nothing. |
-| `scripts/status.ps1`, `scripts/status.sh` | Read-only: the table behind `/nightmill:status`, also as `--porcelain` or `--json`. |
-| `scripts/models.ps1`, `scripts/models.sh` | Read-only: the table behind `/nightmill:models`. |
-| `scripts/validate-config.ps1`, `scripts/validate-config.sh` | Checks a config against the schema: an error per wrong value, a warning per unknown key (an error with `--strict`); `--base` checks the one on the base branch. |
-| `scripts/guard.ps1`, `scripts/guard.sh` | The PreToolUse hook: refuses a status edit to Ready or Approved, a merge without `--auto`, a force push, a push to the base branch and the other commands the workflow forbids. |
-| `scripts/session-start.ps1`, `scripts/session-start.sh` | The SessionStart hook: where the project has no `.claude/nightmill.json`, one line that makes Claude offer `/nightmill:init`. |
-| `scripts/release.ps1`, `scripts/release.sh` | For nightmill's own releases: `--version X.Y.Z` opens the release pull request, `--publish` tags it and creates the GitHub Release. |
-| `scripts/new-worktree.*` | An ad-hoc extra checkout outside the slot system. |
-| `scripts/render-templates.*` | Writes the project's issue forms from `areas` and `invariants`. |
-| `scripts/template-board.*` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
+| `scripts/slot.sh` | Permanent worktree slots: `--take <branch>`, `--release N`, `--abandon N`, `--reap`, `--status`, `--capacity`, `--report <step>`. |
+| `scripts/stages.sh` | Read-only: the time a story spent in each stage, from the slots' record `ledger.tsv`, for one issue (`--issue N`) or the last N takes (`--last N`). |
+| `scripts/history.sh` | Read-only: how the work went in a window - time per board status, fix rounds and check fix rounds, cost per issue, slot utilisation - from `ledger.tsv` and the board's status changes, as text, JSON (`--json`) or one static page (`--html <dir>`). |
+| `scripts/load.sh` | Read-only: measures CPU load and free memory over a short window, shows the agent limit and the slots in use, and suggests an agent limit with the reason. Changes nothing. |
+| `scripts/panel.sh` | Read-only: the slot lines the pane draws, from `slot --status --porcelain`. |
+| `scripts/dashboard.sh` | Read-only: a page in the browser with every slot and its agent (running, stalled), and what waits at Spec review and Approved, rewritten every `dashboardRefreshSeconds`. Changes nothing. |
+| `scripts/room.sh` | Before `/next`, `/spec` and `/fix` start an agent: checks free memory and CPU load, and pauses while the machine has no room. Changes nothing. |
+| `scripts/control.sh` | One controller pass: measures like the load command and changes the live agent limit (and slot count) only through `slot --capacity`, only in `apply` mode. Stops nothing. |
+| `scripts/drive.sh` | Runs `/nightmill:fix all` and `/nightmill:next <N>` headless in a loop until nothing is Ready or Approved, the time limit is reached or the kill switch is set, then posts one summary. Sets no status. |
+| `scripts/gate.sh` | Checks the pause flag and the limits before a step: exit 0 go, 1 paused, 2 cannot check, 3 a limit is breached, 4 the epic is paused. Changes nothing. |
+| `scripts/status.sh` | Read-only: the table behind `/nightmill:status`, also as `--porcelain` or `--json`. |
+| `scripts/models.sh` | Read-only: the table behind `/nightmill:models`. |
+| `scripts/validate-config.sh` | Checks a config against the schema: an error per wrong value, a warning per unknown key (an error with `--strict`); `--base` checks the one on the base branch. |
+| `scripts/guard.sh` | The PreToolUse hook: refuses a status edit to Ready or Approved, a merge without `--auto`, a force push, a push to the base branch and the other commands the workflow forbids. |
+| `scripts/session-start.sh` | The SessionStart hook: where the project has no `.claude/nightmill.json`, one line that makes Claude offer `/nightmill:init`. |
+| `scripts/release.sh` | For nightmill's own releases: `--version X.Y.Z` opens the release pull request, `--publish` tags it and creates the GitHub Release. |
+| `scripts/new-worktree.sh` | An ad-hoc extra checkout outside the slot system. |
+| `scripts/render-templates.sh` | Writes the project's issue forms from `areas` and `invariants`. |
+| `scripts/template-board.sh` | Read-only check of whether `/init` can copy nightmill's template board for a config; prints one line. |
 | `templates/workflows/nightmill-drive.yml` | A workflow for the project to copy: runs the driver on a schedule and on demand on a self-hosted runner. |
 | `schema/nightmill.schema.json` | Every configuration key, described. |
 
@@ -73,7 +73,8 @@ Bare `/spec`, `/next`, `/fix`, `/story`, `/check` also work unless another plugi
 ## Install
 
 You need Claude Code, `git`, and `gh` signed in with `gh auth login` and the `project` scope
-(`gh auth refresh -s project`). The bash scripts need nothing beyond bash and the tools a POSIX shell has (awk, sed, grep).
+(`gh auth refresh -s project`). The scripts are bash and need nothing beyond bash
+and the tools a POSIX shell has (awk, sed, grep); on Windows that is Git Bash, from Git for Windows.
 
 Read "Security model" below before you run /nightmill:init: it says what the agents can do, who can steer them and what
 to restrict.
@@ -95,8 +96,7 @@ the plugin at user scope and open projects that do not use it, set `NIGHTMILL_HI
 user `settings.json` to silence it everywhere. The hook runs `scripts/session-start.sh`, so it needs bash:
 that is `sh` on macOS and Linux and Git Bash on Windows, which Claude Code uses whenever Git for Windows is
 installed. On a Windows machine where Claude Code runs hooks through PowerShell only, the hook does nothing
-and says nothing; `scripts/session-start.ps1` does the same job and can be wired by hand as a `SessionStart`
-command hook in the project's `.claude/settings.json`.
+and says nothing; install Git for Windows to run it.
 
 `/nightmill:init` is an install chat. It detects what `gh` and the repository can tell (owner, repo, an
 existing board, the check command, areas), asks one question at a time for the rest with a proposed
@@ -151,10 +151,10 @@ pull request. So `/init` has a second plan line, **Run permissions**, that adds 
 - **The git commands in each slot**, written `git -C <slot> ...` for every slot from 1 to `worktrees.slots`: the
   subcommands `/next`, `/fix` and their agents run there (status, diff, log, add, commit, stash, the plumbing for
   the tester's files, the two `reset` forms, the rebase and a push with the feature or fix prefix).
-- **Five scripts** at the plugin's folder, `slot`, `room`, `gate`, `validate-config` and `status`, in the bash and the
-  PowerShell form, and the quick check (`<verification.check> --quick`).
+- **Five scripts** at the plugin's folder, `slot`, `room`, `gate`, `validate-config` and `status`, in the bash form, and the
+  quick check (`<verification.check> --quick`).
 
-That makes `26 + 21 × worktrees.slots` rules (68 for 2 slots) and one directory. The skills write each of those
+That makes `21 + 21 × worktrees.slots` rules (63 for 2 slots) and one directory. The skills write each of those
 commands in exactly one form, because a rule matches only the text that is typed: in a slot always
 `git -C <absolute slot path> ...`, the check as `cd <absolute slot path> && <verification.check>`.
 
@@ -195,7 +195,7 @@ rule, because a `*` there would also match the skills' stash and commit lines; t
 branch's ruleset (no force push, required checks) stays the backstop. They follow `git.baseBranch`: run `/init`
 again after it changes. A project set up with an earlier version runs `/init` again to get the five `gh` delete rules.
 
-**The guard.** The plugin ships a `PreToolUse` hook, `scripts/guard.sh` (twin `scripts/guard.ps1`), that runs before
+**The guard.** The plugin ships a `PreToolUse` hook, `scripts/guard.sh`, that runs before
 every Bash and PowerShell tool call and refuses, with a one-line reason:
 
 - a board status edit to Ready or Approved (`gh project item-edit` with that option id, or the GraphQL mutation);
@@ -214,8 +214,7 @@ projects. `git.mergeFlags` must contain `--auto`: this narrows that key, and a p
 merge step refused (`/init`'s report says so). A merge without `--auto` that the maintainer asks of the agent is
 refused too, so the release pull request of `docs/decisions/0002`, which is merged without auto-merge, is merged by the
 maintainer (the GitHub page or the maintainer's own terminal), not by the agent. The hook runs `bash`; on Windows it
-needs Git Bash. A PowerShell-only machine has the deny rules only; `scripts/guard.ps1` can be wired by hand in the
-user's hooks. A guard that cannot start lets the call through, as Claude Code treats any exit but 2.
+needs Git Bash. A PowerShell-only machine has the deny rules only; install Git for Windows to run the guard. A guard that cannot start lets the call through, as Claude Code treats any exit but 2.
 
 **Taking it back:** delete the rules from `permissions.deny`; the hook goes with the plugin.
 
@@ -233,8 +232,8 @@ workflows, and only what differs is listed.
 
 The template lives in `templates/board-template.json` (`{ "owner": ..., "number": ... }`): a public board of the
 maintainer that holds no items, only structure. It belongs to the plugin and is not a config key; a `null`
-number means none is published and `/init` falls back. `scripts/template-board.ps1 -Config <file>` (or
-`scripts/template-board.sh --config <file>`) prints `template: usable (<owner>/<number>)` or
+number means none is published and `/init` falls back. `scripts/template-board.sh --config <file>`
+prints `template: usable (<owner>/<number>)` or
 `template: not usable: <none published | not reachable | fields differ | statuses differ>`; it only reads.
 
 The maintainer refreshes the template from a configured board: `gh project copy <n> --source-owner <owner>
@@ -347,7 +346,7 @@ The guard script's refusals are shown by its smoke test (`tests/smoke-guard.sh`)
 |---|---|---|
 | Every subagent prompt carries the data rule (an instruction to the model, not a check) | enforced by `tests/lint.sh` for the prompt text only; nothing checks that the model obeys it | [#108](https://github.com/CodaColaLight/nightmill/issues/108) |
 | Only the agent's own login's comments are read; `/next` stops on a body edited after the spec comment | enforced by `tests/lint.sh` for the skills' text only; no mechanism checks it at run time | [#108](https://github.com/CodaColaLight/nightmill/issues/108) |
-| Control characters in issue titles are removed from what `/nightmill:status` prints | enforced by `scripts/status.sh` and `scripts/status.ps1` | [#134](https://github.com/CodaColaLight/nightmill/issues/134) |
+| Control characters in issue titles are removed from what `/nightmill:status` prints | enforced by `scripts/status.sh` | [#134](https://github.com/CodaColaLight/nightmill/issues/134) |
 | Each skill's config injection has a fallback and `allowed-tools` | enforced by the skills' frontmatter, pinned by `tests/lint.sh` | [#127](https://github.com/CodaColaLight/nightmill/issues/127) |
 | An agent cannot set Ready or Approved | enforced by the guard hook, where it runs | [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
 | A merge without `--auto`, with `--admin` or through `gh api` is refused | enforced by the guard hook, where it runs; `--admin` also by a deny rule | [#110](https://github.com/CodaColaLight/nightmill/issues/110) |
@@ -489,7 +488,7 @@ with `test: ` and is a test finding: it goes back to the tester, the other findi
 same fix round. A tester that says why its test stands is shown in How verified, and the finding stays open for the
 maintainer.
 
-Check a config with `scripts/validate-config.ps1` (or `scripts/validate-config.sh`). It reads the
+Check a config with `scripts/validate-config.sh`. It reads the
 schema, prints one line per finding that names the key (`error: worktrees.slots: expected integer, got string`),
 and warns about keys it does not know, with a hint for a likely typo. It also rejects a config that puts a
 reviewer on a model ranked below the role it reviews (`specReviewer` below `specWriter`, `codeReviewer` below
@@ -500,21 +499,21 @@ reviewer on a model ranked below the role it reviews (`specReviewer` below `spec
 
 A slot is a worktree that is never removed. A new task switches it to a new branch from the base
 branch, so build output and installed dependencies stay warm and builds are incremental instead of
-cold. A slot is busy from `-Take` to `-Release` (after the PR merged), `-Abandon` or an automatic release. Slot N
+cold. A slot is busy from `--take` to `--release` (after the PR merged), `--abandon` or an automatic release. Slot N
 gets `base + N` for every configured port, so two servers run side by side. The number of slots follows
 `worktrees.slots` or `WORKER_SLOTS`, or a value set during the session (below); one per 8 GB of RAM is a sound default.
 
-A take (`-Take` / `--take`) first frees every busy slot whose pull request has merged, so the next `/next` or
-`/fix` finds a free slot without a person running `-Release`; `-Reap` (`--reap`) does only that. A slot is freed
+A take (`--take`) first frees every busy slot whose pull request has merged, so the next `/next` or
+`/fix` finds a free slot without a person running `--release`; `--reap` does only that. A slot is freed
 only when its worktree is clean and `gh` lists a merged pull request for its branch whose last commit is the tip of
 the local branch, so a reused branch name or work after the merge keeps the slot busy and nothing is deleted. A slot
 that cannot be judged (`gh` missing, logged out or failing, no fetch) stays busy, with a note on standard error, and
 never makes a take fail. A slot whose pull request is open, closed without a merge or moved by "update branch" stays
-busy until `-Release` or `-Abandon` (`/fix all` abandons it itself). Each freed slot is reported in one line:
+busy until `--release` or `--abandon` (`/fix all` abandons it itself). Each freed slot is reported in one line:
 `Slot 1 is free (was feat/a, PR #12), released automatically.`
 
 `/fix all` runs one bug per slot and frees a bug's slot itself once its branch is on its open pull request
-(`-Abandon`; the local branch is kept, so a few slots serve a long list); a slot whose bug was skipped stays busy with
+(`--abandon`; the local branch is kept, so a few slots serve a long list); a slot whose bug was skipped stays busy with
 its files for the maintainer; overlapping bugs (a file named in both issues, the same `parallel.hotFiles` entry,
 `parallel.doNotPair`) do not run at the same time; the run ends when every Ready bug has a pull request, was skipped,
 or is listed as not started, with one table.
@@ -523,39 +522,38 @@ A take claims its slot before it does any work: it writes the slot's marker in t
 process id, and creates it only if the slot has none, so two takes started together get different slots. A take whose
 fetch, switch or warm-up fails puts the slot back as it was, frees it and says `<step> failed (exit N)`; when the
 failed warm-up left changed or new files in the slot, the slot keeps the claim instead, so that nothing is lost, and
-`-Abandon N` (`--abandon N`) frees it once the files are dealt with. A take that died or was stopped without finishing
-leaves a claim that `slot -Status` shows with `has ended` (or `no process recorded`, for a take that could not put its
-slot back) and `/nightmill:status` with the step `take-died`. Nothing frees it automatically, and `-Abandon N`
-(`--abandon N`) frees it once its files are dealt with, keeping the branch. If `-Abandon` says the process is still
-running but no take is (its number was reused, or it is the PowerShell console a stopped take ran in), end or close
+`--abandon N` frees it once the files are dealt with. A take that died or was stopped without finishing
+leaves a claim that `slot --status` shows with `has ended` (or `no process recorded`, for a take that could not put its
+slot back) and `/nightmill:status` with the step `take-died`. Nothing frees it automatically, and `--abandon N`
+frees it once its files are dealt with, keeping the branch. If `--abandon` says the process is still
+running but no take is (its number was reused), end or close
 that process, or remove the marker `<worktrees.root>/.slots/slot-N.json` by hand. On Windows, a program that reads
 the marker at the same moment (/nightmill:status, the panel, the dashboard, another take) can make the take's last
 write to it fail for a moment. The take tries its own marker changes up to 21 times, 0.25 s apart, so such a collision
 does not leave the slot claimed; a reader that holds the marker for longer than that ends the take as described above.
 A take that is interrupted after it has claimed its slot (Ctrl+C, or a TERM signal in bash) puts the slot back and
-frees it as a failed take does, and names the step: "warm-up 1 interrupted (INT); slot 1 is free again" (bash, exit
-130, or 143 for TERM), "warm-up 1 stopped; slot 1 is free again" (PowerShell, which cannot tell why it was stopped and
-keeps its own exit code). Interrupted while it writes its finished marker, it leaves the claim, and -Abandon N
-(--abandon N) frees it. A take that is killed without a chance to clean up (Stop-Process, kill -KILL, a closed window)
-leaves a claim that slot -Status shows as ended; -Abandon N frees it.
+frees it as a failed take does, and names the step: "warm-up 1 interrupted (INT); slot 1 is free again"
+(exit 130, or 143 for TERM). Interrupted while it writes its finished marker, it leaves the claim, and --abandon N frees it.
+A take that is killed without a chance to clean up (kill -KILL, a closed window)
+leaves a claim that slot --status shows as ended; --abandon N frees it.
 
 ### What a slot's agent is doing
 
 `/next` and `/fix`, and the implementer and fixer they launch, record their skill, role and current step in the
-slot's marker at each step (`-Report <step>` / `--report <step>`). `/nightmill:status` lists every slot with its agent
+slot's marker at each step (`--report <step>`). `/nightmill:status` lists every slot with its agent
 state: **running** while the last report is at most `worktrees.stalledAfterMinutes` minutes old (default 30),
 **stalled** when it is older (the session may have ended, crashed or been abandoned; look at it, and free the slot with
-`-Abandon` if it was dropped), **unknown** when the slot has no report (taken by hand or by an older version). A slot
+`--abandon` if it was dropped), **unknown** when the slot has no report (taken by hand or by an older version). A slot
 still being taken shows unknown with the step taking; one whose take died shows the step take-died. A slot
 whose run is over (step `done`) and that waits for its merge also shows stalled once the threshold has passed;
-`-Release`, `-Reap` or the next take frees it. Nothing is stopped or freed because a slot is stalled, and a step longer
+`--release`, `--reap` or the next take frees it. Nothing is stopped or freed because a slot is stalled, and a step longer
 than the threshold (a long code review or check) shows stalled while it runs; `/spec` takes no slot and is not shown.
 
 ### Where a story's time went
 
 The slot scripts keep a record of every take: `<worktrees.root>/.slots/ledger.tsv`, beside the slot markers. It is
 untracked and append-only, shared by every worktree, and kept after a release, an abandon, an automatic release and
-the deletion of the branch (delete it by hand to start over). Only `slot.ps1` and `slot.sh` write it, in the commands
+the deletion of the branch (delete it by hand to start over). Only `slot.sh` writes it, in the commands
 that already run, so no skill or agent does anything extra: the take appends a `take` line (the claim and the end of
 the take), every report a `step` line (the step name and when it was reported), every freeing a `free` line
 (`released`, `reaped` or `abandoned`, with the merged pull request's number, open and merge time and closing issues).
@@ -563,8 +561,8 @@ One line per event, eleven tab-separated fields, times in UTC; readers skip a li
 also appends a `run` line after each headless run ([Limits and the kill switch](#limits-and-the-kill-switch)), which
 `stages.*` skips.
 
-`scripts/stages.sh --issue N` (`stages.ps1 -Issue N`) prints the takes that ended in a merged pull request closing
-issue N; `--last N` (`-Last N`, default 5) the last N takes. Read-only, no network. Per take, a header
+`scripts/stages.sh --issue N` prints the takes that ended in a merged pull request closing
+issue N; `--last N` (default 5) the last N takes. Read-only, no network. Per take, a header
 (`#<issue>  <branch>  slot <n>  <state>`, the state `merged <time>`, `released`/`reaped`/`abandoned <time>`, `running`
 or `not freed`) and one row per stage:
 
@@ -585,14 +583,13 @@ For totals across issues and takes over a night or a month, see [How the work we
 
 ### How the work went
 
-`scripts/history.sh` (`history.ps1`) prints, for a time window, how the work went. Read-only: it changes nothing on
+`scripts/history.sh` prints, for a time window, how the work went. Read-only: it changes nothing on
 GitHub and writes no file but the page of `--html`. Where things stand now is `/nightmill:status`; for a program,
-`scripts/status.sh --json` (`status.ps1 -Json`, combinable with `--all`) prints its cells as one JSON object on one line
+`scripts/status.sh --json` (combinable with `--all`) prints its cells as one JSON object on one line
 (`items`, `notes`, `slots` and `capacity`, the last two `null` without `worktrees`).
 
 ```sh
 bash scripts/history.sh [--from <t>] [--to <t>] | [--run <stamp>]   [--json | --html <dir>]
-powershell -File scripts/history.ps1 [-From <t>] [-To <t>] | [-Run <stamp>]   [-Json | -Html <dir>]
 ```
 
 `<t>` is a day (`2026-11-09`, read as its 00:00:00 UTC) or a UTC time (`2026-11-09T01:00:00Z`); both ends of the window
@@ -629,7 +626,6 @@ Spec review rounds (`/spec` takes no slot) and headless runs started by hand (no
 To keep the slots in view during a run, start the dashboard in a terminal, from inside the project:
 
 ```
-scripts/dashboard.ps1
 bash scripts/dashboard.sh
 ```
 
@@ -647,7 +643,7 @@ the reason, never as free or as nothing waiting; the slot states, which need no 
 
 To stop it, press Ctrl-C in that terminal or close the terminal; nothing keeps running. The page stays as last written
 and, after three intervals without a rewrite, says it is out of date. The page has no buttons or links and changes
-nothing. `--once` (`-Once`) renders it once. The data comes from `status.sh --porcelain` (`status.ps1 -Porcelain`),
+nothing. `--once` renders it once. The data comes from `status.sh --porcelain`,
 which prints the tables of `/status` tab-separated for programs (the record kinds `item`, `note`, `slot`, `capacity`).
 
 ### Watching the run beside the chat
@@ -684,27 +680,23 @@ The slot count and the agent limit (how many agents run at once) can be raised o
 without a restart:
 
 ```sh
-scripts/slot.ps1 -Capacity                              # show the numbers and where they come from
-scripts/slot.ps1 -Capacity -SlotCount 3 -AgentLimit 3   # set one or both
-scripts/slot.ps1 -Capacity -Clear                       # back to the configuration
 bash scripts/slot.sh --capacity [--slot-count N] [--agent-limit M] [--clear] [--porcelain]
 ```
 
 A value is a whole number from 1 to 99; an invalid one changes nothing and says why. A set value wins over
 `WORKER_SLOTS`, which wins over the configuration (`worktrees.slots`, `parallel.maxAgents`; 2 when absent). The values
 are kept in `<worktrees.root>/.slots/capacity.json`, beside the slot markers and outside the repository, until
-`-Clear` or until set again; the tracked `.claude/nightmill.json` is never edited. A raised slot count is used by the
+`--clear` or until set again; the tracked `.claude/nightmill.json` is never edited. A raised slot count is used by the
 next take (the new worktrees are created on first use). Lowering it never touches a busy slot: a busy slot above the
 new count is shown as retiring, is no longer handed out, and drops out of the list once it is released (its worktree
 stays on disk for when the count goes up again). A lowered agent limit stops no running agent: `/next`, `/spec` and
 `/fix` read the limit each time they decide whether to start another agent and wait until fewer run than it allows.
-`slot -Status` and `/nightmill:status` show the effective numbers in a `capacity:` line and say `live; config <n>`
+`slot --status` and `/nightmill:status` show the effective numbers in a `capacity:` line and say `live; config <n>`
 while a set value is in force.
 
 ### Is the machine used well?
 
 ```sh
-scripts/load.ps1 [-Porcelain]
 bash scripts/load.sh [--porcelain]
 ```
 
@@ -713,8 +705,7 @@ agents running, and suggests an agent limit with one `why:` line. It takes one s
 `parallel.loadWindowSeconds` seconds (default 10), so it takes that long. The CPU load is the busy share of all
 processors, the mean of the samples; the free memory is the memory the system can hand out without swapping, the
 lowest sample. The sources: `/proc/stat` and `/proc/meminfo` (`MemAvailable`) on Linux, the same files in Git Bash
-(`MemFree`, which carries Windows' available memory), `Win32_PerfRawData_PerfOS_Processor` and
-`Win32_OperatingSystem` in PowerShell on Windows, `top`, `vm_stat` and `sysctl hw.memsize` on macOS. MB and GB are
+(`MemFree`, which carries Windows' available memory), `top`, `vm_stat` and `sysctl hw.memsize` on macOS. MB and GB are
 decimal.
 
 The suggestion is the smaller of two bounds, at least 1 and at most `parallel.maxSuggestedAgents` (default 4). The
@@ -727,15 +718,14 @@ of busy slots: the only count a script can read.
 It does not see the API's rate limits, the token budget, GPU, disk or network, agents outside the slots (`/spec`'s
 writer, the reviewers, another session), or memory a build will take but has not taken yet; CPU used by other
 programs counts as if the agents used it. A measurement it cannot take is shown as `unavailable` with the reason, and
-then there is no suggestion (exit 1). It changes nothing: to apply a suggestion, run `slot -Capacity -AgentLimit N`
-(`slot.sh --capacity --agent-limit N`). The porcelain form prints one tab-separated line per value, by name: `cpu`,
+then there is no suggestion (exit 1). It changes nothing: to apply a suggestion, run
+`slot.sh --capacity --agent-limit N`. The porcelain form prints one tab-separated line per value, by name: `cpu`,
 `memory-free`, `memory-total`, `window`, `agent-limit`, `slot-count`, `slots-busy`, `agents-running`,
 `memory-per-agent`, `ceiling`, `suggested`.
 
 ### Room for one more agent
 
 ```sh
-scripts/room.ps1 [-Since <seconds>]
 bash scripts/room.sh [--since <seconds>]
 ```
 
@@ -755,7 +745,6 @@ start back: it never changes the agent limit, stops an agent or frees a slot. A 
 ### Adjusting the limit to the load
 
 ```sh
-scripts/control.ps1
 bash scripts/control.sh
 ```
 
@@ -766,7 +755,7 @@ changes the live agent limit with `slot --capacity`, like a hand-set value, show
 
 One pass is one call of the script. In a session, `/loop 5m /nightmill:control` runs a pass every 5 minutes (use the
 value of `parallel.controlIntervalMinutes`, default 5), or `/loop /nightmill:control` paces itself by the
-`control: next pass in <i> min` line every pass prints. An orchestrator runs `scripts/control.ps1` or
+`control: next pass in <i> min` line every pass prints. An orchestrator runs
 `bash scripts/control.sh` at that interval. A pass measures over `parallel.loadWindowSeconds` like the load command,
 takes its suggestion as the target and keeps it between `parallel.controlMinAgents` (default 1) and
 `parallel.controlMaxAgents` (default 4).
@@ -778,7 +767,7 @@ brought inside them at once. The slot count is raised to the new limit by any pa
 slot count, also when that pass lowers the limit but the new limit is still above the slot count; a pass that keeps the
 limit never touches it, and it is never lowered. The last change is the time in `capacity.json`, rewritten by every
 `slot --capacity` set (also one that changes nothing or sets only the slot count), so any such set, by hand or not,
-restarts the cooldown, and `-Clear` hands the start back to the configuration. Leave `WORKER_SLOTS` unset where the
+restarts the cooldown, and `--clear` hands the start back to the configuration. Leave `WORKER_SLOTS` unset where the
 controller runs, or accept that a raise up to that value writes no live slot count.
 
 Every pass reports in one line: the old value, the new value (or `kept`), the rule and the measure that caused it,
@@ -786,7 +775,7 @@ for example `control: agent limit 2 -> 3, slots 2 -> 3 (room; CPU 10%, free memo
 suggested 4: ...)`. A pass that cannot measure changes nothing, says `kept (unavailable; ...)` and exits 1. The
 controller never stops an agent, frees a slot or edits the config: busy slots stay busy, and a lowered limit only
 holds back the next start. It leaves nothing running: the loop ends with the session, and the last live values stay
-until `-Clear`, as for a hand-set value.
+until `--clear`, as for a hand-set value.
 
 The controller does not see the API's rate limits, the token budget, or agents outside the slots; nor what the load
 command does not see (GPU, disk, network, memory a build has not taken yet; CPU used by other programs counts as the
@@ -881,15 +870,15 @@ claude -p "/nightmill:fix all" --permission-mode manual --max-turns 2000 > "$HOM
 ### Several runs at once
 
 - Every session of the project on the machine, headless or not, shares the same slots. Their number is
-  `worktrees.slots` (default 2), unless `WORKER_SLOTS` or a live value from `slot -Capacity` replaces it
+  `worktrees.slots` (default 2), unless `WORKER_SLOTS` or a live value from `slot --capacity` replaces it
   ([Changing the numbers during a session](#changing-the-numbers-during-a-session)).
 - A `/next` or a single `/fix` run holds one slot from its take until the slot is freed after the merge (by the next
-  take, `-Reap` or `-Release`), also after the run has ended. `/fix all` holds one slot per bug in flight and frees
+  take, `--reap` or `--release`), also after the run has ended. `/fix all` holds one slot per bug in flight and frees
   each once its pull request is open. So at most as many `/next` and `/fix` runs work at once as there are slots,
   counting the slots that still wait for a merge.
 - A run that finds every slot busy stops with `all <k> slots are busy`. Its story or bug is then at In progress with
   nothing behind it, because the status is set before the take; the maintainer moves it back (Approved for a story,
-  Ready for a bug). So start no more runs than there are free slots (`slot -Status`, or `/nightmill:status`).
+  Ready for a bug). So start no more runs than there are free slots (`slot --status`, or `/nightmill:status`).
 - The agent limit (`parallel.maxAgents`, default 2, or the live value) is counted by each session for the agents it
   started, so two sessions can run up to twice the limit. The room check before each start measures the whole machine
   and holds a start back when memory or CPU is short ([Room for one more agent](#room-for-one-more-agent)).
@@ -927,7 +916,7 @@ terminates the commands it is running and starts nothing new. The driver's kill 
 
 - **During a take:** an interrupted take frees its slot again ("interrupted ...; slot <n> is free again"). A take
   killed without a chance to clean up (`kill -KILL`, a closed window) leaves a claim that `/nightmill:status` shows
-  with the step `take-died`; `-Abandon N` (`--abandon N`) frees it once its files are dealt with
+  with the step `take-died`; `--abandon N` frees it once its files are dealt with
   ([Why slots](#why-slots)).
 - **After the take:** nothing is undone. The board status stays as the run last set it (In progress, or Review once
   the pull request is open). The slot stays taken with its branch, its commits and its uncommitted files. Its last
@@ -939,7 +928,7 @@ terminates the commands it is running and starts nothing new. The driver's kill 
   **stalled**. A slot with uncommitted files from the stopped run is refused until they are committed, stashed or
   discarded.
 - **A bug:** `/fix` continues nothing. A bug stopped in flight stays at In progress with its slot taken; the
-  maintainer looks at the slot, frees it with `-Abandon N` and moves the bug back to Ready for a new run.
+  maintainer looks at the slot, frees it with `--abandon N` and moves the bug back to Ready for a new run.
 - **`/fix all`** stopped by a signal prints no final table. Each bug in flight is left as a single run is. A slot it
   already freed stays free, and a bug whose pull request is open is at Review.
 - `--continue` or `--resume` reopens the stopped conversation, but they are not needed: work is continued through the
@@ -957,7 +946,6 @@ Run it in the project's main checkout:
 
 ```sh
 bash "<plugin>/scripts/drive.sh"
-powershell -NoProfile -ExecutionPolicy Bypass -File "<plugin>/scripts/drive.ps1"
 ```
 
 `<plugin>` is `installPath` of the entry `nightmill@nightmill` in `claude plugin list --json`. The driver needs
@@ -995,7 +983,7 @@ To start it from a local scheduler instead of the workflow, one cron line:
 - **The time limit:** `unattended.maxMinutes` (default 240). No step starts once that many minutes have passed since the
   driver started; it is checked between steps, so a run can last that long plus one step.
 - **The kill switch:** the file `.git/nightmill-stop` in the main checkout. Set it with `touch .git/nightmill-stop`
-  (PowerShell: `New-Item .git/nightmill-stop`) and clear it by deleting the file. Only its existence counts. Set
+  and clear it by deleting the file. Only its existence counts. Set
   before the start, the run does not start; set later, the run ends after the step that is running. It sits in the git
   directory, so it never makes the tree dirty.
 - **One driver per repository:** a second driver started beside a running one says
@@ -1175,12 +1163,12 @@ branch as the marketplace: `claude plugin marketplace add CodaColaLight/nightmil
 
 ### Releasing
 
-`main` only takes pull requests, so a release has two steps. `scripts/release.sh --version X.Y.Z` (or
-`scripts/release.ps1 -Version X.Y.Z`) creates the branch `release/vX.Y.Z` with one commit that bumps
+`main` only takes pull requests, so a release has two steps. `scripts/release.sh --version X.Y.Z`
+creates the branch `release/vX.Y.Z` with one commit that bumps
 `.claude-plugin/plugin.json`, moves the `Unreleased` entries of `CHANGELOG.md` under `## X.Y.Z (date)` and
 updates the `Version` line below, then opens the pull request. After you merge it, the same command with
-`--publish` (`-Publish`) tags the release commit and creates the GitHub Release from the changelog section.
-`--dry-run` (`-DryRun`) shows the plan and changes nothing. The script refuses when the version is not
+`--publish` tags the release commit and creates the GitHub Release from the changelog section.
+`--dry-run` shows the plan and changes nothing. The script refuses when the version is not
 greater than the current one, when the tree is dirty, when you are not on an up-to-date `main`, when
 `Unreleased` is empty, or when the tag or branch exists. The lint fails if `plugin.json`, the newest
 changelog heading and the README's `Version` line disagree. Projects pin by the version in `plugin.json`.

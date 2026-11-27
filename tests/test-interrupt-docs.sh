@@ -47,10 +47,10 @@ done
 if has "$tmp" 'A signal sent with kill'; then fail "scripts/slot.ps1: the header keeps the sentence on kill"; fi
 
 for t in 'A take that is interrupted after it has claimed its slot (Ctrl+C, or a TERM signal in bash) puts the slot back and frees it as a failed take does' \
-  '"warm-up 1 interrupted (INT); slot 1 is free again" (bash, exit 130, or 143 for TERM)' \
-  '"warm-up 1 stopped; slot 1 is free again" (PowerShell, which cannot tell why it was stopped and keeps its own exit code)' \
-  'Interrupted while it writes its finished marker, it leaves the claim, and -Abandon N (--abandon N) frees it.' \
-  'A take that is killed without a chance to clean up (Stop-Process, kill -KILL, a closed window) leaves a claim that slot -Status shows as ended; -Abandon N frees it.'; do
+  '"warm-up 1 interrupted (INT); slot 1 is free again"' \
+  '(exit 130, or 143 for TERM)' \
+  'Interrupted while it writes its finished marker, it leaves the claim, and --abandon N frees it.' \
+  'leaves a claim that slot --status shows as ended; --abandon N frees it.'; do
   has "$root/README.md" "$t" || fail "README.md does not say: $t"
 done
 

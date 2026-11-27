@@ -40,8 +40,8 @@ else
     echo "FAIL: README.md has no section '## What is in the plugin'"; fail=1
   else
     for s in "${scripts[@]}"; do
-      if ! grep -qF -- "scripts/$s." <<<"$sect"; then
-        echo "FAIL: README.md 'What is in the plugin' does not name scripts/$s.ps1 / scripts/$s.sh"; fail=1
+      if ! grep -qF -- "scripts/$s.sh" <<<"$sect"; then
+        echo "FAIL: README.md 'What is in the plugin' does not name scripts/$s.sh"; fail=1
       fi
     done
     for k in "${skills[@]}"; do

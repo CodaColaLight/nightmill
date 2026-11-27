@@ -18,7 +18,7 @@ text and the configuration disagree, the configuration wins. The process rules a
 skill of this plugin; this skill is the step list.
 
 **The pause and the limits** (the `workflow` skill) are checked before every step of this list, by the six points
-listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`,
+listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"`,
 with `--issue <N>` once the story is known and `--role <role> --turns <t>` after a launch returns. Exit 1, 2 or 4
 stops the run with its `Stopped:` line (and the clean-up of "The spec writer" step 5); exit 3 is the breach (comment,
 label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set).
@@ -161,8 +161,7 @@ rule. The spec file is the writer's.
    `git switch -c <branch> origin/<branch>`); the tree must be clean, except in S5 when the checkout is already on it
    with the spec file as its only uncommitted change. Remember the branch you came from. You choose `<slug>`; the file path is known before the launch.
 2. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
-   builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
-   `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
+   builds). At the agent limit (read it now, as the workflow skill says: `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
    wait for; the session never writes the spec itself instead. The writer is one agent (its prompt forbids launching others).
    Then check the room on the machine (**Parallel work** in the `workflow` skill).
 3. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
@@ -231,9 +230,8 @@ After the writer's `Result: complete` and a right form, and before the commit, t
 different agent reviews the spec file as it is in the working tree. The findings format, the rounds and the pairing
 rule are in **Findings and fix rounds** in the `workflow` skill.
 
-1. **The pairing.** Run `validate-config` of the shell in use on the project's base configuration
-   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Base`, or
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
+1. **The pairing.** Run `validate-config` on the project's base configuration
+   (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
    the base branch, **The configuration** in the `workflow` skill; a stop of that rule is exit 2). When it reports a line
    on `roles.specReviewer.model` with the text `ranks below`, stop with
    `Stopped: the specReviewer ranks below the specWriter: <the text of that line>. Nothing was reviewed; the status of #<issue> is Spec.`

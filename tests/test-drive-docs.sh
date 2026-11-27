@@ -116,7 +116,7 @@ else
   want=$'### The driver\n### Limits and the kill switch\n### The summary\n### The workflow template'
   [ "$heads" = "$want" ] || fail "README.md: the sub-headings of '## Running on a schedule' are not exactly: The driver, Limits and the kill switch, The summary, The workflow template (in order)"
   d=$(sed -n '/"maxMinutes": {/,/}/p' "$schema" | sed -n 's/.*"default": *\([0-9]*\).*/\1/p' | head -1)
-  for w in scripts/drive.sh scripts/drive.ps1 templates/workflows/nightmill-drive.yml .git/nightmill-stop \
+  for w in scripts/drive.sh templates/workflows/nightmill-drive.yml .git/nightmill-stop \
            "\`unattended.maxMinutes\` (default ${d:-240})" unattended.summaryIssue total_cost_usd 'permissions: {}' GITHUB_TOKEN \
            repo read:org project workflow self-hosted NIGHTMILL_CHECKOUT -- '--permission-mode manual' \
            '(#before-the-first-run)' '(#when-a-run-is-stopped)' '(#security-model)'; do
@@ -124,7 +124,7 @@ else
     case "$sec" in *"$w"*) ;; *) fail "README.md: the section '## Running on a schedule' lacks '$w'" ;; esac
   done
   [[ "$sec" =~ \[#165\]\(https://github.com/[^\)]*/issues/165\) ]] || fail "README.md: no link to #165 in the section"
-  grep -qF '| `scripts/drive.ps1`, `scripts/drive.sh` |' "$readme" || fail "README.md: no row of scripts/drive.ps1, scripts/drive.sh in the plugin table"
+  grep -qF '| `scripts/drive.sh` |' "$readme" || fail "README.md: no row of scripts/drive.sh in the plugin table"
 fi
 flatreadme=$(tr '\n' ' ' < "$readme" | sed -E 's/ +/ /g')
 if [[ "$flatreadme" == *'no trigger that starts runs ships yet'* ]]; then fail "README.md: the Security model still says 'no trigger that starts runs ships yet'"; fi

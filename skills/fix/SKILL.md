@@ -20,7 +20,7 @@ A bug is a defect in shipped behaviour (form: `.github/ISSUE_TEMPLATE/bug.yml`).
 milestone, iteration number or CHANGELOG entry.
 
 **The pause and the limits** (the `workflow` skill) are checked before every step of this list, by the six points
-listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"` or `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/gate.ps1"`,
+listed there: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"`,
 with `--issue <N>` once the bug is known, `--slot <n>` once a slot is taken and `--role <role> --turns <t>` after a
 launch returns. For `/fix <N>` exit 1, 2 or 4 stops the run with its `Stopped:` line and exit 3 is the breach (comment,
 label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set); for `/fix all` see "The gate" in
@@ -43,8 +43,7 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
    the lane line of "The fast lane", rule 2.
 3. **Set the status to In progress** and read it back (`gh project item-list`, `gh project field-list`,
    `gh project item-edit`). Before it, check the room on the machine (**Parallel work** in the `workflow` skill).
-   Work in a slot: `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Take <git.fixPrefix><number>-<slug>`
-   (bash: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.fixPrefix><number>-<slug>`); `-Release N` after the
+   Work in a slot: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --take <git.fixPrefix><number>-<slug>`; `--release N` after the
    merge (in "Batch mode" the slot is freed once its pull request is open). In a single checkout without slots,
    `git fetch origin`, then `git switch -c <git.fixPrefix><number>-<slug> origin/<git.baseBranch>`. In a slot every git
    command, the session's own included, is `git -C <slot path> ...` with the absolute slot path, never
@@ -187,9 +186,8 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
 
 ## Reporting the steps
 
-A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call of the
-shell in use, with N the slot number the take printed (`Slot N is yours`):
-`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Report <step> -Slot <n> -Skill fix -Role <role>` or
+A slot records what its agent is doing, so `/status` shows it `running` or `stalled`. A report is one call, with N
+the slot number the take printed (`Slot N is yours`):
 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --report <step> --slot <n> --skill fix --role <role>`. A report that
 fails never stops the run: go on, and name a failed report you made yourself once, in your final message. A report
 is not a board status. A run without slots (no `worktrees`, `git switch -c` in a single checkout) took no slot and
@@ -229,7 +227,7 @@ The session keeps the pick, the decision that it is a bug, the board, the slot a
 is the tester's.
 
 1. **Count.** Before the launch count the agents running, as for the fixer (the live agent limit from
-   `slot.ps1 -Capacity -Porcelain` or `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
+   `slot.sh --capacity --porcelain`, else `parallel.maxAgents`). At the limit wait for
    one to end and say what you wait for; the session never writes the test itself instead. The tester is one agent (its
    agent file has no `Agent` tool), and it has returned before the fixer is launched, so a bug runs at most one producer
    at a time. Then check the room on the machine (**Parallel work** in the `workflow` skill).
@@ -309,8 +307,7 @@ decide it), the status, the slot, the manual check, the pull request and every h
 tester's; the fix, and the commit of both, are the fixer's. The fixer is launched only after "The tester" went on.
 
 1. **Count.** Before the launch count the agents running (the workflow rule: subagents, slot builds, your own
-   builds). At the agent limit (read it now, as the workflow skill says: `slot.ps1 -Capacity -Porcelain` or
-   `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
+   builds). At the agent limit (read it now, as the workflow skill says: `slot.sh --capacity --porcelain`, the live value, else `parallel.maxAgents`) wait for one to end and say what you
    wait for; the session never writes the code itself instead. The fixer is one agent (its prompt forbids launching others).
    Then check the room on the machine (**Parallel work** in the `workflow` skill).
 2. **Launch.** One Agent call: a fresh agent (omit `subagent_type`; not nightmill:worker), not a fork, with the
@@ -379,8 +376,8 @@ Do this:
    with `git -C <slot path> add ...` and `git -C <slot path> commit -m "<message>"`, a message that names the bug.
    Never commit red.
 
-Report your progress with `<the report command of the shell in use, with --slot <n> --skill fix --role fixer
-(PowerShell: -Slot, -Skill, -Role) and the step as the value of --report / -Report>`: before step 1 (`test`), before
+Report your progress with `<the report command, with --slot <n> --skill fix --role fixer and the step as the value of
+--report>`: before step 1 (`test`), before
 step 2 (`code`), before every run of the check (`check`) and before the commit (`commit`). It writes only the slot's
 marker outside the repository and is not a status; when it fails, go on.
 
@@ -545,7 +542,7 @@ other path is not the tester's, and a tester file is the tester's as a whole. Th
    object store as the pristine copy), `<head>` by `git -C <slot> rev-parse -q --verify HEAD:<path>` (`none` when it
    prints nothing: the file is new), and `<mode>` is the first field of `git -C <slot> ls-tree HEAD -- <path>` when
    `<head>` is not `none`, else the mode of the line `new file mode <mode>` that
-   `git -C <slot> diff --no-index -- /dev/null <path>` prints (git alone, the same in bash and PowerShell; its exit code
+   `git -C <slot> diff --no-index -- /dev/null <path>` prints (git alone; its exit code
    1 means only that the files differ). A path whose file is missing when it is recorded stops the run with
    `Stopped: the tester returned failed: it deleted <path>`. The pristine copy lives only in the object store, never in
    the stash (shared by all worktrees) and never in a file of the slot. Keep `<tester originals>` beside them: one line
@@ -575,7 +572,7 @@ other path is not the tester's, and a tester file is the tester's as a whole. Th
       `git -C <slot> update-index --add --cacheinfo <mode>,<blob>,<path>`, then `git -C <slot> checkout-index -f -- <path>`
       (writes the tester's text into the working tree, creating its directory, with git's filters), then
       `git -C <slot> reset -q -- <path>` (the index at that path is HEAD's again; the file is uncommitted, as the tester
-      left it). Git writes the file; no shell redirection is used, so the bytes are the same in bash and PowerShell.
+      left it). Git writes the file; no shell redirection is used, so the bytes do not depend on the shell.
    4. Check every line of `<tester blobs>` again by rule 3; one that still fails stops with
       `Stopped: the fixer returned failed: the tester's file <path> could not be restored`.
 
@@ -673,9 +670,8 @@ The tester's dispute prompt carries no reason of the fixer beyond its `Disputes`
 After the fixer's result (not `failed`) and before the manual check, a different agent reviews the fix. The findings
 format, the rounds and the pairing rule are in **Findings and fix rounds** in the `workflow` skill.
 
-1. **The pairing.** Run `validate-config` of the shell in use on the project's base configuration
-   (`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.ps1" -Base`, or
-   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
+1. **The pairing.** Run `validate-config` on the project's base configuration
+   (`bash "${CLAUDE_PLUGIN_ROOT}/scripts/validate-config.sh" --base`, run in the project's checkout: the configuration on
    the base branch, **The configuration** in the `workflow` skill; a stop of that rule is exit 2). When it reports a line
    on `roles.codeReviewer.model` with the text `ranks below`, stop with
    `Stopped: the codeReviewer ranks below the fixer: <the text of that line>. Nothing was reviewed; the status of #<issue> is In progress and the slot is taken.`
@@ -930,7 +926,7 @@ differences (step 7 does not run: `/fix all` watches no pull request):
   its step 3 begins); a bug skipped as `needs a story` before a take does not count. With the limit reached no new
   start happens: bugs in flight finish, and every bug still waiting (also one that became Ready later) is listed as not
   started with `run limit of <k> reached`.
-- **One take at a time.** The session runs one take at a time: a take (`slot.ps1 -Take` / `slot.sh --take`) only as a
+- **One take at a time.** The session runs one take at a time: a take (`slot.sh --take`) only as a
   foreground shell call, never in the background and never in the same message as another take or an abandon, and the
   next slot command only after the previous one has exited. So two starts of this run never get the same slot.
 - **Overlapping bugs wait.** Before a bug starts, record its **named files**: each token of the issue's title or body
@@ -952,8 +948,7 @@ differences (step 7 does not run: `/fix all` watches no pull request):
   4. `git -C <slot> rev-parse HEAD` equals what `gh pr view <pr> --json headRefOid --jq .headRefOid` prints (the
      branch's last commit is the head of the open PR, so it is pushed).
 
-  Then run `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/slot.ps1" -Abandon <n>` or
-  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --abandon <n>` and expect exit 0 and the line `Slot <n> is free`; the
+  Then run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slot.sh" --abandon <n>` and expect exit 0 and the line `Slot <n> is free`; the
   local branch is kept, and its commits are on the open PR. When any check fails, or the abandon exits non-zero, the
   slot is **held**: change nothing, the slot keeps its marker and its files, and the final table names the check that
   failed. A bug that ends without a PR (skipped, or stopped in flight) never has its slot freed, whether its tree is

@@ -469,7 +469,7 @@ echo "== init installs the run permissions"
 # slots, in .claude/settings.local.json. /init is a conversation, so the lint pins the wording; the manual check does the behaviour.
 ini=skills/init/SKILL.md
 for w in '**Run permissions**' '.claude/settings.local.json' 'additionalDirectories' 'Edit(//' '/slot-*/**' \
-         'git rev-parse --path-format=absolute --git-common-dir' '26 + 21' \
+         'git rev-parse --path-format=absolute --git-common-dir' '21 + 21' '5 rules' \
          "declined (the skills' git commands, scripts and slot edits will prompt)" \
          'kept: <k> script rules for another plugin folder' \
          'Bash(git fetch origin)' 'Bash(git switch *)' 'Bash(git add *)' 'Bash(git commit *)' \
@@ -483,10 +483,11 @@ for w in '**Run permissions**' '.claude/settings.local.json' 'additionalDirector
          'Bash(git -C <S> reset -q -- *)' 'Bash(git -C <S> update-index *)' 'Bash(git -C <S> checkout-index *)' \
          'Bash(git -C <S> symbolic-ref *)' 'Bash(git -C <S> rebase origin/<B>)' 'Bash(git -C <S> rebase --continue)' \
          'Bash(git -C <S> push -u origin <Fe>*)' 'Bash(git -C <S> push -u origin <Fx>*)' \
-         'Bash(bash "<P>/scripts/<name>.sh" *)' \
-         'Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)'; do
+         'Bash(bash "<P>/scripts/<name>.sh" *)'; do
   grep -qF -- "$w" "$ini" || { echo "FAIL: $ini does not mention the run permissions item: $w"; fail=1; }
 done
+# #364: init writes the bash form of the script rules only
+if grep -qF -- 'Bash(powershell' "$ini"; then echo "FAIL: $ini writes a PowerShell allow rule; init writes the bash form only (#364)"; fail=1; fi
 if ! sed -n '/^- \*\*Run permissions\*\*/,/^- \*\*/p' "$ini" | grep -F 'without removing or reordering an entry' >/dev/null; then
   echo "FAIL: $ini: the Run permissions line does not say no entry is removed or reordered"; fail=1
 fi
@@ -523,12 +524,11 @@ for f in skills/next/SKILL.md skills/fix/SKILL.md agents/tester.md; do
     grep -qF -- "git -C <S> $sub" "$ini" || { echo "FAIL: $f runs git -C <slot> $sub, which no Run permissions rule covers"; fail=1; }
   done < <(grep -oE 'git -C <slot( path)?> (stash [a-z]+|reset (--mixed|-q)|[a-z-]+)' "$f" | sort -u)
 done
-# every script call is one of the two forms the rules match
+# every script call is the one form the rule matches
 for f in skills/*/SKILL.md; do
   while IFS= read -r m; do
     case "$m" in
       bash\ \"*.sh\") ;;
-      'powershell -NoProfile -ExecutionPolicy Bypass -File "'*.ps1\") ;;
       *) echo "FAIL: $f: $m is not the one script form"; fail=1 ;;
     esac
   done < <(grep -oE '(bash |powershell -NoProfile -ExecutionPolicy Bypass -File )?"\$\{CLAUDE_PLUGIN_ROOT\}/scripts/[a-z-]+\.(sh|ps1)"' "$f")
@@ -683,9 +683,7 @@ for f in scripts/slot.sh scripts/slot.ps1; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry the automatic release item: $w"; fail=1; }
   done
 done
-for w in '--reap' '-Reap'; do
-  grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
-done
+grep -qF -- '--reap' README.md || { echo "FAIL: README.md does not mention --reap"; fail=1; }
 
 echo "== capacity is wired"
 # The slot count and the agent limit can be changed during a session (iteration 22): both slot scripts keep the live
@@ -696,18 +694,16 @@ for f in scripts/slot.sh scripts/slot.ps1; do
 done
 grep -qF -- '--capacity' scripts/slot.sh || { echo "FAIL: scripts/slot.sh has no --capacity"; fail=1; }
 grep -qF -- '-Capacity' scripts/slot.ps1 || { echo "FAIL: scripts/slot.ps1 has no -Capacity"; fail=1; }
-for w in '--capacity --porcelain' '-Capacity -Porcelain'; do
-  grep -qF -- "$w" skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with $w"; fail=1; }
-done
+grep -qF -- '--capacity --porcelain' skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not read the agent limit with --capacity --porcelain"; fail=1; }
 for f in skills/next/SKILL.md skills/fix/SKILL.md skills/spec/SKILL.md; do
-  if ! grep -qF -- '--capacity --porcelain' "$f" && ! grep -qF -- '-Capacity -Porcelain' "$f"; then
+  if ! grep -qF -- '--capacity --porcelain' "$f"; then
     echo "FAIL: $f does not read the agent limit with the capacity command"; fail=1
   fi
   if grep -qF 'At `parallel.maxAgents` wait' "$f"; then
     echo "FAIL: $f still waits at parallel.maxAgents read once (the agent limit is read at every decision)"; fail=1
   fi
 done
-for w in '--capacity' '-Capacity' 'WORKER_SLOTS'; do
+for w in '--capacity' 'WORKER_SLOTS'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
 
@@ -728,7 +724,7 @@ for f in scripts/lib/status.awk scripts/status.ps1; do
   if grep -qF 'stalledAfterMinutes' "$f"; then echo "FAIL: $f reads stalledAfterMinutes (the slot script decides running or stalled)"; fail=1; fi
 done
 for f in skills/next/SKILL.md skills/fix/SKILL.md; do
-  for w in '--report' '-Report' 'slot-taken' 'code-review' 'done'; do
+  for w in '--report' 'slot-taken' 'code-review' 'done'; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the report item: $w"; fail=1; }
   done
 done
@@ -783,9 +779,7 @@ done
 for w in 'history.sh' 'history.ps1' '--html' 'status.sh --json'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for w in '--json' '-Json'; do
-  grep -qF -- "$w" skills/status/SKILL.md || { echo "FAIL: skills/status/SKILL.md does not mention $w"; fail=1; }
-done
+grep -qF -- '--json' skills/status/SKILL.md || { echo "FAIL: skills/status/SKILL.md does not mention --json"; fail=1; }
 if grep -rqF 'history.sh' skills; then
   echo "FAIL: a file in skills/ names history.sh (the history is a script the maintainer runs, not a skill): $(grep -rlF 'history.sh' skills | tr '\n' ' ')"; fail=1
 fi
@@ -1083,7 +1077,7 @@ for spec in roomCheck:true roomMinFreeMB:2000 roomMaxCpuPercent:90 roomPauseSeco
   k=${spec%%:*}; d=${spec#*:}
   [ "$(json_get "parallel.$k")" = "$d" ] || { echo "FAIL: templates/nightmill.example.json: parallel.$k is not the schema default $d"; fail=1; }
 done
-for w in 'scripts/room.ps1' 'scripts/room.sh' 'Stopped: no room on this machine' 'never changes the agent limit, stops an agent or releases a slot'; do
+for w in 'scripts/room.sh' 'Stopped: no room on this machine' 'never changes the agent limit, stops an agent or releases a slot'; do
   grep -qF -- "$w" skills/workflow/SKILL.md || { echo "FAIL: skills/workflow/SKILL.md does not say: $w"; fail=1; }
 done
 for spec in next:7 fix:6 spec:3; do
@@ -1154,7 +1148,7 @@ for spec in controlMode:off controlMinAgents:1 controlMaxAgents:4 controlCooldow
 done
 s=skills/control/SKILL.md
 if [ -f "$s" ]; then
-  for w in 'scripts/control.ps1' 'scripts/control.sh' 'control: next pass in'; do
+  for w in 'scripts/control.sh' 'control: next pass in'; do
     grep -qF -- "$w" "$s" || { echo "FAIL: $s does not say: $w"; fail=1; }
   done
   for w in 'nightmill.json' '--agent-limit' '-AgentLimit' '--slot-count' '-SlotCount'; do
@@ -1591,6 +1585,62 @@ echo "== the agreement section stays cheap"
 # #340: the lint copies of tests/smoke-check.sh/.ps1 check the rules only; the cost test runs once, in the lint.
 [ "${NIGHTMILL_CI_PARTS_RULES_ONLY:-}" = 1 ] || bash tests/test-lint-agreement-cost.sh "$PWD" || fail=1
 
+echo "== the skills, the agents and the README name the .sh form only (#364)"
+# Iteration 67 (#364, decision record 0004 step 3): a line of a skill, an agent or the user part of the README that tells
+# how to run a script names the bash form. The .ps1 files still ship (#365 removes them), so the Developing nightmill part
+# of the README may name a .ps1 that has no .sh twin or that a test line names, but not scripts/<x>.ps1 of a script that exists.
+sh_only_scan() { # sh_only_scan <mode> <file> <stop-heading>: prints "<n>:<first match>" per failing line
+  awk -v mode="$1" -v stop="$3" '
+    mode == "dev" { if (!on) { if ($0 == stop) on = 1; next } }
+    mode == "user" && $0 == stop { exit }
+    {
+      m = ""
+      if (mode == "dev") {
+        s = $0
+        while (match(s, /(scripts\/|[ `(])[a-z0-9-]+\.ps1/)) {
+          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+          sub(/^[ `(]/, "", t)
+          n = t; sub(/^scripts\//, "", n)
+          if (system("test -f scripts/" n) == 0) { m = "scripts/" n; break }
+        }
+      } else {
+        if (index($0, ".ps1")) m = ".ps1"
+        else if (mode == "user" && index($0, "powershell -")) m = "powershell -"
+        else if (mode == "agent" && index($0, "powershell")) m = "powershell"
+        else if (mode == "skill" && index($0, "powershell")) m = "powershell"
+        if (m == "" && mode != "user") {
+          t = $0; gsub(/PowerShell tests/, "", t)
+          if (index(t, "PowerShell") && !(mode == "agent" && $0 ~ /^tools:/)) m = "PowerShell"
+        }
+        if (m == "" && match($0, "(^|[ `(/])-[A-Z][a-z]+")) {
+          m = substr($0, RSTART, RLENGTH); sub(/^[ `(\/]/, "", m)
+        }
+        if (m != "" && mode == "user" && $0 ~ /^On Windows the pane runs `scripts\/panel\.ps1` /) m = ""
+      }
+      if (m != "") print NR ":" m
+    }' "$2"
+}
+sh_only_report() { # sh_only_report <file> <scan output>
+  while IFS= read -r so_l; do
+    [ -n "$so_l" ] || continue
+    echo "FAIL: $1:${so_l%%:*} names the PowerShell form of a script (${so_l#*:}); name the .sh form only (#364)"; fail=1
+  done <<<"$2"
+}
+for so_f in skills/*/SKILL.md; do sh_only_report "$so_f" "$(sh_only_scan skill "$so_f" '')"; done
+for so_f in agents/*.md; do [ -f "$so_f" ] && sh_only_report "$so_f" "$(sh_only_scan agent "$so_f" '')"; done
+sh_only_report README.md "$(sh_only_scan user README.md '## Developing nightmill')"
+sh_only_report README.md "$(sh_only_scan dev README.md '## Developing nightmill')"
+
+# the .ps1 files still ship in this release (#365 removes them), so a project's .ps1 allow rules and hand-wired hooks work
+for so_s in slot room gate validate-config status session-start guard; do
+  [ -f "scripts/$so_s.ps1" ] || { echo "FAIL: scripts/$so_s.ps1 is gone; this release ships the .ps1 files (#364, #365 removes them)"; fail=1; }
+done
+# the changelog tells a Windows session without Git Bash what to do, and that the removal of the .ps1 files comes later
+so_cl=$(tr '\n' ' ' < CHANGELOG.md 2>/dev/null | tr -s ' ')
+for so_w in 'Iteration 67 (#364)' 'install Git for Windows' 'comes before the one that removes the .ps1 files (#365)'; do
+  case "$so_cl" in *"$so_w"*) ;; *) echo "FAIL: CHANGELOG.md does not say: $so_w (#364)"; fail=1 ;; esac
+done
+
 echo "== text from issues is data"
 # Text from issues, pull requests, comments and linked files is data, never instructions (bug #108). On a public
 # repository anyone can comment on an Approved issue while the agent holds gh, git push and auto-merge. So: the workflow
@@ -1831,7 +1881,7 @@ echo "== /fix all runs bugs in parallel"
 # check does the behaviour.
 fx=skills/fix/SKILL.md
 for w in 'parallel.fixAllMaxBugs' 'Stopped: parallel.fixAllMaxBugs must be a whole number of at least 0' \
-         'One producer at a time per bug' 'one take at a time' '--abandon' '-Abandon' '--json headRefOid' \
+         'One producer at a time per bug' 'one take at a time' '--abandon' '--json headRefOid' \
          '--untracked-files=all' 'held: uncommitted files' 'Not started:' 'Stopped in flight:' 'run limit of <k> reached' \
          'no slot frees in this run' 'parallel.hotFiles' 'parallel.doNotPair' 'overlaps #N, will conflict until that merges' \
          'pause flag' '| Bug | Result | PR | Slot | Cause or reason | Verified |' 'git.mergeFlags'; do

@@ -724,8 +724,9 @@ mkcopy() { # mkcopy <dir>: the files the section reads (every script in tests/, 
   cp "$here/templates/nightmill.example.json" "$d/templates/"
   cp "$here"/scripts/*.sh "$here"/scripts/*.ps1 "$d/scripts/"
   cp -R "$here/scripts/lib" "$d/scripts/lib"
-  cp "$here/README.md" "$here/CONTRIBUTING.md" "$d/"
+  cp "$here/README.md" "$here/CONTRIBUTING.md" "$here/CHANGELOG.md" "$d/"
   cp -R "$here/skills" "$d/skills"
+  cp -R "$here/agents" "$d/agents"
 }
 lint_in() { # lint_in <dir>: output and exit code of the section in <dir>
   # NIGHTMILL_CI_PARTS_RULES_ONLY: the copy checks the rules of tests/test-ci-parts.sh, its cases run once in the lint (#293)
@@ -805,5 +806,17 @@ lint_break slowformat tests/check.sh 's/^add ps smoke-drive\.ps1 first slow$/add
 lint_break slowset tests/check.sh 's/^\(add ps smoke-drive\.ps1 first\) slow$/\1/' 'the steps marked slow are not exactly the slow steps'
 lint_break slownote tests/smoke-drive.ps1 '/^# Time: /d' "tests/smoke-drive.ps1 has no '# Time: ' note in its header"
 lint_break mapplugin tests/check.sh '/^shared \.claude-plugin\/plugin\.json$/d' 'the map does not have the line shared .claude-plugin/plugin.json'
+
+# the skills, the agents and the README name the .sh form only (#364): the section of tests/lint.sh, each rule broken once
+lint_break shskill skills/status/SKILL.md 's#bash "\${CLAUDE_PLUGIN_ROOT}/scripts/status.sh"#powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/status.ps1"#' 'names the PowerShell form of a script'
+lint_break shflag skills/workflow/SKILL.md 's/--capacity --porcelain/-Capacity -Porcelain/' 'names the PowerShell form of a script (-Capacity'
+lint_break shreadme README.md 's#bash scripts/load.sh \[--porcelain\]#scripts/load.ps1 [-Porcelain]#' 'README.md:'
+grep -qF 'names the PowerShell form of a script' <<<"$out" || fail "lint shreadme: no 'names the PowerShell form of a script' in: $out"
+lint_break shdev README.md 's#^`main` only takes pull requests, so a release has two steps.#& Or `scripts/release.ps1`.#' 'names the PowerShell form of a script (scripts/release.ps1)'
+# the init section: init writes no PowerShell allow rule (#364)
+sec="$tmp/lint-init-section.sh"
+awk '/^echo "== init installs the run permissions"/ { p = 1 } /^echo "== \/next and \/fix hand the coding to a subagent"/ { p = 0 } p' "$here/tests/lint.sh" > "$sec"
+[ -s "$sec" ] || fail "lint: tests/lint.sh has no section '== init installs the run permissions'"
+lint_break initps skills/init/SKILL.md 's#`Bash(bash "<P>/scripts/<name>.sh" \*)`\.#&\n    `Bash(powershell -NoProfile -ExecutionPolicy Bypass -File "<P>/scripts/<name>.ps1" *)`#' 'writes a PowerShell allow rule'
 
 echo "smoke-check: ok"
