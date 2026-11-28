@@ -137,6 +137,14 @@ for a in agents/*.md; do
   grep -q '^name: ' "$a" || { echo "FAIL: $a has no name"; fail=1; }
 done
 
+echo "== skills use the status names of the schema"
+# The status names /spec and /next move a story by are the schema's defaults of board.statuses (ready, specReview,
+# approved): a contract, so they are checked in the whole skill file.
+for w in 'Ready' 'Spec review'; do
+  grep -qF -- "$w" skills/spec/SKILL.md || { echo "FAIL: skills/spec/SKILL.md does not use the status $w"; fail=1; }
+done
+grep -qF -- 'Approved' skills/next/SKILL.md || { echo "FAIL: skills/next/SKILL.md does not use the status Approved"; fail=1; }
+
 echo "== init skill keeps the install-chat steps"
 # /init applies the install chat with these commands and API calls (iteration 1); the wording of its questions and
 # its steps is the manual check's (iteration 73: tests check contracts, not the wording of skills).
