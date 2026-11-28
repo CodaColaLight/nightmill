@@ -1,6 +1,6 @@
 # Iteration 76: the check steps check behaviour and contracts, not the wording of skills and docs
 
-Status: draft, awaiting approval (#411)
+Status: delivered in iteration 76 (PR #416)
 
 Story #411, epic #337 (fast verification loop), the rest of #344: the 14 check steps and the smoke reads that
 iteration 73 (`docs/specs/iteration-73-tests-check-behaviour.md`, decision 2 and the last row of decision 3) left
