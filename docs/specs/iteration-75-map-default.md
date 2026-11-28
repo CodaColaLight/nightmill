@@ -1,6 +1,6 @@
 # Iteration 75: a new test needs no line in the map of tests/check.sh
 
-Status: draft, awaiting approval (#405)
+Status: delivered in iteration 75 (PR #414)
 
 Story #405, epic #337 (fast verification loop): the rest of #343, criterion 3, which iteration 70 met only in part
 (decision 11 of `docs/specs/iteration-70-ci-step-lists-generated.md`, PR #404). After this iteration a bash step that no
