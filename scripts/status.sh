@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/status.sh - one table of what waits for the maintainer and what is stuck (nightmill).
 #
-#   status.sh [--all] [--porcelain | --json]
+#   status.sh [--all] [--porcelain | --json] | --budget
 #
 # --porcelain prints the same cells for a program, tab separated, one record per line ending with LF:
 # item (#, Status, Who, PR, Age, Flag, Title), note, slot (the ten cells of the Slots section) and capacity
@@ -20,36 +20,86 @@
 # usage error, a missing or unreadable config, a missing gh or a failed gh call.
 # A busy slot whose since is not YYYY-MM-DDTHH:MM:SS shows the Since cell ? and, unless its PR is merged or closed,
 # the flag "stale: busy, since unreadable" (iteration 57, #329).
+# The check time (iteration 74): with verification.checkBudgetSeconds or verification.stepBudgetSeconds set (1 to
+# 86400; another value is 0, no budget, with one note), the text form ends with one 'check time:' line: the record
+# <git common dir>/nightmill-check.tsv of the main checkout (written by nightmill's tests/check.sh) against the budgets.
+# --budget prints only that line (or 'check time: no budget set') and exits 0; it needs git and the config, not gh.
+# --porcelain and --json do not show it.
 # NIGHTMILL_NOW (seconds since 1970, with the local time zone taken as UTC) fixes the clock; the smoke test uses it.
 set -euo pipefail
 
-usage() { echo "usage: status.sh [--all] [--porcelain | --json]" >&2; exit 2; }
+usage() { echo "usage: status.sh [--all] [--porcelain | --json] | --budget" >&2; exit 2; }
 die() { echo "status.sh: $*" >&2; exit 2; }
 
 all=0
 porcelain=0
 json=0
+budget=0
+nargs=$#
 while [ $# -gt 0 ]; do
   case "$1" in
     --all) all=1 ;;
     --porcelain) porcelain=1 ;;
     --json) json=1 ;;
+    --budget) budget=1 ;;
     -h|--help) usage ;;
     *) echo "unknown option: $1" >&2; usage ;;
   esac
   shift
 done
 if [ "$porcelain" = 1 ] && [ "$json" = 1 ]; then usage; fi
+if [ "$budget" = 1 ] && [ "$nargs" != 1 ]; then usage; fi
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$here/lib/json.sh"
+. "$here/lib/ledger.sh"
 
-command -v gh >/dev/null 2>&1 || die "gh is not installed or not on the PATH"
+[ "$budget" = 1 ] || command -v gh >/dev/null 2>&1 || die "gh is not installed or not on the PATH"
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "run status.sh from inside a git checkout of the project"
 main=$(dirname "$gitdir")
 cfg="$main/.claude/nightmill.json"
 [ -f "$cfg" ] || die "no $cfg (run /nightmill:init)"
 json_load "$cfg" || exit 2
+
+# The budgets (iteration 74): b_check and b_step in seconds, 0 for none
+b_check=0; b_step=0
+for b_key in checkBudgetSeconds stepBudgetSeconds; do
+  json_has "verification.$b_key" || continue
+  v=$(json_get "verification.$b_key")
+  if [[ "$v" =~ ^[0-9]{1,5}$ ]] && [ "$((10#$v))" -le 86400 ]; then
+    v=$((10#$v))
+    if [ "$b_key" = checkBudgetSeconds ]; then b_check=$v; else b_step=$v; fi
+  else
+    echo "status.sh: verification.$b_key must be a whole number from 0 to 86400; no budget" >&2
+  fi
+done
+# budget_text <seconds>: the duration, or none for 0
+budget_text() { if [ "$1" -gt 0 ]; then ledger_duration "$1"; else printf 'none'; fi; }
+# check_time_line: the check time line of the record against the budgets
+check_time_line() {
+  local rec="$gitdir/nightmill-check.tsv" bb bs line="" extra="" stamp mode verdict total top top_s state="within budget"
+  bb=$(budget_text "$b_check"); bs=$(budget_text "$b_step")
+  if [ ! -e "$rec" ]; then
+    echo "check time: no check recorded yet (budget $bb per check, $bs per step)"; return 0
+  fi
+  { IFS= read -r line && ! IFS= read -r extra && [ -z "$extra" ]; } < "$rec" 2>/dev/null || line=""
+  IFS=$'\t' read -r stamp mode verdict total top top_s extra <<<"$line"
+  if ! [[ "$line" =~ ^[^$'\t']+$'\t'[^$'\t']+$'\t'[^$'\t']+$'\t'[^$'\t']+$'\t'[^$'\t']+$'\t'[^$'\t']+$ ]] ||
+    ! [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
+    ! [[ "$mode" =~ ^(full|affected)$ ]] || ! [[ "$verdict" =~ ^(passed|failed)$ ]] ||
+    ! [[ "$total" =~ ^[0-9]{1,9}$ ]] || ! [[ "$top_s" =~ ^[0-9]{1,9}$ ]]; then
+    echo "check time: the record $rec is not readable (budget $bb per check, $bs per step)"; return 0
+  fi
+  total=$((10#$total)); top_s=$((10#$top_s))
+  if { [ "$b_check" -gt 0 ] && [ "$total" -gt "$b_check" ]; } || { [ "$b_step" -gt 0 ] && [ "$top_s" -gt "$b_step" ]; }; then
+    state="OVER BUDGET"
+  fi
+  echo "check time: last $mode check $stamp ($verdict) took $(ledger_duration "$total") (budget $bb); slowest step $top $(ledger_duration "$top_s") (budget $bs): $state"
+}
+if [ "$budget" = 1 ]; then
+  if [ "$b_check" -gt 0 ] || [ "$b_step" -gt 0 ]; then check_time_line; else echo "check time: no budget set"; fi
+  exit 0
+fi
 
 owner=$(json_get github.owner); repo=$(json_get github.repo); number=$(json_get github.projectNumber)
 { [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$number" ]; } || die "github.owner, github.repo and github.projectNumber are needed in $cfg"
@@ -117,3 +167,4 @@ ST_ALL=$all ST_PORCELAIN=$porcelain ST_JSON=$json ST_CAPACITY="${capline#capacit
 if [ "$slots_configured" = 1 ] && [ "$json" = 0 ]; then
   if [ "$porcelain" = 1 ]; then printf 'capacity\t%s\n' "${capline#capacity: }"; else printf '%s\n' "$capline"; fi
 fi
+if [ "$porcelain" = 0 ] && [ "$json" = 0 ] && { [ "$b_check" -gt 0 ] || [ "$b_step" -gt 0 ]; }; then check_time_line; fi

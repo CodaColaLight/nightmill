@@ -27,6 +27,27 @@ launch returns. Exit 1, 2 or 4 stops the run with its `Stopped:` line; exit 3 is
 
 Follow **Picking an issue** in the `workflow` skill with the status **Approved** (`board.statuses.approved`).
 
+**The time budget of the check** (iteration 74), only when the base-branch configuration sets a budget
+(`verification.checkBudgetSeconds` or `verification.stepBudgetSeconds` from 1 to 86400); otherwise this step is as
+written below.
+
+- Before listing the board, or before reading a named issue, run
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh" --budget`. When its line ends with `: OVER BUDGET`, print it.
+- While that line ends with `: OVER BUDGET`, for **every story taken**, picked from the board or named by number (also
+  one named to finish its own work), once the story is known and accepted by the rules below and before the `Picking`
+  line: if its parent epic is `verification.budgetEpic` (not 0), go on without a question. Otherwise ask the
+  maintainer, exactly:
+  `The check is over its budget. Take #<n> "<title>" anyway, a story outside epic #<budgetEpic>? (yes / no)`;
+  with `budgetEpic` 0 the text after the comma is left out (`... Take #<n> "<title>" anyway? (yes / no)`). `yes`
+  goes on. `no`, or no answer, changes nothing and prints
+  `Stopped: the check is over its budget; #<n> was not taken. Nothing was changed.`
+- When no person can answer, in a step of the driver (`NIGHTMILL_RUN_STARTED` is set), do not ask: print
+  `Going on without asking: no one can answer in a driver step (#<n>).` after the line and go on.
+- The parent epic is
+  `gh api graphql -f query='query { repository(owner: "<owner>", name: "<repo>") { issue(number: <n>) { parent { number } } } }' --jq .data.repository.issue.parent.number`;
+  when that is empty, the first `Epic: #<k>` in the body counts. Bugs are refused here as always and never asked
+  about.
+
 - If `$ARGUMENTS` holds an issue number, take that issue. It also takes In progress and Review, only to finish the
   story's own work (see "Resuming a story" below). The other statuses are refused with one line, changing nothing:
   Backlog `#<n> is at Backlog, not Approved, In progress or Review; only the maintainer moves a story to Ready.`;
@@ -121,7 +142,10 @@ Follow **Picking an issue** in the `workflow` skill with the status **Approved**
    `- revised by the tester after a dispute in fix round <k>: <test name> (<file>): <what changed>`, from its `Answers`
    line. Each answer of the tester to a test finding follows as
    `- tester's answer to the code review in fix round <k>: <the Answers line, as the tester wrote it>`.
-   The rest of "How verified" (the implementer's tests, the check, the manual check) follows. When a dispute is still open (see "The tester's files"),
+   The rest of "How verified" (the implementer's tests, the check, the manual check) follows. When a budget is set in the
+   base-branch configuration and the implementer's `New check steps:` line names a step, add one line per step after
+   the check line: `- New check step <name>: <duration> (step budget <S>)`, `<S>` the duration of
+   `verification.stepBudgetSeconds`, or `none` for 0. It is a statement for the maintainer, not a gate. When a dispute is still open (see "The tester's files"),
    add after `## Review`:
 
    ```
@@ -474,11 +498,16 @@ Result: complete | partial | failed
 Criteria: <one line per acceptance criterion: met or not met, and the test that protects it>
 Tests: <the tests added or changed>
 Check: <the last line of the check (never of the quick check)>, green or red
+New check steps: <name> <duration>, one per step the change adds to the check, with the time from its result line in the last full check; none>
 Commits: <hash and subject, one per line; none>
 Manual check: needed | not needed (<the verification.manualCheckPaths touched>)
 Disputes: <one line per disputed test: <test name> (<file>): <why it is wrong or cannot be satisfied, one line>; none>
 Left: <what is not done and why; nothing>
 ```
+
+The `New check steps:` line is in the block only when the base-branch configuration sets a budget
+(`verification.checkBudgetSeconds` or `verification.stepBudgetSeconds` from 1 to 86400, iteration 74); without a
+budget the session leaves that line out of the prompt.
 
 A fix round after a dispute gets this paragraph at the end of the prompt, after any blocking findings of an earlier
 review that are still to fix (both are passed):
