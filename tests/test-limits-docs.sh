@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/test-limits-docs.sh - the pause flag and the limits are wired (iteration 53, #165;
 # docs/specs/iteration-53-run-limits.md, "Tests"). Parts K (the keys), G (the gate in the skills), D (the driver),
-# R (the README).
+# R (the README). Only the contracts are checked (a key, a command, a file name, a line a script parses); the headings
+# and the sentences of the skills and the README are the manual check's (iteration 73).
 #   tests/test-limits-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -112,34 +113,25 @@ wf="$root/skills/workflow/SKILL.md"
 if [ ! -f "$wf" ]; then
   fail "skills/workflow/SKILL.md: missing"
 else
-  grep -qF '**The pause and the limits**' "$wf" || fail "skills/workflow/SKILL.md: no heading **The pause and the limits**"
-  for w in 'scripts/gate.sh' 'Stopped: paused: ' 'Stopped: limit: ' 'Stopped by a limit: ' '--add-label blocked' 'tool_uses' 'limits.turnsPerRole is not checked'; do
+  # 'Stopped by a limit: ' starts the comment the driver looks for (scripts/drive.sh); tool_uses is the field of an
+  # agent's result the skill passes as --turns
+  for w in 'scripts/gate.sh' 'Stopped by a limit: ' '--add-label blocked' 'tool_uses'; do
     grep -qF -- "$w" "$wf" || fail "skills/workflow/SKILL.md: does not contain '$w'"
-  done
-  para=$(awk '/\*\*The pause and the limits\*\*/ { s = 1 } s { print }' "$wf")
-  for n in 0 1 2 3 4; do
-    if ! grep -qE "(exit( code)? ${n}([^0-9]|\$))|(\*\*${n}\*\*)|(\`${n}\`)|(^\| ${n} )|(^- ${n}[: ])" <<< "$para"; then
-      fail "skills/workflow/SKILL.md: the paragraph does not name the exit code $n"
-    fi
   done
 fi
 ext=ps1
 for sk in next fix spec check story control; do
   f="$root/skills/$sk/SKILL.md"
   if [ ! -f "$f" ]; then fail "skills/$sk/SKILL.md: missing"; continue; fi
-  grep -qF '**The pause and the limits**' "$f" || fail "skills/$sk/SKILL.md: no **The pause and the limits**"
   grep -qF 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh"' "$f" || fail "skills/$sk/SKILL.md: no call bash \"\${CLAUDE_PLUGIN_ROOT}/scripts/gate.sh\""
   if grep -qF "gate.$ext" "$f"; then fail "skills/$sk/SKILL.md: still names gate.$ext"; fi
 done
-if grep -qF 'once they exist' "$root/skills/fix/SKILL.md"; then fail "skills/fix/SKILL.md: still says 'once they exist'"; fi
 for sk in status models; do
   if grep -qF 'gate.sh' "$root/skills/$sk/SKILL.md"; then fail "skills/$sk/SKILL.md: contains gate.sh (it does not gate)"; fi
 done
 ini="$root/skills/init/SKILL.md"
 grep -qF '| `paused` | `FBCA04` |' "$ini" || fail "skills/init/SKILL.md: no label row for paused (FBCA04)"
 grep -qF '`gate`' "$ini" || fail "skills/init/SKILL.md: group D does not name gate"
-grep -qF '21 + 21' "$ini" || fail "skills/init/SKILL.md: the count is not 21 + 21"
-if grep -qF '24 + 21' "$ini"; then fail "skills/init/SKILL.md: still says 24 + 21"; fi
 
 # --- Part D ---
 f=scripts/drive.sh
@@ -158,19 +150,8 @@ else
 fi
 
 # --- Part R ---
-sec=$(awk '/^### Limits and the kill switch$/ { s = 1; print; next } s && /^##/ { exit } s { print }' "$readme")
-for w in '.git/nightmill-stop' 'limits.paused' 'ledger.tsv' 'paused'; do
-  case "$sec" in *"$w"*) ;; *) fail "README.md: '### Limits and the kill switch' lacks '$w'" ;; esac
+for w in '.git/nightmill-stop' 'limits.paused' 'ledger.tsv' '`paused`' '| `scripts/gate.sh` |' 'bash tests/smoke-gate.sh'; do
+  grep -qF -- "$w" "$readme" || fail "README.md lacks '$w'"
 done
-if [[ "$sec" == *'are not there yet'* ]]; then fail "README.md: '### Limits and the kill switch' still says the limits are not there yet"; fi
-grep -qF '| `scripts/gate.sh` |' "$readme" || fail "README.md: no row of scripts/gate.sh in the plugin table"
-grep -qF 'bash tests/smoke-gate.sh' "$readme" || fail "README.md: no line of bash tests/smoke-gate.sh in Developing nightmill"
-sm=$(awk '/^## Security model$/ { s = 1; print; next } s && /^## / { exit } s { print }' "$readme" | flat)
-[[ "$sm" == *'enforced by scripts/gate.*'* ]] || fail "README.md: the Security model row of the limits is not 'enforced by scripts/gate.*'"
-if grep -qF 'not enforced yet | [#165]' "$readme"; then fail "README.md: the #165 row of the Security model still says 'not enforced yet'"; fi
-flatreadme=$(flat < "$readme")
-[[ "$flatreadme" == *'a pause flag for every run comes with'* ]] && fail "README.md: When a run is stopped still says 'a pause flag for every run comes with'"
-[[ "$flatreadme" == *'`paused`'* ]] || fail "README.md: the label paused is not mentioned"
-[[ "$flatreadme" == *'ledger.tsv'*'run'* ]] || true
 
 exit "$bad"

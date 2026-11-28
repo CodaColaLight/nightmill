@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # tests/test-config-from-base.sh - iteration 48 (#111): the skills and the slot script read the config from the base
 # branch, git.mergeFlags must contain --auto and never --admin, and a change under .claude/ or .github/ is never
-# auto-merged. Pins on the text of the schema, the skills, the scripts and the README, as the spec's lint section lists
-# them. tests/lint.sh calls this file.
+# auto-merged. Checks the schema's rule, the injection lines and allowed-tools of the skills, the commands the skills
+# run and the scripts; the sentences of the skills and the README are the manual check's (iteration 73). tests/lint.sh
+# calls this file.
 #   tests/test-config-from-base.sh [<root>]   # root: the checkout to read (default: this one)
 set -uo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -20,7 +21,7 @@ need() {
   text=$(flat "$root/$1")
   has "$text" "$2" || fail "$1: lacks: $2"
 }
-# lacks <file> <needle>
+# lacks <file> <needle>: the file (flattened) does not contain the needle
 lacks() {
   local text
   [ -f "$root/$1" ] || { fail "$1: missing"; return; }
@@ -38,7 +39,6 @@ has "$mf" '"default": "--auto --squash"' || fail "schema: git.mergeFlags lost it
 tail_text=${schema#*'"mergeFlags"'}
 desc=${tail_text#*'"description": "'}
 desc=${desc%%'"'*}
-has "$tail_text" 'Must contain the word --auto and never --admin' || fail "schema: the description of git.mergeFlags does not say it must contain --auto and never --admin"
 [ -n "$desc" ] || fail "schema: git.mergeFlags has no description"
 
 echo "== the lint accepts pattern and not, and polices them"
@@ -52,7 +52,9 @@ fi
 
 echo "== the merge step checks --auto and --admin before it runs"
 for f in skills/workflow/SKILL.md skills/spec/SKILL.md skills/next/SKILL.md skills/fix/SKILL.md; do
-  need "$f" 'it must contain --auto and never --admin'
+  need "$f" 'git.mergeFlags'
+  need "$f" '--auto'
+  need "$f" '--admin='
 done
 
 echo "== the injection and allowed-tools of the six skills"
@@ -64,16 +66,9 @@ for name in workflow spec next fix story check; do
   grep -qxF -- "$inj" "$f" || fail "skills/$name/SKILL.md: the injection line of the base configuration is not there exactly"
   grep -qxF -- "$allowed" "$f" || fail "skills/$name/SKILL.md: allowed-tools is not exactly the base configuration's rules"
   if grep -F '!`cat .claude/nightmill.json' "$f" >/dev/null; then fail "skills/$name/SKILL.md: still injects the working tree's config with cat"; fi
-  grep -F -- 'Project configuration on the base branch (`origin/HEAD:.claude/nightmill.json`; the first line names the base ref; see **The configuration**' "$f" >/dev/null || fail "skills/$name/SKILL.md: the lead-in of the injection is not the base configuration's"
 done
-need skills/workflow/SKILL.md '**The configuration**'
 need skills/workflow/SKILL.md 'git remote set-head origin --auto'
 need skills/workflow/SKILL.md 'git show origin/<git.baseBranch>:.claude/nightmill.json'
-lacks skills/workflow/SKILL.md 'read from `.claude/nightmill.json` when it starts'
-need skills/workflow/SKILL.md 'read from the run'"'"'s configuration (**The configuration**) when it starts'
-need skills/workflow/SKILL.md 'origin/HEAD is not set, so the base branch'"'"'s configuration cannot be found; run git remote set-head origin --auto once'
-need skills/workflow/SKILL.md 'nightmill: no branch of origin is known; the configuration is read from the working tree.'
-need skills/workflow/SKILL.md 'nightmill: origin/HEAD has no .claude/nightmill.json; the configuration is read from the working tree.'
 for name in spec next fix; do
   need "skills/$name/SKILL.md" 'validate-config.sh" --base'
 done
@@ -87,25 +82,15 @@ lacks scripts/slot.sh '.claude/nightmill.json"'
 need scripts/validate-config.sh '--base'
 
 echo "== a change under .claude/ or .github/ is never auto-merged"
-wf=skills/workflow/SKILL.md
-need $wf '--no-renames'
-need $wf '.claude/'
-need $wf '.github/'
-need $wf 'Auto-merge is not enabled: it changes'
-need $wf ', under .claude/ or .github/, which is never auto-merged.'
-need $wf 'Auto-merge is not enabled: the changed paths could not be listed ('
-need $wf 'the fix of round'
-need $wf ', under .claude/ or .github/, which is never auto-merged'
-for name in spec next fix; do
-  need "skills/$name/SKILL.md" 'which is never auto-merged'
+# the skills list the changed paths with this command and refuse auto-merge for a path under these two folders
+for f in skills/workflow/SKILL.md skills/spec/SKILL.md skills/next/SKILL.md skills/fix/SKILL.md; do
+  need "$f" 'diff --name-only --no-renames origin/<git.baseBranch>...<branch>'
+  need "$f" '.claude/'
+  need "$f" '.github/'
 done
 
 echo "== the README"
 need README.md 'git remote set-head origin --auto'
-need README.md 'contains `--auto` and never `--admin`'
-need README.md 'A change under `.claude/` or `.github/` is not auto-merged'
-need README.md 'The guard hook and the other scripts (status, room, control, models, the dashboard and the pane) read the config from the base branch'
-need README.md 'merge flags (with `--auto`, never `--admin`)'
 
 if [ "$bad" -ne 0 ]; then exit 1; fi
 echo "OK"

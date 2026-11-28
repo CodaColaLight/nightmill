@@ -13,7 +13,9 @@ specs (the directories are in your prompt) for a rule the spec contradicts. Chec
 finding when one fails:
 
 1. every acceptance criterion of the issue is covered by a rule of the spec and is testable: the spec names the test or
-   the manual scenario that protects it;
+   the manual scenario that protects it; a test that searches the wording of a skill, an agent or a document is not
+   such a test unless what it finds is a contract (a config key, a command, a file name, or a line that a script or
+   a skill parses);
 2. exact rules and numbers are in the spec itself: no value left as "suitable", "a few" or "as the implementer sees
    fit", and no number pushed into the issue;
 3. the spec contradicts no decision and no existing spec (name the one it contradicts);

@@ -779,8 +779,6 @@ lint_break platformexample templates/nightmill.example.json 's/"platform": "all"
 lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
 lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'
 lint_break platformcheck tests/check.sh 's/verification\.platform/verification-platform/g' 'FAIL: tests/check.sh does not mention verification.platform'
-# tests/check.sh does not read verification.platform (iteration 68)
-lint_break platformmeaning schema/nightmill.schema.json 's/tests\/check\.sh does not read it/tests\/check.sh reads it/' 'does not say tests/check.sh does not read it'
 # the map of tests/check.sh (iteration 59, decision 7): every test step and every script is in it
 lint_break mapstep tests/check.sh '/^map [^ ]* smoke-hook\.sh$/d; /^map /{s/,smoke-hook\.sh,/,/; s/,smoke-hook\.sh$//; s/ smoke-hook\.sh,/ /;}' 'no path maps to the step smoke-hook.sh'
 d="$tmp/lint-mapscript"

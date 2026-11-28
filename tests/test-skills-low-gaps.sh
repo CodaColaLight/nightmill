@@ -5,11 +5,10 @@
 #       pins the other agents): not inherited from the session, no Agent, and Bash so it can move a board status
 #   (b) skills/spec/SKILL.md removes the label that /story sets (labels.needsSpec) with `--remove-label` when the spec is
 #       written
-#   (c) a skill with `disable-model-invocation: true` has no "Use when asked ..." in its description: the model never
-#       invokes it, so the sentence triggers nothing
 #   (d) one spelling of the permission rule for `gh project` across the skills: `Bash(gh project *)` or
 #       `Bash(gh project:*)`, never both (either one passes)
-# Items that need a design choice (where the check runs on the base, the hot-file action in /next, the config injected
+# Item (c), that a skill the model cannot invoke does not say "Use when asked ..." in its description, is wording and the
+# manual check's (iteration 73). Items that need a design choice (where the check runs on the base, the hot-file action in /next, the config injected
 # twice, the one way to describe Done, the changelog entry format, the SessionStart matcher, rate limits) are not pinned.
 #   tests/test-skills-low-gaps.sh [<root>]
 set -uo pipefail
@@ -40,19 +39,6 @@ elif ! grep -qE -e '--remove-label[[:space:]]+<?(labels\.needsSpec|needs-spec)' 
   echo "FAIL: skills/spec/SKILL.md never removes the labels.needsSpec label (needs-spec) that /story sets"
   fail=1
 fi
-
-# (c) a skill the model cannot invoke does not say "Use when asked ..."
-for f in "$root"/skills/*/SKILL.md; do
-  rel=${f#"$root"/}
-  fm=$(front "$f")
-  grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' <<<"$fm" || continue
-  desc=$(grep -E '^description:' <<<"$fm" || true)
-  if grep -qiE 'use (it )?when (asked|someone asks|the maintainer asks)' <<<"$desc"; then
-    echo "FAIL: $rel sets disable-model-invocation: true but its description says \"Use when asked ...\"," \
-      "which never triggers it"
-    fail=1
-  fi
-done
 
 # (d) one spelling of the gh project permission rule
 colon=$(grep -rlF 'Bash(gh project:*)' "$root"/skills 2>/dev/null | sed "s|^$root/||" | tr '\n' ' ')
