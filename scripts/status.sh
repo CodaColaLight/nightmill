@@ -55,8 +55,10 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$here/lib/ledger.sh"
 
 [ "$budget" = 1 ] || command -v gh >/dev/null 2>&1 || die "gh is not installed or not on the PATH"
-gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "run status.sh from inside a git checkout of the project"
-# in the shell's own form (Git Bash prints C:/...; the check-time line names the record by this path)
+gitdir=$(git rev-parse --git-common-dir 2>/dev/null) || die "run status.sh from inside a git checkout of the project"
+# made absolute by the shell, not by git: from the main checkout git prints .git and pwd builds the path
+# from the shell's own $PWD (git's absolute form resolves symlinks and, in Git Bash, prints C:/...; the
+# check-time line names the record by this path); from a linked worktree git prints it absolute
 gitdir=$(cd "$gitdir" && pwd) || die "the git common dir $gitdir cannot be entered"
 main=$(dirname "$gitdir")
 cfg="$main/.claude/nightmill.json"
