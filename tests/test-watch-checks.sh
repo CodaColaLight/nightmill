@@ -83,11 +83,10 @@ need "$W" 'git -C <slot path> push -u origin <branch>' 'git push -u origin <bran
 # No comment while the checks still run
 for f in skills/*/SKILL.md; do
   flatf=$(flat "$f")
-  for text in '--body "Checks of PR #<pr> were still running'; do
-    case "${flatf}" in
-      *"${text}"*) echo "FAIL: ${f} comments where no rule asks for it"; fail=1 ;;
-    esac
-  done
+  text='--body "Checks of PR #<pr> were still running'
+  case "${flatf}" in
+    *"${text}"*) echo "FAIL: ${f} comments where no rule asks for it"; fail=1 ;;
+  esac
 done
 
 [ "${fail}" = 0 ] && echo "WATCH CHECKS OK" || { echo "WATCH CHECKS FAILED"; exit 1; }
