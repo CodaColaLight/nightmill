@@ -28,8 +28,8 @@
 #                  changed paths are git diff --name-only against the merge base plus the untracked files, and the map
 #                  between '# affects: begin' and '# affects: end' below turns each into steps (map <pattern> <steps>,
 #                  shared <pattern>, lintonly <pattern>; a pattern is a case pattern on the whole path, a changed
-#                  tests/<step> runs itself). A shared path, a path in no line of the map, or no merge base runs the
-#                  full check instead. Never prints the line of a passed full check unless it ran the full check.
+#                  tests/<step> runs itself; a bash step that no map line names runs for every path, iteration 75).
+#                  A shared path, a path in no line of the map, or no merge base runs the full check instead. Never prints the line of a passed full check unless it ran the full check.
 #   --within a,b   with --affected only (iteration 60; CI's smoke jobs on a pull request): of the named steps, those the
 #                  changed paths select (the lint only when it is named). Where
 #                  --affected alone would run the full check, it runs --only a,b instead. With --summary, the section
@@ -179,8 +179,9 @@ add bash test-worker-merge.sh
   fi
 }
 
-# The map of --affected (iteration 59, decision 3; tests/lint.sh reads it and fails on a test step that no map line
-# names and on a script that maps to no step). map <pattern> <step>[,<step>...]: a changed path that matches selects
+# The map of --affected (iteration 59, decision 3; tests/lint.sh reads it and fails on a claude step that no map line
+# names and on a script that maps to no step). A bash step that no map line names runs in every selective run
+# (iteration 75), so a new test needs no line here; a map line narrows it to the paths the line names. map <pattern> <step>[,<step>...]: a changed path that matches selects
 # the steps; shared <pattern>: a changed path that matches runs the full check; lintonly <pattern>: a changed path
 # that matches and matches no map line runs the lint alone. A pattern is a case pattern on the whole path ('*' also
 # matches '/'); a script is scripts/<x>.*. The map lines name
@@ -361,7 +362,8 @@ fi
 
 # --affected (iteration 59): the changed paths, each turned into steps by the map. aff is selective (the lint and the
 # selected steps run) or full (the full check runs, and its reason is aff_reason); aff_sel[i] is 1 for a step that a
-# changed path selected.
+# changed path selected. A bash step that no map line names is selected by every path of a selective run (iteration
+# 75, rule 5, applied after the rules that make the run the full check).
 aff=""; aff_reason=""; aff_c=0; aff_ref=""; aff_lines=(); aff_paths=(); aff_texts=()
 for ((i = 0; i < n; i++)); do aff_sel[i]=0; done
 if [ "$mode" = affected ]; then
@@ -385,6 +387,10 @@ if [ "$mode" = affected ]; then
     esac
     nm=$((nm + 1))
   done <<<"$map_text"
+  # the steps a map line names (iteration 75, decision 1): a bash step that no map line names is selected by every
+  # path of a selective run (rule 5); a step's own path (rule 2) does not name it
+  map_named=","
+  for ((j = 0; j < nm; j++)); do [ "${m_kind[j]}" != map ] || map_named="$map_named${m_steps[j]#,}"; done
   # the changed paths, sorted and unique
   paths=""
   if [ -n "${NIGHTMILL_CHECK_PATHS:-}" ]; then
@@ -426,17 +432,25 @@ if [ "$mode" = affected ]; then
       continue
     fi
     case $p in tests/*) names="$names${p#tests/}," ;; esac
-    got=""; got_w=""
+    got=""
     for ((i = 0; i < n; i++)); do
-      case $names in
-        *",${k_name[i]},"*) aff_sel[i]=1; got="$got${got:+,}${k_name[i]}"
-          [ "${w_in[i]}" = 0 ] || got_w="$got_w${got_w:+,}${k_name[i]}" ;;
-      esac
+      case $names in *",${k_name[i]},"*) got=1; break ;; esac
     done
     if [ -z "$got" ] && [ -z "$is_lintonly" ]; then
       [ -n "$aff_reason" ] || aff_reason="$p is in no line of the map"
       continue
     fi
+    # its steps (rule 2), and then rule 5 (iteration 75), after the full-check rules: every bash step no map line names
+    got=""; got_w=""
+    for ((i = 0; i < n; i++)); do
+      case $names in
+        *",${k_name[i]},"*) ;;
+        *) [ "${k_kind[i]}" = bash ] || continue
+          case $map_named in *",${k_name[i]},"*) continue ;; esac ;;
+      esac
+      aff_sel[i]=1; got="$got${got:+,}${k_name[i]}"
+      [ "${w_in[i]}" = 0 ] || got_w="$got_w${got_w:+,}${k_name[i]}"
+    done
     # what the path selects: its steps, the lint only, or (with --within) none of the steps of the list
     if [ -z "$within" ]; then
       if [ -n "$got" ]; then sel_text=$got; else sel_text="the lint only"; fi

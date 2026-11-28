@@ -1175,9 +1175,10 @@ while IFS= read -r l; do
   done
 done < <(grep -E '^[[:space:]]*(- )?name: ' "$chk_ci" || true)
 
-echo "== every script and every test step is in the map"
+echo "== every script and every step is placed by the map"
 # Iteration 59, decision 7: the map of tests/check.sh --affected (between '# affects: begin' and '# affects: end') is
-# well formed, names only steps, names every bash step, maps every script and
+# well formed, names only steps, names every step that is neither the lint nor a bash step (iteration 75: a bash step
+# that no map line names is placed by the default of --affected, so it needs no line), maps every script and
 # every file under tests/fixtures/ (bug #379), holds
 # the shared and lintonly lines of decision 3, and the skills and the README describe the mode. The matching is the
 # case pattern of the check, in this process (bug #270: no process per path).
@@ -1213,13 +1214,13 @@ else
       case $aff_all in *"|$x|"*) ;; *) echo "FAIL: tests/check.sh: the map names $x, which is not a step"; fail=1 ;; esac
     done
   done
-  # rule 3: every bash step is named by a map line
-  while read -r _ k b _; do
-    case $k in bash) ;; *) continue ;; esac
+  # rule 3 (iteration 75, decision 3): every step that is neither the lint nor a bash step (the claude steps) is named
+  # by a map line; it has no default, so without one it would run only in the full check
+  for b in "claude plugin validate" "claude plugin test"; do
     hit=""
     for ((j = 0; j < aff_n; j++)); do case ${aff_steps[j]} in *",$b,"*) hit=1; break ;; esac; done
     [ -n "$hit" ] || { echo "FAIL: tests/check.sh: no path maps to the step $b"; fail=1; }
-  done <<<"$chk_block"
+  done
   # aff_select <path>: aff_got is what the path selects by decision 4: 'shared', or its steps in list order
   aff_select() {
     local p=$1 j x names="," shared=""
