@@ -1,6 +1,6 @@
 # Iteration 73: the lint and the tests it starts check contracts and behaviour, not the wording of skills and docs
 
-Status: draft, awaiting approval (#344)
+Status: delivered in iteration 73 (PR #409)
 
 Story #344, epic #337 (fast verification loop). Many sections of `tests/lint.sh` and many tests it starts search a
 skill, an agent, the README or a spec for an exact sentence. After this iteration a check that searches such text is
