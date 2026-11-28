@@ -56,6 +56,8 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 [ "$budget" = 1 ] || command -v gh >/dev/null 2>&1 || die "gh is not installed or not on the PATH"
 gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "run status.sh from inside a git checkout of the project"
+# in the shell's own form (Git Bash prints C:/...; the check-time line names the record by this path)
+gitdir=$(cd "$gitdir" && pwd) || die "the git common dir $gitdir cannot be entered"
 main=$(dirname "$gitdir")
 cfg="$main/.claude/nightmill.json"
 [ -f "$cfg" ] || die "no $cfg (run /nightmill:init)"
