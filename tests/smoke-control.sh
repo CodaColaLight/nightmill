@@ -402,14 +402,13 @@ apply_cfg
 echo "== 12. unusable config values fall back"
 busy 1
 nocap
-for v in '"Apply"' '"on"' 1 true; do
-  set_parallel "\"controlMode\": $v"
-  run - steady
-  code_is "controlMode $v" 0
-  has_err "controlMode $v" 'control: parallel.controlMode must be "off", "report" or "apply"; using "off"'
-  err_lines "controlMode $v" 1
-  expect_out "controlMode $v" "$OFF"
-done
+set_parallel '"controlMode": "Apply"'
+run - steady
+code_is 'controlMode "Apply"' 0
+has_err 'controlMode "Apply"' 'control: parallel.controlMode must be "off", "report" or "apply"; using "off"'
+err_lines 'controlMode "Apply"' 1
+expect_out 'controlMode "Apply"' "$OFF"
+# In-process (iteration 72): the fallback of controlMode "on", 1 and true is tested in tests/test-lib-load.sh, section control settings.
 # bad_value <key> <value> <default> <high>
 bad_value() {
   apply_cfg "\"$1\": $2"
@@ -420,28 +419,19 @@ bad_value() {
   expect_out "$1 = $2" "control: agent limit 2 kept (steady; $M_STEADY)
 $NEXT"
 }
-for v in 0 100; do
-  bad_value controlMinAgents "$v" 1 99
-  bad_value controlMaxAgents "$v" 4 99
-done
-for v in 0 1441 1.5 '"15"'; do bad_value controlCooldownMinutes "$v" 15 1440; done
-for v in 0 1441 '"5"'; do bad_value controlIntervalMinutes "$v" 5 1440; done
+bad_value controlMinAgents 0 1 99
+# In-process (iteration 72): the fallback of controlMinAgents 100 and controlMaxAgents 0 and 100 is tested in tests/test-lib-load.sh, section control settings.
+# In-process (iteration 72): the fallback of controlCooldownMinutes 0, 1441, 1.5 and "15" is tested in tests/test-lib-load.sh, section control settings.
+# In-process (iteration 72): the fallback of controlIntervalMinutes 0, 1441 and "5" is tested in tests/test-lib-load.sh, section control settings.
 apply_cfg '"controlCooldownMinutes": 0'
 cap 2 2
 run $((B + 60)) roomy
 first_is "cooldown default" "control: agent limit 2 kept (cooldown 14 of 15 min left; $M_ROOMY)"
 nocap
-apply_cfg '"controlMinAgents": null, "controlMaxAgents": null, "controlCooldownMinutes": null, "controlIntervalMinutes": null'
-run - steady
-code_is "null values" 0
-no_err "null values"
-set_parallel '"controlMode": null'
-run - steady
-no_err "null mode"
-expect_out "null mode" "$OFF"
+# In-process (iteration 72): the case of null values (the defaults, nothing on standard error) is tested in tests/test-lib-load.sh, section control settings.
+# In-process (iteration 72): a null mode (off, nothing on standard error) is tested in tests/test-lib-load.sh, section control settings.
+# In-process (iteration 72): the case of absent keys (the defaults, nothing on standard error) is tested in tests/test-lib-load.sh, section control settings.
 apply_cfg
-run - steady
-no_err "absent keys"
 
 echo "== 13. errors"
 cap 2 2

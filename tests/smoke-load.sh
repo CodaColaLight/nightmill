@@ -41,9 +41,6 @@ fixture() { # fixture <name> <line>...: write a fixture file
   shift
   printf '%s\n' "$@" > "$tmp/fx/$name"
 }
-same() { # same <name> <cpu> <free> <total>: three equal samples
-  fixture "$1" "$2 $3 $4" "$2 $3 $4" "$2 $3 $4"
-}
 
 # base_sync <dir> (iteration 48): slot.sh reads the config on origin/HEAD, not the working tree's file, so before a run
 # origin/HEAD of the test repository is made to hold the working tree's config: a commit of that one file, with no
@@ -84,15 +81,8 @@ has_err() { # has_err <name> <line>: standard error has the line
 code_is() { [ "$code" = "$2" ] || { cat "$tmp/out.txt" "$tmp/err.txt"; fail "$1: exit code $code, expected $2"; }; }
 no_err() { [ ! -s "$tmp/err.txt" ] || { cat "$tmp/err.txt"; fail "$1: something on standard error"; }; }
 
-# the fixtures of the scenarios
+# the fixture of scenario a
 fixture a "5 61000 64000" "10 60000 64000" "15 62000 64000"
-same b 20 9000 16000
-same c 20 9000 32000
-same d 30 1000 16000
-same e 90 50000 64000
-same f 85 50000 64000
-same g 100 50000 64000
-same i 5 12000 16000
 
 echo "== every value is printed (scenario a)"
 busy 1
@@ -131,30 +121,10 @@ has_line "window" "cpu: 40% busy (mean of 3 samples from NIGHTMILL_LOAD_FIXTURE)
 has_line "window" "memory: 60000 MB free of 64000 MB (lowest of 3 samples)"
 has_line "window" "suggested agent limit: 2 (now 2: keep)"
 has_line "window" "why: CPU is the limit: 40% busy with 1 agents in the slots, aiming at 80%"
-# the mean is rounded half up
-fixture half "10 61000 64000" "11 60000 64000"
-run half --porcelain
-has_line "rounding" "cpu${TAB}11"
+# In-process (iteration 72): the mean rounded half up (fixture half) is tested in tests/test-lib-load.sh, section measure.
 
 echo "== the suggestion and its reason (scenarios b to g and i)"
-# scenario <name> <busy> <P> <direction> <reason key> <why text>
-scenario() {
-  busy "$2"
-  run "$1"
-  code_is "scenario $1" 0
-  has_line "scenario $1" "suggested agent limit: $3 (now 2: $4)"
-  has_line "scenario $1" "why: $6"
-  run "$1" --porcelain
-  code_is "scenario $1 porcelain" 0
-  has_line "scenario $1 porcelain" "suggested${TAB}$3${TAB}$4${TAB}$5"
-}
-scenario b 1 2 keep memory-total "memory is the limit: 16000 MB in all holds 2 agents at 8 GB each"
-scenario c 1 2 keep memory-free "memory is the limit: 9000 MB free holds 1 more agents at 8 GB each beside the 1 in the slots"
-scenario d 2 1 lower memory-short "memory is short: 1000 MB free is under 10% of 16000 MB, one agent fewer than the 2 in the slots"
-scenario e 2 1 lower cpu "CPU is the limit: 90% busy with 2 agents in the slots, aiming at 80%"
-scenario f 0 1 lower cpu-other "CPU is the limit: 85% busy with no slot in use"
-scenario g 1 1 lower cpu "CPU is the limit: 100% busy with 1 agents in the slots, aiming at 80%"
-scenario i 0 1 lower memory-free "memory is the limit: 12000 MB free holds 1 more agents at 8 GB each beside the 0 in the slots"
+# In-process (iteration 72): what scenarios b to g and i suggest, with its reason and its why text, is tested in tests/test-lib-load.sh, section suggest.
 
 echo "== floor and ceiling"
 # g: raw 0 gives 1 (above); a: raw 8 gives the ceiling 4 (above); h: memoryPerAgentGB 4 and maxSuggestedAgents 6
@@ -179,25 +149,13 @@ bad_value() {
   has_err "$1 = $2" "load: parallel.$1 must be a whole number from $4 to $5; using $3"
   [ "$(wc -l < "$tmp/err.txt" | tr -d ' ')" = 1 ] || fail "$1 = $2: more than one line on standard error"
 }
-for v in 0 -1 8.5 8.0 '"8"' true; do
-  bad_value memoryPerAgentGB "$v" 8 1 1024
-  has_line "memoryPerAgentGB = $v" "memory-per-agent${TAB}8"
-done
-for v in 0 100; do
-  bad_value maxSuggestedAgents "$v" 4 1 99
-  has_line "maxSuggestedAgents = $v" "ceiling${TAB}4"
-done
-for v in 1 61; do
-  bad_value loadWindowSeconds "$v" 10 2 60
-done
-with_parallel '"memoryPerAgentGB": null, "maxSuggestedAgents": null, "loadWindowSeconds": null'
-run a --porcelain
-code_is "null values" 0
-no_err "null values"
-has_line "null values" "memory-per-agent${TAB}8"
-with_parallel '"maxAgents": 2'
-run a --porcelain
-no_err "absent keys"
+bad_value memoryPerAgentGB 0 8 1 1024
+has_line "memoryPerAgentGB = 0" "memory-per-agent${TAB}8"
+# In-process (iteration 72): the fallback of memoryPerAgentGB -1, 8.5, 8.0, "8" and true is tested in tests/test-lib-load.sh, section load settings.
+# In-process (iteration 72): the fallback of maxSuggestedAgents 0 and 100 is tested in tests/test-lib-load.sh, section load settings.
+# In-process (iteration 72): the fallback of loadWindowSeconds 1 and 61 is tested in tests/test-lib-load.sh, section load settings.
+# In-process (iteration 72): the case of null values (the defaults, nothing on standard error) is tested in tests/test-lib-load.sh, section load settings.
+# In-process (iteration 72): the case of absent keys (nothing on standard error) is tested in tests/test-lib-load.sh, section load settings.
 printf '%s\n' "$base_cfg" > "$cfg"
 
 echo "== the agent limit and the slots come from the slot script"
@@ -289,22 +247,8 @@ unusable() {
   has_err "fixture $1" "$2"
 }
 unusable missing "load: cannot read NIGHTMILL_LOAD_FIXTURE: $tmp/fx/missing"
-fixture one "10 60000 64000"
-unusable one "load: NIGHTMILL_LOAD_FIXTURE needs at least 2 samples"
-fixture two "# a comment" "" "10 60000 64000" "10 60000"
-unusable two 'load: NIGHTMILL_LOAD_FIXTURE line 4 is not "<cpu> <free MB> <total MB>"'
-fixture cpux "10 60000 64000" "x 60000 64000"
-unusable cpux 'load: NIGHTMILL_LOAD_FIXTURE line 2 is not "<cpu> <free MB> <total MB>"'
-fixture cpu101 "101 60000 64000" "10 60000 64000"
-unusable cpu101 'load: NIGHTMILL_LOAD_FIXTURE line 1 is not "<cpu> <free MB> <total MB>"'
-fixture freeneg "10 60000 64000" "10 -5 64000"
-unusable freeneg 'load: NIGHTMILL_LOAD_FIXTURE line 2 is not "<cpu> <free MB> <total MB>"'
-fixture total0 "10 60000 64000" "10 60000 0"
-unusable total0 'load: NIGHTMILL_LOAD_FIXTURE line 2 is not "<cpu> <free MB> <total MB>"'
-fixture comments "# readings" "" "5 61000 64000" "# between" "10 60000 64000" "15 62000 64000"
-run comments --porcelain
-code_is "comment and empty lines" 0
-has_line "comment and empty lines" "window${TAB}3${TAB}fixture"
+# In-process (iteration 72): each of the unusable fixtures one, two, cpux, cpu101, freeneg and total0 is tested in tests/test-lib-load.sh, section measure.
+# In-process (iteration 72): a fixture with comment and empty lines (fixture comments) is tested in tests/test-lib-load.sh, section measure.
 
 echo "== usage and project errors"
 run a --nope
