@@ -513,11 +513,12 @@ grep -qF -- 'additionalDirectories' README.md || { echo "FAIL: README.md does no
 
 echo "== /next and /fix hand the coding to a subagent"
 # /next launches an implementer subagent and /fix a fixer subagent on the configured model (iteration 13): the keys,
-# the result block the session reads and the merge command; the wording of the launch is the manual check's.
+# the result block the session reads and the merge command; the wording of the launch is the manual check's. The
+# prefix 'Stopped: ' of the stop lines stays (only the prefix): scripts/drive.sh:272 reads '^Stopped:' from the output.
 for pair in "next:implementer" "fix:fixer"; do
   skill=${pair%%:*}; role=${pair##*:}
   f=skills/$skill/SKILL.md
-  for w in "roles.$role.model" 'parallel.maxAgents' 'Result: complete | partial | failed' 'gh pr merge'; do
+  for w in "roles.$role.model" 'parallel.maxAgents' 'Result: complete | partial | failed' 'gh pr merge' 'Stopped: '; do
     grep -qF -- "$w" "$f" || { echo "FAIL: $f does not mention the subagent item: $w"; fail=1; }
   done
 done
@@ -1554,10 +1555,11 @@ echo "== /fix all runs bugs in parallel"
 # any other value that is not a whole number stops the run), one producer at a time per bug, one take at a time, the slot
 # freed with --abandon once the branch is the head of the open pull request and held when its files are uncommitted,
 # overlapping bugs that wait, the pause flag at each start, the Stopped line with the two lists, and one table at the end.
-# The keys, the flags and the commands stay; the wording of the batch is the manual check's (iteration 73).
+# The keys, the flags, the commands and the header of the result table stay (scripts/drive.sh:275 reads its column 6);
+# the wording of the batch is the manual check's (iteration 73).
 fx=skills/fix/SKILL.md
 for w in 'parallel.fixAllMaxBugs' 'parallel.hotFiles' 'parallel.doNotPair' 'git.mergeFlags' '--abandon' '--json headRefOid' \
-         '--untracked-files=all'; do
+         '--untracked-files=all' '| Bug | Result | PR | Slot | Cause or reason | Verified |'; do
   grep -qF -- "$w" "$fx" || { echo "FAIL: $fx does not say the /fix all item: $w"; fail=1; }
 done
 grep -qF '"fixAllMaxBugs": { "type": "integer", "minimum": 0, "default": 0,' schema/nightmill.schema.json || { echo "FAIL: schema: parallel.fixAllMaxBugs is not an integer with minimum 0 and default 0"; fail=1; }
