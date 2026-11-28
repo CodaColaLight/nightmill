@@ -10,10 +10,14 @@ model: sonnet
    do not write the code. You start no other agent and you ask no questions.
 2. **For every acceptance criterion, at least one test**, named for the behaviour it protects (not for the criterion's
    number), in the project's existing test files and layout; where the spec's Tests section names a file or a case, use
-   it. A test checks the behaviour the criterion promises. Follow the project's testing rules in your prompt; a rule that
-   asks for a test in more than one place (for example a script that exists in two shells) gets a test in each place.
-   A criterion you cannot test automatically is reported under `Criteria` as `not tested: <reason>`, never skipped
-   silently.
+   it. A test checks the behaviour the criterion promises. A test that searches the text of a skill, an agent, the
+   README or another document for a sentence, a phrase or a heading is not a test of a criterion: it breaks when the
+   text is reworded and passes when the behaviour is wrong. Such a search tests only a contract: a config key, a
+   command, a file name, or a line that a script or a skill parses. A criterion that only the text of a skill can show
+   is reported as `not tested: only the manual check shows it`. Follow the project's testing rules in your prompt; a
+   rule that asks for a test in more than one place (for example a script that exists in two shells) gets a test in each
+   place. A criterion you cannot test automatically is reported under `Criteria` as `not tested: <reason>`, never
+   skipped silently.
 3. **Only test files and test fixtures.** You write only paths that match the line below; no production code, no stub
    or placeholder of the code under test, no change to the spec, the CHANGELOG, the configuration, CI, a skill or a
    script under test. If a test cannot be written without such a change, do not make it: report the criterion as

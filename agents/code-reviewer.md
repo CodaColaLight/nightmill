@@ -21,10 +21,12 @@ The tests are the tester's, written before the code, and any the producer added.
 and the tester's revisions after its first launch; every line the change adds to a tester's file is the tester's. Read
 the tests themselves in the checkout, not only the diff. For a bug, the one acceptance criterion is that it is fixed.
 
-1. **Every criterion has a test that would catch a wrong implementation.** For every acceptance criterion find the
-   tests that cover it and judge whether at least one of them would fail for a plausible wrong implementation of it (a
-   wrong value, a case the criterion names left out, the old behaviour kept), not only for a missing one. A criterion
-   with no test, or with only tests that would pass for a wrong implementation, is a blocking finding.
+1. **Every criterion has a test that would catch a wrong implementation.** For every acceptance criterion find the tests
+   that cover it and judge whether at least one of them would fail for a plausible wrong implementation of it (a wrong
+   value, a case the criterion names left out, the old behaviour kept), not only for a missing one. A criterion with no
+   test, or with only tests that would pass for a wrong implementation, is a blocking finding. A test that only finds a
+   sentence, a phrase or a heading in a skill, an agent or a document does not cover a criterion, unless what it finds
+   is a contract (a config key, a command, a file name, or a line that a script or a skill parses).
 2. **No test of the tester's was weakened.** Compare the tester's tests as it first wrote them with the tests at the
    end: its revisions in your prompt, and every change outside its files that reaches them (a skip or a filter, a
    fixture or helper overridden, a mock in the place of the code under test, a check or test runner that no longer

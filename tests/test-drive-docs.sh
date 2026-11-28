@@ -2,7 +2,8 @@
 # tests/test-drive-docs.sh - the driver, its keys, the workflow template and the README section (iteration 52, #164).
 # Iteration 53 (#165): the driver also passes --max-turns and --max-budget-usd and edits an issue only to add blocked.
 # Iteration 54 (#166): the driver also calls history.sh --run for its summary.
-# Parts S (the driver sets no status), K (the config keys), T (the template), R (the README).
+# Parts S (the driver sets no status), K (the config keys), T (the template), R (the README: the flags, keys, files and
+# variables it names; its headings, their order and its sentences are the manual check's, iteration 73).
 #   tests/test-drive-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -64,7 +65,6 @@ for k in maxMinutes summaryIssue; do
   case "$e" in *'"minimum": 1'*) ;; *) fail "schema: unattended.$k has no minimum 1" ;; esac
 done
 e=$(entry maxMinutes | tr '\n' ' ')
-case "$e" in *"(1 to 1440)"*) ;; *) fail "schema: unattended.maxMinutes description does not give the upper bound (1 to 1440)" ;; esac
 case "$e" in *'"default": 240'*) ;; *) fail "schema: unattended.maxMinutes has no default 240" ;; esac
 e=$(entry summaryIssue | tr '\n' ' ')
 case "$e" in *'"default"'*) fail "schema: unattended.summaryIssue has a default" ;; esac
@@ -103,32 +103,13 @@ else
 fi
 
 # --- Part R ---
-n=$(grep -c '^## Running on a schedule$' "$readme" || true)
-if [ "$n" != 1 ]; then
-  fail "README.md has $n lines '## Running on a schedule', 1 expected"
-else
-  a=$(grep -n '^## Running unattended$' "$readme" | head -1 | cut -d: -f1 || true)
-  b=$(grep -n '^## Running on a schedule$' "$readme" | head -1 | cut -d: -f1)
-  c=$(grep -n '^## Developing nightmill$' "$readme" | head -1 | cut -d: -f1 || true)
-  { [ -n "$a" ] && [ "$b" -gt "$a" ]; } || fail "README.md: '## Running on a schedule' is not after '## Running unattended'"
-  { [ -n "$c" ] && [ "$b" -lt "$c" ]; } || fail "README.md: '## Running on a schedule' is not before '## Developing nightmill'"
-  sec=$(awk '/^## Running on a schedule$/ { s = 1; print; next } s && /^## / { exit } s { print }' "$readme")
-  heads=$(printf '%s\n' "$sec" | grep '^### ' || true)
-  want=$'### The driver\n### Limits and the kill switch\n### The summary\n### The workflow template'
-  [ "$heads" = "$want" ] || fail "README.md: the sub-headings of '## Running on a schedule' are not exactly: The driver, Limits and the kill switch, The summary, The workflow template (in order)"
-  d=$(sed -n '/"maxMinutes": {/,/}/p' "$schema" | sed -n 's/.*"default": *\([0-9]*\).*/\1/p' | head -1)
-  for w in scripts/drive.sh templates/workflows/nightmill-drive.yml .git/nightmill-stop \
-           "\`unattended.maxMinutes\` (default ${d:-240})" unattended.summaryIssue total_cost_usd 'permissions: {}' GITHUB_TOKEN \
-           repo read:org project workflow self-hosted NIGHTMILL_CHECKOUT -- '--permission-mode manual' \
-           '(#before-the-first-run)' '(#when-a-run-is-stopped)' '(#security-model)'; do
-    [ "$w" != -- ] || continue
-    case "$sec" in *"$w"*) ;; *) fail "README.md: the section '## Running on a schedule' lacks '$w'" ;; esac
-  done
-  [[ "$sec" =~ \[#165\]\(https://github.com/[^\)]*/issues/165\) ]] || fail "README.md: no link to #165 in the section"
-  grep -qF '| `scripts/drive.sh` |' "$readme" || fail "README.md: no row of scripts/drive.sh in the plugin table"
-fi
-flatreadme=$(tr '\n' ' ' < "$readme" | sed -E 's/ +/ /g')
-if [[ "$flatreadme" == *'no trigger that starts runs ships yet'* ]]; then fail "README.md: the Security model still says 'no trigger that starts runs ships yet'"; fi
-if [[ "$flatreadme" == *'Nothing in nightmill starts runs on a schedule yet'* ]]; then fail "README.md: Running unattended still says 'Nothing in nightmill starts runs on a schedule yet'"; fi
+d=$(sed -n '/"maxMinutes": {/,/}/p' "$schema" | sed -n 's/.*"default": *\([0-9]*\).*/\1/p' | head -1)
+for w in scripts/drive.sh templates/workflows/nightmill-drive.yml .git/nightmill-stop \
+         "\`unattended.maxMinutes\` (default ${d:-240})" unattended.summaryIssue total_cost_usd 'permissions: {}' GITHUB_TOKEN \
+         repo read:org project workflow self-hosted NIGHTMILL_CHECKOUT -- '--permission-mode manual'; do
+  [ "$w" != -- ] || continue
+  grep -qF -- "$w" "$readme" || fail "README.md lacks '$w'"
+done
+grep -qF '| `scripts/drive.sh` |' "$readme" || fail "README.md: no row of scripts/drive.sh in the plugin table"
 
 exit "$bad"

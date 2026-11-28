@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# tests/test-unattended-docs.sh - the README has a "Running unattended" section (iteration 49, #160). Pins on the
-# text; the spec's 11 pins.
+# tests/test-unattended-docs.sh - the README's "Running unattended" (iteration 49, #160) gives the headless commands
+# with their flags and the keys and defaults a run depends on. Only the contracts are checked (a command and its flags,
+# a config key and its schema default, a file name, a line a skill parses); the headings, their order and the
+# sentences are the manual check's (iteration 73). The whole README is searched.
 #   tests/test-unattended-docs.sh [<root>]   # root: the checkout to read (default: this one)
 set -euo pipefail
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -12,7 +14,7 @@ schema="$root/schema/nightmill.schema.json"
 
 # contains <flat text> <needle>
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
-flatten() { tr '\n' ' ' | sed -E 's/ +/ /g'; }
+flat=$(tr '\n' ' ' < "$readme" | sed -E 's/ +/ /g')
 
 # default_of <key>: the default of a one-line schema entry
 default_of() {
@@ -26,49 +28,10 @@ for v in "$d_slots" "$d_agents" "$d_watch" "$d_stalled"; do
   case "$v" in ''|*[!0-9]*) fail "schema/nightmill.schema.json: a default is missing or not a number" ;; esac
 done
 
-repo=$(grep -oE '/plugin marketplace add [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' "$readme" | head -1 | sed 's|.* ||' || true)
-[ -n "$repo" ] || fail "README.md: no /plugin marketplace add line"
-
-# part <heading line>: the lines of sec after that heading up to the next '### '. awk reads to the end (a flag, no
-# exit): an early exit can kill printf with SIGPIPE, and under pipefail that fails the pipe.
-part() { printf '%s\n' "$sec" | awk -v h="$1" 'd { next } $0 == h { s = 1; next } s && /^### / { d = 1; next } s { print }'; }
-
-# 1. exactly one heading, after the limit sub-section and before Developing nightmill
-n=$(grep -c '^## Running unattended$' "$readme" || true)
-if [ "$n" != "1" ]; then
-  fail "README.md has $n lines '## Running unattended', 1 expected"
-else
-  ln=$(grep -n '^## Running unattended$' "$readme" | head -1 | cut -d: -f1)
-  al=$(grep -n '^### Adjusting the limit to the load$' "$readme" | head -1 | cut -d: -f1 || true)
-  dv=$(grep -n '^## Developing nightmill$' "$readme" | head -1 | cut -d: -f1 || true)
-  { [ -n "$al" ] && [ "$ln" -gt "$al" ]; } || fail "README.md: '## Running unattended' is not after '### Adjusting the limit to the load'"
-  { [ -n "$dv" ] && [ "$ln" -lt "$dv" ]; } || fail "README.md: '## Running unattended' is not before '## Developing nightmill'"
-fi
-
-sec=$(awk '/^## Running unattended$/ { s = 1; print; next } s && /^## / { exit } s { print }' "$readme")
-if [ -z "$sec" ]; then
-  fail "README.md has no section '## Running unattended'"
-  echo "FAIL: stopping: nothing else to check" >&2
-  exit 1
-fi
-flat=$(printf '%s\n' "$sec" | flatten)
-
-# 2. five sub-headings, once each, in order, and no other '### '
-prev=0
-for h in '### Before the first run' '### The commands' '### Several runs at once' '### Watching a run' '### When a run is stopped'; do
-  c=$(printf '%s\n' "$sec" | grep -cxF "$h" || true)
-  if [ "$c" != "1" ]; then fail "README.md: the section has $c lines '$h', 1 expected"; continue; fi
-  l=$(printf '%s\n' "$sec" | grep -nxF "$h" | head -1 | cut -d: -f1)
-  [ "$l" -gt "$prev" ] || fail "README.md: '$h' is out of order"
-  prev=$l
-done
-cnt=$(printf '%s\n' "$sec" | grep -c '^### ' || true)
-[ "$cnt" = "5" ] || fail "README.md: the section has $cnt lines starting '### ', 5 expected"
-
-# 3. the four command lines in a code block of '### The commands'; the skills still have these names
-cmds=$(part '### The commands')
-block=$(printf '%s\n' "$cmds" | awk '/^```/ { b = !b; next } b { print }')
-# the defaults 200 and 2000 are the schema's limits.turnsPerRole.session and that times limits.issuesPerRun (iteration 53)
+# 1. the four command lines; their --max-turns are the schema's limits.turnsPerRole.session (200) and that times
+# limits.issuesPerRun (2000, iteration 53); the skills and the plugin still have these names
+cmd_lines=$(grep '^claude -p ' "$readme" || true)
+[ -n "$cmd_lines" ] || fail "README.md has no line starting 'claude -p '"
 d_session=$(awk '/"turnsPerRole": \{/ { t = 1 } t && /"session": \{/ { s = 1 } s && /"default":/ { sub(/.*"default": */, ""); sub(/[^0-9].*/, ""); print; exit }' "$schema")
 d_issues=$(awk '/"issuesPerRun": \{/ { s = 1 } s && /"default":/ { sub(/.*"default": */, ""); sub(/[^0-9].*/, ""); print; exit }' "$schema")
 case "$d_session$d_issues" in ''|*[!0-9]*) fail "schema/nightmill.schema.json: limits.turnsPerRole.session or limits.issuesPerRun has no numeric default" ;; esac
@@ -78,20 +41,19 @@ if [ -n "$d_session" ] && [ -n "$d_issues" ]; then
 fi
 for pair in '/nightmill:next=200' '/nightmill:next 112=200' '/nightmill:fix 57=200' '/nightmill:fix all=2000'; do
   cmd=${pair%=*}; turns=${pair##*=}
-  line=$(printf '%s\n' "$block" | grep -F -- "claude -p \"$cmd\" " | head -1 || true)
-  if [ -z "$line" ]; then fail "README.md: '### The commands' has no code-block line for claude -p \"$cmd\""; continue; fi
+  line=$(printf '%s\n' "$cmd_lines" | grep -F -- "claude -p \"$cmd\" " | head -1 || true)
+  if [ -z "$line" ]; then fail "README.md has no line for claude -p \"$cmd\""; continue; fi
   case "$line " in *" --max-turns $turns "*) ;; *) fail "README.md: the line for $cmd has no '--max-turns $turns': $line" ;; esac
-  contains "$line" '--permission-mode manual' || fail "README.md: the line for $cmd lacks --permission-mode manual: $line"
 done
 for w in 'limits.turnsPerRole.session' 'limits.issuesPerRun' '--max-budget-usd'; do
-  contains "$(printf '%s\n' "$cmds" | flatten)" "$w" || fail "README.md: '### The commands' does not mention $w"
+  contains "$flat" "$w" || fail "README.md does not mention $w"
 done
 grep -xF 'name: next' "$root/skills/next/SKILL.md" >/dev/null || fail "skills/next/SKILL.md: no line 'name: next'"
 grep -xF 'name: fix' "$root/skills/fix/SKILL.md" >/dev/null || fail "skills/fix/SKILL.md: no line 'name: fix'"
 grep -E '^argument-hint:.*all' "$root/skills/fix/SKILL.md" >/dev/null || fail "skills/fix/SKILL.md: argument-hint has no 'all'"
 grep -E '"name": *"nightmill"' "$root/.claude-plugin/plugin.json" >/dev/null || fail ".claude-plugin/plugin.json: name is not nightmill"
 
-# 4. every claude -p line uses manual mode and none of the forbidden flags
+# 2. every claude -p line uses manual mode and none of the forbidden flags
 while IFS= read -r line; do
   [ -n "$line" ] || continue
   contains "$line" '--permission-mode manual' || fail "README.md: a 'claude -p' line lacks --permission-mode manual: $line"
@@ -99,91 +61,43 @@ while IFS= read -r line; do
     if contains "$line" "$bad_flag"; then fail "README.md: a 'claude -p' line contains $bad_flag: $line"; fi
   done
 done <<EOF2
-$(printf '%s\n' "$sec" | grep '^claude -p ' || true)
+$cmd_lines
 EOF2
-if ! printf '%s\n' "$sec" | grep '^claude -p ' >/dev/null; then fail "README.md: the section has no line starting 'claude -p '"; fi
-for w in '--bare' 'bypassPermissions' '--dangerously-skip-permissions' 'default' '--output-format json'; do
-  contains "$flat" "$w" || fail "README.md: the section does not mention $w"
+for w in '--bare' 'bypassPermissions' '--dangerously-skip-permissions' '--output-format json'; do
+  contains "$flat" "$w" || fail "README.md does not mention $w"
 done
 
-# 5. the settings a run needs
-before=$(part '### Before the first run' | flatten)
+# 3. the settings a run needs: the files, the keys and the command that writes them
 # The README must contain the literal text ~/.claude.json; the tilde is not meant to expand.
 # shellcheck disable=SC2088
-for w in '**Permissions**' '**Deny rules**' '**Edit permission**' '**Run permissions**' '.claude/settings.json' '.claude/settings.local.json' \
-  '(#the-edit-permission)' '(#the-run-permissions)' '(#the-deny-rules-and-the-guard)' '/nightmill:init' 'hasTrustDialogAccepted' \
-  '~/.claude.json' 'this workspace has not been trusted' 'defaultMode' '.claude/'; do
-  contains "$before" "$w" || fail "README.md: '### Before the first run' does not contain $w"
-done
-for h in '### The edit permission' '### The run permissions' '### The deny rules and the guard'; do
-  grep -xF "$h" "$readme" >/dev/null || fail "README.md has no heading '$h'"
+for w in '.claude/settings.json' '.claude/settings.local.json' '/nightmill:init' 'hasTrustDialogAccepted' \
+  '~/.claude.json' 'defaultMode' '.claude/'; do
+  contains "$flat" "$w" || fail "README.md does not contain $w"
 done
 
-# 6. /init again, #213, the guard's limits, #164 and #165
-contains "$before" '/init' || fail "README.md: '### Before the first run' does not contain /init"
-contains "$before" "[#213](https://github.com/$repo/issues/213)" || fail "README.md: '### Before the first run' does not link #213"
-contains "$flat" '(#what-is-enforced)' || fail "README.md: the section does not contain (#what-is-enforced)"
-for n in 164 165; do
-  contains "$flat" "[#$n](https://github.com/$repo/issues/$n)" || fail "README.md: the section does not link #$n"
-done
-
-# 7. several runs at once
-several=$(part '### Several runs at once' | flatten)
-contains "$several" "\`worktrees.slots\` (default $d_slots)" || fail "README.md: '### Several runs at once' lacks \`worktrees.slots\` (default $d_slots)"
-if ! contains "$several" "\`parallel.maxAgents\`, default $d_agents" && ! contains "$several" "\`parallel.maxAgents\` (default $d_agents)"; then
-  fail "README.md: '### Several runs at once' lacks \`parallel.maxAgents\` with default $d_agents"
+# 4. several runs at once: the keys with their schema defaults, the variable, the slot script's line /fix reads
+contains "$flat" "\`worktrees.slots\` (default $d_slots)" || fail "README.md lacks \`worktrees.slots\` (default $d_slots)"
+if ! contains "$flat" "\`parallel.maxAgents\`, default $d_agents" && ! contains "$flat" "\`parallel.maxAgents\` (default $d_agents)"; then
+  fail "README.md lacks \`parallel.maxAgents\` with default $d_agents"
 fi
-for w in 'WORKER_SLOTS' 'all <k> slots are busy' 'In progress' '/fix all' '(#changing-the-numbers-during-a-session)' '(#room-for-one-more-agent)' \
-  "[#176](https://github.com/$repo/issues/176)"; do
-  contains "$several" "$w" || fail "README.md: '### Several runs at once' does not contain $w"
+for w in 'WORKER_SLOTS' 'all <k> slots are busy' '/fix all'; do
+  contains "$flat" "$w" || fail "README.md does not contain $w"
 done
 grep -F 'slots are busy' "$root/scripts/slot.sh" >/dev/null || fail "scripts/slot.sh no longer contains 'slots are busy'"
 
-# 8. watching a run
-watching=$(part '### Watching a run' | flatten)
-for w in 'claude -p "/nightmill:status"' '/nightmill:status' '**running**' '**stalled**' '(#what-a-slots-agent-is-doing)' \
-  '(#watching-the-run-in-a-browser)' '(#watching-the-run-beside-the-chat)' "review.watchChecksMinutes\` (default $d_watch)" 'exit code'; do
-  case "$w" in
-    review.watchChecksMinutes*) contains "$watching" "$w" || contains "$watching" "review.watchChecksMinutes (default $d_watch)" || fail "README.md: '### Watching a run' lacks review.watchChecksMinutes (default $d_watch)" ;;
-    *) contains "$watching" "$w" || fail "README.md: '### Watching a run' does not contain $w" ;;
-  esac
+# 5. watching a run: the commands and the key with its schema default
+for w in 'claude -p "/nightmill:status"' '/nightmill:status'; do
+  contains "$flat" "$w" || fail "README.md does not contain $w"
 done
-for h in '### What a slot'"'"'s agent is doing' '### Watching the run in a browser' '### Watching the run beside the chat'; do
-  grep -xF "$h" "$readme" >/dev/null || fail "README.md has no heading '$h'"
+contains "$flat" "review.watchChecksMinutes\` (default $d_watch)" || contains "$flat" "review.watchChecksMinutes (default $d_watch)" ||
+  fail "README.md lacks review.watchChecksMinutes (default $d_watch)"
+
+# 6. a stopped run: the slot step /next reads, the command that frees a slot, the key with its schema default, the
+# statuses (the schema's defaults of board.statuses) and the command that resumes
+for w in 'take-died' '--abandon N' "\`worktrees.stalledAfterMinutes\` (default $d_stalled)" '/nightmill:next <N>' \
+  'In progress' 'Review' 'Ready'; do
+  contains "$flat" "$w" || fail "README.md does not contain $w"
 done
-
-# 9. when a run is stopped
-stopped=$(part '### When a run is stopped' | flatten)
-for w in 'Ctrl+C' 'SIGTERM' '143' 'take-died' '--abandon N' 'In progress' 'Review' 'auto-merge' '**running**' '**stalled**' \
-  "\`worktrees.stalledAfterMinutes\` (default $d_stalled)" '/nightmill:next <N>' 'Ready' "[#165](https://github.com/$repo/issues/165)"; do
-  contains "$stopped" "$w" || fail "README.md: '### When a run is stopped' does not contain $w"
-done
-if contains "$stopped" '-Abandon N'; then fail "README.md: '### When a run is stopped' still names -Abandon N (bash form only, #364)"; fi
-grep -F 'another run is working on it' "$root/skills/next/SKILL.md" >/dev/null || fail "skills/next/SKILL.md no longer contains 'another run is working on it'"
-grep -F '`stalled` and `unknown` are resumed' "$root/skills/next/SKILL.md" >/dev/null || fail "skills/next/SKILL.md no longer contains '\`stalled\` and \`unknown\` are resumed'"
-
-# 10. the cross-references
-hl=$(grep '^- \*\*Headless runs:\*\*' "$readme" | head -1 || true)
-if [ -z "$hl" ]; then
-  fail "README.md has no line starting '- **Headless runs:**'"
-else
-  contains "$hl" '(#running-unattended)' || fail "README.md: the Headless runs bullet does not link (#running-unattended)"
-  contains "$hl" '#160' || fail "README.md: the Headless runs bullet does not contain #160"
-fi
-secm=$(awk '/^## Security model$/ { s = 1; print; next } s && /^## / { exit } s { print }' "$readme" | flatten)
-contains "$secm" '(#running-unattended)' || fail "README.md: the Security model section does not link (#running-unattended)"
-if contains "$secm" 'is not described yet'; then fail "README.md: the Security model section still says 'is not described yet'"; fi
-
-# 11. every issue link in the section has the same number twice and the right URL
-links=$(printf '%s' "$flat" | grep -oE '\[#[0-9]+\]\([^)]*\)' || true)
-while IFS= read -r l; do
-  [ -n "$l" ] || continue
-  a=${l#\[#}; a=${a%%\]*}
-  want="[#$a](https://github.com/$repo/issues/$a)"
-  [ "$l" = "$want" ] || fail "README.md: link $l should be $want"
-done <<EOF3
-$links
-EOF3
 
 [ "$bad" = 0 ] && echo "ok: running unattended is documented"
 exit "$bad"

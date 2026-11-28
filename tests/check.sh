@@ -137,7 +137,6 @@ add bash test-check-skill.sh
 add bash test-ci-summary.sh
 add bash test-fix-pick.sh
 add bash test-guard-rules.sh alone
-add bash test-interrupt-docs.sh
 add bash test-json-bom.sh
 add bash test-json-speed.sh
 add bash test-lib-load.sh
@@ -192,7 +191,7 @@ map .claude/CLAUDE.md test-changelog-coverage.sh
 map .github/workflows/ci.yml smoke-check.sh
 map CHANGELOG.md smoke-release.sh,test-release-resume.sh,test-release-low-defects.sh,test-changelog-refs.sh,test-changelog-coverage.sh
 map CONTRIBUTING.md smoke-check.sh
-map README.md smoke-release.sh,smoke-check.sh,test-release-resume.sh,test-release-low-defects.sh,test-resume-stuck.sh,test-story-dedup.sh,test-interrupt-docs.sh,test-spec-template.sh,test-watch-checks.sh,test-guard-rules.sh
+map README.md smoke-release.sh,smoke-check.sh,test-release-resume.sh,test-release-low-defects.sh,test-resume-stuck.sh,test-story-dedup.sh,test-spec-template.sh,test-watch-checks.sh,test-guard-rules.sh
 map agents/* test-script-modes.sh,test-guard-rules.sh,claude plugin validate,claude plugin test
 map agents/spec-reviewer.md test-spec-template.sh
 map agents/worker.md test-worker-merge.sh
@@ -218,7 +217,7 @@ map scripts/release.* smoke-release.sh,test-lint-pipefail.sh,test-release-resume
 map scripts/render-templates.* smoke-render.sh,test-lint-pipefail.sh,test-render-quoting.sh,test-script-modes.sh,test-mktemp-template.sh
 map scripts/room.* smoke-room.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,smoke-drive.sh
 map scripts/session-start.* smoke-hook.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
-map scripts/slot.* smoke-slot.sh,smoke-control.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,test-interrupt-docs.sh,smoke-drive.sh,test-slot-low-defects.sh
+map scripts/slot.* smoke-slot.sh,smoke-control.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-skill-config-fallback.sh,test-slot-number.sh,smoke-drive.sh,test-slot-low-defects.sh
 map scripts/stages.* smoke-slot.sh,smoke-stages.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
 map scripts/status.* smoke-status.sh,smoke-dashboard.sh,test-lint-pipefail.sh,test-status-controls.sh,test-script-modes.sh,test-mktemp-template.sh
 map scripts/template-board.* smoke-template-board.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
