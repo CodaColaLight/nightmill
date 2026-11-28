@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/test-ci-run-steps.sh - rule 10a of tests/test-ci-parts.sh counts every run step of the part job (bug #296; iteration 55,
-# #289): the job smoke-gitbash-part may have exactly one run line (the tests/check.sh ... --only ${{ matrix.only }} call), so
+# #289): the job smoke-gitbash-part may have exactly one run line (the tests/check.sh ... $CHECK_SELECT @gitbash-${{ matrix.part }} call), so
 # that no step runs outside the parts' lists, and a step written in the compact form `- run: ...` counts as a run line like
 # one written `run: ...` after a `- name:` or `- shell:` line. Each case is a scratch copy of .github/workflows/ci.yml (the
 # real file is never touched) with a second run step added to the part job in the compact form: after the check step, before

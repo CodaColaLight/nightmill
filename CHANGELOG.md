@@ -16,6 +16,11 @@
   checks of main once two measured runs are within the 17-minute budget of iteration 66; the lint fails on a part
   with continue-on-error and on any other name for the final job. No config key.
 - Iteration 71 (#347): a spec stays short: `iterations.maxSpecLines` (default 0, no limit) holds a spec to a number of lines; the spec reviewer reports a spec over it as blocking, and a story that does not fit gets a split proposed on its issue instead of a spec.
+- Iteration 70 (#343): CI takes every smoke job's steps from the step list of tests/check.sh: the Ubuntu job runs the
+  groups @with-jq and @without-jq, Git Bash part k the group @gitbash-k, and the marks jq, nogitbash and alone on a
+  step's line say where it runs; the bash lines of the list are in name order, so a new test is one line in the
+  step list and none in the workflow (it still needs a map line). The lint no longer compares the workflow's lists with the step list; it fails on a step name in the
+  workflow and on a test file that runs nowhere. No config key.
 
 ## 0.10.0 (2026-11-27)
 

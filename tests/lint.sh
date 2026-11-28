@@ -432,9 +432,7 @@ done < <(json_keys properties.roles.properties)
 if grep -qF 'nightmill.json' skills/models/SKILL.md; then
   echo "FAIL: skills/models/SKILL.md names the config file; it would have to inject it"; fail=1
 fi
-for f in tests/check.sh .github/workflows/ci.yml; do
-  grep -qF 'smoke-models' "$f" || { echo "FAIL: $f does not run smoke-models"; fail=1; }
-done
+grep -qF 'smoke-models' tests/check.sh || { echo "FAIL: tests/check.sh does not run smoke-models"; fail=1; }
 
 echo "== init installs the edit permission"
 # /init adds the rule Edit(**) to permissions.allow of .claude/settings.local.json (iteration 12). /init is a
@@ -736,9 +734,7 @@ grep -qF 'ledger.tsv' "$f" || { echo "FAIL: $f does not carry the record file: l
 f=scripts/stages.sh
 [ -f "$f" ] || { echo "FAIL: $f does not exist"; fail=1; }
 w='smoke-stages.sh'
-for f in tests/check.sh .github/workflows/ci.yml; do
-  grep -qF -- "$w" "$f" || { echo "FAIL: $f does not run $w"; fail=1; }
-done
+grep -qF -- "$w" tests/check.sh || { echo "FAIL: tests/check.sh does not run $w"; fail=1; }
 for w in 'ledger.tsv' 'ci-and-merge' 'not-reported' 'stages.sh'; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention the stage record item: $w"; fail=1; }
 done
@@ -1016,9 +1012,7 @@ for w in load.sh maxSuggestedAgents memoryPerAgentGB loadWindowSeconds 'rate lim
 done
 f=tests/smoke-load.sh
 grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
-for f in tests/check.sh .github/workflows/ci.yml; do
-  grep -qF 'smoke-load' "$f" || { echo "FAIL: $f does not run smoke-load"; fail=1; }
-done
+grep -qF 'smoke-load' tests/check.sh || { echo "FAIL: tests/check.sh does not run smoke-load"; fail=1; }
 
 echo "== room is wired"
 # A skill checks that the machine has room before it starts an agent (iteration 28): both room scripts and both smoke
@@ -1068,9 +1062,7 @@ for w in room.sh roomCheck roomMinFreeMB roomMaxCpuPercent roomPauseSeconds room
 done
 f=tests/smoke-room.sh
 grep -qF NIGHTMILL_LOAD_FIXTURE "$f" 2>/dev/null || { echo "FAIL: $f does not set NIGHTMILL_LOAD_FIXTURE"; fail=1; }
-for f in tests/check.sh .github/workflows/ci.yml; do
-  grep -qF 'smoke-room' "$f" || { echo "FAIL: $f does not run smoke-room"; fail=1; }
-done
+grep -qF 'smoke-room' tests/check.sh || { echo "FAIL: tests/check.sh does not run smoke-room"; fail=1; }
 
 echo "== control is wired"
 # An opt-in controller adjusts the agent limit from the measured load (iteration 30): both control scripts, the skill and
@@ -1127,9 +1119,7 @@ f=tests/smoke-control.sh
 for w in NIGHTMILL_LOAD_FIXTURE NIGHTMILL_NOW; do
   grep -qF "$w" "$f" 2>/dev/null || { echo "FAIL: $f does not set $w"; fail=1; }
 done
-for f in tests/check.sh .github/workflows/ci.yml; do
-  grep -qF 'smoke-control' "$f" || { echo "FAIL: $f does not run smoke-control"; fail=1; }
-done
+grep -qF 'smoke-control' tests/check.sh || { echo "FAIL: tests/check.sh does not run smoke-control"; fail=1; }
 
 echo "== dashboard is wired"
 # A page in the browser shows the slots and what waits (iteration 31): the dashboard scripts, the renderer, both smoke
@@ -1162,9 +1152,7 @@ json_load templates/nightmill.example.json
 for w in dashboard.sh dashboardRefreshSeconds Ctrl-C --porcelain; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
-for f in tests/check.sh .github/workflows/ci.yml; do
-  grep -qF 'smoke-dashboard' "$f" || { echo "FAIL: $f does not run smoke-dashboard"; fail=1; }
-done
+grep -qF 'smoke-dashboard' tests/check.sh || { echo "FAIL: tests/check.sh does not run smoke-dashboard"; fail=1; }
 
 echo "== slots pane is wired"
 # A pane beside the Claude chat shows the slots (iteration 32): a hooks module named under "modules" in hooks.json,
@@ -1206,10 +1194,9 @@ json_load templates/nightmill.example.json
 for w in /nightmill-slots panelRefreshSeconds 2.1.287; do
   grep -qF -- "$w" README.md || { echo "FAIL: README.md does not mention $w"; fail=1; }
 done
+grep -qF -- smoke-panel tests/check.sh || { echo "FAIL: tests/check.sh does not carry: smoke-panel"; fail=1; }
 for f in tests/check.sh .github/workflows/ci.yml; do
-  for w in smoke-panel 'claude plugin test'; do
-    grep -qF -- "$w" "$f" || { echo "FAIL: $f does not carry: $w"; fail=1; }
-  done
+  grep -qF -- 'claude plugin test' "$f" || { echo "FAIL: $f does not carry: claude plugin test"; fail=1; }
 done
 for w in 'claude plugin test --help' 'claude plugin test not available'; do
   grep -qF -- "$w" tests/check.sh || { echo "FAIL: tests/check.sh does not carry: $w"; fail=1; }
@@ -1226,9 +1213,9 @@ fi
 echo "== the check starts the longest steps first"
 # Iteration 42, decision 1 (and #279): exactly the longest steps of a CI run carry the mark 'first' in the step list of
 # tests/check.sh, so with a limit above 1 they start before all others and the total is set by the slowest step.
-# A step marked slow (iteration 62) ends in ' first slow': the ' slow' is removed before the compare.
-firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p && / first( slow)?$/ { sub(/ slow$/, ""); print }' tests/check.sh | tr '\n' '|')
-want_firsts="add bash smoke-slot.sh first|add bash test-spec-template.sh first|"
+# A mark is any field from the fourth on (iteration 70: the CI marks may follow 'first'), so the names are compared.
+firsts=$(awk '/^# steps: begin$/ { p = 1; next } /^# steps: end$/ { p = 0 } p { for (i = 4; i <= NF; i++) if ($i == "first") print $3 }' tests/check.sh | tr '\n' '|')
+want_firsts="smoke-slot.sh|test-spec-template.sh|"
 if [ "$firsts" != "$want_firsts" ]; then
   echo "FAIL: tests/check.sh: the steps marked first are not exactly the longest steps (docs/specs/iteration-42-parallel-check.md, decision 1): $firsts"; fail=1
 fi
@@ -1238,8 +1225,11 @@ echo "== the check runs every smoke script"
 # Iteration 42, decision 11: the step list of tests/check.sh (between '# steps: begin' and '# steps: end') runs every
 # smoke script once, in its own shell; the check has one place that prints the all-passed line; the key and the quick
 # mode are wired in the schema, the example, the README, the contributor guide and the skills; and CI runs its smoke
-# jobs through tests/check.sh $CHECK_SELECT (--only, or --affected --within on a pull request): the bash job with a list equal to the step list's bash steps, the Git Bash
-# parts (iterations 55 and 66; the parts are checked in the next section but one), and no other job name begins with a required one.
+# jobs through tests/check.sh $CHECK_SELECT (--only, or --affected --within on a pull request) and the groups of the
+# check (iteration 70): the bash job @with-jq, then @without-jq after it hides jq, the Git Bash parts @gitbash-<k> (checked
+# in the next section but one), and no other job name begins with a required one. No step is named in the workflow:
+# the step list is the only list, its bash lines are in name order, and every tests/smoke-*.sh is a step and every
+# tests/test-*.sh a step or started by this lint (a test file must run somewhere).
 chk_block=""
 chk_nb=$(grep -cx '# steps: begin' tests/check.sh || true)
 chk_ne=$(grep -cx '# steps: end' tests/check.sh || true)
@@ -1247,13 +1237,15 @@ chk_lb=$(grep -nx '# steps: begin' tests/check.sh | head -n 1 | cut -d: -f1 || t
 chk_le=$(grep -nx '# steps: end' tests/check.sh | head -n 1 | cut -d: -f1 || true)
 if [ "$chk_nb" = 1 ] && [ "$chk_ne" = 1 ] && [ "$chk_le" -gt "$chk_lb" ]; then
   chk_block=$(sed -n "$((chk_lb + 1)),$((chk_le - 1))p" tests/check.sh | grep -v '^[[:space:]]*$' || true)
-  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash) [A-Za-z0-9._-]+( first)?( slow)?$' >/dev/null; then chk_block=""; fi
+  # the marks in their order (iteration 70); the CI marks on bash lines only, never nogitbash with alone
+  if printf '%s\n' "$chk_block" | grep -vE '^add (lint|bash) [A-Za-z0-9._-]+( first)?( slow)?( jq)?( nogitbash)?( alone)?$' >/dev/null ||
+    printf '%s\n' "$chk_block" | grep -E '^add lint .* (jq|nogitbash|alone)( |$)| nogitbash alone$' >/dev/null; then chk_block=""; fi
 fi
 if [ -z "$chk_block" ]; then
   echo "FAIL: tests/check.sh: the step list between '# steps: begin' and '# steps: end' is missing or malformed"; fail=1
 else
   # Iteration 62, decision 8 rule 2: exactly the slow steps of decision 4 carry the mark 'slow' (a lint line never)
-  chk_slows=$(printf '%s\n' "$chk_block" | awk '$NF == "slow" { print $2 " " $3 }' | tr '\n' '|')
+  chk_slows=$(printf '%s\n' "$chk_block" | awk '{ for (i = 4; i <= NF; i++) if ($i == "slow") print $2 " " $3 }' | tr '\n' '|')
   want_slows="bash test-lintcopy-output.sh|"
   if [ "$chk_slows" != "$want_slows" ]; then
     echo "FAIL: tests/check.sh: the steps marked slow are not exactly the slow steps (docs/specs/iteration-62-slow-tests-out-of-check.md, decision 4): $chk_slows"; fail=1
@@ -1261,7 +1253,7 @@ else
   # Iteration 62, decision 8 rule 3: every profiled step (decision 1) and every slow step says in a '# Time: ' line of
   # its header where its time goes; one awk pass over the files (bug #270: no process per line)
   chk_prof=""
-  for b in $(printf '%s\n' "$chk_block" | awk '$NF == "slow" { print $3 }'); do
+  for b in $(printf '%s\n' "$chk_block" | awk '{ for (i = 4; i <= NF; i++) if ($i == "slow") print $3 }'); do
     case " $chk_prof " in *" tests/$b "*) ;; *) chk_prof="$chk_prof tests/$b" ;; esac
   done
   # shellcheck disable=SC2086
@@ -1273,13 +1265,26 @@ else
     head && !/^#/ { head = 0 }
     head && /^# Time: / { hit = 1 }
     END { if (prev != "" && !hit) print prev }' $chk_prof 2>/dev/null </dev/null)
-  for f in tests/smoke-*.sh; do
+  # every smoke file is a step, once; a test file is a step, once, or started by a line of this lint that is no
+  # comment (iteration 70). One awk pass each for the counts and the starts (bug #270: no process per file).
+  chk_counts=$(printf '%s\n' "$chk_block" | awk '$2 == "bash" { c[$3]++ } END { printf "|"; for (k in c) printf "%s:%d|", k, c[k] }')
+  chk_started="|$(awk '{ l = $0; sub(/^[[:space:]]+/, "", l); if (l ~ /^#/) next
+      while (match(l, /bash tests\/[A-Za-z0-9._-]+/)) { print substr(l, RSTART + 11, RLENGTH - 11); l = substr(l, RSTART + RLENGTH) } }' tests/lint.sh | tr '\n' '|')"
+  for f in tests/smoke-*.sh tests/test-*.sh; do
     [ -f "$f" ] || continue
     b=${f#tests/}
-    c=$(printf '%s\n' "$chk_block" | awk -v b="$b" '$2 == "bash" && $3 == b' | wc -l | tr -d ' ')
-    if [ "$c" = 0 ]; then echo "FAIL: tests/check.sh does not run tests/$b"; fail=1
-    elif [ "$c" -gt 1 ]; then echo "FAIL: tests/check.sh runs tests/$b more than once"; fail=1; fi
+    case $chk_counts in
+      *"|$b:1|"*) ;;
+      *"|$b:"*) echo "FAIL: tests/check.sh runs tests/$b more than once"; fail=1 ;;
+      *) case $b in
+           smoke-*) echo "FAIL: tests/check.sh does not run tests/$b"; fail=1 ;;
+           *) case $chk_started in *"|$b|"*) ;; *) echo "FAIL: tests/$b runs nowhere: it is no step of tests/check.sh and tests/lint.sh does not start it"; fail=1 ;; esac ;;
+         esac ;;
+    esac
   done
+  # the bash lines in name order (decision 2): the first that is not after the one before it
+  chk_order=$(printf '%s\n' "$chk_block" | LC_ALL=C awk '$2 == "bash" { if (prev != "" && !($3 > prev)) { print $3 " comes after " prev; exit } prev = $3 }')
+  [ -z "$chk_order" ] || { echo "FAIL: tests/check.sh: the bash steps of the step list are not in name order: $chk_order"; fail=1; }
   while read -r _ k b _; do
     case $k in bash) [ -f "tests/$b" ] || { echo "FAIL: tests/check.sh runs tests/$b, which does not exist"; fail=1; } ;; esac
   done <<<"$chk_block"
@@ -1318,28 +1323,11 @@ for fw in 'README.md|checkJobs' 'README.md|--quick' 'CONTRIBUTING.md|--quick' \
   grep -qF -- "${fw#*|}" "${fw%%|*}" || { echo "FAIL: ${fw%%|*} does not mention ${fw#*|}"; fail=1; }
 done
 chk_ci=.github/workflows/ci.yml
-# chk_only <the files the list must hold, in order> <the list>: the FAIL lines of one --only list
-chk_only() {
-  local want=$1 got=$2 x c bad=0
-  for x in $want; do
-    case ",$got," in *",$x,"*) ;; *) echo "FAIL: $chk_ci does not run tests/$x"; fail=1; bad=1 ;; esac
-  done
-  for x in ${got//,/ }; do
-    c=$(printf '%s\n' ${got//,/ } | grep -cxF -- "$x" || true)
-    case " $want " in
-      *" $x "*) [ "$c" = 1 ] || { echo "FAIL: $chk_ci: tests/$x is not a step of its job or is named twice"; fail=1; bad=1; } ;;
-      *) echo "FAIL: $chk_ci: tests/$x is not a step of its job or is named twice"; fail=1; bad=1 ;;
-    esac
-  done
-  if [ "$bad" = 0 ] && [ "$(printf '%s\n' $want | tr '\n' ',')" != "$got," ]; then
-    echo "FAIL: $chk_ci: the --only list is not in the order of the step list"; fail=1
-  fi
-}
-# Iteration 60, decision 8 rule 5: the bash job has two check lines with $CHECK_SELECT, the first with the list
-# smoke-json.sh before the step that hides jq, the second with the other bash steps; --only and --affected occur only
-# in the env line of CHECK_SELECT. Iteration 64, decision 6: the two lines are counted in the job smoke-bash only
-# (from "  smoke-bash:" to the next line that starts with two spaces and a letter), so the Git Bash job's check line of
-# the same shape does not count; one awk reads the file once (bug #270)
+# Iteration 70, decision 5 (in place of iteration 60, decision 8 rule 5): the bash job has two check lines with
+# $CHECK_SELECT, the group @with-jq before the step that hides jq, the group @without-jq after it; --only and --affected
+# occur only in the env line of CHECK_SELECT. Iteration 64, decision 6: the two lines are counted in the job smoke-bash
+# only (from "  smoke-bash:" to the next line that starts with two spaces and a letter), so the Git Bash job's check line
+# of the same shape does not count; one awk reads the file once (bug #270)
 chk_sel='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT '
 chk_bash_lines=$(awk -v sel="$chk_sel" '
   /^  smoke-bash:/ { in_job = 1; next }
@@ -1348,12 +1336,17 @@ chk_bash_lines=$(awk -v sel="$chk_sel" '
 chk_hide=$(grep -nE '^[[:space:]]*- name: Hide jq' "$chk_ci" | head -n 1 | cut -d: -f1 || true)
 chk_l1=$(printf '%s\n' "$chk_bash_lines" | sed -n 1p); chk_l2=$(printf '%s\n' "$chk_bash_lines" | sed -n 2p)
 if [ "$(printf '%s' "$chk_bash_lines" | grep -c . || true)" != 2 ] || [ -z "$chk_hide" ] ||
-  [ "${chk_l1##*"$chk_sel"}" != smoke-json.sh ] || [ "${chk_l1%%:*}" -ge "$chk_hide" ]; then
-  echo "FAIL: $chk_ci: the bash smoke job does not run tests/check.sh --summary \"\$GITHUB_STEP_SUMMARY\" \$CHECK_SELECT smoke-json.sh, then the other bash steps"; fail=1
-elif [ -n "$chk_block" ]; then
-  chk_want_bash=$(printf '%s\n' "$chk_block" | awk '$2 == "bash" && $3 != "smoke-json.sh" { print $3 }' | tr '\n' ' ')
-  chk_only "$chk_want_bash" "${chk_l2##*"$chk_sel"}"
+  [ "${chk_l1##*"$chk_sel"}" != @with-jq ] || [ "${chk_l1%%:*}" -ge "$chk_hide" ] ||
+  [ "${chk_l2##*"$chk_sel"}" != @without-jq ] || [ "${chk_l2%%:*}" -le "$chk_hide" ]; then
+  echo "FAIL: $chk_ci: the bash smoke job does not run tests/check.sh --summary \"\$GITHUB_STEP_SUMMARY\" \$CHECK_SELECT @with-jq, then @without-jq after it hides jq"; fail=1
 fi
+# no step name in the workflow, comments included (iteration 70, decision 5): CI takes its steps from the step list
+chk_names=$(printf '%s\n' "$chk_block" | awk '$2 == "bash" { printf "%s ", $3 }')
+while IFS= read -r x; do
+  [ -z "$x" ] || { echo "FAIL: $chk_ci names the step $x (CI takes its steps from the step list of tests/check.sh)"; fail=1; }
+done < <(awk -v names="$chk_names" 'BEGIN { k = split(names, nm, " ") }
+  { for (i = 1; i <= k; i++) if (!(nm[i] in hit) && index($0, nm[i])) { hit[nm[i]] = 1; o[++no] = nm[i] } }
+  END { for (i = 1; i <= no; i++) print o[i] }' "$chk_ci")
 chk_env_line="  CHECK_SELECT: \${{ github.event_name == 'pull_request' && '--affected --within' || '--only' }}"
 if grep -E -e '--only|--affected' "$chk_ci" | grep -vxF -- "$chk_env_line" >/dev/null; then
   echo "FAIL: $chk_ci: --only or --affected occurs outside the env line of CHECK_SELECT"; fail=1
@@ -1472,9 +1465,10 @@ for fw in 'skills/workflow/SKILL.md|--affected' 'skills/workflow/SKILL.md|check:
 done
 
 echo "== the CI parts are well formed"
-# Rules 7 to 11 of tests/test-ci-parts.sh (iterations 55, 64, 66 and 68): the final job smoke-gitbash has a Job times
-# step, and only it has a job-level permissions block (rules 7 and 8); the Git Bash parts, their run step and their lists
-# of bash steps, and the final job that fails unless every part succeeded (rules 10a, 10b and 11). The rules and their
+# Rules 7 to 11 of tests/test-ci-parts.sh (iterations 55, 64, 66, 68 and 70): the final job smoke-gitbash has a Job
+# times step, and only it has a job-level permissions block (rules 7 and 8); the Git Bash parts and their run step, and
+# the final job that fails unless every part succeeded (rules 10a and 10b); rule 11 pins the CI marks of the step list
+# (jq, nogitbash, alone) to the steps earlier specs chose and the matrix's part count to the one the list makes. The rules and their
 # cases live in tests/test-ci-parts.sh, started once (bug #270: each process costs time in the lint copies).
 bash tests/test-ci-parts.sh "$PWD" || fail=1
 
@@ -1866,9 +1860,11 @@ done
 echo "== bash files do not use jq"
 # The bash scripts and their tests read JSON with scripts/lib/json.sh (iteration 7), so they run on a machine
 # with only git, gh and bash. Only tests/smoke-json.sh may call jq, as an oracle when it is installed, and
-# this file names it in its own checks. A mention in a comment line is fine.
+# this file names it in its own checks. A mention in a comment line is fine. The step list of tests/check.sh carries
+# the CI mark jq and the groups @with-jq and @without-jq (iteration 70), so the check and the two tests of the marks,
+# tests/smoke-check.sh and tests/test-ci-parts.sh, name the word without calling jq.
 for f in scripts/*.sh scripts/lib/* tests/*.sh; do
-  case "$f" in tests/smoke-json.sh|tests/lint.sh) continue ;; esac
+  case "$f" in tests/smoke-json.sh|tests/lint.sh|tests/check.sh|tests/smoke-check.sh|tests/test-ci-parts.sh) continue ;; esac
   if grep -nw jq "$f" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep . >/dev/null; then
     echo "FAIL: $f uses jq outside a comment; read JSON with scripts/lib/json.sh"; fail=1
   fi

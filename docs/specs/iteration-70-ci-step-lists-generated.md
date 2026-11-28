@@ -1,6 +1,6 @@
 # Iteration 70: CI takes every smoke job's steps from the step list of tests/check.sh
 
-Status: draft, awaiting approval (#343)
+Status: delivered in iteration 70 (PR #404)
 
 Story #343, epic #337 (fast verification loop). Today a new test is one line in the step list of `tests/check.sh`
 and one name in each of two long lines of `.github/workflows/ci.yml` (the Ubuntu job's list and the packed Git Bash

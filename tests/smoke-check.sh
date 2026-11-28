@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 unset UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES NIGHTMILL_CHECK_STEPS
 echo 1794038400 > "$tmp/clock"
 export NIGHTMILL_CLOCK_FILE="$tmp/clock"
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step|@group>[,...] | --affected [--within <step|@group>[,...]]] [--jobs <1-16>] [--summary <file>]'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # barrier <file-test>: a loop of at most 300 tries, 0.1 s apart, then exit 9
@@ -511,6 +511,103 @@ usage_case --affected --within
 usage_case --affected --within nope
 grep -qxF 'check: no step named nope' <<<"$err" || fail "usage: no 'no step named nope' line for --within: $err"
 
+echo "== groups"
+# iteration 70: @with-jq, @without-jq and @gitbash-<k> are expanded by the check from the CI marks of the step list (the
+# seventh field of a fixture line: a subset of jq nogitbash alone). Seven steps: a (lint), b (jq), c (alone), d (no mark),
+# e (nogitbash), f (alone), g (no mark); each appends its name to one log.
+glog="$tmp/groups.log"
+mk_groups() { # mk_groups <file> <marks of b> <marks of c> <marks of e>: the seven steps
+  {
+    printf 'a\techo a >> "%s"\tlint\n' "$glog"
+    printf 'b\techo b >> "%s"\tbash\t\t\t\t%s\n' "$glog" "$2"
+    printf 'c\techo c >> "%s"\tbash\t\t\t\t%s\n' "$glog" "$3"
+    printf 'd\techo d >> "%s"\tbash\n' "$glog"
+    printf 'e\techo e >> "%s"\tbash\t\t\t\t%s\n' "$glog" "$4"
+    printf 'f\techo f >> "%s"\tbash\t\t\t\talone\n' "$glog"
+    printf 'g\techo g >> "%s"\tbash\n' "$glog"
+  } > "$1"
+}
+grp_run() { # grp_run <steps file> <args...>: out, err, rc of the check on the fixture, one step at a time; the log in grp_log
+  local f=$1; shift
+  : > "$glog"
+  set +e
+  out=$(NIGHTMILL_CHECK_STEPS="$f" bash "$nrepo/tests/check.sh" --jobs 1 "$@" 2>"$tmp/err.txt"); rc=$?
+  set -e
+  err=$(cat "$tmp/err.txt")
+  grp_log=$(tr '\n' ',' < "$glog")
+}
+grp_ok() { # grp_ok <wanted log> <args...>: the check passes and runs exactly the wanted steps
+  local want=$1; shift
+  grp_run "$tmp/groups.txt" "$@"
+  [ "$rc" = 0 ] || fail "groups ($*): exit $rc: $out $err"
+  [ "$grp_log" = "$want" ] || fail "groups ($*): the steps that ran: [$grp_log], wanted [$want]"
+}
+mk_groups "$tmp/groups.txt" jq alone nogitbash
+grp_ok "b," --only @with-jq
+grp_ok "c,d,e,f,g," --only @without-jq
+grp_ok "c," --only @gitbash-1
+grp_ok "f," --only @gitbash-2
+grp_ok "b,d,g," --only @gitbash-3
+grp_ok "c,d," --only @gitbash-1,d
+# a name given in a group and in the list counts once, and the steps run in list order
+grp_ok "b,d,g," --only g,@gitbash-3,b
+# the header names the expanded steps
+grp_run "$tmp/groups.txt" --only @gitbash-3
+case "$(head -n 1 <<<"$out")" in "check: only b,d,g, "*) ;; *) fail "groups: the header does not name the expanded steps: $out" ;; esac
+# --within takes groups too, in the fallback of --affected as well
+printf '%s\n' 'map x/d d' 'shared scripts/lib/*' > "$tmp/groups.map"
+printf 'x/d\n' > "$tmp/groups.paths"
+: > "$glog"
+set +e
+out=$(NIGHTMILL_CHECK_STEPS="$tmp/groups.txt" NIGHTMILL_CHECK_MAP="$tmp/groups.map" NIGHTMILL_CHECK_PATHS="$tmp/groups.paths" bash "$nrepo/tests/check.sh" --affected --within @gitbash-3 --jobs 1 2>"$tmp/err.txt"); rc=$?
+set -e
+err=$(cat "$tmp/err.txt")
+[ "$rc" = 0 ] || fail "groups, --affected --within @gitbash-3: exit $rc: $out $err"
+[ "$(tr '\n' ',' < "$glog")" = "d," ] || fail "groups, --affected --within @gitbash-3: the steps that ran: $(tr '\n' ',' < "$glog")"
+# the errors: exit code 2, the message and the usage line, and no step runs
+grp_err() { # grp_err <message> <args...>
+  local msg=$1; shift
+  grp_run "$tmp/groups.txt" "$@"
+  [ "$rc" = 2 ] || fail "groups ($*): exit $rc, wanted 2: $out $err"
+  grep -qxF -- "$msg" <<<"$err" || fail "groups ($*): no '$msg' line: $err"
+  grep -qxF -- "$USAGE" <<<"$err" || fail "groups ($*): no usage line: $err"
+  [ -z "$grp_log" ] || fail "groups ($*): a step ran: $grp_log"
+}
+grp_err 'check: no Git Bash part 4 (the step list makes 3)' --only @gitbash-4
+grp_err 'check: no group named @nope' --only @nope
+grp_err 'check: no group named @gitbash-0' --only @gitbash-0
+grp_err 'check: no group named @gitbash-x' --only @gitbash-x
+grp_err 'check: no Git Bash part 4 (the step list makes 3)' --affected --within @gitbash-4
+# a group with no step
+mk_groups "$tmp/groups-nojq.txt" "" alone nogitbash
+grp_run "$tmp/groups-nojq.txt" --only @with-jq
+[ "$rc" = 2 ] || fail "groups, no jq step: exit $rc, wanted 2: $out $err"
+grep -qxF 'check: the group @with-jq has no step' <<<"$err" || fail "groups, no jq step: no 'the group @with-jq has no step' line: $err"
+# the seventh field: a subset of jq nogitbash alone, in that order, on bash lines
+badmarks() { # badmarks <name> <marks> <kind>: the fixture line of b has these marks
+  {
+    printf 'a\ttrue\tlint\n'
+    printf 'b\ttrue\t%s\t\t\t\t%s\n' "$3" "$2"
+  } > "$tmp/groups-$1.txt"
+  grp_run "$tmp/groups-$1.txt" --only b
+  [ "$rc" = 2 ] || fail "groups, marks '$2' on a $3 line: exit $rc, wanted 2: $out $err"
+}
+badmarks both "nogitbash alone" bash
+badmarks order "alone jq" bash
+badmarks lintmark "jq" lint
+badmarks unknown "fast" bash
+grep -qF 'the seventh field is a subset of jq nogitbash alone, in that order, not fast' <<<"$err" || fail "groups, unknown mark: no 'the seventh field is a subset' line: $err"
+# on the real list: seven parts
+run_real() { # run_real <args...>: out, err, rc of the real tests/check.sh
+  set +e
+  out=$(bash "$here/tests/check.sh" "$@" 2>"$tmp/err.txt"); rc=$?
+  set -e
+  err=$(cat "$tmp/err.txt")
+}
+run_real --only @gitbash-8
+[ "$rc" = 2 ] || fail "groups, real list: --only @gitbash-8 exit $rc, wanted 2: $out $err"
+grep -qxF 'check: no Git Bash part 8 (the step list makes 7)' <<<"$err" || fail "groups, real list: no 'no Git Bash part 8 (the step list makes 7)' line: $err"
+
 echo "== two checks at once"
 mkdir -p "$tmp/tmpA" "$tmp/tmpB"
 for r in A B; do
@@ -599,13 +696,12 @@ echo "== the slowest steps of the real list start first"
 # The real step list of tests/check.sh (between '# steps: begin' and '# steps: end'): the steps measured slowest in CI
 # (issue 279) carry the 'first' mark. Only these are pinned; more steps may be marked later.
 real_list=$(awk '/^# steps: begin$/{on=1;next} /^# steps: end$/{on=0} on' "$here/tests/check.sh")
-# a step marked slow (iteration 62) ends in ' slow' after its 'first': the mark is removed before the whole-line match
-real_first=$(sed 's/ slow$//' <<<"$real_list")
-for want in "bash test-spec-template.sh" "bash smoke-slot.sh"; do
-  has_line "$real_first" "add $want first" || fail "slowest steps: 'add $want first' is not in the step list of tests/check.sh"
+# the CI marks (iteration 70) follow 'first' and 'slow' on a line, so the lines are matched whole
+for want in "bash smoke-slot.sh first alone" "bash test-spec-template.sh first"; do
+  has_line "$real_list" "add $want" || fail "slowest steps: 'add $want' is not in the step list of tests/check.sh"
 done
-# the slow steps are marked in the step list itself (iteration 62, decision 4)
-want="bash test-lintcopy-output.sh slow"
+# the slow steps are marked in the step list itself (iteration 62, decision 4), and the step runs in no Git Bash part (iteration 70)
+want="bash test-lintcopy-output.sh slow nogitbash"
 has_line "$real_list" "add $want" || fail "slow steps: 'add $want' is not in the step list of tests/check.sh"
 
 echo "== the lint: the check runs every smoke script"
@@ -651,11 +747,25 @@ lint_break nofile tests/check.sh 's/^# steps: end/add bash smoke-nope.sh\
 # steps: end/' 'FAIL: tests/check.sh runs tests/smoke-nope.sh, which does not exist'
 lint_break twopassed tests/check.sh '$a\
 echo "ALL CHECKS PASSED"' 'FAIL: tests/check.sh prints ALL CHECKS PASSED in more than one place'
-lint_break cibash .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,//' 'FAIL: .github/workflows/ci.yml does not run tests/smoke-hook.sh'
-lint_break cijson .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary.*smoke-hook\.sh/s/\$CHECK_SELECT /\$CHECK_SELECT smoke-json.sh,/' 'FAIL: .github/workflows/ci.yml: tests/smoke-json.sh is not a step of its job or is named twice'
-lint_break ciswap .github/workflows/ci.yml '/run: bash tests\/check\.sh --summary/s/smoke-hook\.sh,smoke-release\.sh/smoke-release.sh,smoke-hook.sh/' 'FAIL: .github/workflows/ci.yml: the --only list is not in the order of the step list'
 lint_break cidirect .github/workflows/ci.yml '$a\
 \      - run: bash tests/smoke-render.sh' 'FAIL: .github/workflows/ci.yml runs tests/smoke-render.sh outside tests/check.sh'
+# iteration 70: CI names groups, never a step; the bash job's two lines; the step list is in name order and carries its marks
+lint_break cistepname .github/workflows/ci.yml 's/\$CHECK_SELECT @with-jq$/$CHECK_SELECT smoke-json.sh/' 'FAIL: .github/workflows/ci.yml names the step smoke-json.sh'
+lint_break cistepcomment .github/workflows/ci.yml '$a\
+# smoke-hook.sh' 'names the step smoke-hook.sh'
+lint_break cigroups .github/workflows/ci.yml 's/@with-jq$/@X/; s/@without-jq$/@with-jq/; s/@X$/@without-jq/' 'the bash smoke job does not run tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT @with-jq, then @without-jq after it hides jq'
+lint_break steporder tests/check.sh '/^add bash smoke-check\.sh alone$/d; s/^# steps: end$/add bash smoke-check.sh alone\
+# steps: end/' 'the bash steps of the step list are not in name order: smoke-check.sh comes after test-worker-merge.sh'
+lint_break testtwice tests/check.sh '/^add bash test-json-bom\.sh$/p' 'runs tests/test-json-bom.sh more than once'
+d="$tmp/lint-testnowhere"
+mkcopy "$d"
+: > "$d/tests/test-zz-nowhere.sh"
+lint_in "$d"
+[ "$rc" != 0 ] || fail "lint testnowhere: passed on a copy with a test file that runs nowhere: $out"
+grep -qF -- 'FAIL: tests/test-zz-nowhere.sh runs nowhere' <<<"$out" || fail "lint testnowhere: no 'FAIL: tests/test-zz-nowhere.sh runs nowhere' in: $out"
+rm -rf "$d"
+lint_break marklint tests/check.sh 's/^add lint lint$/add lint lint jq/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
+lint_break markboth tests/check.sh 's/^add bash smoke-check\.sh alone$/add bash smoke-check.sh nogitbash alone/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
 lint_break cirename .github/workflows/ci.yml 's/name: bash scripts smoke tests/name: bash scripts smoke/' 'the required job bash scripts smoke tests is missing'
 lint_break cibegins .github/workflows/ci.yml 's/name: claude plugin validate (not blocking)/name: bash scripts smoke tests (1)/' "FAIL: .github/workflows/ci.yml: the job name 'bash scripts smoke tests (1)' begins with the required name 'bash scripts smoke tests'"
 # CI selects the steps a pull request affects, and every required job runs on every event (iteration 60, decision 8)
@@ -663,7 +773,6 @@ lint_break cienv .github/workflows/ci.yml $'/CHECK_SELECT:/s/\'--only\'/\'--quic
 lint_break cipaths .github/workflows/ci.yml $'/^  pull_request:$/a\\\n\\    paths-ignore: [\'docs/**\']' "FAIL: .github/workflows/ci.yml: the 'on:' block is not exactly push to main and pull_request"
 lint_break ciif .github/workflows/ci.yml $'/^    name: Lint (generic, JSON, skills, shell)$/a\\\n\\    if: github.event_name == \'push\'' "job lint has an 'if:'"
 lint_break cidepth .github/workflows/ci.yml '/^  smoke-bash:$/,/^  smoke-gitbash-part:$/{/fetch-depth: 0/d;}' 'job smoke-bash does not check out with fetch-depth: 0'
-lint_break cijsondirect .github/workflows/ci.yml '/\$CHECK_SELECT smoke-json\.sh$/s/run: .*/run: bash tests\/smoke-json.sh/' 'the bash smoke job does not run tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT smoke-json.sh, then the other bash steps'
 # verification.platform is wired in the schema, the example, the README, the init skill and the check (iteration 56, decision 10)
 lint_break platformschema schema/nightmill.schema.json 's/"platform"/"platformx"/g' 'FAIL: schema: verification.platform is not a string'
 lint_break platformexample templates/nightmill.example.json 's/"platform": "all"/"platform": "unix"/' 'FAIL: templates/nightmill.example.json does not mention verification.platform all'
@@ -697,8 +806,8 @@ lint_break mapshared tests/check.sh '/^shared scripts\/lib\/\*$/d' 'the map does
 lint_break cimapci tests/check.sh '/^shared \.github\/workflows\/\*$/d' 'the map does not have the line shared .github/workflows/*'
 lint_break mapskill skills/check/SKILL.md 's/check: AFFECTED/check: AFFECTEX/g' 'skills/check/SKILL.md does not mention check: AFFECTED'
 # the slow mark (iteration 62, decision 8): its format, the set of slow steps, the '# Time: ' notes and the release line of the map
-lint_break slowformat tests/check.sh 's/^add bash test-lintcopy-output\.sh slow$/add bash test-lintcopy-output.sh slow first/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
-lint_break slowset tests/check.sh 's/^\(add bash test-lintcopy-output\.sh\) slow$/\1/' 'the steps marked slow are not exactly the slow steps'
+lint_break slowformat tests/check.sh 's/^add bash test-lintcopy-output\.sh slow nogitbash$/add bash test-lintcopy-output.sh nogitbash slow/' "the step list between '# steps: begin' and '# steps: end' is missing or malformed"
+lint_break slowset tests/check.sh 's/^\(add bash test-lintcopy-output\.sh\) slow nogitbash$/\1 nogitbash/' 'the steps marked slow are not exactly the slow steps'
 lint_break slownote tests/test-lintcopy-output.sh '/^# Time: /d' "tests/test-lintcopy-output.sh has no '# Time: ' note in its header"
 lint_break mapplugin tests/check.sh '/^shared \.claude-plugin\/plugin\.json$/d' 'the map does not have the line shared .claude-plugin/plugin.json'
 

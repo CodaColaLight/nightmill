@@ -1115,8 +1115,9 @@ check before every commit and every pull request. CI runs the smoke jobs through
 steps on Ubuntu, and all of them but `test-lintcopy-output.sh` (the Ubuntu job runs that one) in Git Bash in seven
 parts on seven Windows runners at once (decision record 0004), the longest steps alone in theirs; a failing step fails
 its part, and the required check `Git Bash scripts smoke tests` is a final job that fails unless every part succeeded;
-the lint fails when a bash step runs
-in no Git Bash part or in two. On a pull request each CI smoke job runs
+the marks on the lines of the step list in `tests/check.sh` say which steps run alone and which run on Ubuntu only,
+and every CI job takes its steps from that list, so a new test is one line there (and one line in the map of
+`tests/check.sh`). On a pull request each CI smoke job runs
 `tests/check.sh --affected --within <its list>`: the steps of its list that the changed paths select, or all of them
 when a path is shared or unknown; a push to `main` runs every step. Every required job runs on every event. `bash tests/check.sh --summary <file>` (`check.ps1 -Summary <file>`)
 appends the check's wall time and its five slowest steps to a Markdown file; each CI run's summary page shows every

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/check.sh - the local equivalent of CI, in one command (verification.check in .claude/nightmill.json).
-#   tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]
+#   tests/check.sh [--quick | --only <step|@group>[,...] | --affected [--within <step|@group>[,...]]] [--jobs <1-16>] [--summary <file>]
 # The steps are the lines of the step list below (between '# steps: begin' and '# steps: end'; tests/lint.sh reads it
-# and fails on a smoke script that is not in it), then the two claude steps:
+# and fails on a test file that runs nowhere), then the two claude steps:
 #   lint                      tests/lint.sh
 #   bash <file>               the bash smoke tests and regression tests (they need git and the tools every POSIX shell has, no jq)
 #   claude plugin validate    claude plugin validate --strict (when claude is on the PATH)
@@ -11,11 +11,19 @@
 # are capped at the machine's processors, and any UPDATE_*_FIXTURES=1 makes L 1. With L = 1 the steps run one after
 # another in the foreground; with more, each step's output goes to a file of its own and is printed whole, in the
 # order of the list, whatever order the steps finish in. The steps marked 'first' are started before the others. The
-# two claude steps run one after the other in one job. A step line is add <kind> <name>[ first][ slow]: a step marked
+# two claude steps run one after the other in one job. A step line is
+# add <kind> <name>[ first][ slow][ jq][ nogitbash][ alone], the marks in this order, each at most once: a step marked
 # 'slow' (iteration 62) does not run in a selective --affected run (with or without --within), which lists it as
-# LEFT OUT:; the full check, --only and the fallbacks of --affected run it as any step.
+# LEFT OUT:; the full check, --only and the fallbacks of --affected run it as any step. The CI marks (iteration 70,
+# bash lines only, never nogitbash with alone) say where CI runs a step: 'jq' in the Ubuntu job before it hides jq,
+# 'nogitbash' in no Git Bash part, 'alone' in a Git Bash part of its own. The bash lines are in name order (LC_ALL=C).
+# The groups, which --only and --within take where they take a step name (CI names groups, never a step):
+#   @with-jq       the bash steps marked jq          @without-jq   the other bash steps
+#   @gitbash-<k>   Git Bash part k: parts 1 to A are the A steps marked alone, one each, in list order, and part A + 1
+#                  is every other bash step not marked nogitbash (when there is one); no other part exists
+# An unknown group, a part beyond the last and a group with no step are usage errors.
 #   --quick        the lint and the bash smoke tests only; never prints the line of a passed full check
-#   --only a,b     exactly the named steps (CI runs its smoke jobs this way)
+#   --only a,b     exactly the named steps (CI runs its smoke jobs this way, with groups)
 #   --affected     the lint and the steps the paths changed against origin/<git.baseBranch> map to (iteration 59): the
 #                  changed paths are git diff --name-only against the merge base plus the untracked files, and the map
 #                  between '# affects: begin' and '# affects: end' below turns each into steps (map <pattern> <steps>,
@@ -36,9 +44,10 @@
 # result line carries the step's time, and a Times: block after the last step lists every step's time and the total
 # (iteration 41; the total is the wall time from the start to the end of the last step).
 # For the tests only: NIGHTMILL_CHECK_STEPS names a file of <name> TAB <command> [TAB <kind> [TAB <reason> [TAB first
-# [TAB slow]]]] lines (kind lint, bash or claude; bash when left out; a step with a reason is not run and is listed
-# as SKIPPED: <reason>; first marks a step to start first and slow marks a slow step, as in the step list; empty fields
-# keep their place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
+# [TAB slow [TAB <CI marks>]]]]] lines (kind lint, bash or claude; bash when left out; a step with a reason is not run
+# and is listed as SKIPPED: <reason>; first marks a step to start first and slow marks a slow step, as in the step
+# list; the CI marks are a space-separated subset of jq nogitbash alone, in that order; empty fields keep their
+# place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
 # scripts/lib/ledger.sh) is the clock the times are read from. With NIGHTMILL_CHECK_STEPS set, NIGHTMILL_CHECK_MAP
 # names a file of map lines read instead of the map below (unset: an empty map). NIGHTMILL_CHECK_PATHS names a file
 # whose lines are the changed paths of --affected; git is then not called. CI sets none of them.
@@ -47,7 +56,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 . scripts/lib/ledger.sh
 . scripts/lib/json.sh
 
-USAGE='usage: tests/check.sh [--quick | --only <step>[,<step>...] | --affected [--within <step>[,<step>...]]] [--jobs <1-16>] [--summary <file>]'
+USAGE='usage: tests/check.sh [--quick | --only <step|@group>[,...] | --affected [--within <step|@group>[,...]]] [--jobs <1-16>] [--summary <file>]'
 usage() { echo "$USAGE" >&2; exit 2; }
 whole_1_16() { [[ "$1" =~ ^[1-9][0-9]?$ ]] && [ "$1" -le 16 ]; }
 
@@ -72,73 +81,82 @@ case $seen in *" --quick "*) case $seen in *" --only "*) usage ;; esac ;; esac
 case $seen in *" --affected "*) case $seen in *" --quick "*|*" --only "*) usage ;; esac ;; esac
 case $seen in *" --within "*) case $seen in *" --affected "*) ;; *) usage ;; esac ;; esac
 
-# The step list: k_kind, k_name, k_first ('first' or empty), k_slow ('slow' or empty), k_skip (a reason, or empty),
-# k_cmd (fixture steps only)
+# The step list: k_kind, k_name, k_first ('first' or empty), k_slow ('slow' or empty), k_jq, k_nogb and k_alone (the
+# CI marks jq, nogitbash and alone, or empty), k_skip (a reason, or empty), k_cmd (fixture steps only)
 n=0
-add() { # add <kind> <name> [first] [slow]
-  local marks="${*:3}"
-  case $marks in
-    ""|first|slow|"first slow") ;;
-    *) echo "check: the step list is malformed: add $*" >&2; exit 2 ;;
-  esac
-  k_kind[n]=$1; k_name[n]=$2; k_first[n]=""; k_slow[n]=""; k_skip[n]=""; k_cmd[n]=""
-  case $marks in first*) k_first[n]=first ;; esac
-  # a lint or claude step is never slow
-  case $marks in *slow) case $1 in bash) k_slow[n]=slow ;; esac ;; esac
+add() { # add <kind> <name> [first] [slow] [jq] [nogitbash] [alone]
+  local w rest=" first slow jq nogitbash alone " bad=""
+  k_first[n]=""; k_slow[n]=""; k_jq[n]=""; k_nogb[n]=""; k_alone[n]=""
+  # each mark at most once and in this order: what is left of the order after a mark is the marks that may follow it
+  for w in "${@:3}"; do
+    case $rest in *" $w "*) rest=" ${rest#*" $w "}" ;; *) bad=1; break ;; esac
+    case $w in
+      first) k_first[n]=first ;;
+      slow) case $1 in bash) k_slow[n]=slow ;; esac ;; # a lint or claude step is never slow
+      jq) k_jq[n]=jq ;;
+      nogitbash) k_nogb[n]=nogitbash ;;
+      alone) k_alone[n]=alone ;;
+    esac
+  done
+  # the CI marks go on bash lines only, and a step that runs in no Git Bash part has no part of its own
+  if [ "$1" != bash ] && [ -n "${k_jq[n]}${k_nogb[n]}${k_alone[n]}" ]; then bad=1; fi
+  if [ -n "${k_nogb[n]}" ] && [ -n "${k_alone[n]}" ]; then bad=1; fi
+  [ -z "$bad" ] || { echo "check: the step list is malformed: add $*" >&2; exit 2; }
+  k_kind[n]=$1; k_name[n]=$2; k_skip[n]=""; k_cmd[n]=""
   n=$((n + 1))
 }
 
 real_steps() {
 # steps: begin
 add lint lint
-add bash smoke-json.sh
-add bash smoke-hook.sh
-add bash smoke-release.sh
-add bash smoke-slot.sh first
-add bash smoke-render.sh
-add bash smoke-validate.sh
-add bash smoke-status.sh
-add bash smoke-template-board.sh
-add bash smoke-models.sh
-add bash smoke-load.sh
-add bash smoke-room.sh
+add bash smoke-check.sh alone
 add bash smoke-control.sh
 add bash smoke-dashboard.sh
-add bash smoke-panel.sh
-add bash smoke-stages.sh
-add bash smoke-check.sh
-add bash test-lintcopy-output.sh slow
-add bash test-lint-pipefail.sh
-add bash test-release-resume.sh
-add bash test-release-low-defects.sh
-add bash test-json-bom.sh
-add bash test-render-quoting.sh
-add bash test-changelog-refs.sh
-add bash test-check-skill.sh
-add bash test-status-controls.sh
-add bash test-worker-merge.sh
-add bash test-script-modes.sh
-add bash test-fix-pick.sh
-add bash test-changelog-coverage.sh
-add bash test-json-speed.sh
-add bash test-mktemp-template.sh
-add bash test-skill-config-fallback.sh
-add bash test-slot-number.sh
-add bash test-board-listing.sh
-add bash test-resume-stuck.sh
-add bash test-story-dedup.sh
-add bash test-interrupt-docs.sh
-add bash test-spec-template.sh first
-add bash smoke-guard.sh
-add bash test-watch-checks.sh
-add bash test-guard-rules.sh
 add bash smoke-drive.sh
 add bash smoke-gate.sh
+add bash smoke-guard.sh
 add bash smoke-history.sh
-add bash test-ci-summary.sh
+add bash smoke-hook.sh
+add bash smoke-json.sh jq
+add bash smoke-load.sh
+add bash smoke-models.sh
+add bash smoke-panel.sh
+add bash smoke-release.sh alone
+add bash smoke-render.sh
+add bash smoke-room.sh
+add bash smoke-slot.sh first alone
+add bash smoke-stages.sh
+add bash smoke-status.sh alone
+add bash smoke-template-board.sh
+add bash smoke-validate.sh alone
 add bash test-baseconfig-pathconv.sh
+add bash test-board-listing.sh
+add bash test-changelog-coverage.sh
+add bash test-changelog-refs.sh
+add bash test-check-skill.sh
+add bash test-ci-summary.sh
+add bash test-fix-pick.sh
+add bash test-guard-rules.sh alone
+add bash test-interrupt-docs.sh
+add bash test-json-bom.sh
+add bash test-json-speed.sh
+add bash test-lint-pipefail.sh
+add bash test-lintcopy-output.sh slow nogitbash
+add bash test-mktemp-template.sh
+add bash test-release-low-defects.sh
+add bash test-release-resume.sh
+add bash test-render-quoting.sh
 add bash test-restricted-path-git.sh
+add bash test-resume-stuck.sh
+add bash test-script-modes.sh
+add bash test-skill-config-fallback.sh
 add bash test-slot-low-defects.sh
+add bash test-slot-number.sh
+add bash test-spec-template.sh first
+add bash test-status-controls.sh
+add bash test-story-dedup.sh
+add bash test-watch-checks.sh
+add bash test-worker-merge.sh
 # steps: end
   add claude "claude plugin validate"
   add claude "claude plugin test"
@@ -246,12 +264,16 @@ if [ -n "${NIGHTMILL_CHECK_STEPS:-}" ]; then
     f=(); while :; do
       case $f_line in *$'\t'*) f+=("${f_line%%$'\t'*}"); f_line=${f_line#*$'\t'} ;; *) f+=("$f_line"); break ;; esac
     done
-    f_name=${f[0]}; f_cmd=${f[1]:-}; f_kind=${f[2]:-}; f_reason=${f[3]:-}; f_first=${f[4]:-}; f_slow=${f[5]:-}
+    f_name=${f[0]}; f_cmd=${f[1]:-}; f_kind=${f[2]:-}; f_reason=${f[3]:-}; f_first=${f[4]:-}; f_slow=${f[5]:-}; f_ci=${f[6]:-}
     [ -n "$f_name" ] || continue
     case ${f_kind:-bash} in lint|bash|claude) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: unknown kind $f_kind" >&2; exit 2 ;; esac
     case $f_first in ""|first) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the fifth field is first or empty, not $f_first" >&2; exit 2 ;; esac
     case $f_slow in ""|slow) ;; *) echo "check: $NIGHTMILL_CHECK_STEPS: the sixth field is slow or empty, not $f_slow" >&2; exit 2 ;; esac
-    add "${f_kind:-bash}" "$f_name" $f_first $f_slow
+    case $f_ci in ""|jq|nogitbash|alone|"jq nogitbash"|"jq alone"|"nogitbash alone"|"jq nogitbash alone") ;;
+      *) echo "check: $NIGHTMILL_CHECK_STEPS: the seventh field is a subset of jq nogitbash alone, in that order, not $f_ci" >&2; exit 2 ;;
+    esac
+    # shellcheck disable=SC2086
+    add "${f_kind:-bash}" "$f_name" $f_first $f_slow $f_ci
     k_cmd[n - 1]=$f_cmd; k_skip[n - 1]=$f_reason
   done < "$NIGHTMILL_CHECK_STEPS"
   fixture=1
@@ -259,6 +281,53 @@ else
   real_steps
   fixture=0
 fi
+
+# The groups (iteration 70): @with-jq (the bash steps marked jq), @without-jq (the other bash steps) and @gitbash-<k>,
+# Git Bash part k: parts 1 to A are the A steps marked alone, one each, in list order; part A + 1 is every other bash
+# step not marked nogitbash, when there is one. gb_n is the number of parts.
+gb_alone=(); gb_packed=""
+for ((i = 0; i < n; i++)); do
+  [ "${k_kind[i]}" = bash ] || continue
+  if [ -n "${k_alone[i]}" ]; then gb_alone+=("${k_name[i]}")
+  elif [ -z "${k_nogb[i]}" ]; then gb_packed="$gb_packed${gb_packed:+,}${k_name[i]}"; fi
+done
+gb_n=${#gb_alone[@]}; [ -z "$gb_packed" ] || gb_n=$((gb_n + 1))
+# expand_groups <list>: grp_list is the list with each element that begins with @ replaced by the steps of its group,
+# in list order; an unknown group, a part beyond gb_n or a group with no step is the usage error
+expand_groups() {
+  local rest=$1, want names i k
+  grp_list=""
+  while [ -n "$rest" ]; do
+    want=${rest%%,*}; rest=${rest#*,}
+    [ -n "$want" ] || usage
+    case $want in
+      @*)
+        names=""
+        case $want in
+          @with-jq|@without-jq)
+            for ((i = 0; i < n; i++)); do
+              [ "${k_kind[i]}" = bash ] || continue
+              if { [ "$want" = @with-jq ] && [ -n "${k_jq[i]}" ]; } || { [ "$want" = @without-jq ] && [ -z "${k_jq[i]}" ]; }; then
+                names="$names${names:+,}${k_name[i]}"
+              fi
+            done ;;
+          @gitbash-*)
+            k=${want#@gitbash-}
+            [[ "$k" =~ ^[1-9][0-9]*$ ]] || { echo "check: no group named $want" >&2; usage; }
+            if [ "${#k}" -gt 6 ] || [ "$k" -gt "$gb_n" ]; then
+              echo "check: no Git Bash part $k (the step list makes $gb_n)" >&2; usage
+            fi
+            if [ "$k" -le "${#gb_alone[@]}" ]; then names=${gb_alone[k - 1]}; else names=$gb_packed; fi ;;
+          *) echo "check: no group named $want" >&2; usage ;;
+        esac
+        [ -n "$names" ] || { echo "check: the group $want has no step" >&2; usage; }
+        grp_list="$grp_list${grp_list:+,}$names" ;;
+      *) grp_list="$grp_list${grp_list:+,}$want" ;;
+    esac
+  done
+}
+if [ -n "$within" ]; then expand_groups "$within"; within=$grp_list; fi
+if [ -n "$only" ]; then expand_groups "$only"; only=$grp_list; fi
 
 # --within (iteration 60): w_in[i] is 1 for a step of the list, wn is how many steps the list names; a name that is no
 # step is the usage error, as with --only
