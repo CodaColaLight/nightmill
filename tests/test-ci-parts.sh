@@ -56,7 +56,7 @@ rules() {
     printf '%s\n' "$norm" | awk -v id="  $1:" '$0 == id { on = 1; next } on && (/^  [A-Za-z]/ || /^[^[:space:]]/) { on = 0 } on'
   }
   fblock=$(block smoke-gitbash)
-  local x i j n idx last parr
+  local idx last parr
 
   # the job times step (decision 7, bug #295): a step of the final job runs tests/ci-jobs-summary.sh, with if: always()
   # and continue-on-error: true, so the summary is written after a failed part and never fails the job; the call counts
