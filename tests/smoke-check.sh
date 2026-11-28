@@ -215,7 +215,7 @@ echo "== affected"
 # c (claude), each appending its name to one log. The map (NIGHTMILL_CHECK_MAP) and the paths (NIGHTMILL_CHECK_PATHS) are fixture files.
 alog="$tmp/affected.log"
 aff_map="$tmp/aff.map"
-printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'shared scripts/lib/*' 'lintonly docs/*' > "$aff_map"
+printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'map tests/fixtures/p2/* p2' 'shared scripts/lib/*' 'lintonly docs/*' > "$aff_map"
 mk_aff() { # mk_aff <reason of b1> <reason of p1> <tail of b1's command> [<tail of b2's command>]: the six steps in $tmp/aff-steps.txt
   {
     printf 'l\techo l >> "%s"\tlint\n' "$alog"
@@ -498,6 +498,74 @@ grep -qxF "check: $tmp/slow-bad.txt: the sixth field is slow or empty, not fast"
 [ ! -s "$alog" ] || fail "slow, bad sixth field: a step ran: $(cat "$alog")"
 mk_aff "" "" ""
 
+# a step that no map line names (iteration 75): it runs in every selective run that has a changed path, so a new test needs no map line
+echo "== affected: a step no map line names"
+aff_map_kept="$aff_map"
+aff_map="$tmp/aff-unnamed.map"
+printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'shared scripts/lib/*' 'lintonly docs/*' > "$aff_map"
+aff_run $'scripts/foo.sh\n'
+[ "$rc" = 0 ] || fail "unnamed, script: exit $rc: $out $err"
+[ "$aff_log" = "l,b1,p1,p2," ] || fail "unnamed, script: the steps that ran: $aff_log"
+[ "$(head -n 1 <<<"$out")" = "$(aff_first 4 1)" ] || fail "unnamed, script: the first line: $out"
+has_line "$out" 'affected: scripts/foo.sh -> b1,p1,p2' || fail "unnamed, script: no 'scripts/foo.sh -> b1,p1,p2' line: $out"
+[ "$(tail -n 1 <<<"$out")" = "AFFECTED CHECK PASSED (4 of 6 steps, changed paths: 1; the full check has not run)" ] || fail "unnamed, script: the last line: $out"
+aff_run $'docs/specs/x.md\n'
+[ "$rc" = 0 ] || fail "unnamed, docs: exit $rc: $out $err"
+[ "$aff_log" = "l,p2," ] || fail "unnamed, docs: the steps that ran: $aff_log"
+has_line "$out" 'affected: docs/specs/x.md -> p2' || fail "unnamed, docs: no 'docs/specs/x.md -> p2' line: $out"
+aff_run $'tests/p2\n'
+[ "$rc" = 0 ] || fail "unnamed, own path: exit $rc: $out $err"
+[ "$aff_log" = "l,p2," ] || fail "unnamed, own path: the steps that ran: $aff_log"
+# a path in no line of the map still makes the run the full check: the default does not hide an unknown path
+aff_run $'other/thing\n'
+[ "$rc" = 0 ] || fail "unnamed, unknown path: exit $rc: $out $err"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: other/thing is in no line of the map; running the full check" ] || fail "unnamed, unknown path: the first line: $out"
+[ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "unnamed, unknown path: the steps that ran: $aff_log"
+aff_run $'scripts/lib/x.sh\n'
+[ "$rc" = 0 ] || fail "unnamed, shared: exit $rc: $out $err"
+[ "$(head -n 1 <<<"$out")" = "check: AFFECTED: scripts/lib/x.sh is shared by many steps; running the full check" ] || fail "unnamed, shared: the first line: $out"
+[ "$aff_log" = "l,b1,b2,p1,p2,c," ] || fail "unnamed, shared: the steps that ran: $aff_log"
+aff_run ''
+[ "$rc" = 0 ] || fail "unnamed, no path: exit $rc: $out $err"
+[ "$aff_log" = "l," ] || fail "unnamed, no path: the steps that ran: $aff_log"
+# --within narrows the unnamed step as any other
+aff_run $'scripts/foo.sh\n' --within b1,b2
+[ "$rc" = 0 ] || fail "unnamed, within b1,b2: exit $rc: $out $err"
+[ "$aff_log" = "b1," ] || fail "unnamed, within b1,b2: the steps that ran: $aff_log"
+aff_run $'scripts/foo.sh\n' --within b1,p2
+[ "$rc" = 0 ] || fail "unnamed, within b1,p2: exit $rc: $out $err"
+[ "$aff_log" = "b1,p2," ] || fail "unnamed, within b1,p2: the steps that ran: $aff_log"
+has_line "$out" 'affected: scripts/foo.sh -> b1,p2' || fail "unnamed, within b1,p2: no 'scripts/foo.sh -> b1,p2' line: $out"
+# a slow step that no line names is left out of a selective run
+printf '%s\n' 'map templates/t.md b2' 'lintonly docs/*' > "$aff_map"
+mk_aff_slow ""
+aff_run $'templates/t.md\n'
+[ "$rc" = 0 ] || fail "unnamed, slow: exit $rc: $out $err"
+[ "$aff_log" = "l,b1,b2,p2," ] || fail "unnamed, slow: the steps that ran: $aff_log"
+has_line "$out" "$SLOW_LEFT" || fail "unnamed, slow: no LEFT OUT line for p1: $out"
+mk_aff "" "" ""
+# the superset: naming p2 never adds a run of it, only removes some; the rest of the run stays the same
+printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'shared scripts/lib/*' 'lintonly docs/*' > "$tmp/aff-b.map"
+printf '%s\n' 'map scripts/foo.* b1,p1' 'map templates/t.md b2' 'map tests/fixtures/p2/* p2' 'shared scripts/lib/*' 'lintonly docs/*' > "$tmp/aff-a.map"
+for set in 'scripts/foo.sh' 'templates/t.md' 'docs/specs/x.md' 'tests/p2' 'tests/fixtures/p2/a' 'other/thing' 'scripts/lib/x.sh' 'scripts/foo.sh docs/a.md' ''; do
+  paths=''
+  if [ -n "$set" ]; then read -ra set_paths <<<"$set"; paths=$(printf '%s\n' "${set_paths[@]}"); fi
+  aff_map="$tmp/aff-a.map"; aff_run "$paths"; named_log=$aff_log; named_first=$(head -n 1 <<<"$out")
+  aff_map="$tmp/aff-b.map"; aff_run "$paths"; unnamed_log=$aff_log; unnamed_first=$(head -n 1 <<<"$out")
+  for st in l b1 b2 p1 p2 c; do
+    case ",$named_log" in *",$st,"*) case ",$unnamed_log" in *",$st,"*) ;; *) fail "unnamed, superset ($set): $st ran with p2 named and not without: $named_log / $unnamed_log" ;; esac ;; esac
+  done
+  if [ "$set" != 'tests/fixtures/p2/a' ]; then
+    [ "${named_log//p2,/}" = "${unnamed_log//p2,/}" ] || fail "unnamed, superset ($set): the runs differ beyond p2: $named_log / $unnamed_log"
+    case "$named_first|$unnamed_first" in
+      "check: AFFECTED, "*"|check: AFFECTED, "*) ;;
+      "check: AFFECTED, "*"|"* | *"|check: AFFECTED, "*) fail "unnamed, superset ($set): one run is selective, the other is not: $named_first / $unnamed_first" ;;
+      *) [ "$named_first" = "$unnamed_first" ] || fail "unnamed, superset ($set): the first lines differ: $named_first / $unnamed_first" ;;
+    esac
+  fi
+done
+aff_map="$aff_map_kept"
+
 # the usage errors
 usage_case --affected --quick
 usage_case --affected --only b
@@ -555,7 +623,7 @@ grp_ok "b,d,g," --only g,@gitbash-3,b
 grp_run "$tmp/groups.txt" --only @gitbash-3
 case "$(head -n 1 <<<"$out")" in "check: only b,d,g, "*) ;; *) fail "groups: the header does not name the expanded steps: $out" ;; esac
 # --within takes groups too, in the fallback of --affected as well
-printf '%s\n' 'map x/d d' 'shared scripts/lib/*' > "$tmp/groups.map"
+printf '%s\n' 'map x/d d' 'map x/other b,c,e,f,g' 'shared scripts/lib/*' > "$tmp/groups.map"
 printf 'x/d\n' > "$tmp/groups.paths"
 : > "$glog"
 set +e
@@ -779,8 +847,31 @@ lint_break platformexample templates/nightmill.example.json 's/"platform": "all"
 lint_break platformreadme README.md 's/verification\.platform/verification-platform/g' 'FAIL: README.md does not mention verification.platform'
 lint_break platforminit skills/init/SKILL.md 's/verification\.platform/verification-platform/g' 'FAIL: skills/init/SKILL.md does not mention verification.platform'
 lint_break platformcheck tests/check.sh 's/verification\.platform/verification-platform/g' 'FAIL: tests/check.sh does not mention verification.platform'
-# the map of tests/check.sh (iteration 59, decision 7): every test step and every script is in it
-lint_break mapstep tests/check.sh '/^map [^ ]* smoke-hook\.sh$/d; /^map /{s/,smoke-hook\.sh,/,/; s/,smoke-hook\.sh$//; s/ smoke-hook\.sh,/ /;}' 'no path maps to the step smoke-hook.sh'
+# the map of tests/check.sh (iteration 59, decision 7; iteration 75): every script is in it, and every step the default does not place
+# (iteration 75: a bash step that no line names is selected by the default, so a new test needs no map line)
+d="$tmp/lint-mapnew"
+mkcopy "$d"
+printf '#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n' > "$d/tests/test-zz-new.sh"
+sed -e 's/^# steps: end$/add bash test-zz-new.sh\
+# steps: end/' "$d/tests/check.sh" > "$d/tests/check.sh.new"; mv "$d/tests/check.sh.new" "$d/tests/check.sh"
+lint_in "$d"
+[ "$rc" = 0 ] || fail "lint mapnew: failed on a new test with its step line and no map line: $out"
+if grep -q 'FAIL' <<<"$out"; then fail "lint mapnew: FAIL on a new test with its step line and no map line: $out"; fi
+cmp -s "$here/tests/lint.sh" "$d/tests/lint.sh" || fail "lint mapnew: tests/lint.sh changed"
+diff_out=$(diff "$here/tests/check.sh" "$d/tests/check.sh" || true)
+[ "$(grep -c '^>' <<<"$diff_out")" = 1 ] || fail "lint mapnew: tests/check.sh does not differ by exactly one added line: $diff_out"
+if grep -q '^<' <<<"$diff_out"; then fail "lint mapnew: a line of tests/check.sh was removed or changed: $diff_out"; fi
+grep -qxF '> add bash test-zz-new.sh' <<<"$diff_out" || fail "lint mapnew: the added line is not the step line: $diff_out"
+rm -rf "$d"
+d="$tmp/lint-mapunnamed"
+mkcopy "$d"
+sed -e '/^map [^ ]* smoke-hook\.sh$/d; /^map /{s/,smoke-hook\.sh,/,/; s/,smoke-hook\.sh$//; s/ smoke-hook\.sh,/ /;}' "$d/tests/check.sh" > "$d/tests/check.sh.new"; mv "$d/tests/check.sh.new" "$d/tests/check.sh"
+lint_in "$d"
+[ "$rc" = 0 ] || fail "lint mapunnamed: failed on a bash step that no map line names: $out"
+if grep -q 'FAIL' <<<"$out"; then fail "lint mapunnamed: FAIL on a bash step that no map line names: $out"; fi
+rm -rf "$d"
+# a claude step has no default: the lint asks a map line of it
+lint_break mapclaude tests/check.sh '/^map /s/,claude plugin test//g' 'no path maps to the step claude plugin test'
 d="$tmp/lint-mapscript"
 mkcopy "$d"
 : > "$d/scripts/zz-new.sh"
