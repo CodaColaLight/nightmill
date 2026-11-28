@@ -1,6 +1,6 @@
 # Iteration 74: the check has a time budget, and /spec and /next ask before new work while it is exceeded
 
-Status: draft, awaiting approval (#345)
+Status: delivered in iteration 74 (PR #413)
 
 Story #345, epic #337 (fast verification loop). Three new optional keys under `verification` hold a budget for one
 run of the check, a budget for one step, and the epic whose stories repair the loop. When a budget is set,

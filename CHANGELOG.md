@@ -23,6 +23,7 @@
   workflow and on a test file that runs nowhere. No config key.
 - Iteration 72 (#346): the load library (`scripts/lib/load.sh`) is tested in-process in `tests/test-lib-load.sh`; the load, room and control smoke tests keep their end-to-end cases and lose the cases that only repeated it.
 - Iteration 73 (#344): tests check behaviour, not wording: the lint and the tests it starts no longer pin sentences of the skills, the agents and the docs, only contracts (a config key, a command, a file name, a line a script or a skill parses); the tester, the code reviewer and the spec reviewer are told that a test of a skill's wording is not a test of a criterion.
+- Iteration 74 (#345): the check has a time budget: `verification.checkBudgetSeconds` and `verification.stepBudgetSeconds` (default 0, no budget) make tests/check.sh print one OVER BUDGET line without failing, `/status` shows the last check's time against them, and while the check is over budget `/spec` and `/next` ask before they take a story outside `verification.budgetEpic`; a pull request that adds a check step states its time.
 
 ## 0.10.0 (2026-11-27)
 

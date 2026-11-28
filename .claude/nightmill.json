@@ -40,7 +40,10 @@
     "manualCheckText": "Run the changed skill in a real project with `claude --plugin-dir <this checkout>` and watch it take the right steps",
     "benchRule": "A script that runs in the smoke tests keeps its scenario there; a new script flag gets a smoke step in the bash tests",
     "checkJobs": 4,
-    "platform": "windows"
+    "platform": "windows",
+    "checkBudgetSeconds": 300,
+    "stepBudgetSeconds": 120,
+    "budgetEpic": 337
   },
   "limits": { "minutesPerIssue": 1440 },
   "escalation": {

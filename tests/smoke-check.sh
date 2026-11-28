@@ -704,6 +704,141 @@ done
 want="bash test-lintcopy-output.sh slow nogitbash"
 has_line "$real_list" "add $want" || fail "slow steps: 'add $want' is not in the step list of tests/check.sh"
 
+echo "== the time budget"
+# Fixture steps move the fixture clock: one +12 s, two +75 s, three +40 s (total 127 s), run one at a time. The budget keys
+# are written into the configuration of nrepo; NIGHTMILL_CHECK_RECORD (test only) names the file of the time record.
+tb_clock() { printf '%s' "echo \$(( \$(cat '$tmp/clock') + $1 )) > '$tmp/clock'"; }
+tb_steps="$tmp/tb-steps.txt"
+{
+  printf 'one\t%s\n' "$(tb_clock 12)"
+  printf 'two\t%s\n' "$(tb_clock 75)"
+  printf 'three\t%s\n' "$(tb_clock 40)"
+} > "$tb_steps"
+tb_fail="$tmp/tb-fail.txt"
+{
+  printf 'one\t%s\n' "$(tb_clock 12)"
+  printf 'two\t%s; exit 1\n' "$(tb_clock 75)"
+  printf 'three\t%s\n' "$(tb_clock 40)"
+} > "$tb_fail"
+tb_kinds="$tmp/tb-kinds.txt"
+{
+  printf 'one\t%s\tlint\n' "$(tb_clock 12)"
+  printf 'two\t%s\tbash\n' "$(tb_clock 75)"
+  printf 'three\t%s\tclaude\n' "$(tb_clock 40)"
+} > "$tb_kinds"
+tb_rec="$tmp/tb-record.tsv"
+# tb_config <check budget json|-> <step budget json|->: the configuration of nrepo; - leaves the key out
+tb_config() {
+  local a="" b=""
+  [ "$1" = - ] || a=", \"checkBudgetSeconds\": $1"
+  [ "$2" = - ] || b=", \"stepBudgetSeconds\": $2"
+  echo "{ \"verification\": { \"check\": \"true\"$a$b } }" > "$nrepo/.claude/nightmill.json"
+}
+# tb_run <steps-file> <args...>: out, err, rc with the clock reset and a fresh record file name
+tb_run() {
+  local steps=$1; shift
+  echo 1794038400 > "$tmp/clock"
+  rm -f "$tb_rec"
+  NIGHTMILL_CHECK_RECORD="$tb_rec" run_check "$steps" "$@"
+}
+# tb_after_total: the line that comes directly after the total line of the Times block
+tb_after_total() { printf '%s\n' "$out" | awk 'p { print; exit } /^  total / { p = 1 }'; }
+tb_count() { printf '%s\n' "$out" | grep -c '^check: OVER BUDGET' || true; }
+
+# no keys: no line and no record; both keys 0 gives the very same output
+tb_config - -
+tb_run "$tb_steps" --jobs 1
+[ "$rc" = 0 ] || fail "budget, no keys: exit $rc: $out"
+[ "$(tb_count)" = 0 ] || fail "budget, no keys: an OVER BUDGET line: $out"
+[ ! -e "$tb_rec" ] || fail "budget, no keys: a record was written: $(cat "$tb_rec")"
+out_nokeys=$out
+tb_config 0 0
+tb_run "$tb_steps" --jobs 1
+[ "$out" = "$out_nokeys" ] || fail "budget, both keys 0: the output differs from the run without the keys: $out"
+[ ! -e "$tb_rec" ] || fail "budget, both keys 0: a record was written: $(cat "$tb_rec")"
+
+# the run is over: the line comes directly after the total line, and the check still passes
+tb_config 120 -
+tb_run "$tb_steps" --jobs 1
+[ "$rc" = 0 ] || fail "budget, run over: exit $rc: $out"
+[ "$(tb_after_total)" = 'check: OVER BUDGET: the check took 2m07s (budget 2m00s)' ] || fail "budget, run over: the line after the total line: [$(tb_after_total)] in: $out"
+[ "$(tb_count)" = 1 ] || fail "budget, run over: not exactly one OVER BUDGET line: $out"
+grep -qxF 'ALL CHECKS PASSED' <<<"$out" || fail "budget, run over: no ALL CHECKS PASSED: $out"
+# the time record of that run: six fields, full, passed, 127 s, the slowest step, the stamp of the last clock value
+[ -f "$tb_rec" ] || fail "budget, record: no record file after a full run with a budget"
+[ "$(wc -l < "$tb_rec" | tr -d ' ')" = 1 ] || fail "budget, record: not one line: $(cat "$tb_rec")"
+want=$(printf '2026-11-07T08:02:07Z\tfull\tpassed\t127\ttwo\t75')
+[ "$(cat "$tb_rec")" = "$want" ] || fail "budget, record: got [$(cat "$tb_rec")] wanted [$want]"
+
+# a step over its budget is named
+tb_config - 60
+tb_run "$tb_steps" --jobs 1
+[ "$rc" = 0 ] || fail "budget, step over: exit $rc: $out"
+[ "$(tb_after_total)" = 'check: OVER BUDGET: two took 1m15s (budget 1m00s)' ] || fail "budget, step over: the line: [$(tb_after_total)] in: $out"
+# both budgets: one line with the check and then every step over, in list order
+tb_config 120 30
+tb_run "$tb_steps" --jobs 1
+[ "$rc" = 0 ] || fail "budget, both: exit $rc: $out"
+want='check: OVER BUDGET: the check took 2m07s (budget 2m00s); two took 1m15s (budget 30s); three took 40s (budget 30s)'
+[ "$(tb_after_total)" = "$want" ] || fail "budget, both: the line: [$(tb_after_total)] in: $out"
+[ "$(tb_count)" = 1 ] || fail "budget, both: not exactly one OVER BUDGET line: $out"
+# a failing step: the same line, the exit code of the failure, and a record that says failed
+tb_run "$tb_fail" --jobs 1
+[ "$rc" = 1 ] || fail "budget, failing: exit $rc: $out"
+[ "$(tb_after_total)" = "$want" ] || fail "budget, failing: the line: [$(tb_after_total)] in: $out"
+grep -qxF 'CHECK FAILED: two' <<<"$out" || fail "budget, failing: no CHECK FAILED: two: $out"
+want_rec=$(printf '2026-11-07T08:02:07Z\tfull\tfailed\t127\ttwo\t75')
+[ "$(cat "$tb_rec" 2>/dev/null)" = "$want_rec" ] || fail "budget, failing record: got [$(cat "$tb_rec" 2>/dev/null)] wanted [$want_rec]"
+# budgets above the times: no line
+tb_config 200 100
+tb_run "$tb_steps" --jobs 1
+[ "$rc" = 0 ] || fail "budget, within: exit $rc: $out"
+[ "$(tb_count)" = 0 ] || fail "budget, within: an OVER BUDGET line: $out"
+# a time exactly at the budget is not over it
+tb_config 127 75
+tb_run "$tb_steps" --jobs 1
+[ "$(tb_count)" = 0 ] || fail "budget, at the budget: an OVER BUDGET line: $out"
+
+# the quick mode and --only name the steps only, and write no record
+tb_config 30 60
+tb_run "$tb_kinds" --quick --jobs 1
+[ "$rc" = 0 ] || fail "budget, quick: exit $rc: $out"
+[ "$(tb_after_total)" = 'check: OVER BUDGET: two took 1m15s (budget 1m00s)' ] || fail "budget, quick: the line: [$(tb_after_total)] in: $out"
+[ ! -e "$tb_rec" ] || fail "budget, quick: a record was written: $(cat "$tb_rec")"
+tb_run "$tb_steps" --only one,two --jobs 1
+[ "$rc" = 0 ] || fail "budget, only: exit $rc: $out"
+[ "$(tb_after_total)" = 'check: OVER BUDGET: two took 1m15s (budget 1m00s)' ] || fail "budget, only: the line: [$(tb_after_total)] in: $out"
+[ ! -e "$tb_rec" ] || fail "budget, only: a record was written: $(cat "$tb_rec")"
+
+# a value that is not a whole number from 0 to 86400 is no budget, with one note
+for bad in '"x"' 86401; do
+  tb_config "$bad" -
+  tb_run "$tb_steps" --jobs 1
+  [ "$rc" = 0 ] || fail "budget, bad value $bad: exit $rc: $out"
+  [ "$(tb_count)" = 0 ] || fail "budget, bad value $bad: an OVER BUDGET line: $out"
+  [ "$(grep -cxF 'check: verification.checkBudgetSeconds must be a whole number from 0 to 86400; no budget' <<<"$err")" = 1 ] || fail "budget, bad value $bad: the note on standard error: [$err]"
+done
+
+# with NIGHTMILL_CHECK_RECORD unset nothing is written; a record that cannot be written gives a note and changes nothing else
+tb_config 120 -
+echo 1794038400 > "$tmp/clock"
+set +e
+out=$(env -u NIGHTMILL_CHECK_RECORD NIGHTMILL_CHECK_STEPS="$tb_steps" bash "$nrepo/tests/check.sh" --jobs 1 2>"$tmp/err.txt"); rc=$?
+set -e
+[ "$rc" = 0 ] || fail "budget, no record variable: exit $rc: $out"
+[ "$(tb_count)" = 1 ] || fail "budget, no record variable: the line is gone: $out"
+[ ! -s "$tmp/err.txt" ] || fail "budget, no record variable: a note on standard error: $(cat "$tmp/err.txt")"
+[ ! -e "$tb_rec" ] || fail "budget, no record variable: a record appeared"
+echo 1794038400 > "$tmp/clock"
+set +e
+out=$(NIGHTMILL_CHECK_RECORD="$tmp/no-such-folder/record.tsv" NIGHTMILL_CHECK_STEPS="$tb_steps" bash "$nrepo/tests/check.sh" --jobs 1 2>"$tmp/err.txt"); rc=$?
+set -e
+[ "$rc" = 0 ] || fail "budget, unwritable record: exit $rc: $out"
+grep -q '^check: the time record was not written (.' "$tmp/err.txt" || fail "budget, unwritable record: no note on standard error: $(cat "$tmp/err.txt")"
+[ "$(tb_after_total)" = 'check: OVER BUDGET: the check took 2m07s (budget 2m00s)' ] || fail "budget, unwritable record: the line: $out"
+echo '{ "verification": { "check": "true" } }' > "$nrepo/.claude/nightmill.json"
+echo 1794038400 > "$tmp/clock"
+
 echo "== the lint: the check runs every smoke script"
 # The section of tests/lint.sh is run alone on scratch copies of the files it reads, each broken once.
 sec="$tmp/lint-section.sh"

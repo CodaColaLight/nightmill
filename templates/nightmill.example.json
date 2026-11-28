@@ -38,7 +38,10 @@
     "manualCheckText": "Open the app, exercise the feature, no console errors.",
     "benchRule": "",
     "checkJobs": 4,
-    "platform": "all"
+    "platform": "all",
+    "checkBudgetSeconds": 0,
+    "stepBudgetSeconds": 0,
+    "budgetEpic": 0
   },
   "escalation": {
     "storyTriggers": ["a new rule or behaviour", "a public API change", "a design choice"]
