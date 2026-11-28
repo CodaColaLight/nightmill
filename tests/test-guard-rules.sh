@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tests for #110 (iteration 47): the deny rules /init writes and the PreToolUse guard hook. The static checks of the
-# spec's lint section "the guard and the deny rules", kept in a file of their own: the hook wiring, the guard scripts'
-# refusal lines, the Deny rules bullet of skills/init/SKILL.md, the rules' fixed prefixes, the collision of the rules
-# with the commands the skills write, the workflow skill's sentences and the README. Text is joined before it is searched.
+# Tests for #110 (iteration 47): the deny rules /init writes and the PreToolUse guard hook. Checked: the hook wiring
+# and the guard script's refusal lines (code); the 23 Bash(...) rules of the Deny rules bullet of skills/init/SKILL.md,
+# their count and fixed prefixes; the keys, files and commands the skills name for them; the runs of the rules and of
+# the guard against every command and graphql fence the skills write; no skill joins gh pr merge with --admin; the
+# README's rules, key, files, heading (linked as #the-deny-rules-and-the-guard) and the issues/253) link. The
+# sentences, the step headings and the State values of the README rows are the reviewers' (iteration 76). Text is
+# joined before it is searched.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 fail=0
@@ -24,7 +27,6 @@ need() {
 }
 
 I=skills/init/SKILL.md
-W=skills/workflow/SKILL.md
 H=hooks/hooks.json
 
 echo "== the hook is wired"
@@ -83,22 +85,13 @@ fi
 if [ -z "$bullet" ]; then
   bad "$I has no '- **Deny rules**' bullet"
 else
-  for t in 'permissions.deny' '.claude/settings.json' 'without removing or reordering an entry' \
-    "Deny rules: declined (the forbidden actions are refused only by the plugin's guard hook and the skills' text)"; do
-    case "$bullet" in *"$t"*) ;; *) bad "$I: the Deny rules bullet lacks: $t" ;; esac
-  done
   for r in "${RULES[@]}"; do
     case "$bullet" in *"$r"*) ;; *) bad "$I: the Deny rules bullet lacks the rule $r" ;; esac
   done
-  case "$bullet" in *'a board item or field, a label or a release'*) ;; *) bad "$I: the Deny rules bullet lacks: a board item or field, a label or a release" ;; esac
   case "$bullet" in *'Bash(git -C'*) bad "$I: the Deny rules bullet holds a rule with git -C" ;; esac
 fi
-need "$I" "gh api graphql -f query='mutation { ... }'"
+need "$I" 'permissions.deny' '.claude/settings.json' "gh api graphql -f query='mutation { ... }'"
 need skills/spec/SKILL.md 'git branch -d <branch>'
-for h in '## 4. Confirm once' '## 5. Apply'; do
-  sec=$(awk -v h="$h" 'index($0, h) == 1 {on=1; next} on && /^## / {exit} on {print}' "$I" 2>/dev/null | tr '\n' ' ')
-  case "$sec" in *[Dd]eny\ rules*) ;; *) bad "$I: step '$h' does not name the deny rules" ;; esac
-done
 
 echo "== the rules have a fixed prefix"
 for r in "${RULES[@]}"; do
@@ -233,42 +226,17 @@ for f in skills/*/SKILL.md; do
   done <<< "$docs"
 done
 
-echo "== the workflow skill"
-need "$W" 'A refused command is final' 'deny rules refuse a merge with `--admin`'
+echo "== no skill joins gh pr merge with --admin"
 for f in skills/*/SKILL.md; do
   case "$(flat "$f")" in *'gh pr merge --admin'*) bad "$f holds the joined text gh pr merge --admin" ;; esac
 done
 
 echo "== the README"
-need README.md '### The deny rules and the guard' 'permissions.deny' 'scripts/guard.sh' 'Git Bash' '0002'
+need README.md '### The deny rules and the guard' 'permissions.deny' 'scripts/guard.sh' '0002' 'issues/253)'
 for r in "${RULES[@]}"; do
   case "$r" in *'<B>'*) continue ;; esac
   need README.md "$r"
 done
-need README.md '23 rules'
-case "$(flat README.md)" in *'18 rules'*) bad "README.md still says 18 rules" ;; esac
-case "$(flat README.md)" in *'`gh project field-delete` are not refused'*) bad "README.md still says field-delete is not refused" ;; esac
-sec=$(awk '/^## Security model/ {on=1; next} on && /^## / {exit} on {print}' README.md)
-row253=$(printf '%s\n' "$sec" | grep -F 'issues/253)' | head -n 1)
-if [ -z "$row253" ]; then
-  bad "README.md: no Security model row holds issues/253)"
-else
-  state=$(printf '%s' "$row253" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
-  case "$state" in 'enforced by '*) ;; *) bad "README.md: the #253 row's State does not start with 'enforced by ': $state" ;; esac
-  case "$state" in *'deny rules'*) ;; *) bad "README.md: the #253 row's State lacks 'deny rules': $state" ;; esac
-  case "$state" in *guard*) ;; *) bad "README.md: the #253 row's State lacks 'guard': $state" ;; esac
-fi
-fileRow=$(printf '%s\n' "$sec" | grep -E '^\| Deleting a local file' | head -n 1)
-if [ -z "$fileRow" ]; then
-  bad "README.md: no Security model row starts with 'Deleting a local file'"
-else
-  state=$(printf '%s' "$fileRow" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
-  [ "$state" = 'not enforced yet' ] || bad "README.md: the local file delete row's State is not 'not enforced yet': $state"
-fi
-if printf '%s\n' "$sec" | grep -F 'issues/253)' | grep -F 'not enforced yet' >/dev/null; then
-  bad "README.md: a row holds both issues/253) and not enforced yet"
-fi
-case "$(flat README.md)" in *'base branch still prompts'*) bad "README.md still says: base branch still prompts" ;; esac
 
 [ "$fail" = 0 ] && echo "GUARD RULES OK"
 exit "$fail"

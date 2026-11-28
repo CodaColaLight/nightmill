@@ -2,7 +2,8 @@
 # tests/test-spec-template.sh - story #150 (iteration 40): specs are written from templates/spec.md and the lint
 # checks the headings of every spec from iteration 40 on in iterations.specDir.
 # (a) templates/spec.md has the title, the status line and the seven required headings once each, in order;
-# (b) skills/spec/SKILL.md, agents/spec-reviewer.md and README.md point at the template;
+# (b) skills/spec/SKILL.md (at least twice), agents/spec-reviewer.md and README.md name the file templates/spec.md;
+#     how they tell the writer and the reviewer to use it is the reviewers' (iteration 76);
 # (c) the lint, run on throwaway copies of the repository, accepts a spec filled in from the template, rejects one
 #     with a heading missing or out of order or inside a fence, and exempts specs below iteration 40.
 # Needs bash, tar, awk and sed. Not a smoke script: run it with `bash tests/test-spec-template.sh`.
@@ -47,17 +48,14 @@ else
   done
 fi
 
-echo "== the skill, the reviewer and the README point at the template"
+echo "== the skill, the reviewer and the README name the template"
 joined() { tr '\n' ' ' <"$here/$1"; }
 skill=$(joined skills/spec/SKILL.md)
 agent=$(joined agents/spec-reviewer.md)
 readme=$(joined README.md)
 n=$(printf '%s' "$skill" | grep -o 'templates/spec.md' | wc -l | tr -d ' ')
 if [ "$n" -lt 2 ]; then fail "skills/spec/SKILL.md names templates/spec.md $n times, not at least twice (writer and reviewer prompt)"; fi
-case "$skill" in *'keep its headings, with their exact text and in their order'*) ;; *) fail "skills/spec/SKILL.md does not tell the writer to keep the template's headings in order" ;; esac
-case "$skill" in *'as the model for the form'*) fail "skills/spec/SKILL.md still takes the latest spec as the model for the form" ;; esac
 case "$agent" in *'templates/spec.md'*) ;; *) fail "agents/spec-reviewer.md does not name templates/spec.md" ;; esac
-case "$agent" in *'in its order'*) ;; *) fail "agents/spec-reviewer.md does not check the template's headings 'in its order'" ;; esac
 case "$readme" in *'templates/spec.md'*) ;; *) fail "README.md does not name templates/spec.md" ;; esac
 
 echo "== the lint checks the headings of specs from iteration 40 on"

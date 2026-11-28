@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Tests for #112 (iteration 44): /spec N and /next N finish a story that an earlier run left at Spec,
-# Spec review, In progress or Review. The skills are conversations, so this pins the wording the
-# behaviour depends on. Text is joined (newlines to spaces, runs of spaces made one) before it is searched.
+# Spec review, In progress or Review. Only the contracts are checked: the status names in the workflow skill, the
+# branch patterns, commands and the parsed lines (`Spec for #<issue>.`, the `resumed` step row) in /spec and /next,
+# `/spec N` and `/next N` in the status skill and the README rows of both commands; the sentences of the resume are the
+# reviewers' (iteration 76). Text is joined (newlines to spaces, runs of spaces made one) before it is searched.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 fail=0
@@ -21,39 +23,18 @@ need() {
 }
 
 echo "== a stuck story is continued"
-need skills/workflow/SKILL.md \
-  "also takes Spec and Spec review" "also takes In progress and Review" "its own artefacts" \
-  "the first unfinished step" "Resuming #<n> at <step>" "nothing to continue" "another run is working on it"
-wf=$(flat skills/workflow/SKILL.md)
-case "${wf}" in
-  *"/spec only takes Ready stories"*) echo "FAIL: skills/workflow/SKILL.md still refuses every status but the skill's own"; fail=1 ;;
-esac
+need skills/workflow/SKILL.md 'Spec' 'Spec review' 'In progress' 'Review'
 
-need skills/spec/SKILL.md \
-  '<git.specPrefix><N>-*' 'Spec for #<issue>.' \
-  "The spec file exists from an earlier run that did not finish" \
-  "every step of /spec is done; the spec waits for approval" \
-  "resumed by /spec at the spec review" "never deletes a branch the run did not create" \
-  "is not set again; it is read back" "an open one is reused" "only when no comment"
+need skills/spec/SKILL.md '<git.specPrefix><N>-*' 'Spec for #<issue>.'
 
 need skills/next/SKILL.md \
   '<git.featurePrefix><N>-<slug>' "closingIssuesReferences" "--status --porcelain" \
-  "is running (last report" "slot --abandon <s>" '| `session` | `resumed` |' \
-  "Resumed by /next at the code review" "resumed by /next at the code review" \
-  "is not set again; it is read back" "an open one is reused" "has no entry for iteration N"
+  "slot --abandon <s>" '| `session` | `resumed` |'
 
 need skills/status/SKILL.md '/spec N' '/next N'
-st=$(flat skills/status/SKILL.md)
-case "${st}" in
-  *'with nothing behind it is `/next`, `/spec` or the maintainer'*) echo "FAIL: skills/status/SKILL.md still sends a stuck item to /next, /spec or the maintainer without a number"; fail=1 ;;
-esac
 
 for row in '/nightmill:spec [N]' '/nightmill:next [N]'; do
-  line=$(grep -F -- "| \`${row}\`" README.md | head -n 1)
-  case "${line}" in
-    *"continues a story"*) ;;
-    *) echo "FAIL: README.md row ${row} does not say the resume item: continues a story"; fail=1 ;;
-  esac
+  grep -F -- "| \`${row}\`" README.md >/dev/null || { echo "FAIL: README.md has no row ${row}"; fail=1; }
 done
 
 [ "${fail}" = 0 ] && echo "RESUME STUCK OK" || { echo "RESUME STUCK FAILED"; exit 1; }
