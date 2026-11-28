@@ -34,7 +34,6 @@ need() {
 SCHEMA=schema/nightmill.schema.json
 EXAMPLE=templates/nightmill.example.json
 SPEC=skills/spec/SKILL.md
-REV=agents/spec-reviewer.md
 TPL=templates/spec.md
 
 # shellcheck source=scripts/lib/json.sh
