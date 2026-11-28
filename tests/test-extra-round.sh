@@ -44,6 +44,8 @@ need "$W" '`extra round`'
 for f in "$S" "$N" "$F"; do need "$f" 'review.maxFixRounds'; done
 # the commands and the step name of the extra round
 need "$S" 'git commit -m "docs: iteration <N> spec (#<issue>), extra review round"'
+# /spec looks for the comment with this prefix when it resumes
+need "$S" 'Extra review round on PR #<pr>:'
 need "$N" 'gh pr edit <pr> --body-file' 'fix-round-<k>'
 need "$F" 'gh pr edit <pr> --body-file' 'fix-round-<k>'
 # a pull request whose findings are still open keeps a line the skills read back when they resume

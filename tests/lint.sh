@@ -151,6 +151,12 @@ echo "== init skill keeps the install-chat steps"
 for w in validate-config createProjectV2View updateProjectV2View BOARD_LAYOUT updateProjectV2Field 'gh label create' 'gh project link' 'workflows(first' 'projects/<n>/workflows'; do
   grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not mention $w"; fail=1; }
 done
+# /init reads the board's workflows (workflows(first: 20) { nodes { name enabled } }) and matches these names in the
+# output, so they are a contract with the API; the filter of Auto-archive items is set by hand and not checked.
+for w in 'Item added to project' 'Item closed' 'Pull request merged' 'Pull request linked to issue' 'Code review approved' \
+         'Code changes requested' 'Item reopened' 'Auto-archive items'; do
+  grep -qF -- "$w" skills/init/SKILL.md || { echo "FAIL: skills/init/SKILL.md does not name the board workflow: $w"; fail=1; }
+done
 
 echo "== session-start hook is wired"
 # The SessionStart hook offers /init where nightmill is not set up (iteration 3): hooks/hooks.json has the
@@ -682,6 +688,8 @@ if [ -f "$ta" ]; then
   for w in 'Result: complete | partial | failed' 'Criteria:' 'Tests:' 'Failing:' 'Files:' 'Left:'; do
     grep -qF -- "$w" "$ta" || { echo "FAIL: $ta does not have the result field: $w"; fail=1; }
   done
+  # /next and /fix parse the Criteria value not tested
+  grep -qF -- 'not tested' "$ta" || { echo "FAIL: $ta does not say: not tested"; fail=1; }
 else
   echo "FAIL: $ta is missing"; fail=1
 fi
