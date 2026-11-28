@@ -177,6 +177,10 @@ if [ -f CONTRIBUTING.md ]; then
   for w in 'tests/check.sh' '--plugin-dir' 'SECURITY.md'; do
     grep -qF -- "$w" CONTRIBUTING.md || { echo "FAIL: CONTRIBUTING.md does not mention $w"; fail=1; }
   done
+  # 'Ready' and 'Approved' are the schema defaults of board.statuses.
+  for w in 'Ready' 'Approved'; do
+    grep -qF -- "$w" CONTRIBUTING.md || { echo "FAIL: CONTRIBUTING.md does not mention $w"; fail=1; }
+  done
 else
   echo "FAIL: CONTRIBUTING.md is missing"; fail=1
 fi
