@@ -208,17 +208,12 @@ bad_value() {
   [ "$(wc -l < "$tmp/err.txt" | tr -d ' ')" = 1 ] || { cat "$tmp/err.txt"; fail "$1 = $2: not one line on standard error"; }
   expect_out "$1 = $2" "$room_ok"
 }
-for v in 0 -1 8.5 '"60"' true 91; do
-  bad_value roomPauseSeconds "$v" "room: parallel.roomPauseSeconds must be a whole number from 1 to 90; using 60"
-done
-for v in 0 101; do
-  bad_value roomMaxCpuPercent "$v" "room: parallel.roomMaxCpuPercent must be a whole number from 1 to 100; using 90"
-done
-for v in 0 1000000; do
-  bad_value roomMinFreeMB "$v" "room: parallel.roomMinFreeMB must be a whole number from 1 to 999999; using 2000"
-done
+bad_value roomPauseSeconds 0 "room: parallel.roomPauseSeconds must be a whole number from 1 to 90; using 60"
+# In-process (iteration 72): the fallback of roomPauseSeconds -1, 8.5, "60", true and 91 is tested in tests/test-lib-load.sh, section room settings.
+# In-process (iteration 72): the fallback of roomMaxCpuPercent 0 and 101 is tested in tests/test-lib-load.sh, section room settings.
+# In-process (iteration 72): the fallback of roomMinFreeMB 0 and 1000000 is tested in tests/test-lib-load.sh, section room settings.
+# In-process (iteration 72): the fallback of roomMaxWaitMinutes 0 and 1441 (the warning and the default) is tested in tests/test-lib-load.sh, section room settings.
 for v in 0 1441; do
-  bad_value roomMaxWaitMinutes "$v" "room: parallel.roomMaxWaitMinutes must be a whole number from 1 to 1440; using 30"
   set_parallel "\"roomMaxWaitMinutes\": $v"
   now=$(date +%s)
   run short --since "$((now - 1800))"
@@ -226,19 +221,9 @@ for v in 0 1441; do
   expect_out "roomMaxWaitMinutes = $v, gave up" "room: gave up after 30 min: free memory 1500 MB, limit at least 2000 MB"
   quick "roomMaxWaitMinutes = $v, gave up"
 done
-for v in '"false"' 0 1; do
-  bad_value roomCheck "$v" "room: parallel.roomCheck must be true or false; using true"
-done
-set_parallel '"roomCheck": null, "roomMinFreeMB": null, "roomMaxCpuPercent": null, "roomPauseSeconds": null, "roomMaxWaitMinutes": null'
-run ok
-code_is "null values" 0
-no_err "null values"
-expect_out "null values" "$room_ok"
-set_parallel '"maxAgents": 2'
-run ok
-code_is "absent keys" 0
-no_err "absent keys"
-expect_out "absent keys" "$room_ok"
+# In-process (iteration 72): the fallback of roomCheck "false", 0 and 1 is tested in tests/test-lib-load.sh, section room settings.
+# In-process (iteration 72): the case of null values (the defaults, nothing on standard error) is tested in tests/test-lib-load.sh, section room settings.
+# In-process (iteration 72): the case of absent keys (the defaults, nothing on standard error) is tested in tests/test-lib-load.sh, section room settings.
 par
 
 echo "== 10. errors"

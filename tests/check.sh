@@ -140,6 +140,7 @@ add bash test-guard-rules.sh alone
 add bash test-interrupt-docs.sh
 add bash test-json-bom.sh
 add bash test-json-speed.sh
+add bash test-lib-load.sh
 add bash test-lint-pipefail.sh
 add bash test-lintcopy-output.sh slow nogitbash
 add bash test-mktemp-template.sh
@@ -208,6 +209,7 @@ map scripts/lib/baseconfig.sh test-baseconfig-pathconv.sh
 map scripts/lib/json.awk smoke-json.sh
 map scripts/lib/json.sh smoke-json.sh,smoke-slot.sh,smoke-status.sh,smoke-dashboard.sh,smoke-panel.sh,test-json-bom.sh,test-json-speed.sh,smoke-history.sh,test-baseconfig-pathconv.sh
 map scripts/lib/ledger.sh smoke-history.sh
+map scripts/lib/load.sh smoke-load.sh,smoke-room.sh,smoke-control.sh,test-lib-load.sh
 map scripts/load.* smoke-load.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
 map scripts/models.* smoke-models.sh,test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh
 map scripts/new-worktree.* test-lint-pipefail.sh,test-script-modes.sh,test-mktemp-template.sh,test-slot-low-defects.sh

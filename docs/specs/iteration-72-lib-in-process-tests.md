@@ -1,6 +1,6 @@
 # Iteration 72: the load library is tested in-process, and its smoke tests keep only their end-to-end cases
 
-Status: draft, awaiting approval (#346)
+Status: delivered in iteration 72 (PR #406)
 
 Story #346, epic #337 (fast verification loop). This iteration proves the pattern on one library, `scripts/lib/load.sh`,
 as the story's agent note says. The rest of `scripts/lib` is left to follow-up stories (Left). A new test,

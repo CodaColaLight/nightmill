@@ -21,6 +21,7 @@
   step's line say where it runs; the bash lines of the list are in name order, so a new test is one line in the
   step list and none in the workflow (it still needs a map line). The lint no longer compares the workflow's lists with the step list; it fails on a step name in the
   workflow and on a test file that runs nowhere. No config key.
+- Iteration 72 (#346): the load library (`scripts/lib/load.sh`) is tested in-process in `tests/test-lib-load.sh`; the load, room and control smoke tests keep their end-to-end cases and lose the cases that only repeated it.
 
 ## 0.10.0 (2026-11-27)
 
