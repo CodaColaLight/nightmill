@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# tests/test-ci-parts.sh - the CI parts are well formed (iterations 55 and 68): the final job smoke-gitbash has a
+# tests/test-ci-parts.sh - the CI parts are well formed (iterations 55, 68 and 70): the final job smoke-gitbash has a
 # Job times step (tests/ci-jobs-summary.sh, with if: always() and continue-on-error: true), and only that job has a
-# job-level permissions block (contents: read, actions: read). Rule 10a (iterations 64, 66 and 69, decision record 0004 step 1): the bash
+# job-level permissions block (contents: read, actions: read). Rule 10a (iterations 64, 66, 69 and 70, decision record 0004 step 1): the bash
 # steps run in Git Bash on Windows runners, in the matrix job smoke-gitbash-part, and block: its name, runs-on:
-# windows-latest, fail-fast: false, a full-history checkout, no if:, no needs:, the part and only lines in pairs, numbered
-# 1 to the <n> of its name, and exactly one run step, tests/check.sh $CHECK_SELECT ${{ matrix.only }}, in a step with
-# shell: bash, and no line of the job has continue-on-error. Rule 10b (iterations 66 and 69): the final job smoke-gitbash
+# windows-latest, fail-fast: false, a full-history checkout, no if:, no needs:, a matrix that is exactly one line
+# `part: [1, 2, ..., <n>]` (no include: and no only: lists, iteration 70) numbered 1 to the <n> of its name, and exactly
+# one run step, tests/check.sh $CHECK_SELECT @gitbash-${{ matrix.part }}, in a step with shell: bash, and no line of the
+# job has continue-on-error. Rule 10b (iterations 66 and 69): the final job smoke-gitbash
 # (the required check Git Bash scripts smoke tests, iteration 69) needs the part job, has if: always(), runs on ubuntu-latest, fails unless every part succeeded, and does not run
-# tests/check.sh. Rule 11 (iteration 66, decisions 3 and 5): every `add bash` step of tests/check.sh except the list
-# gitbash_out (test-lintcopy-output.sh, which the Ubuntu job runs) is named in exactly one part, each list is in the order
-# of the step list, and each step on the list gitbash_alone has a part of its own. Prints one FAIL line per broken rule,
+# tests/check.sh. Rule 11 (iteration 70, decisions 1, 3 and 6): the marks on the `add bash` lines of tests/check.sh are
+# pinned to the steps that earlier specs chose (11a: jq, nogitbash and alone, each to its list gitbash_jq, gitbash_out
+# and gitbash_alone), and the matrix has as many parts as the step list makes (11b: the steps marked alone, plus one
+# packed part when another step is not marked nogitbash). The parts' steps are derived by tests/check.sh and tested in
+# tests/smoke-check.sh. Prints one FAIL line per broken rule,
 # then runs its own cases on
 # scratch copies, each broken once. tests/lint.sh starts it once. With NIGHTMILL_CI_PARTS_RULES_ONLY=1 it checks the
 # rules only and skips its cases: tests/smoke-check.sh sets it on its lint copies, so one check runs the cases once
@@ -23,16 +26,18 @@ trap 'rm -rf "$tmp"' EXIT
 fail=0
 PFX='.github/workflows/ci.yml: '
 
-# The Git Bash job's lists (iteration 66), one name per line; `rules` reads them as shell variables, so a case can set
-# them in a subshell. gitbash_out: the bash steps the Git Bash job leaves out (decision 3; the Ubuntu job runs them).
-# gitbash_alone: the steps that each have a part of their own (decision 5, rule 1; after the rebalance, if any).
+# The marks' pins (iteration 70, decision 6, rule 11a), one name per line; `rules` reads them as shell variables, so a case can
+# set them in a subshell. gitbash_jq: the steps the Ubuntu job runs before it hides jq (iteration 60, decision 5).
+# gitbash_out: the bash steps the Git Bash job leaves out, marked nogitbash (iteration 66, decision 3). gitbash_alone:
+# the steps that each have a part of their own, marked alone (iteration 66, decision 5).
+gitbash_jq='smoke-json.sh'
 gitbash_out='test-lintcopy-output.sh'
-gitbash_alone='smoke-slot.sh
-smoke-status.sh
-smoke-check.sh
-test-guard-rules.sh
+gitbash_alone='smoke-check.sh
 smoke-release.sh
-smoke-validate.sh'
+smoke-slot.sh
+smoke-status.sh
+smoke-validate.sh
+test-guard-rules.sh'
 
 inlist() { # inlist <name> <list, one name per line>: the name is on the list
   case $'\n'"$2"$'\n' in *$'\n'"$1"$'\n'*) return 0 ;; esac
@@ -100,11 +105,28 @@ rules() {
     fl "the job smoke-gitbash's 'permissions:' block is not exactly 'contents: read' and 'actions: read'"
   fi
 
-  # rule 10a: the Git Bash parts (iterations 64 and 66). A step starts at a line of six spaces, a dash and a space; a
-  # compact `- key: value` counts as the key, and every run line counts (bug #296)
-  local gpblock gfblock gbad="" gname="" gro=0 gff=0 gfd=0 gif=0 gneeds=0 gruns=0 grunok=0 grl="" gsh=0 gcoe=0 gm gw
-  local gks=() gonlys=()
-  local GBRUN='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }}'
+  # the marks of the step list (rule 11), read first: gm_jq, gm_nogb and gm_alone are the marked names, comma-separated in
+  # list order; gm_packed is 1 when some bash step is neither alone nor nogitbash; nparts is the number of parts the list makes
+  local gm_jq gm_nogb gm_alone gm_packed nparts gmarks
+  gmarks=$(awk '/^# steps: begin$/ { on = 1; next } /^# steps: end$/ { on = 0 }
+    on && $1 == "add" && $2 == "bash" {
+      al = 0; ng = 0
+      for (i = 4; i <= NF; i++) {
+        if ($i == "jq") j = j (j == "" ? "" : ",") $3
+        if ($i == "nogitbash") { n = n (n == "" ? "" : ",") $3; ng = 1 }
+        if ($i == "alone") { a = a (a == "" ? "" : ",") $3; al = 1; na++ }
+      }
+      if (!al && !ng) packed = 1
+    }
+    END { print j; print n; print a; print packed + 0; print na + 0 }' "$chk")
+  gm_jq=$(sed -n 1p <<<"$gmarks"); gm_nogb=$(sed -n 2p <<<"$gmarks"); gm_alone=$(sed -n 3p <<<"$gmarks"); gm_packed=$(sed -n 4p <<<"$gmarks")
+  nparts=$(( $(sed -n 5p <<<"$gmarks") + gm_packed ))
+
+  # rule 10a: the Git Bash parts (iterations 64, 66 and 70). A step starts at a line of six spaces, a dash and a space; a
+  # compact `- key: value` counts as the key, and every run line counts (bug #296). The matrix is one line, part: [1, 2, ..., <n>]
+  local gpblock gfblock gbad="" gname="" gro=0 gff=0 gfd=0 gif=0 gneeds=0 gruns=0 grunok=0 grl="" gsh=0 gcoe=0 gm gw gmat gmok=0 glist
+  local gks=()
+  local GBRUN='run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT @gitbash-${{ matrix.part }}'
   gstep_end() { # the step just read: is it the one run step, with its keys?
     if [ "$grl" = "$GBRUN" ] && [ "$gsh" = 1 ]; then grunok=$((grunok + 1)); fi
     gsh=0; grl=""
@@ -123,14 +145,21 @@ rules() {
       "fetch-depth: 0") gfd=1 ;;
       "if:"*) gif=1 ;;
       "needs:"*) gneeds=1 ;;
-      "part: "*) gks[${#gks[@]}]=${t#part: } ;;
-      "only: "*) gonlys[${#gonlys[@]}]=${t#only: } ;;
       "shell: bash") gsh=1 ;;
       "continue-on-error:"*) gcoe=1 ;;
       "run:"*) gruns=$((gruns + 1)); grl=$t ;;
     esac
   done <<<"$gpblock"
   gstep_end
+  # the matrix block: the lines after `      matrix:` that are indented by more than six spaces, without comments and blanks
+  gmat=$(printf '%s\n' "$gpblock" | awk '$0 == "      matrix:" { on = 1; next }
+    on { if ($0 ~ /^ *$/) next; match($0, /[^ ]/); if (RSTART - 1 <= 6) { on = 0; next }
+         t = $0; sub(/^ +/, "", t); if (t ~ /^#/) next; print }')
+  if [ -n "$gmat" ] && [ "$(printf '%s\n' "$gmat" | wc -l | tr -d ' ')" = 1 ] && grep -qE '^        part: \[[0-9]+(, [0-9]+)*\]$' <<<"$gmat"; then
+    gmok=1
+    glist=${gmat#*\[}; glist=${glist%\]}
+    IFS=, read -r -a gks <<<"${glist// /}"
+  fi
   gm=${#gks[@]}
   [ -n "$gpblock" ] || gbad="the job smoke-gitbash-part is missing"
   if [ -z "$gbad" ]; then
@@ -143,8 +172,8 @@ rules() {
   [ -n "$gbad" ] || [ "$gneeds" = 0 ] || gbad="a needs: line"
   [ -n "$gbad" ] || [ "$gcoe" = 0 ] || gbad="a continue-on-error: line"
   if [ -z "$gbad" ]; then
-    if [ "$gm" -lt 2 ]; then gbad="fewer than two parts"
-    elif [ "$gm" != "${#gonlys[@]}" ]; then gbad="the part and only lines are not in pairs"
+    if [ "$gmok" = 0 ]; then gbad="the matrix is not one line 'part: [1, 2, ..., $nparts]'"
+    elif [ "$gm" -lt 2 ]; then gbad="fewer than two parts"
     elif [ "$gm" != "$gname" ]; then gbad="the name says $gname parts, the matrix has $gm"
     else
       k=0
@@ -155,7 +184,7 @@ rules() {
     fi
   fi
   [ -n "$gbad" ] || [ "$gruns" = 1 ] || gbad="$gruns run steps, not exactly one"
-  [ -n "$gbad" ] || [ "$grunok" = 1 ] || gbad='the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT ${{ matrix.only }} in a step with shell: bash'
+  [ -n "$gbad" ] || [ "$grunok" = 1 ] || gbad='the run step is not a run: bash tests/check.sh --summary "$GITHUB_STEP_SUMMARY" $CHECK_SELECT @gitbash-${{ matrix.part }} in a step with shell: bash'
   [ -z "$gbad" ] || fl "the Git Bash parts are malformed ($gbad)"
 
   # rule 10b: the final job smoke-gitbash fails unless every part succeeded, and runs no check itself
@@ -179,60 +208,20 @@ rules() {
   fi
   [ -z "$gbad" ] || fl "the Git Bash job is malformed ($gbad)"
 
-  # rule 11: every bash step of the step list that the Git Bash job does not leave out is named in exactly one part,
-  # each list is in the order of the step list, and the steps on gitbash_alone have a part of their own. Read only
-  # when the parts parse
-  local gb=()
-  while IFS= read -r x; do [ -z "$x" ] || gb[${#gb[@]}]=$x; done < <(awk '/^# steps: begin$/ { on = 1; next } /^# steps: end$/ { on = 0 } on && $1 == "add" && $2 == "bash" { print $3 }' "$chk")
-  [ "${#gb[@]}" -gt 0 ] || fl "tests/check.sh has no bash steps"
-  local gbn
-  gbcount() { # gbcount <name>: sets gbn to the number of places the only lists name the step (no subshell: slow in Git Bash)
-    local q p
-    gbn=0
-    for q in "${gonlys[@]}"; do
-      IFS=, read -r -a parr <<<"$q"
-      for p in "${parr[@]}"; do [ "$p" != "$1" ] || gbn=$((gbn + 1)); done
-    done
+  # rule 11a: the marks of the step list are the steps that earlier specs chose
+  csvsort() { printf '%s' "$1" | tr ',' '\n' | LC_ALL=C sort | tr '\n' ','; }
+  gbpin() { # gbpin <mark> <marked names, comma-separated> <the pinned names, one per line> <source>
+    local want=${3//$'\n'/,}
+    if [ "$(csvsort "$2")" != "$(csvsort "$want")" ]; then
+      echo "FAIL: tests/check.sh: the steps marked $1 are not exactly $want ($4): ${2:-none}"
+    fi
   }
-  if [ "$gm" -ge 1 ] && [ "$gm" = "${#gonlys[@]}" ]; then
-    for x in "${gb[@]}"; do
-      inlist "$x" "$gitbash_out" && continue
-      gbcount "$x"
-      if [ "$gbn" = 0 ]; then fl "tests/$x runs in no Git Bash part"
-      elif [ "$gbn" -gt 1 ]; then fl "tests/$x runs in more than one Git Bash part"; fi
-    done
-    i=0
-    while [ "$i" -lt "$gm" ]; do
-      k=${gks[$i]}
-      IFS=, read -r -a parr <<<"${gonlys[$i]}"
-      last=-1
-      for n in "${parr[@]}"; do
-        idx=-1; j=0
-        while [ "$j" -lt "${#gb[@]}" ]; do [ "${gb[$j]}" != "$n" ] || { idx=$j; break; }; j=$((j + 1)); done
-        if [ "$idx" = -1 ]; then
-          fl "Git Bash part $k names tests/$n, which is not a bash step of tests/check.sh"
-        else
-          if inlist "$n" "$gitbash_out"; then
-            fl "Git Bash part $k names tests/$n, which the Git Bash job leaves out (docs/specs/iteration-66-gitbash-job-time.md, decision 3)"
-          fi
-          if [ "$idx" -lt "$last" ]; then fl "Git Bash part $k: the --only list is not in the order of the step list"; last=999999; fi
-          [ "$last" = 999999 ] || last=$idx
-        fi
-        if inlist "$n" "$gitbash_alone" && [ "${#parr[@]}" -gt 1 ]; then
-          fl "Git Bash part $k: tests/$n shares its part (docs/specs/iteration-66-gitbash-job-time.md, decision 5)"
-        fi
-      done
-      i=$((i + 1))
-    done
-    while IFS= read -r x; do
-      [ -n "$x" ] || continue
-      inlist "$x" "$(printf '%s\n' "${gb[@]}")" || fl "the Git Bash job leaves out tests/$x, which is not a bash step of tests/check.sh"
-    done <<<"$gitbash_out"
-    while IFS= read -r x; do
-      [ -n "$x" ] || continue
-      gbcount "$x"
-      [ "$gbn" != 0 ] || fl "tests/$x is to run alone, but it runs in no Git Bash part"
-    done <<<"$gitbash_alone"
+  gbpin jq "$gm_jq" "$gitbash_jq" 'docs/specs/iteration-60-ci-affected-jobs.md, decision 5'
+  gbpin nogitbash "$gm_nogb" "$gitbash_out" 'docs/specs/iteration-66-gitbash-job-time.md, decision 3'
+  gbpin alone "$gm_alone" "$gitbash_alone" 'docs/specs/iteration-66-gitbash-job-time.md, decision 5'
+  # rule 11b: the matrix has as many parts as the step list makes, read only when the matrix parses
+  if [ "$gmok" = 1 ] && [ "$gm" != "$nparts" ]; then
+    fl "the matrix has $gm parts, the step list of tests/check.sh makes $nparts"
   fi
 }
 
@@ -346,12 +335,13 @@ mkcase gbof > /dev/null
 ci_awk gbof '/^  [A-Za-z]/ { inb = ($0 == "  smoke-gitbash-part:") } inb && /^    name: .* of [0-9]+$/ { sub(/[0-9]+$/, $NF + 1) } { print }'
 changed gbof .github/workflows/ci.yml
 expect_gb gbof 'the Git Bash parts are malformed'
-mkcase gbnumbers > /dev/null
-ci_awk2 gbnumbers 'FNR == NR { if ($0 ~ /^  [A-Za-z]/) inb = ($0 == "  smoke-gitbash-part:"); if (inb && $0 ~ /^ *- part: /) { pa = pb; va = vb; pb = FNR; vb = $NF } next }
-  FNR == pa { sub(/[0-9]+$/, vb) } FNR == pb { sub(/[0-9]+$/, va) } { print }'
-changed gbnumbers .github/workflows/ci.yml
-expect_gb gbnumbers 'the Git Bash parts are malformed'
-gb_case gbonlyrun '/run: bash tests\/check\.sh/s/ \${{ matrix.only }}//' 'the Git Bash parts are malformed'
+gb_case gbnumbers 's/part: \[1, 2,/part: [2, 1,/' 'the Git Bash parts are malformed'
+gb_case gbinclude '/^        part: \[/a\
+        include:' 'the matrix is not one line'
+gb_case gbonlyback '/^        part: \[/a\
+        only: x' 'the matrix is not one line'
+gb_case gbeight 's/ of 7$/ of 8/;s/part: \[1, 2, 3, 4, 5, 6, 7\]/part: [1, 2, 3, 4, 5, 6, 7, 8]/' 'the matrix has 8 parts, the step list of tests/check.sh makes 7'
+gb_case gbonlyrun 's/@gitbash-\${{ matrix.part }}/${{ matrix.only }}/' 'the Git Bash parts are malformed'
 
 # the final job (10b)
 mkcase gbfgone > /dev/null
@@ -374,42 +364,43 @@ o=$(rules "$tmp/case-gbfcheck")
 expect_gb gbfcheck 'the Git Bash job is malformed (it runs tests/check.sh)' "$o"
 if grep -qF 'the Git Bash parts are malformed' <<<"$o"; then echo "FAIL: case gbfcheck: the final job's run step counted as a part: $o"; fail=1; fi
 
-# the lists (11)
-gb_case gbnoguard 's/smoke-guard\.sh,//;s/,smoke-guard\.sh$//' 'tests/smoke-guard.sh runs in no Git Bash part'
-gb_case gbgate2 's/smoke-gate\.sh/smoke-gate.sh,smoke-gate.sh/' 'more than one Git Bash part'
+# the marks and the count (11): one unmarked line in the step list puts a test in the check and in every CI job
 mkcase gbnewstep > /dev/null
 f="$tmp/case-gbnewstep/tests/check.sh"
-sed -e 's/^# steps: end$/add bash smoke-new.sh\
-# steps: end/' "$f" > "$f.new" && mv "$f.new" "$f"
+sed -e 's/^add bash smoke-models\.sh$/add bash smoke-models.sh\
+add bash smoke-new.sh/' "$f" > "$f.new" && mv "$f.new" "$f"
 changed gbnewstep tests/check.sh
-expect_gb gbnewstep 'tests/smoke-new.sh runs in no Git Bash part'
-mkcase gbnostep > /dev/null
-ci_awk2 gbnostep 'FNR == NR { if ($0 ~ /^  [A-Za-z]/) inb = ($0 == "  smoke-gitbash-part:"); if (inb && $0 ~ /^ *only: /) last = FNR; next }
-  FNR == last { $0 = $0 ",smoke-nope.sh" } { print }'
-changed gbnostep .github/workflows/ci.yml
-expect_gb gbnostep 'names tests/smoke-nope.sh, which is not a bash step'
-mkcase gborder > /dev/null
-ci_awk gborder '/^  [A-Za-z]/ { inb = ($0 == "  smoke-gitbash-part:") }
-  inb && !d && /^ *only: [^,]+,[^,]+/ {
-    match($0, /only: /); pre = substr($0, 1, RSTART + RLENGTH - 1); n = split(substr($0, RSTART + RLENGTH), a, ",")
-    t = a[1]; a[1] = a[2]; a[2] = t; s = a[1]; for (i = 2; i <= n; i++) s = s "," a[i]; $0 = pre s; d = 1
-  }
-  { print }'
-changed gborder .github/workflows/ci.yml
-expect_gb gborder 'not in the order of the step list'
-# test-lintcopy-output.sh, which the job leaves out, added to a packed part in list order (just before its successor)
-gb_case gblintcopy 's/test-lint-pipefail\.sh/test-lintcopy-output.sh,test-lint-pipefail.sh/' 'which the Git Bash job leaves out'
-# a short step (the first of the list) moved into the part of the first step on gitbash_alone, in list order
-gb_first=$(printf '%s\n' "$gitbash_alone" | sed -n 1p)
-gb_case gbalone "s/smoke-json\.sh,//;s/,smoke-json\.sh\$//;s/^\( *only: \)\(${gb_first//./\\.}\)\$/\1smoke-json.sh,\2/" 'shares its part'
+o=$(rules "$tmp/case-gbnewstep")
+if [ "$o" != "$out" ]; then echo "FAIL: case gbnewstep: one new unmarked line in the step list changes what the rules print: [$o] against the checkout's [$out]"; fail=1; fi
+if [ -n "$out" ]; then echo "FAIL: case gbnewstep: the rules print for the checkout itself, so the new step proves nothing: $out"; fail=1; fi
+mkcase gbnewalone > /dev/null
+f="$tmp/case-gbnewalone/tests/check.sh"
+sed -e 's/^# steps: end$/add bash smoke-new.sh alone\
+# steps: end/' "$f" > "$f.new" && mv "$f.new" "$f"
+changed gbnewalone tests/check.sh
+o=$(rules "$tmp/case-gbnewalone")
+expect_gb gbnewalone 'the steps marked alone are not exactly' "$o"
+expect_gb gbnewalone 'makes 8' "$o"
+mkcase gbunalone > /dev/null
+f="$tmp/case-gbunalone/tests/check.sh"
+sed -e 's/^add bash smoke-check\.sh alone$/add bash smoke-check.sh/' "$f" > "$f.new" && mv "$f.new" "$f"
+changed gbunalone tests/check.sh
+o=$(rules "$tmp/case-gbunalone")
+expect_gb gbunalone 'the steps marked alone are not exactly' "$o"
+expect_gb gbunalone 'makes 6' "$o"
+mkcase gbnojq > /dev/null
+f="$tmp/case-gbnojq/tests/check.sh"
+sed -e 's/^\(add bash smoke-json\.sh\) jq$/\1/' "$f" > "$f.new" && mv "$f.new" "$f"
+changed gbnojq tests/check.sh
+expect_gb gbnojq 'the steps marked jq are not exactly smoke-json.sh'
 
-# the lists are variables of the test: a case sets one in a subshell, on an unchanged scratch copy
+# the pins are variables of the test: a case sets one in a subshell, on an unchanged scratch copy
 mkcase gbout > /dev/null
 o=$(gitbash_out=smoke-nope.sh; rules "$tmp/case-gbout")
-expect_gb gbout 'which is not a bash step of tests/check.sh' "$o"
+expect_gb gbout 'the steps marked nogitbash are not exactly smoke-nope.sh' "$o"
 mkcase gbalonenope > /dev/null
 o=$(gitbash_alone="$gitbash_alone"$'\n'smoke-nope.sh; rules "$tmp/case-gbalonenope")
-expect_gb gbalonenope 'tests/smoke-nope.sh is to run alone, but it runs in no Git Bash part' "$o"
+expect_gb gbalonenope 'the steps marked alone are not exactly' "$o"
 
 [ "$fail" = 0 ] || exit 1
 echo "OK: the CI parts"
