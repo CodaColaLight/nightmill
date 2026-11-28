@@ -50,7 +50,16 @@
 # place); the check then runs exactly those steps (bash -c <command>) instead of its own. NIGHTMILL_CLOCK_FILE (see
 # scripts/lib/ledger.sh) is the clock the times are read from. With NIGHTMILL_CHECK_STEPS set, NIGHTMILL_CHECK_MAP
 # names a file of map lines read instead of the map below (unset: an empty map). NIGHTMILL_CHECK_PATHS names a file
-# whose lines are the changed paths of --affected; git is then not called. CI sets none of them.
+# whose lines are the changed paths of --affected; git is then not called. NIGHTMILL_CHECK_RECORD names the file of the
+# time record (below); with it or NIGHTMILL_CHECK_STEPS set, git is not asked for the record's place, and with it unset
+# no record is written. CI sets none of them.
+# The time budget (iteration 74): verification.checkBudgetSeconds (one full or --affected run) and
+# verification.stepBudgetSeconds (one step), each a whole number from 0 to 86400 (0: no budget; another value is 0,
+# with one note). With a budget set, the line 'check: OVER BUDGET: <part>[; <part>]...' follows the total line of the
+# Times: block when anything took more seconds than its budget: 'the check took <d> (budget <b>)' (full or --affected
+# runs only), then '<step> took <d> (budget <b>)' for each step over, in list order. It never fails the check. A full or
+# --affected run that was not interrupted then writes one line, <stamp> TAB <mode> TAB <passed|failed> TAB <total
+# seconds> TAB <slowest step> TAB <its seconds>, to <git common dir>/nightmill-check.tsv (scripts/status.sh shows it).
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 . scripts/lib/ledger.sh
@@ -513,6 +522,20 @@ else
     L=$procs; why="$why, capped at $procs processors"
   fi
 fi
+# The time budget (iteration 74): b_check and b_step in seconds, 0 for none
+b_check=0; b_step=0
+if [ -f .claude/nightmill.json ] && json_load .claude/nightmill.json >/dev/null 2>&1; then
+  for b_key in checkBudgetSeconds stepBudgetSeconds; do
+    json_has "verification.$b_key" || continue
+    v=$(json_get "verification.$b_key")
+    if [[ "$v" =~ ^[0-9]{1,5}$ ]] && [ "$((10#$v))" -le 86400 ]; then
+      v=$((10#$v))
+      if [ "$b_key" = checkBudgetSeconds ]; then b_check=$v; else b_step=$v; fi
+    else
+      echo "check: verification.$b_key must be a whole number from 0 to 86400; no budget" >&2
+    fi
+  done
+fi
 for u in UPDATE_STATUS_FIXTURES UPDATE_DASHBOARD_FIXTURES UPDATE_PANEL_FIXTURES; do
   if [ "${!u:-}" = 1 ]; then L=1; why="$u is set"; break; fi
 done
@@ -569,6 +592,43 @@ times_block() {
   echo "Times:"
   for l in ${times[@]+"${times[@]}"}; do printf '%s\n' "$l"; done
   printf '  %-28s %8s\n' total "$(ledger_duration $((check_end - check_start)))"
+}
+# budget_line: the OVER BUDGET line, when a budget is set and the run or a step took more seconds than its budget
+budget_line() {
+  local parts="" i total=$((check_end - check_start))
+  if [ "$b_check" -gt 0 ] && [ "$total" -gt "$b_check" ]; then
+    case $mode in full|affected) parts="the check took $(ledger_duration "$total") (budget $(ledger_duration "$b_check"))" ;; esac
+  fi
+  if [ "$b_step" -gt 0 ]; then
+    for ((i = 0; i < ${#t_names[@]}; i++)); do
+      [ "${t_secs[i]}" -gt "$b_step" ] || continue
+      parts="$parts${parts:+; }${t_names[i]} took $(ledger_duration "${t_secs[i]}") (budget $(ledger_duration "$b_step"))"
+    done
+  fi
+  [ -z "$parts" ] || echo "check: OVER BUDGET: $parts"
+}
+# write_record: the time record of a full or --affected run (one line, replaced through a temporary file and mv -f);
+# outside a git checkout none; a failed write gives one note on standard error
+write_record() {
+  local rec gd verdict=passed i top=- top_s=0 tmpf err
+  if [ -n "${NIGHTMILL_CHECK_RECORD:-}" ] || [ "$fixture" = 1 ]; then
+    rec=${NIGHTMILL_CHECK_RECORD:-}
+    [ -n "$rec" ] || return 0
+  else
+    gd=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+    [ -n "$gd" ] || return 0
+    rec=$gd/nightmill-check.tsv
+  fi
+  [ ${#failed[@]} -eq 0 ] || verdict=failed
+  for ((i = 0; i < ${#t_names[@]}; i++)); do
+    if [ "${t_secs[i]}" -gt "$top_s" ] || [ "$top" = - ]; then top=${t_names[i]}; top_s=${t_secs[i]}; fi
+  done
+  tmpf="$(dirname "$rec")/.nightmill-check.tsv.$$"
+  if ! err=$( { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(ledger_stamp "$check_end")" "$mode" "$verdict" \
+      "$((check_end - check_start))" "$top" "$top_s" > "$tmpf" && mv -f "$tmpf" "$rec"; } 2>&1 ); then
+    rm -f "$tmpf" 2>/dev/null
+    echo "check: the time record was not written (${err%%$'\n'*})" >&2
+  fi
 }
 # selection_md: the selection section of a --within run (iteration 60, decision 6), its trailing empty lines cut: which
 # steps ran and which were left out, and why; for the fallback, the reason every step of the list ran
@@ -726,6 +786,10 @@ else
 fi
 
 times_block
+if [ "$b_check" -gt 0 ] || [ "$b_step" -gt 0 ]; then
+  budget_line
+  case $mode in full|affected) write_record ;; esac
+fi
 echo
 # the steps that cannot run, in list order, each text once (the steps --quick leaves out are not listed)
 shown="|"

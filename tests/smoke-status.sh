@@ -347,11 +347,11 @@ for args in "--porcelain --json" "--json --porcelain" "--all --porcelain --json"
   # shellcheck disable=SC2086
   run_in "$tmp/work" a $args
   [ "$code" = 2 ] || fail "$args: exit code $code, 2 expected"
-  grep -qxF 'usage: status.sh [--all] [--porcelain | --json]' "$tmp/err.txt" || fail "$args: no usage line: $(cat "$tmp/err.txt")"
+  grep -qxF 'usage: status.sh [--all] [--porcelain | --json] | --budget' "$tmp/err.txt" || fail "$args: no usage line: $(cat "$tmp/err.txt")"
   [ ! -s "$tmp/out.txt" ] || fail "$args: printed on standard output: $(cat "$tmp/out.txt")"
 done
 run_in "$tmp/work" a --nope
-[ "$code" = 2 ] && grep -qxF 'usage: status.sh [--all] [--porcelain | --json]' "$tmp/err.txt" || fail "--nope: the usage line names --json: $(cat "$tmp/err.txt")"
+[ "$code" = 2 ] && grep -qxF 'usage: status.sh [--all] [--porcelain | --json] | --budget' "$tmp/err.txt" || fail "--nope: the usage line names --json: $(cat "$tmp/err.txt")"
 set +e
 base_sync "$tmp/work"
 (cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/a" GH_LOG="$tmp/gh.log" GH_FAIL=1 NIGHTMILL_NOW=$NOW bash "$S" --json) > "$tmp/out.txt" 2> "$tmp/err.txt"
@@ -374,6 +374,92 @@ for scn in a b c; do
   run_in "$tmp/work" "$scn" --porcelain
   expect "porcelain $scn" "$FIX/$scn/expected-porcelain.txt"
 done
+
+echo "== the check time line"
+# The record is a file in the git common dir of the main checkout (nightmill-check.tsv, written by tests/check.sh); the
+# budgets come from verification in the configuration.
+rec="$tmp/work/.git/nightmill-check.tsv"
+# tb_cfg <verification members>: the configuration with slots and a verification object
+tb_cfg() {
+  sed "s/\"worktrees\": {/\"verification\": { $1 },\n  \"worktrees\": {/" "$tmp/with-slots.json" > "$tmp/work/.claude/nightmill.json"
+}
+stamp=2026-11-07T08:02:07Z
+printf '%s\tfull\tpassed\t127\ttwo\t75\n' "$stamp" > "$rec"
+markers a
+# no budget key: the text form is the expected output, with a record present
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
+run_in "$tmp/work" a
+[ "$code" = 0 ] || fail "check time, no keys: exit code $code: $(cat "$tmp/err.txt")"
+expect "check time, no keys" "$FIX/a/expected.txt"
+tb_cfg '"checkBudgetSeconds": 0, "stepBudgetSeconds": 0'
+run_in "$tmp/work" a
+expect "check time, both keys 0" "$FIX/a/expected.txt"
+# budgets 120 and 60: the last line is the record against them
+tb_cfg '"checkBudgetSeconds": 120, "stepBudgetSeconds": 60'
+run_in "$tmp/work" a
+[ "$code" = 0 ] || fail "check time over: exit code $code: $(cat "$tmp/err.txt")"
+want="check time: last full check $stamp (passed) took 2m07s (budget 2m00s); slowest step two 1m15s (budget 1m00s): OVER BUDGET"
+[ "$(tail -n 1 "$tmp/out.txt")" = "$want" ] || fail "check time over: the last line: [$(tail -n 1 "$tmp/out.txt")]"
+[ "$(sed '$d' "$tmp/out.txt")" = "$(cat "$FIX/a/expected.txt")" ] || fail "check time over: the lines before the last one changed"
+# --porcelain and --json do not change
+run_in "$tmp/work" a --porcelain
+expect "check time, porcelain" "$FIX/a/expected-porcelain.txt"
+run_in "$tmp/work" a --json
+expect "check time, json" "$FIX/a/expected.json"
+# budgets above the record
+tb_cfg '"checkBudgetSeconds": 200, "stepBudgetSeconds": 100'
+run_in "$tmp/work" a
+want="check time: last full check $stamp (passed) took 2m07s (budget 3m20s); slowest step two 1m15s (budget 1m40s): within budget"
+[ "$(tail -n 1 "$tmp/out.txt")" = "$want" ] || fail "check time within: the last line: [$(tail -n 1 "$tmp/out.txt")]"
+# the check budget only: no step budget; the step alone can make it over
+tb_cfg '"checkBudgetSeconds": 120'
+run_in "$tmp/work" a
+want="check time: last full check $stamp (passed) took 2m07s (budget 2m00s); slowest step two 1m15s (budget none): OVER BUDGET"
+[ "$(tail -n 1 "$tmp/out.txt")" = "$want" ] || fail "check time, check budget only: the last line: [$(tail -n 1 "$tmp/out.txt")]"
+tb_cfg '"stepBudgetSeconds": 60'
+run_in "$tmp/work" a
+want="check time: last full check $stamp (passed) took 2m07s (budget none); slowest step two 1m15s (budget 1m00s): OVER BUDGET"
+[ "$(tail -n 1 "$tmp/out.txt")" = "$want" ] || fail "check time, step budget only: the last line: [$(tail -n 1 "$tmp/out.txt")]"
+# no record
+rm -f "$rec"
+tb_cfg '"checkBudgetSeconds": 120, "stepBudgetSeconds": 60'
+run_in "$tmp/work" a
+want='check time: no check recorded yet (budget 2m00s per check, 1m00s per step)'
+[ "$(tail -n 1 "$tmp/out.txt")" = "$want" ] || fail "check time, no record: the last line: [$(tail -n 1 "$tmp/out.txt")]"
+# a record of five fields is not readable
+printf '%s\tfull\tpassed\t127\ttwo\n' "$stamp" > "$rec"
+run_in "$tmp/work" a
+want="check time: the record $rec is not readable (budget 2m00s per check, 1m00s per step)"
+[ "$(tail -n 1 "$tmp/out.txt")" = "$want" ] || fail "check time, bad record: the last line: [$(tail -n 1 "$tmp/out.txt")]"
+
+echo "== status.sh --budget"
+printf '%s\tfull\tpassed\t127\ttwo\t75\n' "$stamp" > "$rec"
+want="check time: last full check $stamp (passed) took 2m07s (budget 2m00s); slowest step two 1m15s (budget 1m00s): OVER BUDGET"
+run_in "$tmp/work" a --budget
+[ "$code" = 0 ] || fail "--budget: exit code $code: $(cat "$tmp/err.txt")"
+[ "$(cat "$tmp/out.txt")" = "$want" ] || fail "--budget: the output is not the one line: $(cat "$tmp/out.txt")"
+[ ! -s "$tmp/gh.log" ] || fail "--budget called gh: $(cat "$tmp/gh.log")"
+# it needs no gh: a gh that fails does not stop it
+set +e
+(cd "$tmp/work" && PATH="$tmp/bin:$PATH" GH_FIX="$FIX/a" GH_LOG="$tmp/gh.log" GH_FAIL=1 NIGHTMILL_NOW=$NOW bash "$S" --budget) > "$tmp/out.txt" 2> "$tmp/err.txt"
+code=$?
+set -e
+[ "$code" = 0 ] && [ "$(cat "$tmp/out.txt")" = "$want" ] || fail "--budget with a failing gh: exit $code: $(cat "$tmp/out.txt") $(cat "$tmp/err.txt")"
+# without a budget
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
+run_in "$tmp/work" a --budget
+[ "$code" = 0 ] || fail "--budget without a budget: exit code $code"
+[ "$(cat "$tmp/out.txt")" = 'check time: no budget set' ] || fail "--budget without a budget: $(cat "$tmp/out.txt")"
+# any other option is a usage error
+for args in "--budget --all" "--all --budget" "--budget --json" "--budget --porcelain"; do
+  # shellcheck disable=SC2086
+  run_in "$tmp/work" a $args
+  [ "$code" = 2 ] || fail "$args: exit code $code, 2 expected"
+  grep -qxF 'usage: status.sh [--all] [--porcelain | --json] | --budget' "$tmp/err.txt" || fail "$args: no usage line: $(cat "$tmp/err.txt")"
+  [ ! -s "$tmp/out.txt" ] || fail "$args: printed on standard output: $(cat "$tmp/out.txt")"
+done
+rm -f "$rec"
+cp "$tmp/with-slots.json" "$tmp/work/.claude/nightmill.json"
 
 echo "== twins (#329): an empty status name or epic label takes the default"
 cat > "$tmp/work/.claude/nightmill.json" <<'EOF2'

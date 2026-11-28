@@ -27,6 +27,27 @@ label `blocked`, `Stopped: limit: <reason>. Labelled blocked.`; no status is set
 
 Follow **Picking an issue** in the `workflow` skill with the status **Ready** (`board.statuses.ready`).
 
+**The time budget of the check** (iteration 74), only when the base-branch configuration sets a budget
+(`verification.checkBudgetSeconds` or `verification.stepBudgetSeconds` from 1 to 86400); otherwise this step is as
+written below.
+
+- Before listing the board, or before reading a named issue, run
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh" --budget`. When its line ends with `: OVER BUDGET`, print it.
+- While that line ends with `: OVER BUDGET`, for **every story taken**, picked from the board or named by number (also
+  one named to finish its own work), once the story is known and accepted by the rules below and before the `Picking`
+  line: if its parent epic is `verification.budgetEpic` (not 0), go on without a question. Otherwise ask the
+  maintainer, exactly:
+  `The check is over its budget. Take #<n> "<title>" anyway, a story outside epic #<budgetEpic>? (yes / no)`;
+  with `budgetEpic` 0 the text after the comma is left out (`... Take #<n> "<title>" anyway? (yes / no)`). `yes`
+  goes on. `no`, or no answer, changes nothing and prints
+  `Stopped: the check is over its budget; #<n> was not taken. Nothing was changed.`
+- When no person can answer, in a step of the driver (`NIGHTMILL_RUN_STARTED` is set), do not ask: print
+  `Going on without asking: no one can answer in a driver step (#<n>).` after the line and go on.
+- The parent epic is
+  `gh api graphql -f query='query { repository(owner: "<owner>", name: "<repo>") { issue(number: <n>) { parent { number } } } }' --jq .data.repository.issue.parent.number`;
+  when that is empty, the first `Epic: #<k>` in the body counts. Bugs are refused here as always and never asked
+  about.
+
 - If `$ARGUMENTS` holds an issue number, take that issue. It also takes Spec and Spec review, only to finish the
   story's own work (see "Resuming a story" below). The other statuses are refused with one line, changing nothing:
   Backlog `#<n> is at Backlog, not Ready, Spec or Spec review; only the maintainer moves a story to Ready.`;
